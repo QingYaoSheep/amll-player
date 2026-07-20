@@ -47,7 +47,7 @@ tauri-plugin-os = { version = "2" }
 tauri-plugin-shell = { version = "2" }
 
 amll-player-core = { path = "../../player-core" }
-ffmpeg_audio = { version = "0.1" }
+ffmpeg_audio = { version = "0.2", features = ["tracing"] }
 ws-protocol = { path = "../../ws-protocol", features = ["tracing"] }
 tauri-plugin-http = "2"
 

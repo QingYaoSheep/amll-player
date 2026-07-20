@@ -2,8 +2,10 @@
 name = "amll-player-core"
 version = "0.1.0"
 edition = "2024"
+
 [features]
 default = []
+
 [dependencies]
 anyhow = "^1.0"
 cpal = "^0.17"
@@ -27,10 +29,14 @@ tokio = { version = "^1", features = [
 ] }
 tracing = "0.1"
 parking_lot = "0.12"
-ffmpeg_audio = { version = "0.1" }
+ffmpeg_audio = { version = "0.2", features = ["tracing"] }
 now-playing-controls = { git = "https://github.com/apoint123/now-playing-controls.git" }
 tokio-util = "0.7.18"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls",
+    "stream",
+] }
+
 [dev-dependencies]
 tracing-subscriber = "0.3"
 windows = { version = "0.62", features = [
@@ -38,4 +44,5 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Gdi",
 ] }
+
 [build-dependencies]

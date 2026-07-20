@@ -1821,9 +1821,9 @@ dependencies = [
 
 [[package]]
 name = "ffmpeg_audio"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dab99f6fa882062febd62f823f928eb1b90dd7cffa025720f8740bc089ab1fe"
+checksum = "ab67e7d0872bae9a86cb68dcd61512963b316d6a354b769b1919e5736927364d"
 dependencies = [
  "ffmpeg_audio_sys",
  "libc",

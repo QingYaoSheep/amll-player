@@ -161,6 +161,7 @@ dependencies = [
  "now-playing-controls",
  "parking_lot",
  "rb",
+ "reqwest 0.13.4",
  "ringbuf",
  "segmap",
  "serde",

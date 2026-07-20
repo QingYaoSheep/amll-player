@@ -291,10 +291,15 @@ export const LocalMusicContext: FC = () => {
 				);
 
 				if (songFromDb.coverPath) {
-					store.set(musicCoverAtom, convertFileSrc(songFromDb.coverPath));
+					const coverPath = songFromDb.coverPath;
+					if (coverPath.startsWith("http://") || coverPath.startsWith("https://")) {
+						store.set(musicCoverAtom, coverPath);
+					} else {
+						store.set(musicCoverAtom, convertFileSrc(coverPath));
+					}
 					store.set(
 						musicCoverIsVideoAtom,
-						songFromDb.coverPath.endsWith(".mp4"),
+						coverPath.endsWith(".mp4"),
 					);
 				} else {
 					store.set(

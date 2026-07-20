@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     fs::File,
-    io::{Read, Seek},
+    io::{Cursor, Read, Seek},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -454,9 +454,20 @@ impl AudioPlayer {
 
         let song_data = self.current_song.clone().context("没有当前歌曲可播放")?;
 
-        let file = File::open(&song_data.file_path)
-            .with_context(|| format!("打开 {} 失败", song_data.file_path))?;
-        let source_stream: Box<dyn CustomMediaSource> = Box::new(file);
+        let source_stream: Box<dyn CustomMediaSource> =
+            if song_data.file_path.starts_with("http://") || song_data.file_path.starts_with("https://") {
+                let bytes = reqwest::get(&song_data.file_path)
+                    .await
+                    .with_context(|| format!("下载 {} 失败", song_data.file_path))?
+                    .bytes()
+                    .await
+                    .with_context(|| format!("读取 {} 响应失败", song_data.file_path))?;
+                Box::new(Cursor::new(bytes.to_vec()))
+            } else {
+                let file = File::open(&song_data.file_path)
+                    .with_context(|| format!("打开 {} 失败", song_data.file_path))?;
+                Box::new(file)
+            };
 
         let target_channels = self.target_channels;
         let target_sample_rate = self.target_sample_rate;

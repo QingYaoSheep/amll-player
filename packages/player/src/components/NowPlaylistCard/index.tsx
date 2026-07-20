@@ -22,7 +22,11 @@ const PlaylistSongItem: FC<
 	const playlistIndex = useAtomValue(queueCurrentIndexAtom);
 	const queueManager = useAtomValue(queueManagerAtom);
 
-	const cover = song.coverPath ? convertFileSrc(song.coverPath) : "";
+	const cover = song.coverPath 
+		? (song.coverPath.startsWith("http://") || song.coverPath.startsWith("https://") 
+			? song.coverPath 
+			: convertFileSrc(song.coverPath))
+		: "";
 	const name = song.songName || "未知歌曲";
 	const artists = song.songArtists || "未知艺术家";
 

@@ -27,7 +27,11 @@ export const useSongCover = (song?: Song) => {
 		// 3. 从 dexie 迁移导入时，使用前端的 mime type
 		// 所以可以确保封面路径总是 jpg 或 mp4 文件，方便判断封面是图片或者视频
 		if (!song.coverPath.endsWith(".mp4")) {
-			setSongImgUrl(convertFileSrc(song.coverPath));
+			if (song.coverPath.startsWith("http://") || song.coverPath.startsWith("https://")) {
+				setSongImgUrl(song.coverPath);
+			} else {
+				setSongImgUrl(convertFileSrc(song.coverPath));
+			}
 			return;
 		}
 
@@ -39,7 +43,9 @@ export const useSongCover = (song?: Song) => {
 
 		setSongImgUrl("");
 		const coverPath = song.coverPath;
-		const videoSrc = convertFileSrc(coverPath);
+		const videoSrc = coverPath.startsWith("http://") || coverPath.startsWith("https://")
+			? coverPath
+			: convertFileSrc(coverPath);
 		getVideoThumbnail(videoSrc)
 			.then((blob) => {
 				const url = URL.createObjectURL(blob);

@@ -35,14 +35,23 @@ export const PlaylistCover: FC<
 
 	useEffect(() => {
 		if (playlist?.coverPath) {
-			setPlaylistImgs([convertFileSrc(playlist.coverPath)]);
+			setPlaylistImgs([
+				playlist.coverPath.startsWith("http://") || playlist.coverPath.startsWith("https://")
+					? playlist.coverPath
+					: convertFileSrc(playlist.coverPath)
+			]);
 			return;
 		}
 		if (songs && songs.length > 0) {
 			const imgs = songs
 				.slice(0, 4)
 				// biome-ignore lint/style/noNonNullAssertion: filter() 检查了 coverPath 的存在
-				.map((s) => convertFileSrc(s.coverPath!));
+				.map((s) => {
+					const path = s.coverPath!;
+					return path.startsWith("http://") || path.startsWith("https://")
+						? path
+						: convertFileSrc(path);
+				});
 			setPlaylistImgs(imgs);
 		} else {
 			setPlaylistImgs([]);

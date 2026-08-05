@@ -135,10 +135,17 @@
 	},
 	"page": {
 		"about": {
+			"contributorRole": "Contributor",
+			"contributorsTitle": "Developers & Contributors",
+			"contributionsCount": "{count} commits",
 			"credits": "Made by SteveXMH and all Contributors from GitHub",
 			"downloading": "Downloading updates…… {progressText}",
 			"installing": "Installing update, player will restart, wait a minute...",
 			"installUpdate": "Install this update",
+			"leadDeveloper": "Owner / Lead Developer",
+			"lessContributors": "Collapse contributors",
+			"loadingContributors": "Loading contributors…",
+			"moreContributors": "Show more contributors ({count})",
 			"newVersion": "Available update from {currentVersion} to {nextVersion}",
 			"subtitle": "About",
 			"updating": "Player will restart after update, hold on a second...."

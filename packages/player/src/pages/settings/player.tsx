@@ -34,10 +34,13 @@ import {
 	verticalCoverLayoutAtom,
 } from "@applemusic-like-lyrics/react-full";
 import {
+	Avatar,
+	Badge,
 	Box,
 	Button,
 	Card,
 	Flex,
+	Grid,
 	Select,
 	Separator,
 	Slider,
@@ -50,6 +53,7 @@ import {
 } from "@radix-ui/themes";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { platform } from "@tauri-apps/plugin-os";
 import { atom, useAtom, useAtomValue, type WritableAtom } from "jotai";
 import { loadable } from "jotai/utils";
@@ -1151,6 +1155,148 @@ const TaskbarLyricSettings = () => {
 	);
 };
 
+const openLink = async (url: string) => {
+	if (!url) return;
+	try {
+		await openUrl(url);
+	} catch {
+		window.open(url, "_blank");
+	}
+};
+
+interface Contributor {
+	id: number;
+	login: string;
+	avatar: string;
+	url: string;
+	contributions: number;
+}
+
+const ContributorsSection: FC = () => {
+	const { t } = useTranslation();
+	const [contributors, setContributors] = useState<Contributor[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [showAll, setShowAll] = useState(false);
+
+	useEffect(() => {
+		const fetchContributors = async () => {
+			try {
+				const response = await fetch(
+					"https://api.github.com/repos/amll-dev/amll-player/contributors?per_page=100&anon=true",
+				);
+				if (!response.ok) return;
+				const data = await response.json();
+				if (Array.isArray(data)) {
+					const list: Contributor[] = data
+						.filter(
+							(item: any) =>
+								item.login &&
+								item.login !== "type-bot" &&
+								item.type !== "Bot" &&
+								!item.login.endsWith("[bot]"),
+						)
+						.map((item: any) => ({
+							id: item.id,
+							login: item.login,
+							avatar: item.avatar_url || "",
+							url: item.html_url || `https://github.com/${item.login}`,
+							contributions: item.contributions || 0,
+						}));
+					setContributors(list);
+				}
+			} catch (error) {
+				console.error("Failed to fetch contributors:", error);
+			} finally {
+				setLoading(false);
+			}
+		};
+
+		fetchContributors();
+	}, []);
+
+	if (loading) {
+		return (
+			<Text color="gray" size="2" my="2" as="div">
+				{t("page.about.loadingContributors", "正在加载贡献者列表…")}
+			</Text>
+		);
+	}
+
+	if (contributors.length === 0) {
+		return null;
+	}
+
+	const initialCount = 6;
+	const visibleContributors = showAll
+		? contributors
+		: contributors.slice(0, initialCount);
+	const hasMore = contributors.length > initialCount;
+
+	return (
+		<Box my="4">
+			<SubTitle my="2">
+				{t("page.about.contributorsTitle", "开发者与贡献者")}
+			</SubTitle>
+			<Grid columns={{ initial: "1", sm: "2", md: "3" }} gap="3" my="2">
+				{visibleContributors.map((item) => {
+					const isOwner =
+						item.login.toLowerCase() === "steve-xmh" ||
+						item.login.toLowerCase() === "stevexmh";
+					return (
+						<Card
+							key={item.id}
+							style={{ cursor: "pointer" }}
+							onClick={() => openLink(item.url)}
+						>
+							<Flex align="center" gap="3">
+								<Avatar
+									size="3"
+									radius="full"
+									src={item.avatar}
+									fallback={item.login.substring(0, 2).toUpperCase()}
+								/>
+								<Flex direction="column" style={{ overflow: "hidden", flexGrow: 1 }}>
+									<Flex align="center" gap="2">
+										<Text weight="bold" size="2" truncate>
+											{item.login}
+										</Text>
+										{isOwner && (
+											<Badge color="amber" variant="soft" size="1">
+												Owner
+											</Badge>
+										)}
+									</Flex>
+									<Text color="gray" size="1" truncate>
+										{isOwner
+											? t("page.about.leadDeveloper", "项目发起者 / 主要开发者")
+											: t("page.about.contributionsCount", "{count} 次提交", {
+													count: item.contributions,
+												})}
+									</Text>
+								</Flex>
+							</Flex>
+						</Card>
+					);
+				})}
+			</Grid>
+			{hasMore && (
+				<Button
+					variant="soft"
+					size="2"
+					mt="2"
+					onClick={() => setShowAll(!showAll)}
+				>
+					{showAll
+						? t("page.about.lessContributors", "收起更多贡献者")
+						: t("page.about.moreContributors", "展开更多贡献者 ({count})", {
+								count: contributors.length - initialCount,
+							})}
+				</Button>
+			)}
+		</Box>
+	);
+};
+
 const AboutSettings = () => {
 	const { t } = useTranslation();
 	const updateInfo = useAtomValue(updateInfoAtom);
@@ -1173,6 +1319,7 @@ const AboutSettings = () => {
 					由 SteveXMH 及其所有 Github 协作者共同开发
 				</Trans>
 			</Text>
+			<ContributorsSection />
 			<Suspense>
 				{updateInfo && (
 					<>

@@ -1170,48 +1170,64 @@ interface Contributor {
 	avatar: string;
 	url: string;
 	contributions: number;
+	isOrgMember: boolean;
 }
 
 const ContributorsSection: FC = () => {
 	const { t } = useTranslation();
 	const [contributors, setContributors] = useState<Contributor[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [showAll, setShowAll] = useState(false);
 
 	useEffect(() => {
-		const fetchContributors = async () => {
+		const fetchData = async () => {
 			try {
-				const response = await fetch(
-					"https://api.github.com/repos/amll-dev/amll-player/contributors?per_page=100&anon=true",
-				);
-				if (!response.ok) return;
-				const data = await response.json();
-				if (Array.isArray(data)) {
-					const list: Contributor[] = data
-						.filter(
-							(item: any) =>
-								item.login &&
-								item.login !== "type-bot" &&
-								item.type !== "Bot" &&
-								!item.login.endsWith("[bot]"),
-						)
-						.map((item: any) => ({
-							id: item.id,
-							login: item.login,
-							avatar: item.avatar_url || "",
-							url: item.html_url || `https://github.com/${item.login}`,
-							contributions: item.contributions || 0,
-						}));
-					setContributors(list);
+				const [contribRes, orgRes] = await Promise.allSettled([
+					fetch(
+						"https://api.github.com/repos/amll-dev/amll-player/contributors?per_page=100&anon=true",
+					),
+					fetch("https://api.github.com/orgs/amll-dev/members?per_page=100"),
+				]);
+
+				const memberSet = new Set<string>();
+				if (orgRes.status === "fulfilled" && orgRes.value.ok) {
+					const members = await orgRes.value.json();
+					if (Array.isArray(members)) {
+						for (const m of members) {
+							if (m.login) memberSet.add(m.login.toLowerCase());
+						}
+					}
+				}
+
+				if (contribRes.status === "fulfilled" && contribRes.value.ok) {
+					const data = await contribRes.value.json();
+					if (Array.isArray(data)) {
+						const list: Contributor[] = data
+							.filter(
+								(item: any) =>
+									item.login &&
+									item.login !== "type-bot" &&
+									item.type !== "Bot" &&
+									!item.login.endsWith("[bot]"),
+							)
+							.map((item: any) => ({
+								id: item.id,
+								login: item.login,
+								avatar: item.avatar_url || "",
+								url: item.html_url || `https://github.com/${item.login}`,
+								contributions: item.contributions || 0,
+								isOrgMember: memberSet.has(item.login.toLowerCase()),
+							}));
+						setContributors(list);
+					}
 				}
 			} catch (error) {
-				console.error("Failed to fetch contributors:", error);
+				console.error("Failed to fetch contributors or org members:", error);
 			} finally {
 				setLoading(false);
 			}
 		};
 
-		fetchContributors();
+		fetchData();
 	}, []);
 
 	if (loading) {
@@ -1226,73 +1242,67 @@ const ContributorsSection: FC = () => {
 		return null;
 	}
 
-	const initialCount = 6;
-	const visibleContributors = showAll
-		? contributors
-		: contributors.slice(0, initialCount);
-	const hasMore = contributors.length > initialCount;
+	const renderContributorCard = (item: Contributor) => (
+		<Card
+			key={item.id}
+			asChild
+			style={{
+				cursor: "pointer",
+				textDecoration: "none",
+				color: "inherit",
+				maxWidth: "30rem",
+			}}
+		>
+			<a
+				href={item.url}
+				target="_blank"
+				rel="noopener noreferrer"
+				onClick={(e) => {
+					e.preventDefault();
+					openLink(item.url);
+				}}
+			>
+				<Flex align="center" gap="2">
+					<Avatar
+						size="2"
+						radius="full"
+						src={item.avatar}
+						fallback={item.login.substring(0, 2).toUpperCase()}
+					/>
+					<Flex direction="column" style={{ overflow: "hidden", flexGrow: 1 }}>
+						<Flex align="center" gap="1">
+							<Text weight="bold" size="2" truncate>
+								{item.login}
+							</Text>
+							{item.isOrgMember && (
+								<Badge color="blue" variant="soft" size="1">
+									AMLL Dev
+								</Badge>
+							)}
+						</Flex>
+						<Text color="gray" size="1" truncate>
+							{t("page.about.contributionsCount", "{count} 次提交", {
+								count: item.contributions,
+							})}
+						</Text>
+					</Flex>
+				</Flex>
+			</a>
+		</Card>
+	);
 
 	return (
 		<Box my="4">
 			<SubTitle my="2">
-				{t("page.about.contributorsTitle", "开发者与贡献者")}
+				{t("page.about.contributorsTitle", "贡献者")}
 			</SubTitle>
-			<Grid columns={{ initial: "1", sm: "2", md: "3" }} gap="3" my="2">
-				{visibleContributors.map((item) => {
-					const isOwner =
-						item.login.toLowerCase() === "steve-xmh" ||
-						item.login.toLowerCase() === "stevexmh";
-					return (
-						<Card
-							key={item.id}
-							style={{ cursor: "pointer" }}
-							onClick={() => openLink(item.url)}
-						>
-							<Flex align="center" gap="3">
-								<Avatar
-									size="3"
-									radius="full"
-									src={item.avatar}
-									fallback={item.login.substring(0, 2).toUpperCase()}
-								/>
-								<Flex direction="column" style={{ overflow: "hidden", flexGrow: 1 }}>
-									<Flex align="center" gap="2">
-										<Text weight="bold" size="2" truncate>
-											{item.login}
-										</Text>
-										{isOwner && (
-											<Badge color="amber" variant="soft" size="1">
-												Owner
-											</Badge>
-										)}
-									</Flex>
-									<Text color="gray" size="1" truncate>
-										{isOwner
-											? t("page.about.leadDeveloper", "项目发起者 / 主要开发者")
-											: t("page.about.contributionsCount", "{count} 次提交", {
-													count: item.contributions,
-												})}
-									</Text>
-								</Flex>
-							</Flex>
-						</Card>
-					);
-				})}
+			<Grid
+				style={{ gridTemplateColumns: "repeat(auto-fill, minmax(20rem, 1fr))" }}
+				gap="3"
+				my="2"
+			>
+				{contributors.map(renderContributorCard)}
 			</Grid>
-			{hasMore && (
-				<Button
-					variant="soft"
-					size="2"
-					mt="2"
-					onClick={() => setShowAll(!showAll)}
-				>
-					{showAll
-						? t("page.about.lessContributors", "收起更多贡献者")
-						: t("page.about.moreContributors", "展开更多贡献者 ({count})", {
-								count: contributors.length - initialCount,
-							})}
-				</Button>
-			)}
 		</Box>
 	);
 };

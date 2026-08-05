@@ -35,7 +35,6 @@ import {
 } from "@applemusic-like-lyrics/react-full";
 import {
 	Avatar,
-	Badge,
 	Box,
 	Button,
 	Card,
@@ -1169,8 +1168,6 @@ interface Contributor {
 	login: string;
 	avatar: string;
 	url: string;
-	contributions: number;
-	isOrgMember: boolean;
 }
 
 const ContributorsSection: FC = () => {
@@ -1181,25 +1178,11 @@ const ContributorsSection: FC = () => {
 	useEffect(() => {
 		const fetchData = async () => {
 			try {
-				const [contribRes, orgRes] = await Promise.allSettled([
-					fetch(
-						"https://api.github.com/repos/amll-dev/amll-player/contributors?per_page=100&anon=true",
-					),
-					fetch("https://api.github.com/orgs/amll-dev/members?per_page=100"),
-				]);
-
-				const memberSet = new Set<string>();
-				if (orgRes.status === "fulfilled" && orgRes.value.ok) {
-					const members = await orgRes.value.json();
-					if (Array.isArray(members)) {
-						for (const m of members) {
-							if (m.login) memberSet.add(m.login.toLowerCase());
-						}
-					}
-				}
-
-				if (contribRes.status === "fulfilled" && contribRes.value.ok) {
-					const data = await contribRes.value.json();
+				const response = await fetch(
+					"https://api.github.com/repos/amll-dev/amll-player/contributors?per_page=100&anon=true",
+				);
+				if (response.ok) {
+					const data = await response.json();
 					if (Array.isArray(data)) {
 						const list: Contributor[] = data
 							.filter(
@@ -1214,14 +1197,12 @@ const ContributorsSection: FC = () => {
 								login: item.login,
 								avatar: item.avatar_url || "",
 								url: item.html_url || `https://github.com/${item.login}`,
-								contributions: item.contributions || 0,
-								isOrgMember: memberSet.has(item.login.toLowerCase()),
 							}));
 						setContributors(list);
 					}
 				}
 			} catch (error) {
-				console.error("Failed to fetch contributors or org members:", error);
+				console.error("Failed to fetch contributors:", error);
 			} finally {
 				setLoading(false);
 			}
@@ -1269,23 +1250,9 @@ const ContributorsSection: FC = () => {
 						src={item.avatar}
 						fallback={item.login.substring(0, 2).toUpperCase()}
 					/>
-					<Flex direction="column" style={{ overflow: "hidden", flexGrow: 1 }}>
-						<Flex align="center" gap="1">
-							<Text weight="bold" size="2" truncate>
-								{item.login}
-							</Text>
-							{item.isOrgMember && (
-								<Badge color="blue" variant="soft" size="1">
-									AMLL Dev
-								</Badge>
-							)}
-						</Flex>
-						<Text color="gray" size="1" truncate>
-							{t("page.about.contributionsCount", "{count} 次提交", {
-								count: item.contributions,
-							})}
-						</Text>
-					</Flex>
+					<Text weight="bold" size="2" truncate style={{ overflow: "hidden" }}>
+						{item.login}
+					</Text>
 				</Flex>
 			</a>
 		</Card>

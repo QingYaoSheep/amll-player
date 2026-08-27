@@ -1,0 +1,11 @@
+"$schema" = "../gen/schemas/mobile-schema.json"
+
+identifier = "ios-http-capability"
+description = "Allow AMLL Player main webview to use Tauri HTTP on iOS/iPadOS for HTTPS lyric and playback APIs."
+local = true
+windows = ["main"]
+platforms = ["iOS"]
+
+[[permissions]]
+identifier = "http:default"
+allow = [{ url = "https://*/*" }]

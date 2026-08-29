@@ -1,0 +1,125 @@
+name: AMLLPlayer
+
+options:
+  bundleIdPrefix: net.stevexmh
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: ""
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    TARGETED_DEVICE_FAMILY: "1,2"
+
+packages:
+  SpotifyiOS:
+    url: https://github.com/spotify/ios-sdk.git
+    exactVersion: 5.0.1
+
+targets:
+  AMLLPlayer:
+    type: application
+    platform: iOS
+    sources:
+      - path: AMLLPlayer
+        excludes:
+          - Resources
+      - path: AMLLPlayer/Resources
+        buildPhase: resources
+    configFiles:
+      Debug: Configuration/Base.xcconfig
+      Release: Configuration/Base.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.stevexmh.amllplayer
+        PRODUCT_NAME: AMLL Player
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_ENTITLEMENTS: Configuration/AMLLPlayer.entitlements
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.1.0
+        SUPPORTS_MACCATALYST: NO
+    info:
+      path: Generated/AMLLPlayer-Info.plist
+      properties:
+        CFBundleDisplayName: AMLL Player
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLName: Spotify
+            CFBundleURLSchemes:
+              - amllplayer
+        LSApplicationCategoryType: public.app-category.music
+        LSApplicationQueriesSchemes:
+          - spotify
+        SpotifyClientID: $(SPOTIFY_CLIENT_ID)
+        SpotifyRedirectURI: $(SPOTIFY_REDIRECT_URI)
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UILaunchScreen: {}
+    dependencies:
+      - package: SpotifyiOS
+        product: SpotifyiOS
+
+  AMLLPlayerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - AMLLPlayerTests
+    configFiles:
+      Debug: Configuration/Base.xcconfig
+      Release: Configuration/Base.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.stevexmh.amllplayer.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: AMLLPlayer
+
+  AMLLPlayerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - AMLLPlayerUITests
+    configFiles:
+      Debug: Configuration/Base.xcconfig
+      Release: Configuration/Base.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.stevexmh.amllplayer.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: AMLLPlayer
+    dependencies:
+      - target: AMLLPlayer
+
+schemes:
+  AMLLPlayer:
+    build:
+      targets:
+        AMLLPlayer: all
+        AMLLPlayerTests:
+          - test
+        AMLLPlayerUITests:
+          - test
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - AMLLPlayerTests
+        - AMLLPlayerUITests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

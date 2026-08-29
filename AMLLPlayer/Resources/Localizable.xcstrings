@@ -1,0 +1,33 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "app.name" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"AMLL Player"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"AMLL Player"}}}},
+    "error.spotifyConfigurationMissing" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Spotify Client ID is not configured."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"尚未配置 Spotify Client ID。"}}}},
+    "error.spotifyRedirectInvalid" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The Spotify redirect URI is invalid."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Spotify 回调 URI 无效。"}}}},
+    "foundation.failed" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Foundation check failed"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"基础检查失败"}}}},
+    "foundation.loading" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Checking project foundation…"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在检查工程基础…"}}}},
+    "foundation.section.configuration" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Local configuration"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"本地配置"}}}},
+    "foundation.section.project" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Project foundation"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"工程基础"}}}},
+    "foundation.spotifyClientID" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Spotify Client ID"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Spotify Client ID"}}}},
+    "foundation.spotifyClientID.help" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Copy Configuration/Secrets.xcconfig.example to Secrets.xcconfig and enter your own Client ID."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"将 Configuration/Secrets.xcconfig.example 复制为 Secrets.xcconfig，并填写你自己的 Client ID。"}}}},
+    "foundation.spotifyOnly" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Spotify-only boundary"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"仅连接 Spotify"}}}},
+    "foundation.spotifySDK" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Spotify iOS SDK 5.0.1"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Spotify iOS SDK 5.0.1"}}}},
+    "foundation.swiftui" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Native SwiftUI lifecycle"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"原生 SwiftUI 生命周期"}}}},
+    "settings.about" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"About"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"关于"}}}},
+    "settings.clientID" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Client ID"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Client ID"}}}},
+    "settings.configured" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Configured"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"已配置"}}}},
+    "settings.noLocalPlayback" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This app does not scan, import, or play local audio files."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"本应用不会扫描、导入或播放本地音频文件。"}}}},
+    "settings.notConfigured" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Not configured"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"未配置"}}}},
+    "settings.playback" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Playback boundary"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"播放边界"}}}},
+    "settings.redirectURI" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Redirect URI"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"回调 URI"}}}},
+    "settings.sourceCode" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Source code"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"源代码"}}}},
+    "settings.spotify" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Spotify"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Spotify"}}}},
+    "settings.spotifyOnly" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Spotify connection only"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"仅连接 Spotify"}}}},
+    "settings.version" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Version"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"版本"}}}},
+    "status.actionRequired" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Action required"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"需要配置"}}}},
+    "status.ready" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Ready"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"已就绪"}}}},
+    "tab.foundation" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Foundation"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"基础"}}}},
+    "tab.settings" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Settings"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"设置"}}}}
+  },
+  "version" : "1.0"
+}

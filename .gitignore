@@ -1,0 +1,26 @@
+# Generated Xcode project
+AMLLPlayer.xcodeproj/
+Generated/
+
+# Local tools and build products
+.tools/
+.build/
+build/
+DerivedData/
+*.xcarchive
+*.ipa
+*.dSYM
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+
+# Local secrets and signing material
+Configuration/Secrets.xcconfig
+*.cer
+*.p12
+*.mobileprovision
+*.provisionprofile
+
+# macOS
+.DS_Store

@@ -87,9 +87,11 @@ targets:
       Release: Configuration/Base.xcconfig
     settings:
       base:
+        BUNDLE_LOADER: $(TEST_HOST)
         PRODUCT_BUNDLE_IDENTIFIER: net.stevexmh.amllplayer.tests
         PRODUCT_NAME: AMLLPlayerTests
         GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/AMLLPlayer.app/AMLLPlayer
     dependencies:
       - target: AMLLPlayer
 

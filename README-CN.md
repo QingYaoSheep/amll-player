@@ -23,6 +23,12 @@ open AMLLPlayer.xcodeproj
 
 生成的 `.xcodeproj` 不进入 Git；本地和 CI 都通过固定版本的 XcodeGen 重建。
 
+## Xcode 27 构建产物
+
+每次推送都会使用专用 Xcode 27 runner，并上传
+AMLLPlayer-Xcode27-unsigned.ipa。该文件用于后续重签名，没有 Apple 开发签名时
+不能直接安装到普通 iPhone 或 iPad。
+
 ## 当前边界
 
 - 最低 iOS/iPadOS 18。

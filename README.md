@@ -39,6 +39,12 @@ The generated Xcode project is intentionally ignored. GitHub Actions regenerates
 - `AMLLPlayer/Rendering`: native lyric renderer boundary
 - `AMLLPlayerTests` and `AMLLPlayerUITests`: automated verification
 
+## Xcode 27 artifacts
+
+Every push builds with the dedicated Xcode 27 runner and uploads
+AMLLPlayer-Xcode27-unsigned.ipa. This unsigned IPA is intended for later
+re-signing and cannot be installed directly on an ordinary iPhone or iPad.
+
 ## CI signing secrets
 
 The manual `Signed development IPA` workflow requires:

@@ -106,9 +106,29 @@ jobs:
             -derivedDataPath build/Xcode27DerivedData \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Upload Xcode 27 simulator app
+      - name: Create unsigned device archive and IPA
+        run: |
+          xcodebuild archive \
+            -project AMLLPlayer.xcodeproj \
+            -scheme AMLLPlayer \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/AMLLPlayer-Xcode27.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+          PACKAGE_ROOT="$RUNNER_TEMP/amll-unsigned-ipa"
+          mkdir -p "$PACKAGE_ROOT/Payload"
+          cp -R \
+            build/AMLLPlayer-Xcode27.xcarchive/Products/Applications/AMLLPlayer.app \
+            "$PACKAGE_ROOT/Payload/"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$PACKAGE_ROOT/Payload" \
+            build/AMLLPlayer-Xcode27-unsigned.ipa
+
+      - name: Upload Xcode 27 IPA
         uses: actions/upload-artifact@v4
         with:
-          name: AMLLPlayer-Xcode27-simulator-app
-          path: build/Xcode27DerivedData/Build/Products/Debug-iphonesimulator/*.app
+          name: AMLLPlayer-Xcode27-unsigned-ipa
+          path: build/AMLLPlayer-Xcode27-unsigned.ipa
           if-no-files-found: error

@@ -64,7 +64,8 @@ final class AppModel {
                 guard !Task.isCancelled else {
                     return
                 }
-                playbackSnapshot = clock.calibrate(with: snapshot)
+                playbackSnapshot = snapshot
+                clock = PlayerClock(anchor: snapshot)
             }
         }
     }

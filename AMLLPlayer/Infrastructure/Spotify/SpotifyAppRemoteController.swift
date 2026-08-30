@@ -57,6 +57,9 @@ final class SpotifyAppRemoteController: NSObject, SpotifyAppRemoteControlling {
 
     func connect(accessToken: String) {
         appRemote.connectionParameters.accessToken = accessToken
+        guard state != .connecting else {
+            return
+        }
         guard !appRemote.isConnected else {
             state = .connected
             subscribeToPlayerState()

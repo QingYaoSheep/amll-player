@@ -50,7 +50,7 @@ final class AppModel {
                     return
                 }
                 sessionState = state
-                if case let .failed(error) = state {
+                if case let .failed(error) = state, error != .notConfigured {
                     presentedError = error
                 }
             }
@@ -96,7 +96,6 @@ final class AppModel {
     }
 
     func logout() {
-        environment.spotifyPlayback.enterBackground()
         environment.spotifySession.logout()
         playbackSnapshot = nil
         devicesState = .idle

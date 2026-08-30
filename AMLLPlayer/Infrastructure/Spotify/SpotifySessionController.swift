@@ -182,7 +182,7 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     ]
 }
 
-extension SpotifySessionController: SPTSessionManagerDelegate {
+extension SpotifySessionController: @preconcurrency SPTSessionManagerDelegate {
     func sessionManager(
         manager: SPTSessionManager,
         didInitiate session: SPTSession

@@ -198,7 +198,7 @@ final class SpotifyAppRemoteController: NSObject, SpotifyAppRemoteControlling {
     }
 }
 
-extension SpotifyAppRemoteController: SPTAppRemoteDelegate {
+extension SpotifyAppRemoteController: @preconcurrency SPTAppRemoteDelegate {
     func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         state = .connected
         subscribeToPlayerState()
@@ -216,7 +216,7 @@ extension SpotifyAppRemoteController: SPTAppRemoteDelegate {
     }
 }
 
-extension SpotifyAppRemoteController: SPTAppRemotePlayerStateDelegate {
+extension SpotifyAppRemoteController: @preconcurrency SPTAppRemotePlayerStateDelegate {
     func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
         publish(playerState)
     }

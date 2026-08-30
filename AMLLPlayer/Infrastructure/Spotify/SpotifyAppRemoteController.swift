@@ -67,7 +67,7 @@ final class SpotifyAppRemoteController: NSObject, SpotifyAppRemoteControlling {
     }
 
     func disconnect() {
-        appRemote.playerAPI?.unsubscribe(nil)
+        appRemote.playerAPI?.unsubscribe(toPlayerState: nil)
         appRemote.playerAPI?.delegate = nil
         if appRemote.isConnected {
             appRemote.disconnect()

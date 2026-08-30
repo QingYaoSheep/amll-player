@@ -89,6 +89,12 @@ jobs:
           CODE_SIGN_STYLE=Manual
           PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
 
+      - name: Verify archived application bundle and signatures
+        run: |
+          APP_BUNDLE="$RUNNER_TEMP/AMLLPlayer.xcarchive/Products/Applications/AMLLPlayer.app"
+          bash Scripts/verify-ios-app-bundle.sh "$APP_BUNDLE"
+          codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+
       - name: Export IPA
         env:
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}

@@ -66,6 +66,11 @@ jobs:
           -archivePath "$RUNNER_TEMP/AMLLPlayer.xcarchive"
           CODE_SIGNING_ALLOWED=NO
 
+      - name: Verify archived application bundle
+        run: >-
+          bash Scripts/verify-ios-app-bundle.sh
+          "$RUNNER_TEMP/AMLLPlayer.xcarchive/Products/Applications/AMLLPlayer.app"
+
       - name: Upload unsigned archive
         uses: actions/upload-artifact@v4
         with:
@@ -125,6 +130,11 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             "$PACKAGE_ROOT/Payload" \
             build/AMLLPlayer-Xcode27-unsigned.ipa
+
+      - name: Verify Xcode 27 application bundle
+        run: >-
+          bash Scripts/verify-ios-app-bundle.sh
+          build/AMLLPlayer-Xcode27.xcarchive/Products/Applications/AMLLPlayer.app
 
       - name: Upload Xcode 27 IPA
         uses: actions/upload-artifact@v4

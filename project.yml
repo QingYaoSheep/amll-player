@@ -54,6 +54,9 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_ENTITLEMENTS: Configuration/AMLLPlayer.entitlements
         CURRENT_PROJECT_VERSION: 1
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/Frameworks"
         MARKETING_VERSION: 0.1.0
         SUPPORTS_MACCATALYST: NO
     info:
@@ -76,6 +79,8 @@ targets:
     dependencies:
       - package: SpotifyiOS
         product: SpotifyiOS
+        embed: true
+        codeSign: true
 
   AMLLPlayerTests:
     type: bundle.unit-test

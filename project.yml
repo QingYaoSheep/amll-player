@@ -79,8 +79,6 @@ targets:
     dependencies:
       - package: SpotifyiOS
         product: SpotifyiOS
-        embed: true
-        codeSign: true
 
   AMLLPlayerTests:
     type: bundle.unit-test

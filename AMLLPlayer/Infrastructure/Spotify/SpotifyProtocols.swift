@@ -7,6 +7,7 @@ protocol SpotifySessionProviding: AnyObject {
     var spotifyAppInstalled: Bool { get }
 
     func authorize() throws
+    func authorizeInBrowser() async throws
     func refreshIfNeeded() async throws
     func validAccessToken() async throws -> String
     func handleRedirectURL(_ url: URL) -> Bool

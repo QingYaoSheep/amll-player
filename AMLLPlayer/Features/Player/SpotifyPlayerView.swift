@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SpotifyPlayerView: View {
     @Bindable var model: AppModel
+    let showSettings: () -> Void
     @State private var isShowingDevices = false
 
     var body: some View {
@@ -19,12 +20,16 @@ struct SpotifyPlayerView: View {
             }
             .navigationTitle("player.title")
             .toolbar {
-                if model.sessionState.isAuthenticated {
-                    ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if model.sessionState.isAuthenticated {
                         Button("player.devices", systemImage: "airplayaudio") {
                             isShowingDevices = true
                             Task { await model.loadDevices() }
                         }
+                    }
+
+                    Button("settings.open", systemImage: "gearshape") {
+                        showSettings()
                     }
                 }
             }

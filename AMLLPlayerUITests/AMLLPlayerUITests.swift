@@ -13,7 +13,7 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Spotify Player"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Spotify configuration required"].exists)
 
-        app.tabBars.buttons["Settings"].tap()
+        app.buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Spotify connection only"].exists)
     }

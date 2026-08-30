@@ -7,11 +7,15 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
 
     private let sessionManager: SPTSessionManager
     private let store: any SpotifySessionDataStoring
+    private let webStore: any SpotifySessionDataStoring
+    private let webAuthorization: SpotifyWebAuthorizationController
     private let diagnostics: any DiagnosticsExporting
     private var stateContinuations: [
         UUID: AsyncStream<SpotifySessionState>.Continuation
     ] = [:]
     private var renewalContinuation: CheckedContinuation<Void, Error>?
+    private var webToken: SpotifyWebToken?
+    private var webRefreshTask: Task<SpotifyWebToken, Error>?
 
     private(set) var currentState: SpotifySessionState = .signedOut {
         didSet {
@@ -20,7 +24,7 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     }
 
     var spotifyAppInstalled: Bool {
-        sessionManager.isSpotifyAppInstalled
+        webToken == nil && sessionManager.isSpotifyAppInstalled
     }
 
     var sessionStates: AsyncStream<SpotifySessionState> {
@@ -40,6 +44,9 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
         clientID: String,
         redirectURI: URL,
         store: any SpotifySessionDataStoring = KeychainSpotifySessionStore(),
+        webStore: any SpotifySessionDataStoring = KeychainSpotifySessionStore(
+            account: "web-session"
+        ),
         diagnostics: any DiagnosticsExporting
     ) {
         let configuration = SPTConfiguration(
@@ -52,6 +59,11 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
             delegate: nil
         )
         self.store = store
+        self.webStore = webStore
+        self.webAuthorization = SpotifyWebAuthorizationController(
+            clientID: clientID,
+            redirectURI: redirectURI
+        )
         self.diagnostics = diagnostics
         super.init()
         sessionManager.delegate = self
@@ -63,6 +75,7 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
             return
         }
 
+        clearWebSession()
         currentState = .authorizing
         sessionManager.initiateSession(
             with: Self.requestedScopes,
@@ -72,7 +85,40 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
         record("Authorization started")
     }
 
+    func authorizeInBrowser() async throws {
+        guard !currentState.isAuthenticated else {
+            return
+        }
+
+        currentState = .authorizing
+        record("Browser authorization started")
+        do {
+            let token = try await webAuthorization.authorize()
+            accept(token)
+        } catch is CancellationError {
+            currentState = .signedOut
+            record("Browser authorization cancelled")
+            throw CancellationError()
+        } catch let error as SpotifyServiceError {
+            currentState = .failed(error)
+            record("Browser authorization failed")
+            throw error
+        } catch {
+            currentState = .failed(.transport)
+            record("Browser authorization failed")
+            throw SpotifyServiceError.transport
+        }
+    }
+
     func refreshIfNeeded() async throws {
+        if let webToken {
+            guard webToken.expiresAt.timeIntervalSinceNow <= Self.refreshLeeway else {
+                return
+            }
+            try await refreshWebToken(webToken)
+            return
+        }
+
         guard let session = sessionManager.session else {
             throw SpotifyServiceError.notAuthorized
         }
@@ -100,6 +146,9 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
 
     func validAccessToken() async throws -> String {
         try await refreshIfNeeded()
+        if let webToken, webToken.expiresAt > Date() {
+            return webToken.accessToken
+        }
         guard let session = sessionManager.session,
               !session.isExpired
         else {
@@ -113,6 +162,10 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     }
 
     func logout() {
+        webAuthorization.cancel()
+        webRefreshTask?.cancel()
+        webRefreshTask = nil
+        clearWebSession()
         sessionManager.session = nil
         try? store.remove()
         renewalContinuation?.resume(throwing: SpotifyServiceError.notAuthorized)
@@ -123,6 +176,17 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
 
     private func restoreSession() {
         do {
+            if let data = try webStore.load(),
+               let token = try? JSONDecoder().decode(SpotifyWebToken.self, from: data),
+               token.expiresAt > Date() || token.isRefreshable
+            {
+                webToken = token
+                currentState = .authenticated(expiresAt: token.expiresAt)
+                record("Stored browser session restored")
+                return
+            }
+            try? webStore.remove()
+
             guard let data = try store.load(),
                   let session = try NSKeyedUnarchiver.unarchivedObject(
                       ofClass: SPTSession.self,
@@ -144,6 +208,7 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     }
 
     private func accept(_ session: SPTSession, renewed: Bool) {
+        clearWebSession()
         sessionManager.session = session
         do {
             let data = try NSKeyedArchiver.archivedData(
@@ -159,6 +224,50 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
         renewalContinuation?.resume()
         renewalContinuation = nil
         record(renewed ? "Session renewed" : "Authorization completed")
+    }
+
+    private func accept(_ token: SpotifyWebToken) {
+        sessionManager.session = nil
+        try? store.remove()
+        webToken = token
+        do {
+            try webStore.save(JSONEncoder().encode(token))
+        } catch {
+            record("Browser session persistence failed")
+        }
+        currentState = .authenticated(expiresAt: token.expiresAt)
+        record("Browser authorization completed")
+    }
+
+    private func refreshWebToken(_ token: SpotifyWebToken) async throws {
+        if let webRefreshTask {
+            accept(try await webRefreshTask.value)
+            return
+        }
+
+        currentState = .refreshing
+        let task = Task { try await webAuthorization.refresh(token) }
+        webRefreshTask = task
+        defer { webRefreshTask = nil }
+
+        do {
+            accept(try await task.value)
+            record("Browser session renewed")
+        } catch is CancellationError {
+            currentState = .failed(.tokenExpired)
+            throw SpotifyServiceError.tokenExpired
+        } catch let error as SpotifyServiceError {
+            currentState = .failed(error)
+            throw error
+        } catch {
+            currentState = .failed(.transport)
+            throw SpotifyServiceError.transport
+        }
+    }
+
+    private func clearWebSession() {
+        webToken = nil
+        try? webStore.remove()
     }
 
     private func record(_ message: String) {

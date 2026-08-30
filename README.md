@@ -23,7 +23,9 @@ Spotify Development Mode requires each user to be allowlisted. Do not commit the
 
 ## Spotify authorization and playback
 
-- Authorization prefers the installed Spotify app and falls back to web PKCE.
+- The main connect action prefers the installed Spotify app and falls back to web PKCE.
+- Settings also offers an explicit system-browser PKCE sign-in path.
+- Native clients never collect or embed a Client Secret; secrets belong on a trusted server.
 - Sessions are stored in a this-device-only Keychain item and removed on logout.
 - App Remote supplies near-real-time state; Web API polling takes over when it is unavailable.
 - Play, pause, previous, next, seek, volume, URI playback, device listing, and playback transfer are supported.

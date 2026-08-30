@@ -3,20 +3,24 @@ import SwiftUI
 struct RootView: View {
     @Bindable var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @State private var isShowingSettings = false
 
     var body: some View {
-        TabView(selection: $model.selectedSection) {
-            SpotifyPlayerView(model: model)
-                .tabItem {
-                    Label("tab.player", systemImage: "play.circle")
-                }
-                .tag(AppSection.player)
-
+        SpotifyPlayerView(model: model) {
+            isShowingSettings = true
+        }
+        .safeAreaInset(edge: .bottom, spacing: 8) {
+            if let snapshot = model.playbackSnapshot,
+               snapshot.item != nil,
+               model.sessionState.isAuthenticated
+            {
+                MiniPlayerBar(model: model, snapshot: snapshot)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
+        }
+        .sheet(isPresented: $isShowingSettings) {
             SettingsView(model: model)
-                .tabItem {
-                    Label("tab.settings", systemImage: "gearshape")
-                }
-                .tag(AppSection.settings)
         }
         .task {
             model.prepare()

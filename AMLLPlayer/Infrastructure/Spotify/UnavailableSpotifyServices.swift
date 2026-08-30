@@ -16,6 +16,10 @@ final class UnavailableSpotifySession: SpotifySessionProviding {
         throw SpotifyServiceError.notConfigured
     }
 
+    func authorizeInBrowser() async throws {
+        throw SpotifyServiceError.notConfigured
+    }
+
     func refreshIfNeeded() async throws {
         throw SpotifyServiceError.notConfigured
     }

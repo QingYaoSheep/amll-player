@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -28,7 +29,23 @@ struct SettingsView: View {
                         Button("settings.logout", role: .destructive) {
                             model.logout()
                         }
+                    } else if model.environment.configuration.isSpotifyConfigured {
+                        Button("settings.login.web", systemImage: "safari") {
+                            Task { await model.authorizeInBrowser() }
+                        }
+                        .disabled(isAuthorizing)
+
+                        if isAuthorizing {
+                            ProgressView("player.authorizing")
+                        }
                     }
+                }
+
+                Section("settings.security") {
+                    Label("settings.pkce", systemImage: "checkmark.shield")
+                    Text("settings.clientSecretHelp")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("settings.playback") {
@@ -49,6 +66,11 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("tab.settings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("common.done") { dismiss() }
+                }
+            }
         }
     }
 
@@ -63,5 +85,12 @@ struct SettingsView: View {
 
     private var accountStatusKey: LocalizedStringKey {
         model.sessionState.isAuthenticated ? "settings.connected" : "settings.disconnected"
+    }
+
+    private var isAuthorizing: Bool {
+        if case .authorizing = model.sessionState {
+            return true
+        }
+        return false
     }
 }

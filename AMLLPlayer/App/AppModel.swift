@@ -2,15 +2,9 @@ import Foundation
 import Observation
 import SwiftUI
 
-enum AppSection: Hashable {
-    case player
-    case settings
-}
-
 @MainActor
 @Observable
 final class AppModel {
-    var selectedSection: AppSection = .player
     private(set) var sessionState: SpotifySessionState
     private(set) var playbackSnapshot: PlaybackSnapshot?
     private(set) var devicesState: LoadableState<[PlaybackDevice]> = .idle
@@ -90,6 +84,16 @@ final class AppModel {
     func authorize() {
         do {
             try environment.spotifySession.authorize()
+        } catch {
+            present(error)
+        }
+    }
+
+    func authorizeInBrowser() async {
+        do {
+            try await environment.spotifySession.authorizeInBrowser()
+        } catch is CancellationError {
+            return
         } catch {
             present(error)
         }

@@ -79,6 +79,7 @@ targets:
     dependencies:
       - package: SpotifyiOS
         product: SpotifyiOS
+      - sdk: AuthenticationServices.framework
       - sdk: Security.framework
 
   AMLLPlayerTests:

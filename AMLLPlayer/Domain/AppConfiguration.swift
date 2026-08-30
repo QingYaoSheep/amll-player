@@ -13,6 +13,7 @@ struct AppConfiguration: Equatable, Sendable {
 
         return !spotifyClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && spotifyClientID != "your_spotify_client_id"
+            && spotifyRedirectURI == Self.defaultRedirectURI
     }
 
     init(bundle: Bundle) {

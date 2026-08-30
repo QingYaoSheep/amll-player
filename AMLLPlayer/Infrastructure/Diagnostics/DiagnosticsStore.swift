@@ -45,6 +45,7 @@ actor DiagnosticsStore: DiagnosticsExporting {
             #"(?i)((?:access|refresh|id)[_-]?token\s*[=:]\s*)[^\s&,]+"#,
             #"(?i)(client[_-]?id\s*[=:]\s*)[^\s&,]+"#,
             #"(?i)(code\s*[=:]\s*)[^\s&,]+"#,
+            #"(?i)((?:code[_-]?(?:verifier|challenge)|authorization[_-]?code)\s*[=:]\s*)[^\s&,]+"#,
         ]
 
         return patterns.reduce(value) { result, pattern in

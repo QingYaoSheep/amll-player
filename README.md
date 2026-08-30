@@ -2,7 +2,7 @@
 
 AMLL Player is being rebuilt as a native SwiftUI application for iPhone and iPad. Audio remains in Spotify; this application provides Spotify browsing, remote controls, and native synchronized lyrics.
 
-This repository currently contains plan 1: the reproducible XcodeGen project, application foundation, tests, localization, diagnostics, and GitHub Actions workflows.
+This repository contains the reproducible XcodeGen foundation and the plan 2 Spotify vertical slice: PKCE authorization, Keychain-backed sessions, App Remote/Web API playback synchronization, controls, and Spotify Connect device switching.
 
 ## Requirements
 
@@ -20,6 +20,15 @@ This repository currently contains plan 1: the reproducible XcodeGen project, ap
 5. Put your own Client ID in the untracked file.
 
 Spotify Development Mode requires each user to be allowlisted. Do not commit the Client ID or any tokens.
+
+## Spotify authorization and playback
+
+- Authorization prefers the installed Spotify app and falls back to web PKCE.
+- Sessions are stored in a this-device-only Keychain item and removed on logout.
+- App Remote supplies near-real-time state; Web API polling takes over when it is unavailable.
+- Play, pause, previous, next, seek, volume, URI playback, device listing, and playback transfer are supported.
+- Backgrounding disconnects App Remote and stops polling. Foregrounding refreshes, reconnects, and recalibrates playback.
+- Web API playback control and on-demand URI playback require Spotify Premium.
 
 ## Generate and open the project
 

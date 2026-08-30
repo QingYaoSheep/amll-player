@@ -27,4 +27,15 @@ final class AppConfigurationTests: XCTestCase {
             AppConfiguration.defaultRedirectURI
         )
     }
+
+    func testRejectsRedirectURIThatDoesNotMatchRegisteredCallback() {
+        let configuration = AppConfiguration(
+            infoDictionary: [
+                "SpotifyClientID": "client-for-test",
+                "SpotifyRedirectURI": "other-app://callback",
+            ]
+        )
+
+        XCTAssertFalse(configuration.isSpotifyConfigured)
+    }
 }

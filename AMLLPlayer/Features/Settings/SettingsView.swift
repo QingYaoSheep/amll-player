@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    let configuration: AppConfiguration
+    @Bindable var model: AppModel
 
     var body: some View {
         NavigationStack {
@@ -9,15 +9,26 @@ struct SettingsView: View {
                 Section("settings.spotify") {
                     LabeledContent("settings.clientID") {
                         Text(configurationStatusKey)
-                        .foregroundStyle(
-                            configuration.isSpotifyConfigured ? .green : .secondary
-                        )
+                            .foregroundStyle(
+                                model.environment.configuration.isSpotifyConfigured
+                                    ? .green : .secondary
+                            )
                     }
 
                     LabeledContent(
                         "settings.redirectURI",
-                        value: configuration.spotifyRedirectURI.absoluteString
+                        value: model.environment.configuration.spotifyRedirectURI.absoluteString
                     )
+
+                    LabeledContent("settings.account") {
+                        Text(accountStatusKey)
+                    }
+
+                    if model.sessionState.isAuthenticated {
+                        Button("settings.logout", role: .destructive) {
+                            model.logout()
+                        }
+                    }
                 }
 
                 Section("settings.playback") {
@@ -46,6 +57,11 @@ struct SettingsView: View {
     }
 
     private var configurationStatusKey: LocalizedStringKey {
-        configuration.isSpotifyConfigured ? "settings.configured" : "settings.notConfigured"
+        model.environment.configuration.isSpotifyConfigured
+            ? "settings.configured" : "settings.notConfigured"
+    }
+
+    private var accountStatusKey: LocalizedStringKey {
+        model.sessionState.isAuthenticated ? "settings.connected" : "settings.disconnected"
     }
 }

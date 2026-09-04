@@ -33,6 +33,8 @@ Spotify Development Mode requires each user to be allowlisted. Do not commit the
 
 - The main connect action prefers the installed Spotify app and falls back to web PKCE.
 - Settings and Spotify login are separate navigation pages with standard back navigation.
+- The mini player uses native Liquid Glass on iOS 26 and later, with a material fallback
+  on older systems and an opaque surface when Reduce Transparency is enabled.
 - Settings offers an explicit system-browser PKCE sign-in path, even in an unconfigured build.
 - Native clients never collect or embed a Client Secret; secrets belong on a trusted server.
 - Sessions are stored in a this-device-only Keychain item and removed on logout.

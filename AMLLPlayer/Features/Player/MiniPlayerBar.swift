@@ -9,7 +9,7 @@ struct MiniPlayerBar: View {
             .animation(minimumInterval: 1 / 30, paused: !snapshot.isPlaying)
         ) { _ in
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     artwork
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -62,16 +62,13 @@ struct MiniPlayerBar: View {
                         }
                 }
                 .frame(height: 2)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 0.5)
-        }
-        .shadow(color: .black.opacity(0.16), radius: 12, y: 5)
+        .modifier(MiniPlayerGlassSurface())
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("miniPlayerBar")
     }
 
     @ViewBuilder
@@ -112,14 +109,50 @@ struct MiniPlayerBar: View {
         disabled: Bool,
         action: @escaping () async -> Void
     ) -> some View {
-        Button(title, systemImage: systemImage) {
+        Button {
             Task { await action() }
+        } label: {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
-        .labelStyle(.iconOnly)
-        .font(.body.weight(.semibold))
-        .frame(width: 34, height: 44)
-        .contentShape(Rectangle())
         .buttonStyle(.plain)
         .disabled(disabled)
+    }
+}
+
+private struct MiniPlayerGlassSurface: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(Color(uiColor: .secondarySystemBackground), in: shape)
+                .overlay { contrastBorder }
+        } else if #available(iOS 26.0, *) {
+            // One system glass surface; do not stack material or glass button backgrounds.
+            content
+                .glassEffect(.regular.interactive(!reduceMotion), in: shape)
+                .overlay { contrastBorder }
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay { contrastBorder }
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        }
+    }
+
+    @ViewBuilder
+    private var contrastBorder: some View {
+        if contrast == .increased {
+            shape.strokeBorder(.primary.opacity(0.6), lineWidth: 1)
+        }
     }
 }

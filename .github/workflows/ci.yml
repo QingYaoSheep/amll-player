@@ -46,7 +46,16 @@ jobs:
           -project AMLLPlayer.xcodeproj
           -scheme AMLLPlayer
           -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest'
+          -resultBundlePath build/Plan3-tests.xcresult
           CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AMLLPlayer-test-results
+          path: build/Plan3-tests.xcresult
+          if-no-files-found: ignore
 
       - name: Build for iPad
         run: >-

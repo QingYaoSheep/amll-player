@@ -4,6 +4,7 @@ Generated/
 
 # Local tools and build products
 .tools/
+.build-tools/
 .build/
 build/
 DerivedData/

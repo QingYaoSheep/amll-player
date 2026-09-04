@@ -157,6 +157,14 @@ actor SpotifyWebAPIClient: SpotifyWebAPIProviding {
         try validate(response)
     }
 
+    func play(accessToken: String, contextURI: String, position: Int, deviceID: String?) async throws {
+        let body = try SpotifyContextPlaybackBody(uri: contextURI, position: position)
+        try await sendPlayerCommand(
+            path: "me/player/play", method: "PUT", accessToken: accessToken,
+            deviceID: deviceID, body: try JSONEncoder().encode(body)
+        )
+    }
+
     private func sendPlayerCommand(
         path: String,
         method: String,
@@ -378,9 +386,40 @@ private struct ActionsResponse: Decodable {
 private struct PlayBody: Encodable {
     let uris: [String]?
     let contextURI: String?
+
+    enum CodingKeys: String, CodingKey {
+        case uris
+        case contextURI = "context_uri"
+    }
 }
 
 private struct TransferBody: Encodable {
     let deviceIDs: [String]
     let play: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case deviceIDs = "device_ids"
+        case play
+    }
+}
+
+struct SpotifyContextPlaybackBody: Encodable {
+    struct Offset: Encodable { let position: Int }
+    let contextURI: String
+    let offset: Offset
+
+    enum CodingKeys: String, CodingKey {
+        case contextURI = "context_uri"
+        case offset
+    }
+
+    init(uri: String, position: Int) throws {
+        let parts = uri.split(separator: ":")
+        guard parts.count == 3, parts[0] == "spotify", ["album", "playlist"].contains(String(parts[1])),
+              SpotifyCatalogDecoder.validID(String(parts[2])), position >= 0 else {
+            throw SpotifyServiceError.transport
+        }
+        contextURI = uri
+        offset = Offset(position: position)
+    }
 }

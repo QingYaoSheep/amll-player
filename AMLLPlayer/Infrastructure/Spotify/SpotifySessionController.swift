@@ -16,6 +16,8 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     private var renewalContinuation: CheckedContinuation<Void, Error>?
     private var webToken: SpotifyWebToken?
     private var webRefreshTask: Task<SpotifyWebToken, Error>?
+    private var credentialGeneration = UUID()
+    private var sdkAuthorizationPending = false
 
     private(set) var currentState: SpotifySessionState = .signedOut {
         didSet {
@@ -76,6 +78,7 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
         }
 
         clearWebSession()
+        sdkAuthorizationPending = true
         currentState = .authorizing
         sessionManager.initiateSession(
             with: Self.requestedScopes,
@@ -90,20 +93,26 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
             return
         }
 
+        sdkAuthorizationPending = false
         currentState = .authorizing
+        let epoch = credentialGeneration
         record("Browser authorization started")
         do {
             let token = try await webAuthorization.authorize()
+            guard epoch == credentialGeneration else { throw CancellationError() }
             accept(token)
         } catch is CancellationError {
+            guard epoch == credentialGeneration else { throw CancellationError() }
             currentState = .signedOut
             record("Browser authorization cancelled")
             throw CancellationError()
         } catch let error as SpotifyServiceError {
+            guard epoch == credentialGeneration else { throw CancellationError() }
             currentState = .failed(error)
             record("Browser authorization failed")
             throw error
         } catch {
+            guard epoch == credentialGeneration else { throw CancellationError() }
             currentState = .failed(.transport)
             record("Browser authorization failed")
             throw SpotifyServiceError.transport
@@ -111,8 +120,16 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     }
 
     func refreshIfNeeded() async throws {
+        try await refreshSession(force: false)
+    }
+
+    func refreshAfterUnauthorized() async throws {
+        try await refreshSession(force: true)
+    }
+
+    private func refreshSession(force: Bool) async throws {
         if let webToken {
-            guard webToken.expiresAt.timeIntervalSinceNow <= Self.refreshLeeway else {
+            guard force || webToken.expiresAt.timeIntervalSinceNow <= Self.refreshLeeway else {
                 return
             }
             try await refreshWebToken(webToken)
@@ -123,7 +140,7 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
             throw SpotifyServiceError.notAuthorized
         }
 
-        guard session.expirationDate.timeIntervalSinceNow <= Self.refreshLeeway else {
+        guard force || session.expirationDate.timeIntervalSinceNow <= Self.refreshLeeway else {
             return
         }
 
@@ -162,6 +179,8 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     }
 
     func logout() {
+        credentialGeneration = UUID()
+        sdkAuthorizationPending = false
         webAuthorization.cancel()
         webRefreshTask?.cancel()
         webRefreshTask = nil
@@ -208,6 +227,7 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     }
 
     private func accept(_ session: SPTSession, renewed: Bool) {
+        sdkAuthorizationPending = false
         clearWebSession()
         sessionManager.session = session
         do {
@@ -240,26 +260,34 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     }
 
     private func refreshWebToken(_ token: SpotifyWebToken) async throws {
+        let epoch = credentialGeneration
         if let webRefreshTask {
-            accept(try await webRefreshTask.value)
+            let renewed = try await webRefreshTask.value
+            guard epoch == credentialGeneration else { throw CancellationError() }
+            accept(renewed)
             return
         }
 
         currentState = .refreshing
         let task = Task { try await webAuthorization.refresh(token) }
         webRefreshTask = task
-        defer { webRefreshTask = nil }
+        defer { if epoch == credentialGeneration { webRefreshTask = nil } }
 
         do {
-            accept(try await task.value)
+            let renewed = try await task.value
+            guard epoch == credentialGeneration else { throw CancellationError() }
+            accept(renewed)
             record("Browser session renewed")
         } catch is CancellationError {
+            guard epoch == credentialGeneration else { throw CancellationError() }
             currentState = .failed(.tokenExpired)
             throw SpotifyServiceError.tokenExpired
         } catch let error as SpotifyServiceError {
+            guard epoch == credentialGeneration else { throw CancellationError() }
             currentState = .failed(error)
             throw error
         } catch {
+            guard epoch == credentialGeneration else { throw CancellationError() }
             currentState = .failed(.transport)
             throw SpotifyServiceError.transport
         }
@@ -296,6 +324,7 @@ extension SpotifySessionController: @preconcurrency SPTSessionManagerDelegate {
         manager: SPTSessionManager,
         didInitiate session: SPTSession
     ) {
+        guard sdkAuthorizationPending, case .authorizing = currentState else { return }
         accept(session, renewed: false)
     }
 
@@ -303,6 +332,7 @@ extension SpotifySessionController: @preconcurrency SPTSessionManagerDelegate {
         manager: SPTSessionManager,
         didRenew session: SPTSession
     ) {
+        guard renewalContinuation != nil, webToken == nil, case .refreshing = currentState else { return }
         accept(session, renewed: true)
     }
 
@@ -310,6 +340,8 @@ extension SpotifySessionController: @preconcurrency SPTSessionManagerDelegate {
         manager: SPTSessionManager,
         didFailWith error: Error
     ) {
+        guard sdkAuthorizationPending || renewalContinuation != nil else { return }
+        sdkAuthorizationPending = false
         let mappedError: SpotifyServiceError = {
             if (error as NSError).code == NSURLErrorNotConnectedToInternet {
                 return .offline

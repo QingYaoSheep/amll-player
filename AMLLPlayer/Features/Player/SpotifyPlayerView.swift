@@ -287,7 +287,7 @@ private struct DeviceSummaryView: View {
     }
 }
 
-private struct DevicePickerView: View {
+struct DevicePickerView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
 

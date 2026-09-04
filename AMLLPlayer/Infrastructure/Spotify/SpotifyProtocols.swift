@@ -9,9 +9,14 @@ protocol SpotifySessionProviding: AnyObject {
     func authorize() throws
     func authorizeInBrowser() async throws
     func refreshIfNeeded() async throws
+    func refreshAfterUnauthorized() async throws
     func validAccessToken() async throws -> String
     func handleRedirectURL(_ url: URL) -> Bool
     func logout()
+}
+
+extension SpotifySessionProviding {
+    func refreshAfterUnauthorized() async throws { try await refreshIfNeeded() }
 }
 
 @MainActor
@@ -31,8 +36,15 @@ protocol SpotifyPlaybackProviding: AnyObject {
     func skipPrevious() async throws
     func setVolume(percent: Int, on deviceID: String?) async throws
     func play(uri: String, on deviceID: String?) async throws
+    func play(contextURI: String, position: Int, on deviceID: String?) async throws
     func devices() async throws -> [PlaybackDevice]
     func transferPlayback(to deviceID: String) async throws
+}
+
+extension SpotifyPlaybackProviding {
+    func play(contextURI: String, position: Int, on deviceID: String?) async throws {
+        throw SpotifyServiceError.transport
+    }
 }
 
 @MainActor
@@ -74,4 +86,11 @@ protocol SpotifyWebAPIProviding: Sendable {
         deviceID: String?
     ) async throws
     func transferPlayback(accessToken: String, deviceID: String) async throws
+    func play(accessToken: String, contextURI: String, position: Int, deviceID: String?) async throws
+}
+
+extension SpotifyWebAPIProviding {
+    func play(accessToken: String, contextURI: String, position: Int, deviceID: String?) async throws {
+        throw SpotifyServiceError.transport
+    }
 }

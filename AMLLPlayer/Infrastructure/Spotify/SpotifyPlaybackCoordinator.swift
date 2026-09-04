@@ -240,6 +240,15 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
         return try await webAPI.devices(accessToken: token)
     }
 
+    func play(contextURI: String, position: Int, on deviceID: String?) async throws {
+        let token = try await session.validAccessToken()
+        try await webAPI.play(
+            accessToken: token, contextURI: contextURI, position: position,
+            deviceID: deviceID ?? clock.anchor?.device?.id
+        )
+        scheduleRefresh()
+    }
+
     func transferPlayback(to deviceID: String) async throws {
         let token = try await session.validAccessToken()
         try await webAPI.transferPlayback(accessToken: token, deviceID: deviceID)

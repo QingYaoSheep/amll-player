@@ -3,6 +3,7 @@ import SwiftUI
 struct MiniPlayerBar: View {
     @Bindable var model: AppModel
     let snapshot: PlaybackSnapshot
+    var openPlayer: () -> Void = {}
 
     var body: some View {
         TimelineView(
@@ -10,18 +11,24 @@ struct MiniPlayerBar: View {
         ) { _ in
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    artwork
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(snapshot.item?.title ?? String(localized: "player.noPlayback"))
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                        Text(snapshot.item?.artistLine ?? "")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    Button(action: openPlayer) {
+                        HStack(spacing: 8) {
+                            artwork
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(snapshot.item?.title ?? String(localized: "player.noPlayback"))
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(snapshot.item?.artistLine ?? "")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("openNowPlaying")
 
                     controlButton(
                         title: "player.previous",

@@ -3,21 +3,38 @@ import SwiftUI
 struct RootView: View {
     @Bindable var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showingPlayer = false
 
     var body: some View {
-        NavigationStack {
-            SpotifyPlayerView(model: model)
+        Group {
+            if model.catalog.active {
+                SpotifyBrowserView(model: model)
+                    .id(model.catalog.identity)
+            } else {
+                NavigationStack { SpotifyPlayerView(model: model) }
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 8) {
             if let snapshot = model.playbackSnapshot,
                snapshot.item != nil,
                model.sessionState.isAuthenticated
             {
-                MiniPlayerBar(model: model, snapshot: snapshot)
+                MiniPlayerBar(model: model, snapshot: snapshot, openPlayer: { showingPlayer = true })
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
             }
         }
+        .sheet(isPresented: $showingPlayer) {
+            NavigationStack {
+                SpotifyPlayerView(model: model)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("common.done") { showingPlayer = false }
+                        }
+                    }
+            }
+        }
+        .onChange(of: model.catalog.identity) { showingPlayer = false }
         .task {
             model.prepare()
             model.handleScenePhase(scenePhase)

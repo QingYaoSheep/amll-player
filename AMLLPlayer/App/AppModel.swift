@@ -12,6 +12,8 @@ final class AppModel {
     var presentedError: SpotifyServiceError?
 
     private(set) var environment: AppEnvironment
+    private(set) var catalog: SpotifyCatalogStore
+    private(set) var selectedDeviceID: String?
     private(set) var isBrowserLoginInProgress = false
 
     var isSpotifyLoginBusy: Bool {
@@ -37,6 +39,7 @@ final class AppModel {
     init(
         environment: AppEnvironment,
         clientIDStore: SpotifyClientIDStore = SpotifyClientIDStore(),
+        catalogProvider: (any SpotifyCatalogProviding)? = nil,
         environmentFactory: @escaping @MainActor (AppConfiguration) -> AppEnvironment = {
             AppEnvironment.make(configuration: $0)
         }
@@ -45,6 +48,10 @@ final class AppModel {
         self.clientIDStore = clientIDStore
         self.environmentFactory = environmentFactory
         self.sessionState = environment.spotifySession.currentState
+        self.catalog = SpotifyCatalogStore(
+            provider: catalogProvider ?? SpotifyCatalogClient(session: environment.spotifySession)
+        )
+        if self.sessionState.isAuthenticated { self.catalog.activate() }
     }
 
     deinit {
@@ -68,6 +75,12 @@ final class AppModel {
                     return
                 }
                 sessionState = state
+                switch state {
+                case .authenticated: catalog.activate()
+                case .signedOut, .authorizing, .failed:
+                    if catalog.active { catalog.reset() }
+                case .refreshing: break
+                }
                 if case let .failed(error) = state, error != .notConfigured {
                     presentedError = error
                 }
@@ -136,6 +149,8 @@ final class AppModel {
     }
 
     func logout() {
+        catalog.reset()
+        selectedDeviceID = nil
         environment.spotifySession.logout()
         sessionState = .signedOut
         playbackSnapshot = nil
@@ -158,9 +173,12 @@ final class AppModel {
 
         sessionTask?.cancel()
         playbackTask?.cancel()
+        catalog.reset()
+        selectedDeviceID = nil
         environment.spotifyPlayback.stop()
         environment.spotifySession.logout()
         environment = environmentFactory(configuration)
+        catalog = SpotifyCatalogStore(provider: SpotifyCatalogClient(session: environment.spotifySession))
         sessionState = environment.spotifySession.currentState
         playbackSnapshot = nil
         devicesState = .idle
@@ -226,8 +244,27 @@ final class AppModel {
     func transferPlayback(to deviceID: String) async {
         await perform {
             try await environment.spotifyPlayback.transferPlayback(to: deviceID)
+            selectedDeviceID = deviceID
             await loadDevices()
         }
+    }
+
+    func playCatalog(_ item: SpotifyCatalogItem, contextURI: String? = nil, position: Int? = nil) async throws {
+        guard catalog.active, item.canPlay, let uri = item.uri else { throw SpotifyCatalogError.unavailable }
+        guard !isPerformingAction else { return }
+        isPerformingAction = true
+        defer { isPerformingAction = false }
+        let epoch = catalog.identity
+        let playback = environment.spotifyPlayback
+        let deviceID = selectedDeviceID ?? playbackSnapshot?.device?.id
+        if let contextURI, let position {
+            try await playback.play(contextURI: contextURI, position: position, on: deviceID)
+        } else {
+            try await playback.play(uri: uri, on: deviceID)
+        }
+        guard catalog.active, catalog.identity == epoch else { throw CancellationError() }
+        // A successful command must not be reported as failed just because its follow-up poll failed.
+        try? await playback.refresh()
     }
 
     func progress(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval {

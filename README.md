@@ -4,6 +4,8 @@ AMLL Player is being rebuilt as a native SwiftUI application for iPhone and iPad
 
 This repository contains the reproducible XcodeGen foundation and the plan 2 Spotify vertical slice: PKCE authorization, Keychain-backed sessions, App Remote/Web API playback synchronization, controls, and Spotify Connect device switching.
 
+Plan 3 now adds Home, Search, Library, and track/album/artist/playlist details, including pagination, refresh, external Spotify links, and context-position playback. See [Plan 3 validation](Docs/Plan3-Validation.md) for the outstanding Xcode/device acceptance checks.
+
 ## Requirements
 
 - iOS or iPadOS 18 or later
@@ -82,4 +84,4 @@ No signing material is written to the repository or uploaded with build artifact
 
 ## License
 
-GPL-3.0. Spotify SDK and other third-party notices remain governed by their respective licenses.
+AGPL-3.0; see LICENSE. Spotify SDK and other third-party notices remain governed by their respective licenses.

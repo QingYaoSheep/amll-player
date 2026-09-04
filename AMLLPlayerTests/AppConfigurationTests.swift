@@ -37,5 +37,31 @@ final class AppConfigurationTests: XCTestCase {
         )
 
         XCTAssertFalse(configuration.isSpotifyConfigured)
+        XCTAssertEqual(configuration.spotifyConfigurationError, .invalidRedirectURI)
+    }
+
+    func testTruncatedXcconfigURLIsNotReportedAsMissingClientID() {
+        let configuration = AppConfiguration(
+            infoDictionary: [
+                "SpotifyClientID": "runtime-client",
+                "SpotifyRedirectURI": "amllplayer:",
+            ]
+        )
+
+        XCTAssertFalse(configuration.isSpotifyConfigured)
+        XCTAssertEqual(configuration.spotifyConfigurationError, .invalidRedirectURI)
+    }
+
+    func testBuiltApplicationHasCompleteSpotifyCallback() {
+        // Read the processed host-app plist, not a hand-written test dictionary.
+        XCTAssertEqual(
+            Bundle.main.object(forInfoDictionaryKey: "SpotifyRedirectURI") as? String,
+            AppConfiguration.defaultRedirectURI.absoluteString
+        )
+        let configuration = AppConfiguration(bundle: .main)
+            .overridingSpotifyClientID("runtime-client")
+
+        XCTAssertTrue(configuration.isSpotifyConfigured)
+        XCTAssertNil(configuration.spotifyConfigurationError)
     }
 }

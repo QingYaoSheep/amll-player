@@ -7,13 +7,19 @@ struct AppConfiguration: Equatable, Sendable {
     let spotifyRedirectURI: URL
 
     var isSpotifyConfigured: Bool {
-        guard let spotifyClientID else {
-            return false
-        }
+        spotifyConfigurationError == nil
+    }
 
-        return !spotifyClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && spotifyClientID != "your_spotify_client_id"
-            && spotifyRedirectURI == Self.defaultRedirectURI
+    var spotifyConfigurationError: SpotifyServiceError? {
+        guard let spotifyClientID,
+              SpotifyClientIDStore.normalized(spotifyClientID) != nil
+        else {
+            return .notConfigured
+        }
+        guard spotifyRedirectURI == Self.defaultRedirectURI else {
+            return .invalidRedirectURI
+        }
+        return nil
     }
 
     init(bundle: Bundle) {

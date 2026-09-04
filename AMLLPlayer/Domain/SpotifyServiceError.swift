@@ -2,6 +2,7 @@ import Foundation
 
 enum SpotifyServiceError: Error, Equatable, LocalizedError, Sendable {
     case notConfigured
+    case invalidRedirectURI
     case notAuthorized
     case noActiveDevice
     case restrictedDevice
@@ -18,6 +19,8 @@ enum SpotifyServiceError: Error, Equatable, LocalizedError, Sendable {
         switch self {
         case .notConfigured:
             String(localized: "error.spotifyConfigurationMissing")
+        case .invalidRedirectURI:
+            String(localized: "error.spotifyRedirectInvalid")
         case .notAuthorized:
             String(localized: "error.spotifyNotAuthorized")
         case .noActiveDevice:

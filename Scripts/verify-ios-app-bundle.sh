@@ -10,6 +10,18 @@ if [[ ! -f "$INFO_PLIST" ]]; then
 fi
 
 APP_EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
+SPOTIFY_REDIRECT_URI="$(/usr/libexec/PlistBuddy -c 'Print :SpotifyRedirectURI' "$INFO_PLIST")"
+if [[ "$SPOTIFY_REDIRECT_URI" != "amllplayer://spotify-callback" ]]; then
+    echo "Invalid built Spotify redirect URI: $SPOTIFY_REDIRECT_URI" >&2
+    exit 1
+fi
+
+SPOTIFY_CALLBACK_SCHEME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$INFO_PLIST")"
+if [[ "$SPOTIFY_CALLBACK_SCHEME" != "amllplayer" ]]; then
+    echo "Application does not register the Spotify callback URL scheme" >&2
+    exit 1
+fi
+
 APP_EXECUTABLE="$APP_BUNDLE/$APP_EXECUTABLE_NAME"
 SPOTIFY_EXECUTABLE="$APP_BUNDLE/Frameworks/SpotifyiOS.framework/SpotifyiOS"
 
@@ -33,4 +45,4 @@ if ! otool -l "$APP_EXECUTABLE" | grep -Fq '@executable_path/Frameworks'; then
     exit 1
 fi
 
-echo "Verified embedded Spotify framework and application runtime search path"
+echo "Verified Spotify callback configuration, embedded framework, and runtime search path"

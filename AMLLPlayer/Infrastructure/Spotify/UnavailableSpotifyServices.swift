@@ -2,8 +2,14 @@ import Foundation
 
 @MainActor
 final class UnavailableSpotifySession: SpotifySessionProviding {
-    let currentState: SpotifySessionState = .failed(.notConfigured)
+    let currentState: SpotifySessionState
     let spotifyAppInstalled = false
+    private let error: SpotifyServiceError
+
+    init(error: SpotifyServiceError = .notConfigured) {
+        self.error = error
+        currentState = .failed(error)
+    }
 
     var sessionStates: AsyncStream<SpotifySessionState> {
         AsyncStream { continuation in
@@ -13,19 +19,19 @@ final class UnavailableSpotifySession: SpotifySessionProviding {
     }
 
     func authorize() throws {
-        throw SpotifyServiceError.notConfigured
+        throw error
     }
 
     func authorizeInBrowser() async throws {
-        throw SpotifyServiceError.notConfigured
+        throw error
     }
 
     func refreshIfNeeded() async throws {
-        throw SpotifyServiceError.notConfigured
+        throw error
     }
 
     func validAccessToken() async throws -> String {
-        throw SpotifyServiceError.notConfigured
+        throw error
     }
 
     func handleRedirectURL(_ url: URL) -> Bool {

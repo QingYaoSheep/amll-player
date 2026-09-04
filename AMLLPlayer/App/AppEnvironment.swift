@@ -23,7 +23,9 @@ struct AppEnvironment {
             return AppEnvironment(
                 configuration: configuration,
                 diagnostics: diagnostics,
-                spotifySession: UnavailableSpotifySession(),
+                spotifySession: UnavailableSpotifySession(
+                    error: configuration.spotifyConfigurationError ?? .notConfigured
+                ),
                 spotifyPlayback: UnavailableSpotifyPlayback()
             )
         }

@@ -147,6 +147,10 @@ final class AppModel {
         guard let clientID = SpotifyClientIDStore.normalized(value) else {
             throw SpotifyServiceError.notConfigured
         }
+        let configuration = environment.configuration.overridingSpotifyClientID(clientID)
+        if let error = configuration.spotifyConfigurationError {
+            throw error
+        }
         try clientIDStore.save(clientID)
         guard clientID != environment.configuration.spotifyClientID else {
             return
@@ -156,7 +160,6 @@ final class AppModel {
         playbackTask?.cancel()
         environment.spotifyPlayback.stop()
         environment.spotifySession.logout()
-        let configuration = environment.configuration.overridingSpotifyClientID(clientID)
         environment = environmentFactory(configuration)
         sessionState = environment.spotifySession.currentState
         playbackSnapshot = nil

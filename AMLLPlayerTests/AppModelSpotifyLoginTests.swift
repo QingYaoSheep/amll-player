@@ -68,6 +68,41 @@ final class AppModelSpotifyLoginTests: XCTestCase {
         XCTAssertEqual(model.environment.configuration.spotifyClientID, "existing-client")
     }
 
+    func testInvalidCallbackDoesNotPersistIDOrStartAuthorization() async throws {
+        let configuration = AppConfiguration(
+            infoDictionary: ["SpotifyRedirectURI": "amllplayer:"]
+        )
+        let store = SpotifyClientIDStore(storage: MemorySpotifyDataStore())
+        let model = AppModel(
+            environment: AppEnvironment.make(configuration: configuration),
+            clientIDStore: store
+        )
+
+        await model.authorizeInBrowser(clientID: "runtime-client")
+
+        XCTAssertEqual(model.presentedError, .invalidRedirectURI)
+        XCTAssertNil(try store.load())
+        XCTAssertFalse(model.isBrowserLoginInProgress)
+    }
+
+    func testUnavailableSessionPreservesInvalidCallbackError() async {
+        let configuration = AppConfiguration(
+            infoDictionary: [
+                "SpotifyClientID": "runtime-client",
+                "SpotifyRedirectURI": "amllplayer:",
+            ]
+        )
+        let session = AppEnvironment.make(configuration: configuration).spotifySession
+
+        XCTAssertEqual(session.currentState, .failed(.invalidRedirectURI))
+        do {
+            try await session.authorizeInBrowser()
+            XCTFail("Invalid callback must prevent authorization")
+        } catch {
+            XCTAssertEqual(error as? SpotifyServiceError, .invalidRedirectURI)
+        }
+    }
+
     private func environment(
         clientID: String,
         session: LoginTestSession = LoginTestSession(),

@@ -1,6 +1,8 @@
 SWIFT_VERSION = 6.0
 IPHONEOS_DEPLOYMENT_TARGET = 18.0
 SPOTIFY_CLIENT_ID =
-SPOTIFY_REDIRECT_URI = amllplayer://spotify-callback
+// Expand the slashes separately: a literal double slash starts an xcconfig comment.
+SPOTIFY_URL_SLASH = /
+SPOTIFY_REDIRECT_URI = amllplayer:$(SPOTIFY_URL_SLASH)$(SPOTIFY_URL_SLASH)spotify-callback
 
 #include? "Secrets.xcconfig"

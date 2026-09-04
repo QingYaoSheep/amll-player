@@ -11,15 +11,39 @@ final class AppModel {
     private(set) var isPerformingAction = false
     var presentedError: SpotifyServiceError?
 
-    let environment: AppEnvironment
+    private(set) var environment: AppEnvironment
+    private(set) var isBrowserLoginInProgress = false
+
+    var isSpotifyLoginBusy: Bool {
+        if isBrowserLoginInProgress {
+            return true
+        }
+        switch sessionState {
+        case .authorizing, .refreshing:
+            return true
+        default:
+            return false
+        }
+    }
 
     @ObservationIgnored private var sessionTask: Task<Void, Never>?
     @ObservationIgnored private var playbackTask: Task<Void, Never>?
     @ObservationIgnored private var clock = PlayerClock()
     @ObservationIgnored private var prepared = false
+    @ObservationIgnored private var isForeground = false
+    @ObservationIgnored private let clientIDStore: SpotifyClientIDStore
+    @ObservationIgnored private let environmentFactory: @MainActor (AppConfiguration) -> AppEnvironment
 
-    init(environment: AppEnvironment) {
+    init(
+        environment: AppEnvironment,
+        clientIDStore: SpotifyClientIDStore = SpotifyClientIDStore(),
+        environmentFactory: @escaping @MainActor (AppConfiguration) -> AppEnvironment = {
+            AppEnvironment.make(configuration: $0)
+        }
+    ) {
         self.environment = environment
+        self.clientIDStore = clientIDStore
+        self.environmentFactory = environmentFactory
         self.sessionState = environment.spotifySession.currentState
     }
 
@@ -67,12 +91,15 @@ final class AppModel {
     func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .active:
+            isForeground = true
             environment.spotifyPlayback.enterForeground()
         case .background:
+            isForeground = false
             environment.spotifyPlayback.enterBackground()
         case .inactive:
             break
         @unknown default:
+            isForeground = false
             environment.spotifyPlayback.enterBackground()
         }
     }
@@ -89,8 +116,17 @@ final class AppModel {
         }
     }
 
-    func authorizeInBrowser() async {
+    func authorizeInBrowser(clientID: String? = nil) async {
+        guard !isSpotifyLoginBusy, !isPerformingAction else {
+            return
+        }
+        isBrowserLoginInProgress = true
+        defer { isBrowserLoginInProgress = false }
+
         do {
+            if let clientID {
+                try configureSpotify(clientID: clientID)
+            }
             try await environment.spotifySession.authorizeInBrowser()
         } catch is CancellationError {
             return
@@ -101,9 +137,37 @@ final class AppModel {
 
     func logout() {
         environment.spotifySession.logout()
+        sessionState = .signedOut
         playbackSnapshot = nil
         devicesState = .idle
         clock = PlayerClock()
+    }
+
+    func configureSpotify(clientID value: String) throws {
+        guard let clientID = SpotifyClientIDStore.normalized(value) else {
+            throw SpotifyServiceError.notConfigured
+        }
+        try clientIDStore.save(clientID)
+        guard clientID != environment.configuration.spotifyClientID else {
+            return
+        }
+
+        sessionTask?.cancel()
+        playbackTask?.cancel()
+        environment.spotifyPlayback.stop()
+        environment.spotifySession.logout()
+        let configuration = environment.configuration.overridingSpotifyClientID(clientID)
+        environment = environmentFactory(configuration)
+        sessionState = environment.spotifySession.currentState
+        playbackSnapshot = nil
+        devicesState = .idle
+        clock = PlayerClock()
+        presentedError = nil
+        prepared = false
+        prepare()
+        if isForeground {
+            environment.spotifyPlayback.enterForeground()
+        }
     }
 
     func refreshPlayback() async {

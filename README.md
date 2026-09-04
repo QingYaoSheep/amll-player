@@ -16,15 +16,24 @@ This repository contains the reproducible XcodeGen foundation and the plan 2 Spo
 1. Create an iOS application in the Spotify Developer Dashboard.
 2. Set the bundle identifier to `net.stevexmh.amllplayer`.
 3. Register `amllplayer://spotify-callback` as the redirect URI.
-4. Copy `Configuration/Secrets.xcconfig.example` to `Configuration/Secrets.xcconfig`.
-5. Put your own Client ID in the untracked file.
+4. In the app, open Settings → Login → Sign in to Spotify.
+5. Enter your Client ID and tap Authorize and sign in. The ID is saved on the device;
+   the system browser opens Spotify's PKCE authorization page.
+
+The login page also includes setup instructions and links to the Developer Dashboard.
+Changing Client ID disconnects the old session before creating the new connection.
+Sessions are scoped to each Client ID. Existing installations may need to sign in once
+after upgrading from the earlier, unscoped session store.
+For a build-time default, you can still copy `Configuration/Secrets.xcconfig.example`
+to the untracked `Configuration/Secrets.xcconfig` and enter a Client ID.
 
 Spotify Development Mode requires each user to be allowlisted. Do not commit the Client ID or any tokens.
 
 ## Spotify authorization and playback
 
 - The main connect action prefers the installed Spotify app and falls back to web PKCE.
-- Settings also offers an explicit system-browser PKCE sign-in path.
+- Settings and Spotify login are separate navigation pages with standard back navigation.
+- Settings offers an explicit system-browser PKCE sign-in path, even in an unconfigured build.
 - Native clients never collect or embed a Client Secret; secrets belong on a trusted server.
 - Sessions are stored in a this-device-only Keychain item and removed on logout.
 - App Remote supplies near-real-time state; Web API polling takes over when it is unavailable.

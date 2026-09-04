@@ -3,11 +3,10 @@ import SwiftUI
 struct RootView: View {
     @Bindable var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
-    @State private var isShowingSettings = false
 
     var body: some View {
-        SpotifyPlayerView(model: model) {
-            isShowingSettings = true
+        NavigationStack {
+            SpotifyPlayerView(model: model)
         }
         .safeAreaInset(edge: .bottom, spacing: 8) {
             if let snapshot = model.playbackSnapshot,
@@ -18,9 +17,6 @@ struct RootView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
             }
-        }
-        .sheet(isPresented: $isShowingSettings) {
-            SettingsView(model: model)
         }
         .task {
             model.prepare()

@@ -20,6 +20,7 @@ protocol SpotifyPlaybackProviding: AnyObject {
     var appRemoteState: SpotifyAppRemoteState { get }
 
     func start()
+    func stop()
     func enterForeground()
     func enterBackground()
     func refresh() async throws

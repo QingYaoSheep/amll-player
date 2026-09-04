@@ -2,11 +2,10 @@ import SwiftUI
 
 struct SpotifyPlayerView: View {
     @Bindable var model: AppModel
-    let showSettings: () -> Void
     @State private var isShowingDevices = false
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
             Group {
                 if !model.environment.configuration.isSpotifyConfigured {
                     ContentUnavailableView(
@@ -28,9 +27,12 @@ struct SpotifyPlayerView: View {
                         }
                     }
 
-                    Button("settings.open", systemImage: "gearshape") {
-                        showSettings()
+                    NavigationLink {
+                        SettingsView(model: model)
+                    } label: {
+                        Label("settings.open", systemImage: "gearshape")
                     }
+                    .accessibilityIdentifier("openSettings")
                 }
             }
             .sheet(isPresented: $isShowingDevices) {

@@ -28,6 +28,18 @@ struct AppConfiguration: Equatable, Sendable {
         spotifyRedirectURI = redirectValue.flatMap(URL.init(string:)) ?? Self.defaultRedirectURI
     }
 
+    func overridingSpotifyClientID(_ clientID: String?) -> AppConfiguration {
+        guard let clientID = clientID.flatMap(SpotifyClientIDStore.normalized) else {
+            return self
+        }
+        return AppConfiguration(
+            infoDictionary: [
+                "SpotifyClientID": clientID,
+                "SpotifyRedirectURI": spotifyRedirectURI.absoluteString,
+            ]
+        )
+    }
+
     static let preview = AppConfiguration(
         infoDictionary: [
             "SpotifyClientID": "preview-client",

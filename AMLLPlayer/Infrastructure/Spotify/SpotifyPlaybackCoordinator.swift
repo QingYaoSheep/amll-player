@@ -101,6 +101,17 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
         }
     }
 
+    func stop() {
+        enterBackground()
+        sessionTask?.cancel()
+        remoteStateTask?.cancel()
+        remoteSnapshotTask?.cancel()
+        sessionTask = nil
+        remoteStateTask = nil
+        remoteSnapshotTask = nil
+        started = false
+    }
+
     func enterForeground() {
         start()
         isForeground = true
@@ -268,6 +279,9 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
 
         do {
             let token = try await session.validAccessToken()
+            guard isForeground, started, !Task.isCancelled else {
+                return
+            }
             if session.spotifyAppInstalled {
                 appRemote.connect(accessToken: token)
                 startPolling()

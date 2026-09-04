@@ -46,6 +46,7 @@ final class UnavailableSpotifyPlayback: SpotifyPlaybackProviding {
     }
 
     func start() {}
+    func stop() {}
     func enterForeground() {}
     func enterBackground() {}
     func refresh() async throws { throw SpotifyServiceError.notConfigured }

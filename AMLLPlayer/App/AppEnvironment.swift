@@ -8,7 +8,11 @@ struct AppEnvironment {
     let spotifyPlayback: any SpotifyPlaybackProviding
 
     static var live: AppEnvironment {
-        make(configuration: AppConfiguration(bundle: .main))
+        let savedClientID = try? SpotifyClientIDStore().load()
+        return make(
+            configuration: AppConfiguration(bundle: .main)
+                .overridingSpotifyClientID(savedClientID)
+        )
     }
 
     static func make(configuration: AppConfiguration) -> AppEnvironment {
@@ -27,6 +31,8 @@ struct AppEnvironment {
         let spotifySession = SpotifySessionController(
             clientID: clientID,
             redirectURI: configuration.spotifyRedirectURI,
+            store: KeychainSpotifySessionStore(account: "session.\(clientID)"),
+            webStore: KeychainSpotifySessionStore(account: "web-session.\(clientID)"),
             diagnostics: diagnostics
         )
         let appRemote = SpotifyAppRemoteController(

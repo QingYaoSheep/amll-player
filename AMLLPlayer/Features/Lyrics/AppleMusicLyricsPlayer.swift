@@ -1,4 +1,5 @@
 import SwiftUI
+import QuartzCore
 
 /// Apple Music supplies only the spatial shell. The lyric canvas embedded here is AMLL's native port.
 struct AppleMusicLyricsPlayer: View {
@@ -10,6 +11,7 @@ struct AppleMusicLyricsPlayer: View {
     @State private var devices = false
     @State private var browsing = false
     @State private var resumeToken = 0
+    @State private var shellMotion = LyricsMotionModel()
     @GestureState private var dismissalDrag: CGFloat = 0
 
     private var configuration: LyricsRenderConfiguration {
@@ -318,9 +320,22 @@ struct AppleMusicLyricsPlayer: View {
                 guard value.translation.height > abs(value.translation.width) else { return }
                 state = max(0, value.translation.height)
             }
-            .onEnded { value in
+            .onChanged { value in
                 guard value.translation.height > abs(value.translation.width) else { return }
-                if value.translation.height > 90 || value.predictedEndTranslation.height > 180 { dismiss() }
+                if shellMotion.mode != .dismissing {
+                    shellMotion.handle(.beginDismissal, at: CACurrentMediaTime())
+                }
+            }
+            .onEnded { value in
+                guard value.translation.height > abs(value.translation.width) else {
+                    shellMotion.handle(.cancelDismissal, at: CACurrentMediaTime())
+                    return
+                }
+                if value.translation.height > 90 || value.predictedEndTranslation.height > 180 {
+                    dismiss()
+                } else {
+                    shellMotion.handle(.cancelDismissal, at: CACurrentMediaTime())
+                }
             }
     }
 

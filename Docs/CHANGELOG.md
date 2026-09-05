@@ -69,4 +69,4 @@
 
 ## 文档导出
 
-- [ChatHistory-Export.md](ChatHistory-Export.md) 保留用户提供的 `fullchathistory.txt` 原始 Markdown 内容，并追加当前上下文中可逐字读取的原始用户消息。
+- [ChatHistory-Export.md](ChatHistory-Export.md) 仅保留本轮当前对话中可访问的原始角色消息，不引入外部历史文件。

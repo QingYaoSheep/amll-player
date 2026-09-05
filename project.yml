@@ -86,7 +86,11 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - AMLLPlayerTests
+      - path: AMLLPlayerTests
+        excludes:
+          - Fixtures
+      - path: AMLLPlayerTests/Fixtures
+        buildPhase: resources
     configFiles:
       Debug: Configuration/Base.xcconfig
       Release: Configuration/Base.xcconfig

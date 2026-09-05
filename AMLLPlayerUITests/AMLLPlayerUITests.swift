@@ -62,6 +62,28 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "Test")
     }
 
+    func testLyricsSearchPreviewApplyAndManualLock() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--lyrics-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 5))
+        app.buttons["openNowPlaying"].tap()
+        let actions = app.buttons["lyricsActions"]
+        for _ in 0..<5 { if actions.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(actions.isHittable)
+        actions.tap()
+        app.buttons["Find or correct lyrics"].tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 3))
+        search.tap(); search.typeText("Correction")
+        let candidate = app.staticTexts["Correction Candidate"].firstMatch
+        XCTAssertTrue(candidate.waitForExistence(timeout: 5)); candidate.tap()
+        XCTAssertTrue(app.staticTexts["Corrected fixture line"].waitForExistence(timeout: 5))
+        app.buttons["lyricsApply"].tap()
+        XCTAssertTrue(app.staticTexts["Manual · locked"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Corrected fixture line"].exists)
+    }
+
     private func catalogApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["--catalog-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]

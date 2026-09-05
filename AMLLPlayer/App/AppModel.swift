@@ -13,6 +13,7 @@ final class AppModel {
 
     private(set) var environment: AppEnvironment
     private(set) var catalog: SpotifyCatalogStore
+    let lyrics: LyricsCoordinator
     private(set) var selectedDeviceID: String?
     private(set) var isBrowserLoginInProgress = false
 
@@ -30,6 +31,7 @@ final class AppModel {
 
     @ObservationIgnored private var sessionTask: Task<Void, Never>?
     @ObservationIgnored private var playbackTask: Task<Void, Never>?
+    @ObservationIgnored private var lyricsMetadataTask: Task<Void, Never>?
     @ObservationIgnored private var clock = PlayerClock()
     @ObservationIgnored private var prepared = false
     @ObservationIgnored private var isForeground = false
@@ -40,11 +42,13 @@ final class AppModel {
         environment: AppEnvironment,
         clientIDStore: SpotifyClientIDStore = SpotifyClientIDStore(),
         catalogProvider: (any SpotifyCatalogProviding)? = nil,
+        lyrics: LyricsCoordinator? = nil,
         environmentFactory: @escaping @MainActor (AppConfiguration) -> AppEnvironment = {
             AppEnvironment.make(configuration: $0)
         }
     ) {
         self.environment = environment
+        self.lyrics = lyrics ?? .live()
         self.clientIDStore = clientIDStore
         self.environmentFactory = environmentFactory
         self.sessionState = environment.spotifySession.currentState
@@ -57,6 +61,7 @@ final class AppModel {
     deinit {
         sessionTask?.cancel()
         playbackTask?.cancel()
+        lyricsMetadataTask?.cancel()
     }
 
     func prepare() {
@@ -79,6 +84,7 @@ final class AppModel {
                 case .authenticated: catalog.activate()
                 case .signedOut, .authorizing, .failed:
                     if catalog.active { catalog.reset() }
+                    lyrics.update(track: nil)
                 case .refreshing: break
                 }
                 if case let .failed(error) = state, error != .notConfigured {
@@ -97,6 +103,7 @@ final class AppModel {
                 }
                 playbackSnapshot = snapshot
                 clock = PlayerClock(anchor: snapshot)
+                if sessionState.isAuthenticated { updateLyricsMetadata(snapshot.item) }
             }
         }
     }
@@ -105,14 +112,19 @@ final class AppModel {
         switch phase {
         case .active:
             isForeground = true
+            lyrics.setForeground(true)
             environment.spotifyPlayback.enterForeground()
         case .background:
             isForeground = false
+            lyricsMetadataTask?.cancel()
+            lyrics.setForeground(false)
             environment.spotifyPlayback.enterBackground()
         case .inactive:
             break
         @unknown default:
             isForeground = false
+            lyrics.setForeground(false)
+            lyricsMetadataTask?.cancel()
             environment.spotifyPlayback.enterBackground()
         }
     }
@@ -149,6 +161,8 @@ final class AppModel {
     }
 
     func logout() {
+        lyricsMetadataTask?.cancel()
+        lyrics.update(track: nil)
         catalog.reset()
         selectedDeviceID = nil
         environment.spotifySession.logout()
@@ -173,6 +187,8 @@ final class AppModel {
 
         sessionTask?.cancel()
         playbackTask?.cancel()
+        lyricsMetadataTask?.cancel()
+        lyrics.update(track: nil)
         catalog.reset()
         selectedDeviceID = nil
         environment.spotifyPlayback.stop()
@@ -269,6 +285,23 @@ final class AppModel {
 
     func progress(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval {
         clock.position(at: uptime)
+    }
+
+    private func updateLyricsMetadata(_ item: PlaybackItem?) {
+        let identity = TrackIdentity(item)
+        let changed = lyrics.track?.spotifyID != identity?.spotifyID
+        lyrics.update(track: identity)
+        guard changed else { return }
+        lyricsMetadataTask?.cancel()
+        guard var identity, identity.isrc == nil, SpotifyCatalogDecoder.validID(identity.spotifyID) else { return }
+        let client = SpotifyCatalogClient(session: environment.spotifySession)
+        lyricsMetadataTask = Task { [weak self] in
+            guard let detail = try? await client.detail(kind: .track, id: identity.spotifyID),
+                  !Task.isCancelled, let self, sessionState.isAuthenticated,
+                  lyrics.track?.spotifyID == identity.spotifyID else { return }
+            identity.isrc = detail.item.track?.isrc
+            if identity.isrc != nil { lyrics.update(track: identity) }
+        }
     }
 
     private func perform(_ operation: () async throws -> Void) async {

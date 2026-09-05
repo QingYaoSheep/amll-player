@@ -26,6 +26,10 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("lyrics.title") {
+                NavigationLink("lyrics.settings") { LyricsSettingsView(coordinator: model.lyrics) }
+            }
+
             Section("settings.about") {
                 LabeledContent("settings.version", value: appVersion)
                 Link(

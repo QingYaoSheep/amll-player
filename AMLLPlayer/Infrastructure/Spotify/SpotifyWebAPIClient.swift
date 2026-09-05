@@ -325,6 +325,7 @@ private struct DeviceResponse: Decodable {
 }
 
 private struct ItemResponse: Decodable {
+    let externalIds: [String: String]?
     let id: String?
     let uri: String
     let name: String
@@ -347,7 +348,8 @@ private struct ItemResponse: Decodable {
             artworkURL: album?.images.first.flatMap { URL(string: $0.url) },
             duration: TimeInterval(durationMs) / 1_000,
             isEpisode: episode,
-            isAdvertisement: advertisement
+            isAdvertisement: advertisement,
+            isrc: externalIds?["isrc"]
         )
     }
 }

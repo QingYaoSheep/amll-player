@@ -1,0 +1,6 @@
+{
+  "original": "[00:01.1][00:02.12]One\n[00:04.123]Two",
+  "translation": "[00:01.350]一\n[00:04.374]不对齐",
+  "romanization": "[00:02.120]yi",
+  "durationMs": 6000
+}

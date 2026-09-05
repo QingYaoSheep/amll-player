@@ -1,0 +1,76 @@
+[
+  {
+    "text": "Hello, world!",
+    "start": 1,
+    "end": 4,
+    "translation": "你好，世界！",
+    "romanization": "heh wo",
+    "isBackground": false,
+    "isDuet": false,
+    "words": [
+      {
+        "text": "Hello, ",
+        "start": 1,
+        "end": 2,
+        "romanWord": "heh"
+      },
+      {
+        "text": "world!",
+        "start": 2,
+        "end": 3,
+        "romanWord": "wo"
+      }
+    ]
+  },
+  {
+    "text": "echo",
+    "start": 2.2,
+    "end": 3.5,
+    "translation": "回声",
+    "romanization": "",
+    "isBackground": true,
+    "isDuet": false,
+    "words": [
+      {
+        "text": "echo",
+        "start": 2.2,
+        "end": 3.5,
+        "romanWord": null
+      }
+    ]
+  },
+  {
+    "text": "Reply",
+    "start": 5,
+    "end": 7,
+    "translation": "",
+    "romanization": "",
+    "isBackground": false,
+    "isDuet": true,
+    "words": [
+      {
+        "text": "Reply",
+        "start": 5,
+        "end": 7,
+        "romanWord": null
+      }
+    ]
+  },
+  {
+    "text": "Together",
+    "start": 8,
+    "end": 10,
+    "translation": "",
+    "romanization": "",
+    "isBackground": false,
+    "isDuet": false,
+    "words": [
+      {
+        "text": "Together",
+        "start": 8,
+        "end": 10,
+        "romanWord": null
+      }
+    ]
+  }
+]

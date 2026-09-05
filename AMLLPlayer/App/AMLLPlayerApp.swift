@@ -7,6 +7,9 @@ struct AMLLPlayerApp: App {
 
     private static func makeModel() -> AppModel {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--lyrics-ui-testing") {
+            return CatalogUITestFixture.makeModel(includeLyrics: true)
+        }
         if ProcessInfo.processInfo.arguments.contains("--catalog-ui-testing") {
             return CatalogUITestFixture.makeModel()
         }

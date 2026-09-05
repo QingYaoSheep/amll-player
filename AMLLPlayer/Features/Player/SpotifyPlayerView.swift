@@ -103,6 +103,7 @@ struct SpotifyPlayerView: View {
                     )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    LyricsDiagnosticView(model: model)
                 }
                 .padding()
                 .frame(maxWidth: 640)

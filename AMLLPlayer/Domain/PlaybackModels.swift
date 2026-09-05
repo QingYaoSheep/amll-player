@@ -10,6 +10,7 @@ struct PlaybackItem: Equatable, Sendable {
     let duration: TimeInterval
     let isEpisode: Bool
     let isAdvertisement: Bool
+    var isrc: String? = nil
 
     var artistLine: String {
         artists.joined(separator: ", ")

@@ -4,11 +4,13 @@ import Foundation
 /// Explicit opt-in, in-memory fixtures. Release builds have no mock account or launch bypass.
 @MainActor
 enum CatalogUITestFixture {
-    static func makeModel() -> AppModel {
-        AppModel(environment: AppEnvironment(
+    static func makeModel(includeLyrics: Bool = false) -> AppModel {
+        let lyrics = LyricsCoordinator(providers: includeLyrics ? [LyricsFixtureProvider()] : [], cache: MemoryLyricsCache(),
+                                       settingsStore: LyricsSettingsStore(defaults: UserDefaults(suiteName: "lyrics-ui-" + UUID().uuidString)!))
+        return AppModel(environment: AppEnvironment(
             configuration: .preview, diagnostics: DiagnosticsStore(),
-            spotifySession: Session(), spotifyPlayback: Playback()
-        ), catalogProvider: Provider())
+            spotifySession: Session(), spotifyPlayback: Playback(includeLyrics: includeLyrics)
+        ), catalogProvider: Provider(), lyrics: lyrics)
     }
 
     private static func item(_ id: String, kind: SpotifyCatalogKind = .track, name: String = "Test Song") -> SpotifyCatalogItem {
@@ -55,8 +57,20 @@ enum CatalogUITestFixture {
     }
 
     private final class Playback: SpotifyPlaybackProviding {
+        let includeLyrics: Bool
+        init(includeLyrics: Bool) { self.includeLyrics = includeLyrics }
         var appRemoteState: SpotifyAppRemoteState { .disconnected }
-        var playbackSnapshots: AsyncStream<PlaybackSnapshot> { AsyncStream { $0.finish() } }
+        var playbackSnapshots: AsyncStream<PlaybackSnapshot> {
+            AsyncStream {
+                if includeLyrics {
+                    let item = PlaybackItem(id: "fixture", uri: "spotify:track:fixture", title: "Fixture Song", artists: ["Fixture Artist"],
+                        albumTitle: nil, artworkURL: nil, duration: 10, isEpisode: false, isAdvertisement: false, isrc: "FIXTURE")
+                    $0.yield(PlaybackSnapshot(item: item, isPlaying: false, position: 1, duration: 10, device: nil,
+                        restrictions: .unrestricted, source: .webAPI, sampledAtUptime: ProcessInfo.processInfo.systemUptime))
+                }
+                $0.finish()
+            }
+        }
         func start() {}
         func stop() {}
         func enterForeground() {}
@@ -72,6 +86,16 @@ enum CatalogUITestFixture {
         func play(contextURI: String, position: Int, on deviceID: String?) async throws {}
         func devices() async throws -> [PlaybackDevice] { [] }
         func transferPlayback(to deviceID: String) async throws {}
+    }
+
+    private final class LyricsFixtureProvider: LyricsProvider {
+        let source = LyricsSource.qq
+        func search(track: TrackIdentity, query: String, settings: LyricsSettings) async throws -> [LyricCandidate] {
+            [LyricCandidate(source: .qq, sourceID: query.isEmpty ? "auto" : "manual", title: query.isEmpty ? "Fixture Song" : "Correction Candidate", artists: ["Fixture Artist"], score: 99)]
+        }
+        func lyrics(candidate: LyricCandidate, settings: LyricsSettings) async throws -> LyricsPayload {
+            LyricsPayload(format: .lrc, original: candidate.sourceID == "manual" ? "[00:01]Corrected fixture line" : "[00:01]Original fixture line")
+        }
     }
 }
 #endif

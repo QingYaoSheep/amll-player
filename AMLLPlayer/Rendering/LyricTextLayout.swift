@@ -176,7 +176,7 @@ final class LyricRowView: UIView {
     }
 
     func update(time: Double, active: Bool, configuration: LyricsRenderConfiguration, policy: RenderQualityPolicy, reduceMotion: Bool) {
-        guard let line else { return }
+        guard line != nil else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         base.contents = active || !policy.blur || !configuration.blurInactive ? sharp : soft
         base.opacity = active ? 0.45 : 0.28

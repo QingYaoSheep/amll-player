@@ -5,7 +5,7 @@ final class AMLLPlayerUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testPlayerAndSettingsAreReachable() {
+    @MainActor func testPlayerAndSettingsAreReachable() {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
@@ -35,7 +35,7 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Spotify Player"].exists)
     }
 
-    func testCatalogNavigationAndMetadataOnlyPlaylist() {
+    @MainActor func testCatalogNavigationAndMetadataOnlyPlaylist() {
         let app = catalogApp()
         XCTAssertTrue(app.staticTexts["Test Listener"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Library"].tap()
@@ -46,7 +46,7 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Spotify has not made these tracks available to this app. Open in Spotify to continue."].exists)
     }
 
-    func testSearchSurvivesDetailNavigation() {
+    @MainActor func testSearchSurvivesDetailNavigation() {
         let app = catalogApp()
         app.tabBars.buttons["Search"].tap()
         let field = app.searchFields.firstMatch
@@ -62,7 +62,7 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "Test")
     }
 
-    func testLyricsSearchPreviewApplyAndManualLock() {
+    @MainActor func testLyricsSearchPreviewApplyAndManualLock() {
         let app = XCUIApplication()
         app.launchArguments += ["--lyrics-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
@@ -86,7 +86,7 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 3))
     }
 
-    func testNativeLyricsBrowseRestoreVisibilityAndRotate() {
+    @MainActor func testNativeLyricsBrowseRestoreVisibilityAndRotate() {
         let app = XCUIApplication()
         app.launchArguments += ["--lyrics-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
@@ -114,7 +114,7 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 3))
     }
 
-    private func catalogApp() -> XCUIApplication {
+    @MainActor private func catalogApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["--catalog-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()

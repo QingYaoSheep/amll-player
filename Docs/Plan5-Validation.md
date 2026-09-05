@@ -32,9 +32,12 @@
 - 本地：Swift Tree-sitter 语法辅助检查、String Catalog JSON/中英文本键、`git diff --check`；SwiftFormat 只格式化计划 5 新文件。语法辅助工具不替代 Swift 编译器，条件编译节点有已知解析限制。
 - CI：沿用 Xcode 26 单元/UI 测试、iPad build/Archive，以及 Xcode 27 SDK build/Archive/未签名 IPA。待本次源码运行完成后填入结果。
 - `LyricsRenderViewTests.testFixedTimelineImagesForVisualReview` 将 390×700 的 2.5/6.5/18/26 秒画面作为 `.xcresult` 的永久附件；UI 测试保留横屏全屏截图。它们是可复现的原生基线，尚未与旧版截图逐像素验收。
+- CI 另用 `xcresulttool export attachments` 输出 `AMLLPlayer-visual-review` artifact，供 Windows 直接检查 PNG。
 - ProMotion 配置参考 [Apple 的刷新率说明](https://developer.apple.com/documentation/quartzcore/optimizing-iphone-and-ipad-apps-to-support-promotion-displays)：工程包含 `CADisableMinimumFrameDurationOnPhone`，渲染按屏幕能力请求最高 120Hz。请求帧率不是实测帧率承诺。
 
 ## 待真机验收
+
+提交前两路只读复核：Standards 找到并修复 1 项（返回按钮出现导致歌词区尺寸改变、立即取消手动浏览）；Spec 找到并修复 3 项（重叠声部预滚动回跳、署名类型选择/回退缺失、下滑手势取消残留）。限定复核确认四项已修复，无新增确定问题；这不替代以下真机测试。
 
 - [ ] 同一固定曲目/时间/设置，与旧版对照前奏、长音、重叠/对唱/背景声、空格、多语言与超长行。
 - [ ] 60Hz 和 ProMotion 设备连续播放 15 分钟：帧率、掉帧、内存、图层数、时钟漂移；记录设备、系统与构建号。

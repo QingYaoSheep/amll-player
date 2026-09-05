@@ -57,6 +57,23 @@ jobs:
           path: build/Plan3-tests.xcresult
           if-no-files-found: ignore
 
+      - name: Export visual review attachments
+        if: always()
+        run: |
+          if [[ -d build/Plan3-tests.xcresult ]]; then
+            xcrun xcresulttool export attachments \
+              --path build/Plan3-tests.xcresult \
+              --output-path build/Plan5-images
+          fi
+
+      - name: Upload visual review attachments
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AMLLPlayer-visual-review
+          path: build/Plan5-images
+          if-no-files-found: ignore
+
       - name: Build for iPad
         run: >-
           xcodebuild build

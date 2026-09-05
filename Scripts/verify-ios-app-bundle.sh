@@ -10,6 +10,19 @@ if [[ ! -f "$INFO_PLIST" ]]; then
 fi
 
 APP_EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CADisableMinimumFrameDurationOnPhone' "$INFO_PLIST")" != "true" ]]; then
+    echo "Application is missing the ProMotion timing opt-in" >&2
+    exit 1
+fi
+for ORIENTATION_KEY in UISupportedInterfaceOrientations 'UISupportedInterfaceOrientations~ipad'; do
+    ORIENTATIONS="$(/usr/libexec/PlistBuddy -c "Print :$ORIENTATION_KEY" "$INFO_PLIST")"
+    for REQUIRED_ORIENTATION in UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight; do
+        if [[ "$ORIENTATIONS" != *"$REQUIRED_ORIENTATION"* ]]; then
+            echo "Missing $REQUIRED_ORIENTATION in $ORIENTATION_KEY" >&2
+            exit 1
+        fi
+    done
+done
 SPOTIFY_REDIRECT_URI="$(/usr/libexec/PlistBuddy -c 'Print :SpotifyRedirectURI' "$INFO_PLIST")"
 if [[ "$SPOTIFY_REDIRECT_URI" != "amllplayer://spotify-callback" ]]; then
     echo "Invalid built Spotify redirect URI: $SPOTIFY_REDIRECT_URI" >&2
@@ -45,4 +58,4 @@ if ! otool -l "$APP_EXECUTABLE" | grep -Fq '@executable_path/Frameworks'; then
     exit 1
 fi
 
-echo "Verified Spotify callback configuration, embedded framework, and runtime search path"
+echo "Verified ProMotion/orientations, Spotify callback, embedded framework, and runtime search path"

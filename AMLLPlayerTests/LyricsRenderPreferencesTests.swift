@@ -23,13 +23,14 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         let name = "render-tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
-        defaults.set(Data(#"{"fontSize":999,"translation":false,"backgroundBlur":-4}"#.utf8), forKey: "lyrics.render.v1")
+        defaults.set(Data(#"{"fontSize":999,"translation":false,"backgroundBlur":-4,"credits":"preferred"}"#.utf8), forKey: "lyrics.render.v1")
         let value = LyricsRenderPreferences(defaults: defaults).configuration
         XCTAssertEqual(value.fontSize, 52)
         XCTAssertEqual(value.backgroundBlur, 0)
         XCTAssertFalse(value.translation)
         XCTAssertTrue(value.romanization)
         XCTAssertFalse(value.remainingTime)
+        XCTAssertEqual(value.credits, .preferLyricAuthor)
     }
 
     func testCorruptAndFutureVersionSettingsFallBackWithoutDeletingData() throws {

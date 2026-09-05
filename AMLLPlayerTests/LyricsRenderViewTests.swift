@@ -1,4 +1,5 @@
 @testable import AMLLPlayer
+import SwiftUI
 import UIKit
 import XCTest
 
@@ -142,6 +143,23 @@ final class LyricsRenderViewTests: XCTestCase {
             attachment.name = "Plan5-390x700-time-\(time)"
             attachment.lifetime = .keepAlways
             add(attachment)
+        }
+    }
+
+    func testStaticCoverImagesForVisualReview() throws {
+        for size in [CGSize(width: 390, height: 844), CGSize(width: 844, height: 390)] {
+            for blur in [0.0, 40.0] {
+                let renderer = ImageRenderer(content:
+                    AlbumArtworkBackground(url: nil, blur: blur, previewImage: Image(uiImage: LyricsRenderFixture.cover))
+                        .frame(width: size.width, height: size.height))
+                renderer.scale = 1
+                let image = try XCTUnwrap(renderer.uiImage)
+                XCTAssertEqual(image.size, size)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "Plan5-cover-\(Int(size.width))x\(Int(size.height))-blur-\(Int(blur))"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
         }
     }
 

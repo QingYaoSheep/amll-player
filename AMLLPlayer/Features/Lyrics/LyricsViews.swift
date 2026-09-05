@@ -2,7 +2,6 @@ import SwiftUI
 
 struct LyricsDiagnosticView: View {
     @Bindable var model: AppModel
-    @State private var showingSearch = false
     private var lyrics: LyricsCoordinator {
         model.lyrics
     }
@@ -15,17 +14,6 @@ struct LyricsDiagnosticView: View {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()
-                Menu {
-                    Button("lyrics.find", systemImage: "magnifyingglass") { showingSearch = true }
-                    Button("lyrics.refresh", systemImage: "arrow.clockwise") { lyrics.reload(force: true) }
-                    Button("lyrics.automatic", systemImage: "arrow.uturn.backward") { lyrics.restoreAutomatic() }
-                    Divider()
-                    Button("lyrics.offset.minus") { lyrics.setOffset(lyrics.selection.offset - 0.1) }
-                    Button("lyrics.offset.plus") { lyrics.setOffset(lyrics.selection.offset + 0.1) }
-                    Button("lyrics.offset.zero") { lyrics.setOffset(0) }
-                } label: { Label("lyrics.actions", systemImage: "ellipsis.circle") }
-                    .accessibilityIdentifier("lyricsActions")
-                    .disabled(lyrics.track == nil || !lyrics.settings.enabled)
             }
             Text(LocalizedStringKey("lyrics.status." + lyrics.status.rawValue)).font(.subheadline).foregroundStyle(.secondary)
             if let document = lyrics.document {
@@ -70,8 +58,28 @@ struct LyricsDiagnosticView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sheet(isPresented: $showingSearch) { LyricsSearchView(coordinator: lyrics) }
         .accessibilityIdentifier("lyricsDiagnostic")
+    }
+}
+
+struct LyricsQuickMenu: View {
+    @Bindable var coordinator: LyricsCoordinator
+    var showSearch: () -> Void
+
+    var body: some View {
+        Menu {
+            Button("lyrics.find", systemImage: "magnifyingglass", action: showSearch)
+            Button("lyrics.refresh", systemImage: "arrow.clockwise") { coordinator.reload(force: true) }
+            Button("lyrics.automatic", systemImage: "arrow.uturn.backward") { coordinator.restoreAutomatic() }
+            Divider()
+            Button("lyrics.offset.minus") { coordinator.setOffset(coordinator.selection.offset - 0.1) }
+            Button("lyrics.offset.plus") { coordinator.setOffset(coordinator.selection.offset + 0.1) }
+            Button("lyrics.offset.zero") { coordinator.setOffset(0) }
+        } label: {
+            Label("lyrics.actions", systemImage: "quote.bubble")
+        }
+        .accessibilityIdentifier("lyricsActions")
+        .disabled(coordinator.track == nil || !coordinator.settings.enabled)
     }
 }
 

@@ -68,14 +68,8 @@ final class AMLLPlayerUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 5))
         app.buttons["openNowPlaying"].tap()
-        let playerScroll = app.scrollViews["playerScroll"]
-        XCTAssertTrue(playerScroll.waitForExistence(timeout: 3))
         let actions = app.buttons["lyricsActions"]
-        for _ in 0..<5 {
-            if actions.isHittable { break }
-            playerScroll.swipeUp()
-        }
-        XCTAssertTrue(actions.isHittable)
+        XCTAssertTrue(actions.waitForExistence(timeout: 3))
         actions.tap()
         app.buttons["Find or correct lyrics"].tap()
         let search = app.searchFields.firstMatch

@@ -3,6 +3,7 @@ import SwiftUI
 struct SpotifyPlayerView: View {
     @Bindable var model: AppModel
     @State private var isShowingDevices = false
+    @State private var isShowingLyricsSearch = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,6 +21,9 @@ struct SpotifyPlayerView: View {
             .navigationTitle("player.title")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if model.playbackSnapshot?.item != nil {
+                        LyricsQuickMenu(coordinator: model.lyrics) { isShowingLyricsSearch = true }
+                    }
                     if model.sessionState.isAuthenticated {
                         Button("player.devices", systemImage: "airplayaudio") {
                             isShowingDevices = true
@@ -37,6 +41,9 @@ struct SpotifyPlayerView: View {
             }
             .sheet(isPresented: $isShowingDevices) {
                 DevicePickerView(model: model)
+            }
+            .sheet(isPresented: $isShowingLyricsSearch) {
+                LyricsSearchView(coordinator: model.lyrics)
             }
         }
     }
@@ -109,7 +116,6 @@ struct SpotifyPlayerView: View {
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)
             }
-            .accessibilityIdentifier("playerScroll")
             .refreshable {
                 await model.refreshPlayback()
             }

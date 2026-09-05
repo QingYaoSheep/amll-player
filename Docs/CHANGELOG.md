@@ -67,3 +67,6 @@
 - GitHub Actions 生成的 IPA 未签名，需要使用用户自己的 Apple 证书重签名后才能安装。
 - 真实 Spotify、Apple Music、QQ Music、NetEase 服务联调和真机验证以各计划验证文档的“待验收”部分为准。
 
+## 文档导出
+
+- [ChatHistory-Export.md](ChatHistory-Export.md) 保留用户提供的 `fullchathistory.txt` 原始 Markdown 内容，并追加当前上下文中可逐字读取的原始用户消息。

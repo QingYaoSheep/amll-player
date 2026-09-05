@@ -15,12 +15,20 @@ struct AMLLBackgroundUniforms {
     float time;
     float volume;
     float alpha;
-    float padding;
+    float aspect;
 };
 
-vertex AMLLBackgroundVarying amllMeshVertex(uint id [[vertex_id]], const device AMLLBackgroundVertex *vertices [[buffer(0)]]) {
+vertex AMLLBackgroundVarying amllMeshVertex(uint id [[vertex_id]],
+                                            const device AMLLBackgroundVertex *vertices [[buffer(0)]],
+                                            constant AMLLBackgroundUniforms &uniforms [[buffer(1)]]) {
     AMLLBackgroundVarying output;
-    output.position = float4(vertices[id].position, 0.0, 1.0);
+    float2 position = vertices[id].position;
+    if (uniforms.aspect > 1.0) {
+        position.y *= uniforms.aspect;
+    } else {
+        position.x /= max(0.001, uniforms.aspect);
+    }
+    output.position = float4(position, 0.0, 1.0);
     output.uv = vertices[id].uv;
     return output;
 }
@@ -36,22 +44,7 @@ fragment float4 amllMeshFragment(AMLLBackgroundVarying input [[stage_in]],
     const float2 rotated = float2(cosine * centered.x - sine * centered.y,
                                   sine * centered.x + cosine * centered.y);
     const float2 finalUV = rotated * max(0.001, 1.0 - uniforms.volume * 2.0) + float2(0.5);
-    const float2 texel = float2(1.0 / 32.0);
-    float4 result = album.sample(albumSampler, finalUV) * 0.227027;
-    result += album.sample(albumSampler, finalUV + float2(texel.x, 0)) * 0.1945946;
-    result += album.sample(albumSampler, finalUV - float2(texel.x, 0)) * 0.1945946;
-    result += album.sample(albumSampler, finalUV + float2(0, texel.y)) * 0.1216216;
-    result += album.sample(albumSampler, finalUV - float2(0, texel.y)) * 0.1216216;
-    result += album.sample(albumSampler, finalUV + texel) * 0.0351351;
-    result += album.sample(albumSampler, finalUV - texel) * 0.0351351;
-    result += album.sample(albumSampler, finalUV + float2(texel.x, -texel.y)) * 0.0351351;
-    result += album.sample(albumSampler, finalUV + float2(-texel.x, texel.y)) * 0.0351351;
-
-    // Exact color pipeline used when AMLL prepares its 32×32 album texture.
-    result.rgb = (result.rgb - 0.5) * 0.4 + 0.5;
-    const float gray = dot(result.rgb, float3(0.3, 0.59, 0.11));
-    result.rgb = gray * -2.0 + result.rgb * 3.0;
-    result.rgb = ((result.rgb - 0.5) * 1.7 + 0.5) * 0.75;
+    float4 result = album.sample(albumSampler, finalUV);
 
     const float alphaVolume = uniforms.alpha * max(0.5, 1.0 - uniforms.volume * 0.5);
     result.rgb *= alphaVolume;

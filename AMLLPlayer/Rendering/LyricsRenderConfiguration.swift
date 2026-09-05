@@ -34,8 +34,8 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var tracking: Double = 0
     var blurInactive = true
     var emphasizeWords = true
-    /// AMLL default: half of the main lyric font size (16 pt at the default 32 pt font).
-    var gradientWidth: Double = 16
+    /// AMLL stores the feather width as an em value; 0.5 tracks the rendered font size.
+    var gradientWidth: Double = AMLLMotionMetrics.wordFadeWidthInEms
     var anchor: Double = 0.35
     var advance: Double = 0.3
     var showLyrics = true
@@ -61,7 +61,8 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         var copy = self
         copy.fontSize = fontSize.isFinite ? min(52, max(24, fontSize)) : 32
         copy.tracking = tracking.isFinite ? min(3, max(-1, tracking)) : 0
-        copy.gradientWidth = gradientWidth.isFinite ? min(32, max(0, gradientWidth)) : 16
+        copy.gradientWidth = gradientWidth.isFinite
+            ? min(1, max(0, gradientWidth)) : AMLLMotionMetrics.wordFadeWidthInEms
         copy.anchor = anchor.isFinite ? min(0.7, max(0.2, anchor)) : 0.35
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         copy.backgroundBlur = backgroundBlur.isFinite ? min(80, max(0, backgroundBlur)) : 40
@@ -72,14 +73,23 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
 @MainActor @Observable
 final class LyricsRenderPreferences {
     var profile: LyricsPresentationProfile {
-        didSet { persist() }
+        didSet {
+            if !switchingProfile { persist() }
+        }
     }
     var configuration: LyricsRenderConfiguration {
-        didSet { persist() }
+        didSet {
+            guard !switchingProfile else { return }
+            if profile == .custom {
+                migratedCustomConfiguration = configuration.validated()
+            }
+            persist()
+        }
     }
     private(set) var migratedCustomConfiguration: LyricsRenderConfiguration?
 
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var switchingProfile = false
     private static let key = "lyrics.render.v2"
     private static let legacyKey = "lyrics.render.v1"
     private struct Stored: Codable {
@@ -97,8 +107,14 @@ final class LyricsRenderPreferences {
            let stored = try? JSONDecoder().decode(Stored.self, from: data), stored.version == 2
         {
             profile = stored.profile
-            configuration = stored.configuration.validated()
-            migratedCustomConfiguration = stored.migratedCustomConfiguration?.validated()
+            if stored.profile == .appleMusic26 {
+                configuration = .init()
+                migratedCustomConfiguration = stored.migratedCustomConfiguration?.validated()
+                    ?? (stored.configuration == .init() ? nil : stored.configuration.validated())
+            } else {
+                configuration = stored.configuration.validated()
+                migratedCustomConfiguration = configuration
+            }
             return
         }
         guard let data = defaults.data(forKey: Self.legacyKey),
@@ -118,10 +134,13 @@ final class LyricsRenderPreferences {
             merged["credits"] = LyricsRenderConfiguration.Credits.preferLyricAuthor.rawValue
         }
         if let mergedData = try? JSONSerialization.data(withJSONObject: merged),
-           let decoded = try? JSONDecoder().decode(LyricsRenderConfiguration.self, from: mergedData)
+           var decoded = try? JSONDecoder().decode(LyricsRenderConfiguration.self, from: mergedData)
         {
             // The replacement plan intentionally activates the new Apple Music layout for every upgrade.
             // Preserve the old values as an opt-in custom-layout backup without applying them automatically.
+            if values["gradientWidth"] != nil {
+                decoded.gradientWidth /= max(1, decoded.fontSize)
+            }
             migratedCustomConfiguration = decoded.validated()
             profile = .appleMusic26
             configuration = .init()
@@ -130,15 +149,21 @@ final class LyricsRenderPreferences {
     }
 
     func activate(_ newProfile: LyricsPresentationProfile) {
-        if newProfile == .custom, let migratedCustomConfiguration {
-            configuration = migratedCustomConfiguration
-        }
+        guard newProfile != profile else { return }
+        if profile == .custom { migratedCustomConfiguration = configuration.validated() }
+        switchingProfile = true
         profile = newProfile
+        configuration = newProfile == .appleMusic26 ? .init() : (migratedCustomConfiguration ?? .init())
+        switchingProfile = false
+        persist()
     }
 
     func restoreAMLLDefaults() {
+        switchingProfile = true
         profile = .appleMusic26
         configuration = .init()
+        switchingProfile = false
+        persist()
     }
 
     private func persist() {

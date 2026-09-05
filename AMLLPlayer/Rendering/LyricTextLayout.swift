@@ -4,6 +4,11 @@ import UIKit
 /// TextKit shapes complete paragraphs, preserving ligatures, composed characters, fallback fonts and bidi runs.
 @MainActor
 final class LyricTextLayout {
+    private struct RasterKey: Hashable {
+        var scale: CGFloat
+        var blurRadius: CGFloat
+    }
+
     struct Fragment {
         let rect: CGRect
         let start: Double
@@ -23,6 +28,7 @@ final class LyricTextLayout {
     private let manager: NSLayoutManager
     private let storage: NSTextStorage
     private let container: NSTextContainer
+    private var rasters: [RasterKey: UIImage] = [:]
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
     init(line: LyricLine, width: CGFloat, configuration: LyricsRenderConfiguration, traits: UITraitCollection) {
@@ -97,6 +103,8 @@ final class LyricTextLayout {
     }
 
     func image(scale: CGFloat, blurRadius: CGFloat = 0) -> UIImage {
+        let key = RasterKey(scale: scale, blurRadius: blurRadius)
+        if let cached = rasters[key] { return cached }
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale; format.opaque = false
         let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
@@ -107,8 +115,13 @@ final class LyricTextLayout {
                   input.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale]),
                   from: input.extent
               )
-        else { return image }
-        return UIImage(cgImage: output, scale: scale, orientation: .up)
+        else {
+            rasters[key] = image
+            return image
+        }
+        let result = UIImage(cgImage: output, scale: scale, orientation: .up)
+        rasters[key] = result
+        return result
     }
 }
 
@@ -196,7 +209,7 @@ final class LyricRowView: UIView {
         for (piece, mask, fragment) in pieces {
             let global = LyricsTimeline.progress(time: time, start: fragment.start, end: fragment.end)
             let progress = min(1, max(0, (global - fragment.lower) / max(0.00001, fragment.upper - fragment.lower)))
-            let fadeWidth = configuration.gradientWidth > 0 ? configuration.gradientWidth : fragment.fontSize * AMLLMotionMetrics.wordFadeWidthInEms
+            let fadeWidth = fragment.fontSize * configuration.gradientWidth
             let feather = min(0.5, fadeWidth / max(1, fragment.rect.width))
             mask.locations = [0, NSNumber(value: max(0, progress - feather)), NSNumber(value: progress), 1]
             // A completed word is entirely filled, including its final glyph edge.

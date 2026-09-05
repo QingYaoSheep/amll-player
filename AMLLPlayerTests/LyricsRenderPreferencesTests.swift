@@ -8,10 +8,10 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         let preferences = LyricsRenderPreferences(defaults: defaults)
+        preferences.activate(.custom)
         preferences.configuration.fontSize = 40
         preferences.configuration.translation = false
         preferences.configuration.remainingTime = true
-        preferences.activate(.custom)
         let restored = LyricsRenderPreferences(defaults: defaults)
         XCTAssertEqual(restored.configuration.fontSize, 40)
         XCTAssertFalse(restored.configuration.translation)
@@ -20,6 +20,23 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         restored.restoreAMLLDefaults()
         XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, .init())
         XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).profile, .appleMusic26)
+    }
+
+    func testProfileSwitchPreservesEditedCustomValuesAndRestoresAMLLBaseline() throws {
+        let name = "render-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        preferences.activate(.custom)
+        preferences.configuration.fontSize = 41
+        preferences.activate(.appleMusic26)
+        XCTAssertEqual(preferences.configuration, .init())
+        preferences.activate(.custom)
+        XCTAssertEqual(preferences.configuration.fontSize, 41)
+        preferences.configuration.fontSize = 43
+        preferences.activate(.appleMusic26)
+        preferences.activate(.custom)
+        XCTAssertEqual(preferences.configuration.fontSize, 43)
     }
 
     func testLegacyPartialSettingsGainNewDefaultsAndClampRanges() throws {
@@ -37,6 +54,7 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         XCTAssertTrue(migrated.romanization)
         XCTAssertFalse(migrated.remainingTime)
         XCTAssertEqual(migrated.credits, .preferLyricAuthor)
+        XCTAssertEqual(migrated.gradientWidth, 0.5)
     }
 
     func testCorruptAndFutureVersionSettingsFallBackWithoutDeletingData() throws {
@@ -49,6 +67,15 @@ final class LyricsRenderPreferencesTests: XCTestCase {
             XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, .init())
             XCTAssertEqual(defaults.data(forKey: "lyrics.render.v1"), data)
         }
+    }
+
+    func testLegacyPointGradientMigratesToAMLLRelativeEmWidth() throws {
+        let name = "render-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(Data(#"{"fontSize":40,"gradientWidth":20}"#.utf8), forKey: "lyrics.render.v1")
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        XCTAssertEqual(try XCTUnwrap(preferences.migratedCustomConfiguration).gradientWidth, 0.5)
     }
 
     func testCreditModesSelectTypesAndOnlyPreferredModesFallBack() {

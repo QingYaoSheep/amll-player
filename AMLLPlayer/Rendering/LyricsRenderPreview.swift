@@ -11,12 +11,14 @@
         @State private var browsing = false
         @State private var renderer: LyricsRenderView?
         @State private var lineTiming = false
+        @State private var targetFPS = 60
         @State private var visible = false
         @Environment(\.scenePhase) private var scenePhase
         var body: some View {
             VStack {
                 PreviewRenderer(configuration: configuration, document: lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document,
                                 position: currentPosition, playing: playing, active: visible && scenePhase == .active,
+                                targetFPS: targetFPS,
                                 resume: resume, browsing: { browsing = $0 }, seek: { position = $0; anchor = ProcessInfo.processInfo.systemUptime },
                                 created: { renderer = $0 })
                 Button("render.returnCurrent") { resume += 1 }
@@ -32,6 +34,15 @@
                     Button(playing ? "player.pause" : "player.play") { position = currentPosition(); anchor = ProcessInfo.processInfo.systemUptime; playing.toggle() }
                     Button("render.restart") { position = 0; anchor = ProcessInfo.processInfo.systemUptime; resume += 1 }
                     Toggle("render.translation", isOn: $configuration.translation)
+                }
+                HStack {
+                    Button("render.stepBackward", systemImage: "backward.frame") { step(by: -1) }.labelStyle(.iconOnly)
+                    Picker("render.frameRate", selection: $targetFPS) {
+                        Text("60 Hz").tag(60)
+                        Text("120 Hz").tag(120)
+                    }
+                    .pickerStyle(.segmented)
+                    Button("render.stepForward", systemImage: "forward.frame") { step(by: 1) }.labelStyle(.iconOnly)
                 }
                 Slider(value: $configuration.fontSize, in: 24 ... 52).accessibilityLabel(Text("render.fontSize"))
                 Toggle("render.preview.line", isOn: $lineTiming)
@@ -54,6 +65,12 @@
             min(1800, position + (playing ? ProcessInfo.processInfo.systemUptime - anchor : 0))
         }
 
+        private func step(by frames: Int) {
+            position = min(1_800, max(0, currentPosition() + Double(frames) / Double(targetFPS)))
+            anchor = ProcessInfo.processInfo.systemUptime
+            playing = false
+        }
+
         private func memoryMB() -> Double {
             var info = mach_task_basic_info()
             var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
@@ -70,6 +87,7 @@
         let position: () -> Double
         let playing: Bool
         let active: Bool
+        let targetFPS: Int
         let resume: Int
         let browsing: (Bool) -> Void
         let seek: (Double) -> Void
@@ -82,6 +100,7 @@
 
         func updateUIView(_ view: LyricsRenderView, context _: Context) {
             view.position = position; view.browsing = browsing; view.seek = seek
+            view.maximumFrameRateOverride = targetFPS
             view.update(document: document, configuration: configuration, offset: 0, duration: 1800,
                         playing: playing, active: active, canSeek: true, reduceMotion: UIAccessibility.isReduceMotionEnabled, resumeToken: resume)
         }

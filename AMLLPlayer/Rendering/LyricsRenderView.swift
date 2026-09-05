@@ -60,6 +60,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     private var lastActive: [Int] = []
     private(set) var frameMilliseconds = 0.0
     private(set) var measuredFPS = 0.0
+    var maximumFrameRateOverride: Int?
     var visibleRowCount: Int {
         rows.count
     }
@@ -180,7 +181,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick(_:)))
             link.add(to: .main, forMode: .common); displayLink = link
         }
-        let policy = RenderQualityPolicy.resolve(maximumFPS: window?.screen.maximumFramesPerSecond ?? 60, reduceMotion: reduceMotion)
+        let policy = qualityPolicy()
         displayLink?.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: Float(policy.frameRate), preferred: Float(policy.frameRate))
         if displayLink?.isPaused == true {
             previousTick = 0
@@ -215,7 +216,9 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             }
             follow.configure(lineInterval: interval, seeking: jumped, interlude: state.interlude != nil)
         }
-        if motion.resumeIfBrowseTimedOut(at: CACurrentMediaTime()) {
+        if !scroll.isDragging, !scroll.isDecelerating,
+           motion.resumeIfBrowseTimedOut(at: CACurrentMediaTime())
+        {
             follow.resume(); follow.position = scroll.contentOffset.y
             browsing(false)
         }
@@ -230,7 +233,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             }
         }
         recycleRows()
-        let policy = RenderQualityPolicy.resolve(maximumFPS: window?.screen.maximumFramesPerSecond ?? 60, reduceMotion: reduceMotion)
+        let policy = qualityPolicy()
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for (index, row) in rows {
             let active = state.active.contains(index)
@@ -311,7 +314,10 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
                 guard let self, self.canSeek else { return }
                 self.seek(LyricsTimeline.seekTarget(line: line, offset: self.offset, duration: self.duration))
                 self.motion.handle(.seek(to: line.start), at: CACurrentMediaTime())
-                self.resumeFollowing()
+                self.follow.resume()
+                self.follow.position = self.scroll.contentOffset.y
+                self.browsing(false)
+                self.syncDisplayLink()
             }
             row.onFocus = { [weak self] in self?.beginBrowsing() }
             row.onResume = { [weak self] in self?.resumeFollowing() }
@@ -333,6 +339,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         guard !needsRebuild else { return }
         recycleRows()
         if !follow.following {
+            motion.handle(.beginBrowsing, at: CACurrentMediaTime())
             let time = position() - offset
             let policy = RenderQualityPolicy.resolve(maximumFPS: 60, reduceMotion: reduceMotion)
             for (index, row) in rows {
@@ -349,6 +356,14 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         let distance = index < focus ? abs(focus - index) + 1 : abs(index - max(focus, latest))
         let compactScale = bounds.width <= 1_024 ? 0.8 : 1
         return min(5, Double(1 + distance) * compactScale)
+    }
+
+    private func qualityPolicy() -> RenderQualityPolicy {
+        let displayMaximum = window?.screen.maximumFramesPerSecond ?? 60
+        return RenderQualityPolicy.resolve(
+            maximumFPS: maximumFrameRateOverride.map { min(displayMaximum, $0) } ?? displayMaximum,
+            reduceMotion: reduceMotion
+        )
     }
 }
 

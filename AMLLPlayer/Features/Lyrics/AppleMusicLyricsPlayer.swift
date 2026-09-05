@@ -23,7 +23,8 @@ struct AppleMusicLyricsPlayer: View {
             ZStack {
                 Color(white: 0.08)
                 AMLLMeshBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
-                                   active: scenePhase == .active && !search && !devices)
+                                   active: scenePhase == .active && !search && !devices,
+                                   blur: configuration.backgroundBlur)
                 Color.black.opacity(0.16)
                 if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                     player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
@@ -53,7 +54,7 @@ struct AppleMusicLyricsPlayer: View {
 
     @ViewBuilder
     private func player(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics, size: CGSize) -> some View {
-        if size.width >= 700 {
+        if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
             tabletPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
         } else if configuration.showLyrics {
             lyricsPlayer(snapshot: snapshot, item: item, metrics: metrics)
@@ -79,16 +80,20 @@ struct AppleMusicLyricsPlayer: View {
                 .padding(.top, metrics.expandedArtworkTop)
             fullMetadata(item: item)
                 .padding(.top, metrics.expandedMetadataGap)
-            LyricsProgressControl(model: model, snapshot: snapshot)
-                .padding(.top, metrics.metadataToProgressGap)
-            transport(snapshot)
-                .padding(.top, metrics.transportTopGap)
-            if configuration.showVolume, let device = snapshot.device, device.supportsVolume, let volume = device.volumePercent {
-                LyricsVolumeControl(model: model, device: device, volume: volume)
-                    .padding(.top, metrics.volumeTopGap)
+            if configuration.showControls {
+                LyricsProgressControl(model: model, snapshot: snapshot)
+                    .padding(.top, metrics.metadataToProgressGap)
+                transport(snapshot)
+                    .padding(.top, metrics.transportTopGap)
+                if configuration.showVolume, let device = snapshot.device, device.supportsVolume,
+                   let volume = device.volumePercent
+                {
+                    LyricsVolumeControl(model: model, device: device, volume: volume)
+                        .padding(.top, metrics.volumeTopGap)
+                }
+                bottomActions
+                    .padding(.top, metrics.bottomActionsTopGap)
             }
-            bottomActions
-                .padding(.top, metrics.bottomActionsTopGap)
             Spacer(minLength: 12)
         }
         .padding(.horizontal, metrics.expandedArtworkInset)
@@ -99,12 +104,16 @@ struct AppleMusicLyricsPlayer: View {
             VStack(spacing: 0) {
                 artwork(item, side: min(420, size.width * 0.38), radius: 14)
                 fullMetadata(item: item).padding(.top, 34)
-                LyricsProgressControl(model: model, snapshot: snapshot).padding(.top, 28)
-                transport(snapshot).padding(.top, 36)
-                if configuration.showVolume, let device = snapshot.device, device.supportsVolume, let volume = device.volumePercent {
-                    LyricsVolumeControl(model: model, device: device, volume: volume).padding(.top, 42)
+                if configuration.showControls {
+                    LyricsProgressControl(model: model, snapshot: snapshot).padding(.top, 28)
+                    transport(snapshot).padding(.top, 36)
+                    if configuration.showVolume, let device = snapshot.device, device.supportsVolume,
+                       let volume = device.volumePercent
+                    {
+                        LyricsVolumeControl(model: model, device: device, volume: volume).padding(.top, 42)
+                    }
+                    bottomActions.padding(.top, 26)
                 }
-                bottomActions.padding(.top, 26)
             }
             .frame(width: min(440, size.width * 0.42))
             lyricCanvas(snapshot)
@@ -153,8 +162,15 @@ struct AppleMusicLyricsPlayer: View {
         HStack(spacing: 12) {
             artwork(item, side: metrics.compactArtworkSize, radius: 11)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.system(size: 17, weight: .bold)).lineLimit(1)
-                Text(item.artistLine).font(.system(size: 16)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
+                if configuration.showTitle {
+                    Text(item.title).font(.system(size: 17, weight: .bold)).lineLimit(1)
+                }
+                if configuration.showArtist {
+                    Text(item.artistLine).font(.system(size: 16)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
+                }
+                if configuration.showAlbum, let album = item.albumTitle {
+                    Text(album).font(.system(size: 14)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
+                }
             }
             Spacer(minLength: 8)
             lyricsActionsMenu
@@ -166,8 +182,15 @@ struct AppleMusicLyricsPlayer: View {
     private func fullMetadata(item: PlaybackItem) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.system(size: 23, weight: .bold)).lineLimit(1)
-                Text(item.artistLine).font(.system(size: 20)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
+                if configuration.showTitle {
+                    Text(item.title).font(.system(size: 23, weight: .bold)).lineLimit(1)
+                }
+                if configuration.showArtist {
+                    Text(item.artistLine).font(.system(size: 20)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
+                }
+                if configuration.showAlbum, let album = item.albumTitle {
+                    Text(album).font(.system(size: 16)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                }
             }
             Spacer(minLength: 8)
             lyricsActionsMenu

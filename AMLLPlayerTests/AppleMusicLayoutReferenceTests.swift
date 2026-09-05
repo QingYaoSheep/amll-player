@@ -28,5 +28,7 @@ final class AppleMusicLayoutReferenceTests: XCTestCase {
         let tablet = AppleMusicLyricsLayoutMetrics.responsive(in: CGSize(width: 1_032, height: 1_376))
         XCTAssertLessThanOrEqual(tablet.compactArtworkSize, 88)
         XCTAssertGreaterThan(tablet.horizontalInset, compact.horizontalInset)
+        XCTAssertFalse(AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: CGSize(width: 874, height: 402)))
+        XCTAssertTrue(AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: CGSize(width: 1_032, height: 1_376)))
     }
 }

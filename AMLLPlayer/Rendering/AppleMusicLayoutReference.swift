@@ -75,4 +75,8 @@ struct AppleMusicLyricsLayoutMetrics: Equatable, Sendable {
         result.expandedArtworkInset = max(20, reference.expandedArtworkInset * widthScale)
         return result
     }
+
+    static func usesTabletColumns(in size: CGSize) -> Bool {
+        size.width >= 700 && size.height >= 600
+    }
 }

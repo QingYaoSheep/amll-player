@@ -1,4 +1,5 @@
 #if DEBUG
+    import Foundation
     import Darwin
     import SwiftUI
 

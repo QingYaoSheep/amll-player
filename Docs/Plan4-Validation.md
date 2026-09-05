@@ -1,6 +1,6 @@
 # 计划 4：多源歌词、缓存与人工纠错
 
-日期：2026-09-04。实现已接入原生应用；Xcode 编译、XCTest、签名安装和真实账户歌词联调尚待执行。本记录不把静态检查或测试用例存在当作验收通过。本次未推送 GitHub。
+日期：2026-09-04；2026-09-05 完成 CI 验证。实现已接入原生应用并推送至 `swiftui-native`；源码提交 `cd3fcb4c` 已通过 Xcode 26/27 构建与自动测试。签名安装、真实账户歌词联调和真机异常场景仍待人工执行，本记录不把 CI 通过等同于这些外部验收完成。
 
 ## 已实现
 
@@ -15,7 +15,7 @@
 
 接线：`AppModel` 随 Spotify 曲目变更驱动协调器，Web API 解码 ISRC，App Remote 缺少 ISRC 时单次读取目录元数据进行补全。退出/更换配置/后台取消相关任务。首次歌词匹配不等待 ISRC 补全或网络，因此离线缓存可先显示。没有 media-user-token 时自动流程立即跳过 Apple，不阻塞 QQ/网易或 Spotify 控制。
 
-入口：播放器下方“歌词”诊断列表与快捷菜单；设置 → 歌词设置 → Apple Music 歌词。搜索结果预览不改变当前歌词，应用后锁定并返回播放器。逐曲正延迟表示歌词延后，只改变歌词时间轴，不 seek Spotify。
+入口：播放器下方“歌词”诊断列表与右上角歌词快捷菜单；设置 → 歌词设置 → Apple Music 歌词。搜索结果预览不改变当前歌词，应用后锁定并返回播放器。逐曲正延迟表示歌词延后，只改变歌词时间轴，不 seek Spotify。
 
 ## 时间、缓存与安全约定
 
@@ -44,13 +44,21 @@
 - LRC golden 明确通过原生适配器将旧版“下一行起点减 1ms”的闭区间变为半开区间，并去掉旧版用于渲染的伪整行 word。重复时间与未知时长策略另外测试。
 - 本机匿名探测：网易搜索 HTTP 200、业务 code 200；Apple `/us/new` HTML HTTP 200，`/us/browse` 或根路径观察到 301；QQ 备用搜索未取得 HTTP 响应。仅说明当前网络的公开端点情况，未验证任何账号、歌词授权或原生 URLSession 的完整流程。
 
-## 自动测试（已编写，待 Xcode 执行）
+## 自动测试与 CI（已通过）
 
 - `LyricsParserTests`：TTML/LRC golden、命名空间、嵌套/相对时间、空格、独立背景/括号、恶意 XML、重复时间、Base64、辅助对齐、RTL、精度与匹配证据。
 - `LyricsProviderTests`：mock HTTP 主备流程、JWT/来源校验、凭据删除竞态、Apple 权限诊断/本地化、网易纯音乐与无歌词、请求编码/重定向边界。
 - `LyricsCoordinatorTests`：三级回退、旧缓存离线可读、全部失败保留正文、切歌/搜索/预览迟到响应、应用人工结果对抗在途自动请求、锁定、恢复自动、偏移/设置持久化、缓存失败。
 - `LyricsCacheTests`：真实内存 SwiftData store 的往返、地区/语言隔离、旧解析版本从原文重算、清正文仍保留锁定和偏移。
 - UI 测试：`testLyricsSearchPreviewApplyAndManualLock`。Debug 参数 `--lyrics-ui-testing` 注入内存数据，不访问个人凭据/歌词服务；Release 无该入口。
+
+GitHub Actions [SwiftUI CI #23](https://github.com/QingYaoSheep/amll-player/actions/runs/33939109026) 对源码提交 `cd3fcb4c` 的结果：
+
+- Xcode 26：Swift lint 通过；86 个单元测试、4 个 UI 测试均为 0 失败；iPad build、无签名 archive 与应用包校验通过。
+- Xcode 27 / iOS 27 SDK：应用 build、device archive、IPA 打包与应用包校验通过。
+- 测试结果：[AMLLPlayer-test-results](https://github.com/QingYaoSheep/amll-player/actions/runs/33939109026/artifacts/9961315833)，SHA-256 `0be50e012850abccf21c5f94962e2b528c43f4a4fc1373cfc0cca7aeaa120548`。
+- Xcode 26 archive：[AMLLPlayer-unsigned-xcarchive](https://github.com/QingYaoSheep/amll-player/actions/runs/33939109026/artifacts/9961338946)，SHA-256 `77fb2a172efad4e3c82915a41fe91402f4b147e6c41512b38c1d8712cfcf3b29`。
+- Xcode 27 IPA：[AMLLPlayer-Xcode27-unsigned-ipa](https://github.com/QingYaoSheep/amll-player/actions/runs/33939109026/artifacts/9961198831)，SHA-256 `67cf4bb78ec48ad5dc04574b61f048f6369e32e217e9226feed4924d9f486989`。该 IPA 未签名，不能直接安装。
 
 重新生成旧插件对照（仅开发机，依赖安装于已忽略的 `.build-tools/dom`）：
 
@@ -60,11 +68,10 @@ node Scripts/compare-legacy-lyrics.cjs E:/AMLL-Swift/AMLL-OLD/packages/player/sr
 node Scripts/compare-legacy-lyrics.cjs E:/AMLL-Swift/AMLL-OLD/packages/player/src/builtin-extensions/spotify-multisource-lyrics.js --lrc
 ```
 
-## 待验收
+## 待人工与线上验收
 
-1. 推送后运行现有 Xcode 26 单元/UI 测试、iPad 构建，以及 Xcode 27 SDK 构建；保留 `.xcresult` 与构建号。Windows 当前无可用 Swift/Xcode 编译器，本次不填写成功结果。
-2. 签名 IPA 真机验证：冷启动、设置持久化、iPhone/iPad 键盘与分屏、预览/应用返回、快速换歌、前后台、正负延迟。
-3. 使用用户自己的 Apple media-user-token 验证自动/手动 bearer、Catalog/账号/歌词三级诊断、地区与语言；分别选定可用 Apple/QQ/网易样本验证线上契约。
-4. 实机断网重启读取已缓存歌曲；缓存/凭据分别清除；低存储、Keychain 拒绝和数据库损坏回归。线上不可用来源不能勾选为服务验收通过。
+1. 签名 IPA 真机验证：冷启动、设置持久化、iPhone/iPad 键盘与分屏、预览/应用返回、快速换歌、前后台、正负延迟。
+2. 使用用户自己的 Apple media-user-token 验证自动/手动 bearer、Catalog/账号/歌词三级诊断、地区与语言；分别选定可用 Apple/QQ/网易样本验证线上契约。
+3. 实机断网重启读取已缓存歌曲；缓存/凭据分别清除；低存储、Keychain 拒绝和数据库损坏回归。线上不可用来源不能勾选为服务验收通过。
 
-上述全部通过后再勾选总计划 P4-01 至 P4-06；目前标记为“代码已实现，待构建/联调/真机验收”。
+上述外部场景通过后再勾选总计划 P4-01 至 P4-06；目前标记为“代码与 CI 已通过，待真实服务/签名真机验收”。

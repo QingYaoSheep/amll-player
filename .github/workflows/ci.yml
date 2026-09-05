@@ -119,6 +119,9 @@ jobs:
           echo "iOS SDK: $SDK_VERSION"
           [[ "$SDK_VERSION" == 27.* ]]
 
+      - name: Install Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Generate project
         run: bash Scripts/generate-project.sh
 

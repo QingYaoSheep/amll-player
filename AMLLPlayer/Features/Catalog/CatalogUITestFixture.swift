@@ -10,7 +10,8 @@ enum CatalogUITestFixture {
         return AppModel(environment: AppEnvironment(
             configuration: .preview, diagnostics: DiagnosticsStore(),
             spotifySession: Session(), spotifyPlayback: Playback(includeLyrics: includeLyrics)
-        ), catalogProvider: Provider(), lyrics: lyrics)
+        ), catalogProvider: Provider(), lyrics: lyrics,
+           renderPreferences: LyricsRenderPreferences(defaults: UserDefaults(suiteName: "render-ui-" + UUID().uuidString)!))
     }
 
     private static func item(_ id: String, kind: SpotifyCatalogKind = .track, name: String = "Test Song") -> SpotifyCatalogItem {

@@ -80,16 +80,38 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Corrected fixture line"].waitForExistence(timeout: 5))
         app.buttons["lyricsApply"].tap()
         XCTAssertTrue(app.staticTexts["Manual · locked"].waitForExistence(timeout: 5))
-        let correctedLine = app.staticTexts["Corrected fixture line"]
-        let playerScroll = app.scrollViews["playerScroll"]
-        XCTAssertTrue(playerScroll.waitForExistence(timeout: 3))
-        for _ in 0 ..< 6 {
-            if correctedLine.exists {
-                break
-            }
-            playerScroll.swipeUp()
-        }
-        XCTAssertTrue(correctedLine.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.scrollViews["nativeLyricsScroll"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Corrected fixture line"].waitForExistence(timeout: 3))
+        app.buttons["closeLyricsPlayer"].tap()
+        XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 3))
+    }
+
+    func testNativeLyricsBrowseRestoreVisibilityAndRotate() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--lyrics-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 5))
+        app.buttons["openNowPlaying"].tap()
+        let lyrics = app.scrollViews["nativeLyricsScroll"]
+        XCTAssertTrue(lyrics.waitForExistence(timeout: 5))
+        lyrics.swipeUp()
+        let resume = app.buttons["resumeLyricsFollowing"]
+        XCTAssertTrue(resume.waitForExistence(timeout: 3))
+        resume.tap()
+        app.buttons["lyricsDisplayOptions"].tap()
+        app.buttons["Hide lyrics"].tap()
+        XCTAssertTrue(app.buttons["Show lyrics"].waitForExistence(timeout: 3))
+        app.buttons["Show lyrics"].tap()
+        XCTAssertTrue(lyrics.waitForExistence(timeout: 3))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCTAssertTrue(app.buttons["closeLyricsPlayer"].waitForExistence(timeout: 3))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Plan5-fullscreen-landscape"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["closeLyricsPlayer"].tap()
+        XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 3))
     }
 
     private func catalogApp() -> XCUIApplication {

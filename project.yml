@@ -63,6 +63,7 @@ targets:
       path: Generated/AMLLPlayer-Info.plist
       properties:
         CFBundleDisplayName: AMLL Player
+        CADisableMinimumFrameDurationOnPhone: true
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLName: Spotify

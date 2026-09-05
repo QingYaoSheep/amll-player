@@ -14,6 +14,7 @@ final class AppModel {
     private(set) var environment: AppEnvironment
     private(set) var catalog: SpotifyCatalogStore
     let lyrics: LyricsCoordinator
+    let renderPreferences: LyricsRenderPreferences
     private(set) var selectedDeviceID: String?
     private(set) var isBrowserLoginInProgress = false
 
@@ -43,12 +44,14 @@ final class AppModel {
         clientIDStore: SpotifyClientIDStore = SpotifyClientIDStore(),
         catalogProvider: (any SpotifyCatalogProviding)? = nil,
         lyrics: LyricsCoordinator? = nil,
+        renderPreferences: LyricsRenderPreferences? = nil,
         environmentFactory: @escaping @MainActor (AppConfiguration) -> AppEnvironment = {
             AppEnvironment.make(configuration: $0)
         }
     ) {
         self.environment = environment
         self.lyrics = lyrics ?? .live()
+        self.renderPreferences = renderPreferences ?? LyricsRenderPreferences()
         self.clientIDStore = clientIDStore
         self.environmentFactory = environmentFactory
         self.sessionState = environment.spotifySession.currentState

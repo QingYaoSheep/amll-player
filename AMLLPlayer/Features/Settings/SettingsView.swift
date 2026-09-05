@@ -28,6 +28,10 @@ struct SettingsView: View {
 
             Section("lyrics.title") {
                 NavigationLink("lyrics.settings") { LyricsSettingsView(coordinator: model.lyrics) }
+                NavigationLink("render.settings") { LyricsAppearanceView(preferences: model.renderPreferences) }
+                #if DEBUG
+                NavigationLink("render.debug") { LyricsRenderPreview() }
+                #endif
             }
 
             Section("settings.about") {

@@ -24,15 +24,8 @@ struct RootView: View {
                     .padding(.bottom, 4)
             }
         }
-        .sheet(isPresented: $showingPlayer) {
-            NavigationStack {
-                SpotifyPlayerView(model: model)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("common.done") { showingPlayer = false }
-                        }
-                    }
-            }
+        .fullScreenCover(isPresented: $showingPlayer) {
+            FullscreenLyricsPlayer(model: model)
         }
         .onChange(of: model.catalog.identity) { showingPlayer = false }
         .task {

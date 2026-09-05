@@ -87,6 +87,22 @@ final class LyricsProviderTests: XCTestCase {
         XCTAssertEqual(try payload.parse(candidate: candidate, duration: 10).lines.first?.translation, "翻译")
     }
 
+    func testAppleLyrics404IsClassifiedAsNotFound() async throws {
+        let credentials = credentials(); try credentials.saveManual(token()); try credentials.saveMedia("fixture-user")
+        let http = try LyricsHTTPFixture([.failure(.http(404))])
+        let provider = AppleLyricsProvider(http: http, credentials: credentials)
+        var settings = LyricsSettings(); settings.language = "en-US"
+        let candidate = LyricCandidate(source: .apple, sourceID: "1", title: "Title", artists: [])
+        do {
+            _ = try await provider.lyrics(candidate: candidate, settings: settings)
+            XCTFail("Expected no timed lyrics")
+        } catch {
+            XCTAssertEqual(error as? LyricsError, .notFound)
+        }
+        let requests = await http.requests
+        XCTAssertEqual(requests.count, 1)
+    }
+
     func testAppleLyricsRetriesAfterRejectedAutomaticBearerIsReplaced() async throws {
         let credentials = credentials()
         try credentials.saveMedia("fixture-user")

@@ -50,8 +50,17 @@ enum LRCLyricsParser {
                     high = mid
                 }
             }
-            return [low - 1, low].filter { rows.indices.contains($0) }.map { rows[$0] }
-                .filter { abs($0.time - time) <= 0.250001 }.min { abs($0.time - time) < abs($1.time - time) }?.text ?? ""
+            var closest: Row?
+            var closestDistance = Double.infinity
+            for index in [low - 1, low] where rows.indices.contains(index) {
+                let candidate = rows[index]
+                let distance = abs(candidate.time - time)
+                if distance <= 0.250_001, distance < closestDistance {
+                    closest = candidate
+                    closestDistance = distance
+                }
+            }
+            return closest?.text ?? ""
         }
         var ends = Array(repeating: 0.0, count: main.count)
         var next: Double?

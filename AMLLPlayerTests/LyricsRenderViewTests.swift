@@ -64,6 +64,10 @@ final class LyricsRenderViewTests: XCTestCase {
         row.setCanSeek(true)
         XCTAssertTrue(row.accessibilityActivate())
         XCTAssertEqual(seeks, 1)
+        config.translation = true
+        config.romanizationFirst = true
+        row.configure(line: line, layout: layout, scale: 2, configuration: config, blur: false, canSeek: true) {}
+        XCTAssertEqual(row.accessibilityLabel, "Main, Romanization, Translation")
     }
 
     func testLongSongReusesVisibleRowsAndBoundedLayoutsAcrossSeeks() {

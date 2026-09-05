@@ -44,6 +44,13 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var remainingTime = false
     var backgroundBlur: Double = 40
 
+    func auxiliaryText(for line: LyricLine) -> [String] {
+        let translationText = translation ? line.translation : ""
+        let romanizationText = romanization ? line.romanization : ""
+        return (romanizationFirst ? [romanizationText, translationText] : [translationText, romanizationText])
+            .filter { !$0.isEmpty }
+    }
+
     func validated() -> Self {
         var copy = self
         copy.fontSize = fontSize.isFinite ? min(52, max(24, fontSize)) : 32

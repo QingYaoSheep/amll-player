@@ -33,18 +33,7 @@ final class LyricTextLayout {
         let attributed = NSMutableAttributedString(string: line.text, attributes: [
             .font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking, .paragraphStyle: paragraph,
         ])
-        var auxiliary: [String] = []
-        if configuration.translation, !line.translation.isEmpty {
-            auxiliary.append(line.translation)
-        }
-        if configuration.romanization, !line.romanization.isEmpty {
-            if configuration.romanizationFirst {
-                auxiliary.insert(line.romanization, at: 0)
-            } else {
-                auxiliary.append(line.romanization)
-            }
-        }
-        for text in auxiliary {
+        for text in configuration.auxiliaryText(for: line) {
             attributed.append(NSAttributedString(string: "\n" + text, attributes: [
                 .font: font.withSize(font.pointSize * 0.56), .foregroundColor: UIColor.white.withAlphaComponent(0.8),
                 .paragraphStyle: paragraph,
@@ -133,13 +122,7 @@ final class LyricRowView: UIView {
 
     func configure(line: LyricLine, layout: LyricTextLayout, scale: CGFloat, configuration: LyricsRenderConfiguration, blur: Bool, canSeek: Bool, onSeek: @escaping () -> Void) {
         self.line = line; self.onSeek = onSeek
-        var context = [line.text]
-        if configuration.translation {
-            context.append(line.translation)
-        }
-        if configuration.romanization {
-            context.append(line.romanization)
-        }
+        let context = [line.text] + configuration.auxiliaryText(for: line)
         accessibilityLabel = context.filter { !$0.isEmpty }.joined(separator: ", ")
         accessibilityIdentifier = "lyricRow." + line.id
         setCanSeek(canSeek)

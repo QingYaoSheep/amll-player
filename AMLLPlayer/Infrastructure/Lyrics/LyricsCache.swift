@@ -55,6 +55,9 @@ final class SwiftDataLyricsCache: LyricsCacheProviding {
     }
 
     init(inMemory: Bool = false) throws {
+        if !inMemory, let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            try FileManager.default.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
+        }
         let schema = Schema([StoredLyrics.self, StoredLyricsSelection.self])
         container = try ModelContainer(for: schema, configurations: [ModelConfiguration("Lyrics-v1", schema: schema, isStoredInMemoryOnly: inMemory)])
         context.autosaveEnabled = false

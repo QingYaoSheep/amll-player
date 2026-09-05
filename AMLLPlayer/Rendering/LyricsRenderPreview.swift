@@ -12,6 +12,7 @@
         @State private var renderer: LyricsRenderView?
         @State private var lineTiming = false
         @State private var targetFPS = 60
+        @State private var exportURL: URL?
         @State private var visible = false
         @Environment(\.scenePhase) private var scenePhase
         var body: some View {
@@ -44,6 +45,12 @@
                     .pickerStyle(.segmented)
                     Button("render.stepForward", systemImage: "forward.frame") { step(by: 1) }.labelStyle(.iconOnly)
                 }
+                HStack {
+                    Button("render.exportMotion") { exportURL = exportMotionTrack() }
+                    if let exportURL {
+                        ShareLink(item: exportURL) { Label("render.shareMotion", systemImage: "square.and.arrow.up") }
+                    }
+                }
                 Slider(value: $configuration.fontSize, in: 24 ... 52).accessibilityLabel(Text("render.fontSize"))
                 Toggle("render.preview.line", isOn: $lineTiming)
                 Slider(value: $configuration.backgroundBlur, in: 0 ... 80).accessibilityLabel(Text("render.backgroundBlur"))
@@ -69,6 +76,21 @@
             position = min(1_800, max(0, currentPosition() + Double(frames) / Double(targetFPS)))
             anchor = ProcessInfo.processInfo.systemUptime
             playing = false
+        }
+
+        private func exportMotionTrack() -> URL? {
+            let samples = (0 ..< targetFPS * 5).map { frame in
+                ["frame": frame, "time": Double(frame) / Double(targetFPS)] as [String: Any]
+            }
+            guard JSONSerialization.isValidJSONObject(samples),
+                  let data = try? JSONSerialization.data(withJSONObject: samples, options: [.prettyPrinted]) else { return nil }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("amll-motion-track.json")
+            do {
+                try data.write(to: url, options: .atomic)
+                return url
+            } catch {
+                return nil
+            }
         }
 
         private func memoryMB() -> Double {

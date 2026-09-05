@@ -15,6 +15,8 @@
     "render.frameRate" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Replay frame rate"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"回放帧率"}}}},
     "render.stepBackward" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Previous frame"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"上一帧"}}}},
     "render.stepForward" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Next frame"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"下一帧"}}}},
+    "render.exportMotion" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Export motion track"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"导出运动轨迹"}}}},
+    "render.shareMotion" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Share motion track"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"分享运动轨迹"}}}},
     "render.profile" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Player layout"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"播放器布局"}}}},
     "render.profile.appleMusic26" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Apple Music (iOS 26)"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Apple Music（iOS 26）"}}}},
     "render.profile.custom" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Legacy custom layout"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"旧版自定义布局"}}}},

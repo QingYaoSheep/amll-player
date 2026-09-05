@@ -80,7 +80,16 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Corrected fixture line"].waitForExistence(timeout: 5))
         app.buttons["lyricsApply"].tap()
         XCTAssertTrue(app.staticTexts["Manual · locked"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Corrected fixture line"].exists)
+        let correctedLine = app.staticTexts["Corrected fixture line"]
+        let playerScroll = app.scrollViews["playerScroll"]
+        XCTAssertTrue(playerScroll.waitForExistence(timeout: 3))
+        for _ in 0 ..< 6 {
+            if correctedLine.exists {
+                break
+            }
+            playerScroll.swipeUp()
+        }
+        XCTAssertTrue(correctedLine.waitForExistence(timeout: 2))
     }
 
     private func catalogApp() -> XCUIApplication {

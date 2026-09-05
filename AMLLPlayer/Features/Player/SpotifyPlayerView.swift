@@ -116,6 +116,7 @@ struct SpotifyPlayerView: View {
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)
             }
+            .accessibilityIdentifier("playerScroll")
             .refreshable {
                 await model.refreshPlayback()
             }

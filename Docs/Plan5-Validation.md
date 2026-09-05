@@ -1,6 +1,6 @@
-# 计划 5：原生逐字歌词渲染引擎
+# 计划 5：Apple Music 布局与 AMLL 原生逐字歌词引擎
 
-日期：2026-09-05。接续基线 `ef16a8ba` 及此前中断时保留的未提交渲染文件。当前为实现与验证记录，CI 结果将在执行后补充；不把代码存在等同于真机验收通过。
+日期：2026-09-05。接续基线 `ef16a8ba` 及此前中断时保留的原生渲染文件。Apple Music 只作为页面空间布局参考，歌词和背景效果以旧工程锁定的 `@applemusic-like-lyrics/core@0.5.2` 为准。当前记录实现证据与尚未完成的真机签收，不把代码存在等同于 1:1 验收通过。
 
 ## 实现范围
 
@@ -8,11 +8,12 @@
 
 | 编号 | 实现 | 验证入口 |
 |---|---|---|
-| P5-01 | `Features/Lyrics/FullscreenLyricsPlayer.swift`：封面 aspect-fill、裁切、安全区覆盖、固定模糊、暗色遮罩；缺封面或 Reduce Transparency 使用纯色 | 全屏页及 Debug 合成封面预览；iPhone/iPad 真机画面对照待验收 |
-| P5-02 | `Rendering/LyricsTimeline.swift`、`LyricTextLayout.swift`、`LyricsRenderView.swift`：独立行/词时间、多声部重叠、前奏/间奏指示、渐变填充、词级上浮、行缩放/模糊、弹簧跟随、对唱/RTL | `LyricsTimelineTests`、`LyricsRenderViewTests`；固定时间截图附件 |
-| P5-03 | `LyricsRenderView.swift`：手动/VoiceOver 浏览暂停跟随，独立返回当前行，点击受设备权限限制的 seek；旋转/换歌复位，退出与后台停 display link | 暂停恢复、权限变化保留浏览、生命周期单元测试；全屏浏览/隐藏恢复/旋转 UI 测试 |
-| P5-04 | `LyricsRenderConfiguration.swift`、`Features/Lyrics/LyricsAppearanceView.swift`：翻译/音译开关及顺序、字号预设、字重、字距、布局/信息显隐、署名模式、版本化本地偏好与旧草稿迁移 | `LyricsRenderPreferencesTests`；TextKit 组合字符/长词换行/字体放大测试 |
-| P5-05 | `Features/Lyrics/MarqueeText.swift`、`Rendering/LyricsRenderPreview.swift`：可停止长标题、真实署名、逐字/逐行合成样本、时间/字号/模糊控制、FPS/帧处理时间/内存/行数/缓存数 | 设置 → Debug 歌词渲染预览；300 主行+背景声部的有界缓存测试 |
+| P5R-00 | `ReferenceCaptures/manifest.json`、`Scripts/verify-layout-references.cjs`：登记两张 iPhone 16 Pro 原图的状态、1206×2622 像素、@3x 和 SHA-256；原图放在 Git 忽略目录 | 本地脚本逐字节校验；精确 iOS build 和 iPad 原图待补 |
+| P5R-01 | `Rendering/AMLLMotionModel.swift`、`LyricsTimeline.swift`：AMLL 解析弹簧、按行间隔变化的纵向参数、字级强调、间奏三点及浏览/返回/seek/关闭状态 | `AMLLMotionModelTests`、`LyricsTimelineTests` 中固定数值和中断测试 |
+| P5R-02 | `Rendering/LyricTextLayout.swift`、`LyricsRenderView.swift`：TextKit 字形布局、真实词时间遮罩、0.5em 羽化、主/辅助/背景声部比例、近远景模糊、滚动与行缩放 | `LyricTextLayoutTests`、`LyricsRenderViewTests` 与固定时间截图附件 |
+| P5R-03 | `Features/Lyrics/AppleMusicLyricsPlayer.swift`、`Rendering/AppleMusicLayoutReference.swift`：显示歌词时的紧凑信息区、隐藏歌词时的大封面控制栈、顶部把手及 iPad 双栏 | `AppleMusicLayoutReferenceTests`、全屏 UI 测试；原图叠片待真机导出 |
+| P5R-04 | `Rendering/AMLLMeshBackground.swift/.metal`：移植封面颜色变换、模糊采样、旋转、镜像、抖动和暗角；前景单独合成 | Xcode 26/27 Metal 编译及 60/120Hz 真机性能待验收 |
+| P5R-05 | `LyricsRenderConfiguration.swift`、`LyricsAppearanceView.swift`：Apple Music 布局/自定义档位、v2 存储、旧设置备份迁移和 AMLL 默认值恢复 | `LyricsRenderPreferencesTests` |
 
 接线：`RootView` 的迷你播放器打开原生全屏页；`AppModel` 继续提供 Spotify 播放快照与 `PlayerClock`，`LyricsCoordinator` 提供计划 4 的歌词文档和逐曲延迟。搜索/预览/人工锁定沿用原有协调器。没有本地音频或运行旧 JS。
 
@@ -31,6 +32,7 @@
 
 - 本地：Swift Tree-sitter 语法辅助检查、String Catalog JSON/中英文本键、`git diff --check`；SwiftFormat 只格式化计划 5 新文件。语法辅助工具不替代 Swift 编译器，条件编译节点有已知解析限制。
 - CI：沿用 Xcode 26 单元/UI 测试、iPad build/Archive，以及 Xcode 27 SDK build/Archive/未签名 IPA。待本次源码运行完成后填入结果。
+- 第一轮源码 `fcf12023` 已通过 [SwiftUI CI #24](https://github.com/QingYaoSheep/amll-player/actions/runs/33966756501)：110 个单元测试、5 个 UI 测试全部零失败，Swift lint、iPad build、Xcode 26 Archive 和 Xcode 27 build/Archive/未签名 IPA/包校验全部通过。该轮测试日志已核实；后续方向/截图导出/VoiceOver 顺序补充使用最终源码单独验证。
 - `LyricsRenderViewTests.testFixedTimelineImagesForVisualReview` 将 390×700 的 2.5/6.5/18/26 秒画面作为 `.xcresult` 的永久附件；UI 测试保留横屏全屏截图。它们是可复现的原生基线，尚未与旧版截图逐像素验收。
 - CI 另用 `xcresulttool export attachments` 输出 `AMLLPlayer-visual-review` artifact，供 Windows 直接检查 PNG。
 - ProMotion 配置参考 [Apple 的刷新率说明](https://developer.apple.com/documentation/quartzcore/optimizing-iphone-and-ipad-apps-to-support-promotion-displays)：工程包含 `CADisableMinimumFrameDurationOnPhone`，渲染按屏幕能力请求最高 120Hz。请求帧率不是实测帧率承诺。
@@ -45,4 +47,4 @@
 - [ ] 真实 Spotify seek、快速换歌、暂停/恢复、前后台、受限设备及失败回滚；正负逐曲延迟叠加提前滚动。
 - [ ] 签名 IPA 安装冷启动；偏好重启恢复；无封面及换封面无旧图残留。
 
-动态背景与 GPU 压力自动降低背景/模糊质量不在本次实现中。计划 7 的高级视觉尚未执行。
+动态背景已经按 AMLL 着色流程接入 Metal；Spotify 遥控模式没有音频采样，因此背景音量参数保持零，不伪造 FFT 输入。计划 7 的 HDR 与动态封面仍未执行。

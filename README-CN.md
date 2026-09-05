@@ -8,6 +8,8 @@ AMLL Player 正在重构为仅面向 iPhone 与 iPad 的 SwiftUI 原生应用。
 
 ## 本地配置
 
+计划 4 已接入 Apple/QQ/网易多源歌词、缓存与人工纠错。计划 5 仅用用户提供的 Apple Music 原图确定全屏页面构图，逐字动效、TextKit/CALayer 歌词绘制和 Metal 专辑背景直接移植 AMLL。实现、CI 结果与待真机验收项目分别见 [计划 4 验证记录](Docs/Plan4-Validation.md) 和 [计划 5 验证记录](Docs/Plan5-Validation.md)。Debug 构建可在设置中打开离线歌词渲染预览。
+
 1. 在 Spotify Developer Dashboard 创建 iOS 应用。
 2. Bundle ID 设置为 `net.stevexmh.amllplayer`。
 3. 注册回调地址 `amllplayer://spotify-callback`。

@@ -11,12 +11,15 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         preferences.configuration.fontSize = 40
         preferences.configuration.translation = false
         preferences.configuration.remainingTime = true
+        preferences.activate(.custom)
         let restored = LyricsRenderPreferences(defaults: defaults)
         XCTAssertEqual(restored.configuration.fontSize, 40)
         XCTAssertFalse(restored.configuration.translation)
         XCTAssertTrue(restored.configuration.remainingTime)
-        restored.configuration = .init()
+        XCTAssertEqual(restored.profile, .custom)
+        restored.restoreAMLLDefaults()
         XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, .init())
+        XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).profile, .appleMusic26)
     }
 
     func testLegacyPartialSettingsGainNewDefaultsAndClampRanges() throws {
@@ -24,13 +27,16 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         defaults.set(Data(#"{"fontSize":999,"translation":false,"backgroundBlur":-4,"credits":"preferred"}"#.utf8), forKey: "lyrics.render.v1")
-        let value = LyricsRenderPreferences(defaults: defaults).configuration
-        XCTAssertEqual(value.fontSize, 52)
-        XCTAssertEqual(value.backgroundBlur, 0)
-        XCTAssertFalse(value.translation)
-        XCTAssertTrue(value.romanization)
-        XCTAssertFalse(value.remainingTime)
-        XCTAssertEqual(value.credits, .preferLyricAuthor)
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        XCTAssertEqual(preferences.profile, .appleMusic26)
+        XCTAssertEqual(preferences.configuration, .init())
+        let migrated = try XCTUnwrap(preferences.migratedCustomConfiguration)
+        XCTAssertEqual(migrated.fontSize, 52)
+        XCTAssertEqual(migrated.backgroundBlur, 0)
+        XCTAssertFalse(migrated.translation)
+        XCTAssertTrue(migrated.romanization)
+        XCTAssertFalse(migrated.remainingTime)
+        XCTAssertEqual(migrated.credits, .preferLyricAuthor)
     }
 
     func testCorruptAndFutureVersionSettingsFallBackWithoutDeletingData() throws {

@@ -17,6 +17,21 @@ final class LyricsTimelineTests: XCTestCase {
         XCTAssertNil(timeline.state(position: 23, offset: 0, advance: 0).gapProgress)
     }
 
+    func testInterludeUsesLatestOverlappingForegroundEndAndLeadsNextLineBy250Milliseconds() throws {
+        let timeline = LyricsTimeline(lines: [
+            LyricLine(id: "long", text: "Long", start: 1, end: 8),
+            LyricLine(id: "short", text: "Short", start: 2, end: 3),
+            LyricLine(id: "next", text: "Next", start: 13, end: 15, isDuet: true),
+        ])
+        XCTAssertNil(timeline.state(position: 7.98, offset: 0, advance: 0).interlude)
+        let interlude = try XCTUnwrap(timeline.state(position: 8, offset: 0, advance: 0).interlude)
+        XCTAssertEqual(interlude.start, 8)
+        XCTAssertEqual(interlude.end, 12.75)
+        XCTAssertTrue(interlude.isNextDuet)
+        XCTAssertEqual(interlude.nextLineIndex, 2)
+        XCTAssertNil(timeline.state(position: 12.74, offset: 0, advance: 0).interlude)
+    }
+
     func testOverlapUsesIndependentHalfOpenIntervalsAndMainVoiceFocus() {
         let timeline = LyricsTimeline(lines: lines)
         XCTAssertEqual(timeline.state(position: 8, offset: 0, advance: 0).active, [0, 1, 2])

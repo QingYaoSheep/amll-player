@@ -1,6 +1,11 @@
 import Foundation
 import Observation
 
+enum LyricsPresentationProfile: String, Codable, CaseIterable, Sendable {
+    case appleMusic26
+    case custom
+}
+
 struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     enum CoverLayout: String, Codable, CaseIterable { case automatic, normal, immersive }
     enum Credits: String, Codable, CaseIterable {
@@ -29,7 +34,8 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var tracking: Double = 0
     var blurInactive = true
     var emphasizeWords = true
-    var gradientWidth: Double = 12
+    /// AMLL default: half of the main lyric font size (16 pt at the default 32 pt font).
+    var gradientWidth: Double = 16
     var anchor: Double = 0.35
     var advance: Double = 0.3
     var showLyrics = true
@@ -55,7 +61,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         var copy = self
         copy.fontSize = fontSize.isFinite ? min(52, max(24, fontSize)) : 32
         copy.tracking = tracking.isFinite ? min(3, max(-1, tracking)) : 0
-        copy.gradientWidth = gradientWidth.isFinite ? min(32, max(0, gradientWidth)) : 12
+        copy.gradientWidth = gradientWidth.isFinite ? min(32, max(0, gradientWidth)) : 16
         copy.anchor = anchor.isFinite ? min(0.7, max(0.2, anchor)) : 0.35
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         copy.backgroundBlur = backgroundBlur.isFinite ? min(80, max(0, backgroundBlur)) : 40
@@ -65,25 +71,37 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
 
 @MainActor @Observable
 final class LyricsRenderPreferences {
-    var configuration: LyricsRenderConfiguration {
-        didSet {
-            if let data = try? JSONEncoder().encode(Stored(version: 1, configuration: configuration.validated())) {
-                defaults.set(data, forKey: Self.key)
-            }
-        }
+    var profile: LyricsPresentationProfile {
+        didSet { persist() }
     }
+    var configuration: LyricsRenderConfiguration {
+        didSet { persist() }
+    }
+    private(set) var migratedCustomConfiguration: LyricsRenderConfiguration?
 
     @ObservationIgnored private let defaults: UserDefaults
-    private static let key = "lyrics.render.v1"
+    private static let key = "lyrics.render.v2"
+    private static let legacyKey = "lyrics.render.v1"
     private struct Stored: Codable {
         var version: Int
+        var profile: LyricsPresentationProfile
         var configuration: LyricsRenderConfiguration
+        var migratedCustomConfiguration: LyricsRenderConfiguration?
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        profile = .appleMusic26
         configuration = .init()
-        guard let data = defaults.data(forKey: Self.key),
+        if let data = defaults.data(forKey: Self.key),
+           let stored = try? JSONDecoder().decode(Stored.self, from: data), stored.version == 2
+        {
+            profile = stored.profile
+            configuration = stored.configuration.validated()
+            migratedCustomConfiguration = stored.migratedCustomConfiguration?.validated()
+            return
+        }
+        guard let data = defaults.data(forKey: Self.legacyKey),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         // Fill newly added fields from defaults; retain settings written by the interrupted Plan 5 build.
         let values: [String: Any]
@@ -102,8 +120,32 @@ final class LyricsRenderPreferences {
         if let mergedData = try? JSONSerialization.data(withJSONObject: merged),
            let decoded = try? JSONDecoder().decode(LyricsRenderConfiguration.self, from: mergedData)
         {
-            configuration = decoded.validated()
+            // The replacement plan intentionally activates the new Apple Music layout for every upgrade.
+            // Preserve the old values as an opt-in custom-layout backup without applying them automatically.
+            migratedCustomConfiguration = decoded.validated()
+            profile = .appleMusic26
+            configuration = .init()
+            persist()
         }
+    }
+
+    func activate(_ newProfile: LyricsPresentationProfile) {
+        if newProfile == .custom, let migratedCustomConfiguration {
+            configuration = migratedCustomConfiguration
+        }
+        profile = newProfile
+    }
+
+    func restoreAMLLDefaults() {
+        profile = .appleMusic26
+        configuration = .init()
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(Stored(version: 2, profile: profile,
+                                                          configuration: configuration.validated(),
+                                                          migratedCustomConfiguration: migratedCustomConfiguration)) else { return }
+        defaults.set(data, forKey: Self.key)
     }
 }
 

@@ -36,7 +36,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     var seek: (Double) -> Void = { _ in }
     var browsing: (Bool) -> Void = { _ in }
     private let scroll = LyricsScrollView()
-    private let dots = UILabel()
+    private let dots = AMLLInterludeDotsView()
     private var timeline = LyricsTimeline(lines: [])
     private var document: LyricsDocument?
     private var configuration = LyricsRenderConfiguration()
@@ -44,6 +44,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     private var playing = false, active = true, canSeek = false, reduceMotion = false
     private var resumeToken = 0
     private var follow = LyricsFollowState()
+    private var motion = LyricsMotionModel()
     private var displayLink: CADisplayLink?
     private var proxy: DisplayLinkProxy?
     private var previousTick = 0.0
@@ -89,11 +90,9 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         scroll.accessibilityLabel = NSLocalizedString("render.lyrics", comment: "")
         scroll.beginAccessibilityBrowsing = { [weak self] in self?.beginBrowsing() }
         addSubview(scroll)
-        dots.text = "●  ●  ●"; dots.font = .systemFont(ofSize: 18, weight: .bold)
-        dots.textColor = .white; dots.textAlignment = .center
         dots.isAccessibilityElement = true
         dots.accessibilityLabel = NSLocalizedString("render.interlude", comment: "")
-        dots.isHidden = true; addSubview(dots)
+        dots.isHidden = true; scroll.addSubview(dots)
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: LyricsRenderView, _: UITraitCollection) in
             view.needsRebuild = true; view.setNeedsLayout()
         }
@@ -108,7 +107,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     {
         if self.document != document {
             self.document = document; timeline = LyricsTimeline(lines: document.lines)
-            follow.reset(); previousTime = nil; lastFocus = nil; lastActive = []; needsRebuild = true
+            follow.reset(); motion = LyricsMotionModel(); previousTime = nil; lastFocus = nil; lastActive = []; needsRebuild = true
             scroll.setContentOffset(scroll.contentOffset, animated: false)
             DispatchQueue.main.async { [weak self] in self?.browsing(false) }
         }
@@ -132,7 +131,6 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         scroll.frame = bounds
-        dots.frame = CGRect(x: 0, y: 6, width: bounds.width, height: 28)
         guard bounds.width > 32, bounds.height > 0 else { return }
         if bounds.size != lastSize || needsRebuild {
             let resized = bounds.size != lastSize
@@ -166,6 +164,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     func resumeFollowing() {
         scroll.setContentOffset(scroll.contentOffset, animated: false)
         follow.resume(); follow.position = scroll.contentOffset.y
+        motion.handle(.resumeFollowing, at: CACurrentMediaTime())
         DispatchQueue.main.async { [weak self] in self?.browsing(false) }
         syncDisplayLink()
     }
@@ -206,23 +205,52 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         let state = timeline.state(position: playbackTime, offset: offset, advance: configuration.advance)
         let jumped = previousTime.map { abs(state.time - $0) > 1 } ?? true
         previousTime = state.time
+        if state.focus != lastFocus {
+            let interval: TimeInterval? = state.focus.flatMap { focus in
+                guard focus > 0 else { return nil }
+                var previous = focus - 1
+                while previous >= 0, timeline.lines[previous].isBackground { previous -= 1 }
+                guard previous >= 0 else { return nil }
+                return timeline.lines[focus].start - timeline.lines[previous].start
+            }
+            follow.configure(lineInterval: interval, seeking: jumped, interlude: state.interlude != nil)
+        }
+        if motion.resumeIfBrowseTimedOut(at: CACurrentMediaTime()) {
+            follow.resume(); follow.position = scroll.contentOffset.y
+            browsing(false)
+        }
         var settled = true
         if let focus = state.focus, frames.indices.contains(focus), follow.following, !scroll.isDragging, !scroll.isDecelerating {
             let target = min(max(0, scroll.contentSize.height - bounds.height), max(0, frames[focus].minY - bounds.height * configuration.anchor))
             let value = follow.step(target: target, dt: dt, immediate: reduceMotion || jumped)
             scroll.contentOffset.y = value
             settled = follow.isSettled(at: target)
+            if settled, (motion.mode == .returning || motion.mode == .seeking) {
+                motion.settledFollowing()
+            }
         }
         recycleRows()
         let policy = RenderQualityPolicy.resolve(maximumFPS: window?.screen.maximumFramesPerSecond ?? 60, reduceMotion: reduceMotion)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for (index, row) in rows {
-            row.update(time: state.time, active: state.active.contains(index), configuration: configuration, policy: policy, reduceMotion: reduceMotion)
+            let active = state.active.contains(index)
+            let blur = lineBlur(index: index, state: state, active: active)
+            row.update(time: state.time, active: active, configuration: configuration, policy: policy,
+                       reduceMotion: reduceMotion, delta: dt, blurLevel: blur)
         }
         CATransaction.commit()
-        dots.isHidden = state.gapProgress == nil || !follow.following
-        if let gap = state.gapProgress {
-            dots.alpha = 0.4 + gap * 0.6
+        dots.isHidden = true
+        if follow.following, let interlude = state.interlude,
+           let presentation = AMLLInterludeMotion.presentation(time: state.time, start: interlude.start, end: interlude.end, playing: playing),
+           frames.indices.contains(interlude.nextLineIndex)
+        {
+            let size = max(10, min(24, configuration.fontSize * 0.32))
+            let width = size * 3 + 8 * 2
+            let next = frames[interlude.nextLineIndex]
+            let x = interlude.isNextDuet ? bounds.width - 20 - width : 20
+            dots.frame = CGRect(x: x, y: next.minY - size - configuration.fontSize * 0.8, width: width, height: size)
+            dots.apply(presentation)
+            dots.isHidden = false
         }
         if state.focus != lastFocus || state.active != lastActive {
             lastFocus = state.focus
@@ -232,7 +260,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
                 .compactMap(\.self).joined(separator: ", ")
             // Do not post announcements on every word or steal VoiceOver focus while the user browses.
         }
-        if !playing, settled {
+        if !playing, settled, motion.mode != .browsing {
             displayLink?.isPaused = true; previousTick = 0
         }
     }
@@ -282,6 +310,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             { [weak self] in
                 guard let self, self.canSeek else { return }
                 self.seek(LyricsTimeline.seekTarget(line: line, offset: self.offset, duration: self.duration))
+                self.motion.handle(.seek(to: line.start), at: CACurrentMediaTime())
                 self.resumeFollowing()
             }
             row.onFocus = { [weak self] in self?.beginBrowsing() }
@@ -296,7 +325,8 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     }
 
     private func beginBrowsing() {
-        follow.browse(); browsing(true); displayLink?.isPaused = !playing
+        follow.browse(); motion.handle(.beginBrowsing, at: CACurrentMediaTime())
+        browsing(true); displayLink?.isPaused = false
     }
 
     func scrollViewDidScroll(_: UIScrollView) {
@@ -310,6 +340,47 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
                            configuration: configuration, policy: policy, reduceMotion: reduceMotion)
             }
         }
+    }
+
+    private func lineBlur(index: Int, state: LyricsRenderState, active: Bool) -> Double {
+        guard configuration.blurInactive, !reduceMotion, follow.following, !active else { return 0 }
+        let latest = state.active.max() ?? state.focus ?? index
+        let focus = state.focus ?? latest
+        let distance = index < focus ? abs(focus - index) + 1 : abs(index - max(focus, latest))
+        let compactScale = bounds.width <= 1_024 ? 0.8 : 1
+        return min(5, Double(1 + distance) * compactScale)
+    }
+}
+
+private final class AMLLInterludeDotsView: UIView {
+    private let dots = (0 ..< 3).map { _ in CALayer() }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        for dot in dots {
+            dot.backgroundColor = UIColor.white.cgColor
+            layer.addSublayer(dot)
+        }
+    }
+
+    required init?(coder _: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let diameter = min(bounds.height, (bounds.width - 16) / 3)
+        for (index, dot) in dots.enumerated() {
+            dot.frame = CGRect(x: CGFloat(index) * (diameter + 8), y: (bounds.height - diameter) / 2, width: diameter, height: diameter)
+            dot.cornerRadius = diameter / 2
+        }
+    }
+
+    func apply(_ presentation: AMLLInterludePresentation) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        transform = CGAffineTransform(scaleX: presentation.scale, y: presentation.scale)
+        for (index, dot) in dots.enumerated() {
+            dot.opacity = Float(presentation.dotOpacities[index])
+        }
+        CATransaction.commit()
     }
 }
 

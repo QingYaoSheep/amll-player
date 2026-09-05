@@ -5,17 +5,36 @@ struct LyricsRenderState: Equatable {
     var active: [Int]
     var focus: Int?
     var gapProgress: Double?
+    var interlude: AMLLInterludeRange?
+}
+
+struct AMLLInterludeRange: Equatable, Sendable {
+    var start: TimeInterval
+    var end: TimeInterval
+    var isNextDuet: Bool
+    var nextLineIndex: Int
 }
 
 /// Prefix maximum end times allow overlapping vocals without scanning the whole song each frame.
 struct LyricsTimeline {
     let lines: [LyricLine]
     private let prefixEnd: [Double]
+    private let interludes: [AMLLInterludeRange]
     init(lines: [LyricLine]) {
         self.lines = lines.filter { $0.start.isFinite && $0.end.isFinite && $0.end >= $0.start }
             .sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
         var maximum = 0.0
         prefixEnd = self.lines.map { maximum = max(maximum, $0.end); return maximum }
+        var gaps: [AMLLInterludeRange] = []
+        var previousEnd = 0.0
+        for (index, line) in self.lines.enumerated() where !line.isBackground {
+            let gapEnd = max(previousEnd, line.start - 0.25)
+            if gapEnd - previousEnd >= 4 {
+                gaps.append(.init(start: previousEnd, end: gapEnd, isNextDuet: line.isDuet, nextLineIndex: index))
+            }
+            previousEnd = max(previousEnd, line.end)
+        }
+        interludes = gaps
     }
 
     func state(position: Double, offset: Double, advance: Double) -> LyricsRenderState {
@@ -43,7 +62,9 @@ struct LyricsTimeline {
         let nextStart = upper < lines.count ? lines[upper].start : previousEnd
         let gap = active.isEmpty && nextStart - previousEnd >= 3 && time >= previousEnd
             ? min(1, max(0, (time - previousEnd) / (nextStart - previousEnd))) : nil
-        return .init(time: time, active: active, focus: focus, gapProgress: gap)
+        let interludeTime = time + 0.02
+        let interlude = interludes.first { $0.start < interludeTime && interludeTime < $0.end }
+        return .init(time: time, active: active, focus: focus, gapProgress: gap, interlude: interlude)
     }
 
     func accessibility(_ state: LyricsRenderState, canSeek: Bool) -> AccessibilityLyricsSnapshot {
@@ -83,6 +104,7 @@ struct LyricsFollowState {
     private(set) var following = true
     var position = 0.0
     var velocity = 0.0
+    var springParameters = AMLLSpringParameters.verticalDefault
     mutating func browse() {
         following = false; velocity = 0
     }
@@ -95,21 +117,24 @@ struct LyricsFollowState {
         following = true; position = 0; velocity = 0
     }
 
+    mutating func configure(lineInterval: TimeInterval?, seeking: Bool, interlude: Bool) {
+        springParameters = AMLLMotionMetrics.verticalSpring(lineInterval: lineInterval, seeking: seeking, interlude: interlude)
+    }
+
     func isSettled(at target: Double) -> Bool {
         abs(position - target) < 0.25 && abs(velocity) < 0.1
     }
 
-    /// Closed-form critically damped spring: stable after a dropped frame and retains velocity on retarget.
+    /// AMLL's analytic spring, including velocity-preserving retargets and its 50 ms dropped-frame clamp.
     mutating func step(target: Double, dt: Double, immediate: Bool) -> Double {
         guard following else { return position }
         if immediate {
             position = target; velocity = 0; return position
         }
-        let elapsed = min(0.05, max(0, dt)), omega = 16.0
-        let delta = position - target, coefficient = velocity + omega * delta
-        let decay = exp(-omega * elapsed)
-        position = target + (delta + coefficient * elapsed) * decay
-        velocity = (velocity - omega * coefficient * elapsed) * decay
+        var spring = AMLLSpring(value: position, velocity: velocity)
+        spring.parameters = springParameters
+        position = spring.step(target: target, delta: dt)
+        velocity = spring.velocity
         return position
     }
 }

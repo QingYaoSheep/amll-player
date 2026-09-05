@@ -23,5 +23,8 @@ Configuration/Secrets.xcconfig
 *.mobileprovision
 *.provisionprofile
 
+# User-supplied Apple Music layout captures remain local. The manifest and measured metrics are tracked.
+ReferenceCaptures/raw/
+
 # macOS
 .DS_Store

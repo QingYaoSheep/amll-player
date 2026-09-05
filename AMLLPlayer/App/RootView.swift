@@ -25,7 +25,11 @@ struct RootView: View {
             }
         }
         .fullScreenCover(isPresented: $showingPlayer) {
-            FullscreenLyricsPlayer(model: model)
+            if model.renderPreferences.profile == .appleMusic26 {
+                AppleMusicLyricsPlayer(model: model)
+            } else {
+                FullscreenLyricsPlayer(model: model)
+            }
         }
         .onChange(of: model.catalog.identity) { showingPlayer = false }
         .task {

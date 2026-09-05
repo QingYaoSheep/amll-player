@@ -245,7 +245,7 @@ struct FullscreenLyricsPlayer: View {
     }
 }
 
-private struct LyricsProgressControl: View {
+struct LyricsProgressControl: View {
     @Bindable var model: AppModel
     let snapshot: PlaybackSnapshot
     @State private var draft = 0.0
@@ -285,7 +285,7 @@ private struct LyricsProgressControl: View {
     }
 }
 
-private struct LyricsVolumeControl: View {
+struct LyricsVolumeControl: View {
     @Bindable var model: AppModel
     let device: PlaybackDevice
     let volume: Int

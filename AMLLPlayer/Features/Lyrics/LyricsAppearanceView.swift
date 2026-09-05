@@ -4,6 +4,16 @@ struct LyricsAppearanceView: View {
     @Bindable var preferences: LyricsRenderPreferences
     var body: some View {
         Form {
+            Section("render.profile") {
+                Picker("render.profile", selection: Binding(
+                    get: { preferences.profile },
+                    set: { preferences.activate($0) }
+                )) {
+                    Text("render.profile.appleMusic26").tag(LyricsPresentationProfile.appleMusic26)
+                    Text("render.profile.custom").tag(LyricsPresentationProfile.custom)
+                }
+                Text("render.profile.help").font(.footnote).foregroundStyle(.secondary)
+            }
             Section("render.typography") {
                 Text("render.sample").font(.system(size: preferences.configuration.fontSize, weight: preferences.configuration.bold ? .bold : .medium))
                     .tracking(preferences.configuration.tracking).frame(minHeight: 70)
@@ -53,7 +63,7 @@ struct LyricsAppearanceView: View {
                 Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
                 Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
             }
-            Button("render.reset") { preferences.configuration = .init() }
+            Button("render.reset") { preferences.restoreAMLLDefaults() }
         }
         .navigationTitle("render.settings")
         .navigationBarTitleDisplayMode(.inline)

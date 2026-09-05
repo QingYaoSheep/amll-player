@@ -11,6 +11,11 @@ final class LyricTextLayout {
         let lower: Double
         let upper: Double
         let rtl: Bool
+        let characterIndex: Int
+        let characterCount: Int
+        let wordText: String
+        let isLastWord: Bool
+        let fontSize: CGFloat
     }
 
     let size: CGSize
@@ -25,18 +30,24 @@ final class LyricTextLayout {
         paragraph.alignment = line.isDuet || line.isRTL ? .right : .left
         paragraph.baseWritingDirection = line.isRTL ? .rightToLeft : .natural
         paragraph.lineBreakMode = .byWordWrapping
-        paragraph.lineSpacing = 3
-        let baseSize = configuration.fontSize * (line.isBackground ? 0.78 : 1)
+        paragraph.lineSpacing = 0
+        let baseSize = configuration.fontSize * (line.isBackground ? AMLLMotionMetrics.backgroundLineScale : 1)
         let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
             for: .systemFont(ofSize: baseSize, weight: configuration.bold ? .bold : .medium), compatibleWith: traits
         )
+        paragraph.minimumLineHeight = font.pointSize * 1.2
+        paragraph.maximumLineHeight = font.pointSize * 1.2
         let attributed = NSMutableAttributedString(string: line.text, attributes: [
             .font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking, .paragraphStyle: paragraph,
         ])
         for text in configuration.auxiliaryText(for: line) {
+            guard let auxiliaryParagraph = paragraph.mutableCopy() as? NSMutableParagraphStyle else { continue }
+            auxiliaryParagraph.minimumLineHeight = font.pointSize * AMLLMotionMetrics.auxiliaryLineScale * 1.5
+            auxiliaryParagraph.maximumLineHeight = font.pointSize * AMLLMotionMetrics.auxiliaryLineScale * 1.5
             attributed.append(NSAttributedString(string: "\n" + text, attributes: [
-                .font: font.withSize(font.pointSize * 0.56), .foregroundColor: UIColor.white.withAlphaComponent(0.8),
-                .paragraphStyle: paragraph,
+                .font: font.withSize(font.pointSize * AMLLMotionMetrics.auxiliaryLineScale),
+                .foregroundColor: UIColor.white.withAlphaComponent(AMLLMotionMetrics.auxiliaryLineOpacity),
+                .paragraphStyle: auxiliaryParagraph,
             ]))
         }
         storage = NSTextStorage(attributedString: attributed)
@@ -51,7 +62,7 @@ final class LyricTextLayout {
         let text = line.text as NSString
         var cursor = 0
         let words = line.precision == .word ? line.words : []
-        for word in words {
+        for (wordIndex, word) in words.enumerated() {
             guard !word.text.isEmpty, cursor < text.length else { continue }
             let range = text.range(of: word.text, range: NSRange(location: cursor, length: text.length - cursor))
             guard range.location != NSNotFound else { continue }
@@ -64,8 +75,9 @@ final class LyricTextLayout {
             }
             let wordRTL = bidiLevel % 2 == 1
             var rectangles: [CGRect] = []
-            manager.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
-                if rect.width > 0 {
+            for glyphIndex in glyphs.location ..< NSMaxRange(glyphs) {
+                let rect = manager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: container)
+                if rect.width > 0, rect.height > 0 {
                     rectangles.append(rect)
                 }
             }
@@ -73,23 +85,28 @@ final class LyricTextLayout {
             rectangles.sort { abs($0.minY - $1.minY) < 1 ? (wordRTL ? $0.minX > $1.minX : $0.minX < $1.minX) : $0.minY < $1.minY }
             let total = rectangles.reduce(CGFloat.zero) { $0 + $1.width }
             var consumed: CGFloat = 0
-            for rect in rectangles where total > 0 {
+            for (characterIndex, rect) in rectangles.enumerated() where total > 0 {
                 result.append(Fragment(rect: rect, start: word.start, end: word.end,
-                                       lower: consumed / total, upper: (consumed + rect.width) / total, rtl: wordRTL))
+                                       lower: consumed / total, upper: (consumed + rect.width) / total, rtl: wordRTL,
+                                       characterIndex: characterIndex, characterCount: rectangles.count, wordText: word.text,
+                                       isLastWord: wordIndex == words.count - 1, fontSize: font.pointSize))
                 consumed += rect.width
             }
         }
         fragments = result
     }
 
-    func image(scale: CGFloat, blurred: Bool = false) -> UIImage {
+    func image(scale: CGFloat, blurRadius: CGFloat = 0) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale; format.opaque = false
         let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
             manager.drawGlyphs(forGlyphRange: manager.glyphRange(for: container), at: .zero)
         }
-        guard blurred, let input = CIImage(image: image),
-              let output = Self.context.createCGImage(input.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 2 * scale]), from: input.extent)
+        guard blurRadius > 0, let input = CIImage(image: image),
+              let output = Self.context.createCGImage(
+                  input.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale]),
+                  from: input.extent
+              )
         else { return image }
         return UIImage(cgImage: output, scale: scale, orientation: .up)
     }
@@ -101,13 +118,15 @@ final class LyricRowView: UIView {
     private let highlight = CALayer()
     private var pieces: [(CALayer, CAGradientLayer, LyricTextLayout.Fragment)] = []
     private var sharp: CGImage?
-    private var soft: CGImage?
+    private var softNear: CGImage?
+    private var softFar: CGImage?
     var line: LyricLine?
     var onSeek: (() -> Void)?
     var onFocus: (() -> Void)?
     var onResume: (() -> Void)?
     private var wasActive: Bool?
     private var canSeek = false
+    private var scaleSpring = AMLLSpring(value: 100)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -129,8 +148,9 @@ final class LyricRowView: UIView {
         accessibilityCustomActions = [UIAccessibilityCustomAction(name: NSLocalizedString("render.returnCurrent", comment: ""), target: self, selector: #selector(resume))]
         pieces.forEach { $0.0.removeFromSuperlayer() }; pieces.removeAll()
         sharp = layout.image(scale: scale).cgImage
-        soft = blur ? layout.image(scale: scale, blurred: true).cgImage : sharp
-        base.frame = CGRect(origin: .zero, size: layout.size); base.contents = soft
+        softNear = blur ? layout.image(scale: scale, blurRadius: 2).cgImage : sharp
+        softFar = blur ? layout.image(scale: scale, blurRadius: 5).cgImage : softNear
+        base.frame = CGRect(origin: .zero, size: layout.size); base.contents = softNear
         highlight.frame = base.frame; highlight.contents = sharp; highlight.opacity = 0
         for fragment in layout.fragments {
             let piece = CALayer(), mask = CAGradientLayer()
@@ -146,6 +166,7 @@ final class LyricRowView: UIView {
             pieces.append((piece, mask, fragment))
         }
         wasActive = nil
+        scaleSpring.set(value: 100)
         layer.removeAllAnimations(); transform = .identity
     }
 
@@ -158,35 +179,52 @@ final class LyricRowView: UIView {
         accessibilityHint = value ? NSLocalizedString("render.seekHint", comment: "") : nil
     }
 
-    func update(time: Double, active: Bool, configuration: LyricsRenderConfiguration, policy: RenderQualityPolicy, reduceMotion: Bool) {
-        guard line != nil else { return }
+    func update(time: Double, active: Bool, configuration: LyricsRenderConfiguration, policy: RenderQualityPolicy,
+                reduceMotion: Bool, delta: TimeInterval = 1.0 / 60.0, blurLevel: Double = 0)
+    {
+        guard let line else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        base.contents = active || !policy.blur || !configuration.blurInactive ? sharp : soft
-        base.opacity = active ? 0.45 : 0.28
+        if active || !policy.blur || !configuration.blurInactive {
+            base.contents = sharp
+        } else {
+            base.contents = blurLevel >= 3.5 ? softFar : softNear
+        }
+        let lineOpacity = line.isBackground ? AMLLMotionMetrics.backgroundLineOpacity : 1
+        base.opacity = Float((active ? 0.4 : 0.2) * lineOpacity)
         // LRC is a genuine line-level highlight; never manufacture word progress.
-        highlight.opacity = pieces.isEmpty && active ? 1 : 0
+        highlight.opacity = pieces.isEmpty && active ? Float(lineOpacity) : 0
         for (piece, mask, fragment) in pieces {
             let global = LyricsTimeline.progress(time: time, start: fragment.start, end: fragment.end)
             let progress = min(1, max(0, (global - fragment.lower) / max(0.00001, fragment.upper - fragment.lower)))
-            let feather = min(0.4, configuration.gradientWidth / max(1, fragment.rect.width))
+            let fadeWidth = configuration.gradientWidth > 0 ? configuration.gradientWidth : fragment.fontSize * AMLLMotionMetrics.wordFadeWidthInEms
+            let feather = min(0.5, fadeWidth / max(1, fragment.rect.width))
             mask.locations = [0, NSNumber(value: max(0, progress - feather)), NSNumber(value: progress), 1]
             // A completed word is entirely filled, including its final glyph edge.
             piece.mask = progress >= 1 ? nil : mask
-            piece.opacity = active && progress > 0 ? 1 : 0
-            let lift = configuration.emphasizeWords && policy.emphasis && global > 0 && global < 1 ? sin(global * .pi) * 2 : 0
-            piece.transform = CATransform3DMakeTranslation(0, -lift, 0)
+            piece.opacity = active && progress > 0 ? Float(lineOpacity) : 0
+            let motion = AMLLWordMotion.presentation(
+                time: time, wordStart: fragment.start, wordEnd: fragment.end,
+                characterIndex: fragment.characterIndex, characterCount: fragment.characterCount,
+                text: fragment.wordText, isLastWord: fragment.isLastWord, isBackground: line.isBackground,
+                enabled: configuration.emphasizeWords && policy.emphasis && active
+            )
+            let em = Double(fragment.fontSize)
+            var transform = CATransform3DMakeTranslation(motion.offsetX * em, motion.offsetY * em, 0)
+            transform = CATransform3DScale(transform, motion.scale, motion.scale, 1)
+            piece.transform = transform
+            piece.shadowColor = UIColor.white.cgColor
+            piece.shadowRadius = motion.glowRadius * em
+            piece.shadowOpacity = Float(motion.glowOpacity)
+            piece.shadowOffset = .zero
         }
         CATransaction.commit()
         if active != wasActive {
-            wasActive = active
-            setCanSeek(canSeek)
-            let scale = active || reduceMotion ? 1.0 : 0.97
-            if reduceMotion {
-                layer.removeAllAnimations(); transform = .identity
-            } else {
-                UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) { self.transform = CGAffineTransform(scaleX: scale, y: scale) }
-            }
+            wasActive = active; setCanSeek(canSeek)
         }
+        scaleSpring.parameters = line.isBackground ? .backgroundScale : .scale
+        let targetScale = active || reduceMotion ? 100 : (line.isBackground ? AMLLMotionMetrics.inactiveBackgroundScale * 100 : AMLLMotionMetrics.inactiveScale * 100)
+        let scale = reduceMotion ? targetScale : scaleSpring.step(target: targetScale, delta: delta)
+        transform = CGAffineTransform(scaleX: scale / 100, y: scale / 100)
     }
 
     override func accessibilityActivate() -> Bool {

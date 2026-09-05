@@ -134,6 +134,15 @@ final class AppleLyricsProvider: LyricsProvider {
             throw LyricsError.permission
         } catch LyricsError.http(403) {
             throw access == .catalog ? LyricsError.bearer : access == .account ? LyricsError.account : LyricsError.permission
+        } catch LyricsError.http(404) {
+            // Apple returns 404 when the catalog item has no time-synced lyric
+            // resource (and for catalog/storefront misses). Treat it as a
+            // candidate miss so the coordinator can try the next language or
+            // lyric provider instead of surfacing a raw HTTP status.
+            if access == .lyrics {
+                throw LyricsError.notFound
+            }
+            throw LyricsError.http(404)
         }
     }
 

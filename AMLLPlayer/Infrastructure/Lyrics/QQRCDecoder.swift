@@ -7,33 +7,12 @@ import Foundation
 /// S-box implementation. It is only used for lyric transport; it is not a
 /// general purpose cryptographic primitive.
 enum QQRCDecoder {
-    private typealias KeySchedule = [UInt32]
+    private typealias KeySchedule = [[UInt8]]
 
     private static let key1 = Array("!@#)(*$%".utf8)
     private static let key2 = Array("123ZXC!@".utf8)
     private static let key3 = Array("!@#)(NHL".utf8)
 
-    private static let initialPermutation = [
-        58, 50, 42, 34, 26, 18, 10, 2, 60, 52, 44, 36, 28, 20, 12, 4,
-        62, 54, 46, 38, 30, 22, 14, 6, 64, 56, 48, 40, 32, 24, 16, 8,
-        57, 49, 41, 33, 25, 17, 9, 1, 59, 51, 43, 35, 27, 19, 11, 3,
-        61, 53, 45, 37, 29, 21, 13, 5, 63, 55, 47, 39, 31, 23, 15, 7,
-    ]
-    private static let inverseInitialPermutation = [
-        40, 8, 48, 16, 56, 24, 64, 32, 39, 7, 47, 15, 55, 23, 63, 31,
-        38, 6, 46, 14, 54, 22, 62, 30, 37, 5, 45, 13, 53, 21, 61, 29,
-        36, 4, 44, 12, 52, 20, 60, 28, 35, 3, 43, 11, 51, 19, 59, 27,
-        34, 2, 42, 10, 50, 18, 58, 26, 33, 1, 41, 9, 49, 17, 57, 25,
-    ]
-    private static let expansion = [
-        32, 1, 2, 3, 4, 5, 4, 5, 6, 7, 8, 9, 8, 9, 10, 11, 12, 13,
-        12, 13, 14, 15, 16, 17, 16, 17, 18, 19, 20, 21, 20, 21, 22, 23,
-        24, 25, 24, 25, 26, 27, 28, 29, 28, 29, 30, 31, 32, 1,
-    ]
-    private static let pBox = [
-        16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10,
-        2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25,
-    ]
     private static let roundShifts = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
     private static let keyPermutationC = [
         56, 48, 40, 32, 24, 16, 8, 0, 57, 49, 41, 33, 25, 17, 9, 1,
@@ -202,88 +181,146 @@ enum QQRCDecoder {
         return nil
     }
 
-    private static func permute(_ input: UInt64, rule: [Int]) -> UInt64 {
-        var output: UInt64 = 0
-        for (index, sourceBit) in rule.enumerated() where ((input >> UInt64(64 - sourceBit)) & 1) != 0 {
-            output |= UInt64(1) << UInt64(63 - index)
-        }
-        return output
-    }
-
-    private static func permuteKey(_ key: [UInt8], table: [Int]) -> UInt64 {
-        var output: UInt64 = 0
-        for (index, position) in table.enumerated() {
-            let wordIndex = position >> 5
-            let bitInWord = position & 31
-            let byteInWord = bitInWord >> 3
-            let bitInByte = bitInWord & 7
-            let byteIndex = wordIndex * 4 + 3 - byteInWord
-            if ((key[byteIndex] >> UInt8(7 - bitInByte)) & 1) != 0 {
-                output |= UInt64(1) << UInt64(table.count - 1 - index)
-            }
-        }
-        return output
-    }
-
     private static func keySchedule(_ key: [UInt8], decrypt: Bool) -> KeySchedule {
-        let mask: UInt64 = 0xFFFF_FFF0
-        var c = permuteKey(key, table: keyPermutationC) << 4
-        var d = permuteKey(key, table: keyPermutationD) << 4
-        var result = KeySchedule(repeating: 0, count: 32)
-        for (index, shift) in roundShifts.enumerated() {
-            c = ((c << UInt64(shift)) | (c >> UInt64(28 - shift))) & mask
-            d = ((d << UInt64(shift)) | (d >> UInt64(28 - shift))) & mask
+        var c: UInt32 = 0
+        var d: UInt32 = 0
+        for index in 0 ..< 28 {
+            c |= bitnum(key, bit: keyPermutationC[index], target: 31 - index)
+            d |= bitnum(key, bit: keyPermutationD[index], target: 31 - index)
+        }
+
+        var result = KeySchedule(repeating: [UInt8](repeating: 0, count: 6), count: 16)
+        for index in 0 ..< 16 {
+            let shift = roundShifts[index]
+            c = ((c << UInt32(shift)) | (c >> UInt32(28 - shift))) & 0xFFFF_FFF0
+            d = ((d << UInt32(shift)) | (d >> UInt32(28 - shift))) & 0xFFFF_FFF0
             let target = decrypt ? 15 - index : index
-            var subkey: UInt64 = 0
-            for position in keyCompression {
-                let bit = position < 28
-                    ? (c >> UInt64(31 - position)) & 1
-                    : (d >> UInt64(31 - (position - 27))) & 1
-                subkey = (subkey << 1) | bit
+            for position in 0 ..< 24 {
+                result[target][position / 8] |= bitnumintr(c, bit: keyCompression[position], target: 7 - position % 8)
             }
-            result[target * 2] = UInt32((subkey >> 24) & 0xFFFFFF)
-            result[target * 2 + 1] = UInt32(subkey & 0xFFFFFF)
+            for position in 24 ..< 48 {
+                result[target][position / 8] |= bitnumintr(d, bit: keyCompression[position] - 27, target: 7 - position % 8)
+            }
         }
         return result
+    }
+
+    private static func bitnum(_ bytes: [UInt8], bit: Int, target: Int) -> UInt32 {
+        let byteIndex = bit / 32 * 4 + 3 - bit % 32 / 8
+        return UInt32((bytes[byteIndex] >> UInt8(7 - bit % 8)) & 1) << UInt32(target)
+    }
+
+    private static func bitnumintr(_ value: UInt32, bit: Int, target: Int) -> UInt8 {
+        UInt8(((value >> UInt32(31 - bit)) & 1) << UInt32(target))
+    }
+
+    private static func bitnumintl(_ value: UInt32, bit: Int, target: Int) -> UInt32 {
+        ((value << UInt32(bit)) & 0x8000_0000) >> UInt32(target)
+    }
+
+    private static func initialPermutation(_ input: [UInt8]) -> (UInt32, UInt32) {
+        let leftBits = [
+            57, 49, 41, 33, 25, 17, 9, 1, 59, 51, 43, 35, 27, 19, 11, 3,
+            61, 53, 45, 37, 29, 21, 13, 5, 63, 55, 47, 39, 31, 23, 15, 7,
+        ]
+        let rightBits = [
+            56, 48, 40, 32, 24, 16, 8, 0, 58, 50, 42, 34, 26, 18, 10, 2,
+            60, 52, 44, 36, 28, 20, 12, 4, 62, 54, 46, 38, 30, 22, 14, 6,
+        ]
+        var left: UInt32 = 0
+        var right: UInt32 = 0
+        for index in leftBits.indices {
+            left |= bitnum(input, bit: leftBits[index], target: 31 - index)
+            right |= bitnum(input, bit: rightBits[index], target: 31 - index)
+        }
+        return (left, right)
+    }
+
+    private static func inverseInitialPermutation(_ left: UInt32, _ right: UInt32) -> [UInt8] {
+        func outputByte(start: Int) -> UInt8 {
+            var value: UInt8 = 0
+            for group in 0 ..< 4 {
+                let bit = start + group * 8
+                if ((right >> UInt32(31 - bit)) & 1) != 0 {
+                    value |= UInt8(1 << (7 - group * 2))
+                }
+                if ((left >> UInt32(31 - bit)) & 1) != 0 {
+                    value |= UInt8(1 << (6 - group * 2))
+                }
+            }
+            return value
+        }
+
+        return [
+            outputByte(start: 4), outputByte(start: 5), outputByte(start: 6), outputByte(start: 7),
+            outputByte(start: 0), outputByte(start: 1), outputByte(start: 2), outputByte(start: 3),
+        ]
+    }
+
+    private static func fFunction(_ state: UInt32, key: [UInt8]) -> UInt32 {
+        var t1 = bitnumintl(state, bit: 31, target: 0) | ((state & 0xF000_0000) >> 1) |
+            bitnumintl(state, bit: 4, target: 5) | bitnumintl(state, bit: 3, target: 6) |
+            ((state & 0x0F00_0000) >> 3) | bitnumintl(state, bit: 8, target: 11) |
+            bitnumintl(state, bit: 7, target: 12) | ((state & 0x00F0_0000) >> 5) |
+            bitnumintl(state, bit: 12, target: 17) | bitnumintl(state, bit: 11, target: 18) |
+            ((state & 0x000F_0000) >> 7) | bitnumintl(state, bit: 16, target: 23)
+        var t2 = bitnumintl(state, bit: 15, target: 0) | ((state & 0x0000_F000) << 15) |
+            bitnumintl(state, bit: 20, target: 5) | bitnumintl(state, bit: 19, target: 6) |
+            ((state & 0x0000_0F00) << 13) | bitnumintl(state, bit: 24, target: 11) |
+            bitnumintl(state, bit: 23, target: 12) | ((state & 0x0000_00F0) << 11) |
+            bitnumintl(state, bit: 28, target: 17) | bitnumintl(state, bit: 27, target: 18) |
+            ((state & 0x0000_000F) << 9) | bitnumintl(state, bit: 0, target: 23)
+
+        var largeState = [
+            UInt8((t1 >> 24) & 0xFF), UInt8((t1 >> 16) & 0xFF), UInt8((t1 >> 8) & 0xFF),
+            UInt8((t2 >> 24) & 0xFF), UInt8((t2 >> 16) & 0xFF), UInt8((t2 >> 8) & 0xFF),
+        ]
+        for index in 0 ..< 6 {
+            largeState[index] ^= key[index]
+        }
+
+        var substituted: UInt32 = 0
+        substituted |= UInt32(sBoxes[0][sBoxIndex(Int(largeState[0] >> 2))]) << 28
+        substituted |= UInt32(sBoxes[1][sBoxIndex(Int(((largeState[0] & 0x03) << 4) | (largeState[1] >> 4)))]) << 24
+        substituted |= UInt32(sBoxes[2][sBoxIndex(Int(((largeState[1] & 0x0F) << 2) | (largeState[2] >> 6)))]) << 20
+        substituted |= UInt32(sBoxes[3][sBoxIndex(Int(largeState[2] & 0x3F))]) << 16
+        substituted |= UInt32(sBoxes[4][sBoxIndex(Int(largeState[3] >> 2))]) << 12
+        substituted |= UInt32(sBoxes[5][sBoxIndex(Int(((largeState[3] & 0x03) << 4) | (largeState[4] >> 4)))]) << 8
+        substituted |= UInt32(sBoxes[6][sBoxIndex(Int(((largeState[4] & 0x0F) << 2) | (largeState[5] >> 6)))]) << 4
+        substituted |= UInt32(sBoxes[7][sBoxIndex(Int(largeState[5] & 0x3F))])
+
+        return bitnumintl(substituted, bit: 15, target: 0) | bitnumintl(substituted, bit: 6, target: 1) |
+            bitnumintl(substituted, bit: 19, target: 2) | bitnumintl(substituted, bit: 20, target: 3) |
+            bitnumintl(substituted, bit: 28, target: 4) | bitnumintl(substituted, bit: 11, target: 5) |
+            bitnumintl(substituted, bit: 27, target: 6) | bitnumintl(substituted, bit: 16, target: 7) |
+            bitnumintl(substituted, bit: 0, target: 8) | bitnumintl(substituted, bit: 14, target: 9) |
+            bitnumintl(substituted, bit: 22, target: 10) | bitnumintl(substituted, bit: 25, target: 11) |
+            bitnumintl(substituted, bit: 4, target: 12) | bitnumintl(substituted, bit: 17, target: 13) |
+            bitnumintl(substituted, bit: 30, target: 14) | bitnumintl(substituted, bit: 9, target: 15) |
+            bitnumintl(substituted, bit: 1, target: 16) | bitnumintl(substituted, bit: 7, target: 17) |
+            bitnumintl(substituted, bit: 23, target: 18) | bitnumintl(substituted, bit: 13, target: 19) |
+            bitnumintl(substituted, bit: 31, target: 20) | bitnumintl(substituted, bit: 26, target: 21) |
+            bitnumintl(substituted, bit: 2, target: 22) | bitnumintl(substituted, bit: 8, target: 23) |
+            bitnumintl(substituted, bit: 18, target: 24) | bitnumintl(substituted, bit: 12, target: 25) |
+            bitnumintl(substituted, bit: 29, target: 26) | bitnumintl(substituted, bit: 5, target: 27) |
+            bitnumintl(substituted, bit: 21, target: 28) | bitnumintl(substituted, bit: 10, target: 29) |
+            bitnumintl(substituted, bit: 3, target: 30) | bitnumintl(substituted, bit: 24, target: 31)
     }
 
     private static func sBoxIndex(_ value: Int) -> Int {
         (value & 0x20) | ((value & 0x1F) >> 1) | ((value & 1) << 4)
     }
 
-    private static func fFunction(_ state: UInt32, high: UInt32, low: UInt32) -> UInt32 {
-        var expanded: UInt64 = 0
-        for position in expansion {
-            expanded = (expanded << 1) | UInt64((state >> UInt32(32 - position)) & 1)
-        }
-        let mixed = expanded ^ (UInt64(high) << 24 | UInt64(low))
-        var substituted: UInt32 = 0
-        for index in 0 ..< 8 {
-            let sixBits = Int((mixed >> UInt64(42 - index * 6)) & 0x3F)
-            substituted = (substituted << 4) | UInt32(sBoxes[index][sBoxIndex(sixBits)])
-        }
-        var output: UInt32 = 0
-        for (index, sourceBit) in pBox.enumerated() where ((substituted >> UInt32(32 - sourceBit)) & 1) != 0 {
-            output |= UInt32(1) << UInt32(31 - index)
-        }
-        return output
-    }
-
     private static func desCrypt(_ input: [UInt8], schedule: KeySchedule) -> [UInt8] {
-        var block: UInt64 = 0
-        for byte in input {
-            block = (block << 8) | UInt64(byte)
-        }
-        let permuted = permute(block, rule: initialPermutation)
-        var left = UInt32((permuted >> 32) & 0xFFFF_FFFF)
-        var right = UInt32(permuted & 0xFFFF_FFFF)
+        let (initialLeft, initialRight) = initialPermutation(input)
+        var left = initialLeft
+        var right = initialRight
         for index in 0 ..< 15 {
             let previousRight = right
-            right = left ^ fFunction(right, high: schedule[index * 2], low: schedule[index * 2 + 1])
+            right = fFunction(right, key: schedule[index]) ^ left
             left = previousRight
         }
-        left ^= fFunction(right, high: schedule[30], low: schedule[31])
-        let outputBlock = permute(UInt64(left) << 32 | UInt64(right), rule: inverseInitialPermutation)
-        return (0 ..< 8).map { index in UInt8((outputBlock >> UInt64(56 - index * 8)) & 0xFF) }
+        left = fFunction(right, key: schedule[15]) ^ left
+        return inverseInitialPermutation(left, right)
     }
 }

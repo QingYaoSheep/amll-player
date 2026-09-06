@@ -233,12 +233,10 @@ final class AppleLyricsProvider: LyricsProvider {
         if context.language != settings.language {
             languages.append(context.language)
         }
-        if settings.language.lowercased().hasPrefix("zh") {
-            for language in ["zh-Hans-CN", "zh-Hans", "zh-CN", "zh-Hant-TW", "zh-Hant"]
-                where !languages.contains(where: { $0 == language })
-            {
-                languages.append(language)
-            }
+        for language in ["zh-Hans-CN", "zh-Hans", "zh-CN"]
+            where !languages.contains(where: { $0 == language })
+        {
+            languages.append(language)
         }
         languages.append(nil)
 

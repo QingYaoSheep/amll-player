@@ -197,7 +197,7 @@ final class LyricsProviderTests: XCTestCase {
     func testAppleLyrics404RetriesWithoutLanguageAndReportsNotFound() async throws {
         let credentials = credentials()
         try credentials.saveManual(token())
-        let http = LyricsHTTPFixture([.failure(.http(404)), .failure(.http(404))])
+        let http = LyricsHTTPFixture(Array(repeating: .failure(.http(404)), count: 5))
         let provider = AppleLyricsProvider(http: http, credentials: credentials)
         var settings = LyricsSettings()
         settings.language = "en-US"
@@ -209,9 +209,10 @@ final class LyricsProviderTests: XCTestCase {
             XCTAssertEqual(error as? LyricsError, .notFound)
         }
         let requests = await http.requests
-        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.count, 5)
         XCTAssertNotNil(try URLComponents(url: XCTUnwrap(requests[0].url), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "l" })
-        XCTAssertNil(try URLComponents(url: XCTUnwrap(requests[1].url), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "l" })
+        XCTAssertEqual(try URLComponents(url: XCTUnwrap(requests[1].url), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "l" }?.value, "zh-Hans-CN")
+        XCTAssertNil(try URLComponents(url: XCTUnwrap(requests[4].url), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "l" })
     }
 
     func testAppleLyricsRetriesAfterRejectedAutomaticBearerIsReplaced() async throws {

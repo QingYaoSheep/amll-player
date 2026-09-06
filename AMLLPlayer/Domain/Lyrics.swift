@@ -78,7 +78,7 @@ struct LyricsDocument: Codable, Equatable, Sendable {
     // Bump when the TTML/LRC semantic mapping changes. Existing cached
     // documents are reparsed from their payload so provider fixes become
     // visible without asking the user to clear the lyric cache.
-    static let parserVersion = 2
+    static let parserVersion = 3
     var candidate: LyricCandidate
     var lines: [LyricLine]
     var language: String
@@ -86,54 +86,129 @@ struct LyricsDocument: Codable, Equatable, Sendable {
     var isInstrumental = false
     var lyricAuthor: String? = nil
     var songwriters: [String] = []
+    var degradationReason: String? = nil
     var precision: LyricsPrecision {
         lines.contains { $0.precision == .word } ? .word : .line
     }
-}
 
-struct LyricsPayload: Codable, Equatable, Sendable {
-    enum Format: String, Codable, Sendable { case ttml, lrc, qrc }
-    var format: Format
-    var original: String
-    var translation = ""
-    var romanization = ""
-    var language = ""
-    var selectionReason = ""
-    var isInstrumental = false
+    var wordTimedLineRatio: Double {
+        guard !lines.isEmpty else { return 0 }
+        return Double(lines.filter { $0.precision == .word && !$0.words.isEmpty }.count) / Double(lines.count)
+    }
 
-    func parse(candidate: LyricCandidate, duration: Double) throws -> LyricsDocument {
-        let lines: [LyricLine]
-        if isInstrumental {
-            lines = []
-        } else {
-            switch format {
-            case .ttml:
-                // A request without `l` uses the storefront's default
-                // language. Keep Chinese as the preferred sidecar when the
-                // response contains several localizations and the payload
-                // does not carry a language tag.
-                lines = try TTMLLyricsParser.parse(
-                    original,
-                    preferredLanguage: language.isEmpty ? "zh-Hans-CN" : language,
-                    duration: duration
-                )
-            case .lrc: lines = try LRCLyricsParser.parse(original, translation: translation, romanization: romanization, duration: duration)
-            case .qrc:
-                var timed = try QQRCDecoder.parse(original, duration: duration)
-                let translations = try LRCLyricsParser.rows(translation)
-                let romanizations = try LRCLyricsParser.rows(romanization)
-                for index in timed.indices {
-                    timed[index].translation = LRCLyricsParser.alignedText(translations, at: timed[index].start)
-                    timed[index].romanization = LRCLyricsParser.alignedText(romanizations, at: timed[index].start)
-                }
-                lines = timed
-            }
-            guard !lines.isEmpty else { throw LyricsError.notFound }
-        }
-        return LyricsDocument(candidate: candidate, lines: lines, language: language,
-                              selectionReason: selectionReason, isInstrumental: isInstrumental)
+    var translationCoverage: Double {
+        guard !lines.isEmpty else { return 0 }
+        return Double(lines.filter { !$0.translation.isEmpty }.count) / Double(lines.count)
+    }
+
+    var romanizationCoverage: Double {
+        guard !lines.isEmpty else { return 0 }
+        return Double(lines.filter { !$0.romanization.isEmpty || $0.words.contains { $0.romanWord != nil } }.count) / Double(lines.count)
     }
 }
+
+struct LyricsAsset: Codable, Equatable, Sendable {
+    enum Format: String, Codable, Sendable { case ttml, qrc, yrc, lrc }
+    var format: Format
+    var text: String
+    var language: String = ""
+    var origin: String = ""
+}
+
+struct LyricsAssetBundle: Codable, Equatable, Sendable {
+    typealias Format = LyricsAsset.Format
+    var primary: LyricsAsset
+    var translationAssets: [LyricsAsset] = []
+    var romanizationAssets: [LyricsAsset] = []
+    var language = ""
+    var selectionReason = ""
+    var degradationReason: String? = nil
+    var isInstrumental = false
+
+    init(primary: LyricsAsset, translationAssets: [LyricsAsset] = [], romanizationAssets: [LyricsAsset] = [],
+         language: String = "", selectionReason: String = "", degradationReason: String? = nil, isInstrumental: Bool = false)
+    {
+        self.primary = primary
+        self.translationAssets = translationAssets
+        self.romanizationAssets = romanizationAssets
+        self.language = language
+        self.selectionReason = selectionReason
+        self.degradationReason = degradationReason
+        self.isInstrumental = isInstrumental
+    }
+
+    /// Compatibility initializer for call sites and version-2 cache records.
+    init(format: Format, original: String, translation: String = "", romanization: String = "", language: String = "",
+         selectionReason: String = "", isInstrumental: Bool = false)
+    {
+        primary = LyricsAsset(format: format, text: original, language: language)
+        translationAssets = translation.isEmpty ? [] : [LyricsAsset(format: LyricsFormatDetector.detect(translation, hint: .lrc), text: translation, language: language)]
+        romanizationAssets = romanization.isEmpty ? [] : [LyricsAsset(format: LyricsFormatDetector.detect(romanization, hint: .lrc), text: romanization, language: language)]
+        self.language = language
+        self.selectionReason = selectionReason
+        self.isInstrumental = isInstrumental
+    }
+
+    var format: Format {
+        primary.format
+    }
+
+    var original: String {
+        primary.text
+    }
+
+    var translation: String {
+        translationAssets.first?.text ?? ""
+    }
+
+    var romanization: String {
+        romanizationAssets.first?.text ?? ""
+    }
+
+    func parse(candidate: LyricCandidate, duration: Double) throws -> LyricsDocument {
+        try LyricsParserPipeline.parse(self, candidate: candidate, duration: duration)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case primary, translationAssets, romanizationAssets, language, selectionReason, degradationReason, isInstrumental
+        case format, original, translation, romanization
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        language = try values.decodeIfPresent(String.self, forKey: .language) ?? ""
+        selectionReason = try values.decodeIfPresent(String.self, forKey: .selectionReason) ?? ""
+        degradationReason = try values.decodeIfPresent(String.self, forKey: .degradationReason)
+        isInstrumental = try values.decodeIfPresent(Bool.self, forKey: .isInstrumental) ?? false
+        if let primary = try values.decodeIfPresent(LyricsAsset.self, forKey: .primary) {
+            self.primary = primary
+            translationAssets = try values.decodeIfPresent([LyricsAsset].self, forKey: .translationAssets) ?? []
+            romanizationAssets = try values.decodeIfPresent([LyricsAsset].self, forKey: .romanizationAssets) ?? []
+        } else {
+            let format = try values.decode(Format.self, forKey: .format)
+            let original = try values.decode(String.self, forKey: .original)
+            primary = LyricsAsset(format: format, text: original, language: language)
+            let translation = try values.decodeIfPresent(String.self, forKey: .translation) ?? ""
+            let romanization = try values.decodeIfPresent(String.self, forKey: .romanization) ?? ""
+            translationAssets = translation.isEmpty ? [] : [LyricsAsset(format: LyricsFormatDetector.detect(translation, hint: .lrc), text: translation, language: language)]
+            romanizationAssets = romanization.isEmpty ? [] : [LyricsAsset(format: LyricsFormatDetector.detect(romanization, hint: .lrc), text: romanization, language: language)]
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(primary, forKey: .primary)
+        try values.encode(translationAssets, forKey: .translationAssets)
+        try values.encode(romanizationAssets, forKey: .romanizationAssets)
+        try values.encode(language, forKey: .language)
+        try values.encode(selectionReason, forKey: .selectionReason)
+        try values.encodeIfPresent(degradationReason, forKey: .degradationReason)
+        try values.encode(isInstrumental, forKey: .isInstrumental)
+    }
+}
+
+@available(*, deprecated, renamed: "LyricsAssetBundle")
+typealias LyricsPayload = LyricsAssetBundle
 
 enum LyricsError: Error, LocalizedError, Equatable, Sendable {
     case notFound, malformed, tooLarge, transport, credentials, bearer, account, permission, cache
@@ -160,7 +235,7 @@ enum LyricsError: Error, LocalizedError, Equatable, Sendable {
 protocol LyricsProvider {
     var source: LyricsSource { get }
     func search(track: TrackIdentity, query: String, settings: LyricsSettings) async throws -> [LyricCandidate]
-    func lyrics(candidate: LyricCandidate, settings: LyricsSettings) async throws -> LyricsPayload
+    func lyrics(candidate: LyricCandidate, settings: LyricsSettings) async throws -> LyricsAssetBundle
 }
 
 enum LyricsMatcher {

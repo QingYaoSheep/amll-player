@@ -27,6 +27,16 @@ final class LyricsCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.errors.count, 2); XCTAssertEqual(netease.searchCalls, 1)
     }
 
+    func testSameSourcePrefersRealWordTimingOverFirstLineCandidate() async {
+        let provider = QualityLyricsProvider()
+        let coordinator = LyricsCoordinator(providers: [provider], cache: MemoryLyricsCache(), settingsStore: store())
+        coordinator.update(track: track)
+        await waitUntil { !coordinator.isLoading }
+        XCTAssertEqual(coordinator.document?.candidate.sourceID, "word")
+        XCTAssertEqual(coordinator.document?.precision, .word)
+        XCTAssertEqual(provider.lyricCalls, ["line", "word"])
+    }
+
     func testStaleCacheVisibleBeforeFailedRefreshAndOfflineReload() async throws {
         let provider = TestLyricsProvider(.qq), cache = MemoryLyricsCache(), settings = store()
         provider.failure = .transport
@@ -213,6 +223,27 @@ private final class TestLyricsProvider: LyricsProvider {
     func resumeSearch(_ index: Int, title: String) {
         var result = candidate; result.title = title
         searchWaiters[index]?.resume(returning: [result]); searchWaiters[index] = nil
+    }
+}
+
+@MainActor
+private final class QualityLyricsProvider: LyricsProvider {
+    let source = LyricsSource.qq
+    var lyricCalls: [String] = []
+
+    func search(track _: TrackIdentity, query _: String, settings _: LyricsSettings) async throws -> [LyricCandidate] {
+        [
+            LyricCandidate(source: .qq, sourceID: "line", title: "Title", artists: ["Artist"], score: 100),
+            LyricCandidate(source: .qq, sourceID: "word", title: "Title", artists: ["Artist"], score: 80),
+        ]
+    }
+
+    func lyrics(candidate: LyricCandidate, settings _: LyricsSettings) async throws -> LyricsAssetBundle {
+        lyricCalls.append(candidate.sourceID)
+        if candidate.sourceID == "word" {
+            return LyricsAssetBundle(primary: LyricsAsset(format: .yrc, text: "[1000,1000](1000,1000,0)Word"))
+        }
+        return LyricsAssetBundle(format: .lrc, original: "[00:01]Line")
     }
 }
 

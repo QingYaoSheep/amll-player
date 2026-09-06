@@ -9,7 +9,7 @@ struct LyricsSelection: Codable, Equatable, Sendable {
 
 struct LyricsCacheEntry: Codable, Sendable {
     var track: TrackIdentity
-    var payload: LyricsPayload
+    var payload: LyricsAssetBundle
     var document: LyricsDocument
     var savedAt: Date
     var parserVersion: Int = LyricsDocument.parserVersion

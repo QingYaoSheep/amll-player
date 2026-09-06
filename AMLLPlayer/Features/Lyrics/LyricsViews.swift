@@ -32,6 +32,12 @@ struct LyricsDiagnosticView: View {
                 DisclosureGroup("lyrics.evidence") {
                     Text(document.candidate.evidence.joined(separator: " · "))
                     Text(document.language + " · " + document.selectionReason)
+                    Text(String(format: "word %.0f%% · translation %.0f%% · romanization %.0f%%",
+                                document.wordTimedLineRatio * 100, document.translationCoverage * 100,
+                                document.romanizationCoverage * 100))
+                    if let degradationReason = document.degradationReason {
+                        Text(degradationReason).foregroundStyle(.orange)
+                    }
                     if let author = document.lyricAuthor {
                         Text(author)
                     }

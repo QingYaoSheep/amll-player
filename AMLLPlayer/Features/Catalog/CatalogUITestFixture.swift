@@ -94,8 +94,8 @@ enum CatalogUITestFixture {
         func search(track: TrackIdentity, query: String, settings: LyricsSettings) async throws -> [LyricCandidate] {
             [LyricCandidate(source: .qq, sourceID: query.isEmpty ? "auto" : "manual", title: query.isEmpty ? "Fixture Song" : "Correction Candidate", artists: ["Fixture Artist"], score: 99)]
         }
-        func lyrics(candidate: LyricCandidate, settings: LyricsSettings) async throws -> LyricsPayload {
-            LyricsPayload(format: .lrc, original: candidate.sourceID == "manual" ? "[00:01]Corrected fixture line" : "[00:01]Original fixture line")
+        func lyrics(candidate: LyricCandidate, settings: LyricsSettings) async throws -> LyricsAssetBundle {
+            LyricsAssetBundle(format: .lrc, original: candidate.sourceID == "manual" ? "[00:01]Corrected fixture line" : "[00:01]Original fixture line")
         }
     }
 }

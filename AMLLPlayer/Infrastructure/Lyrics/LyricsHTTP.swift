@@ -63,7 +63,7 @@ actor LyricsHTTP: LyricsHTTPProviding {
     }
 
     static func allowed(_ host: String) -> Bool {
-        ["amp-api.music.apple.com", "music.apple.com", "beta.music.apple.com", "u.y.qq.com", "c.y.qq.com", "music.163.com"].contains(host)
+        ["amp-api.music.apple.com", "music.apple.com", "beta.music.apple.com", "u.y.qq.com", "c.y.qq.com", "music.163.com", "interface3.music.163.com"].contains(host)
     }
 
     static func canFollowRedirect(from original: URLRequest, to request: URLRequest) -> Bool {
@@ -91,6 +91,19 @@ enum LyricsRequest {
             request.httpMethod = "POST"; request.httpBody = try JSONSerialization.data(withJSONObject: body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
+        return request
+    }
+
+    static func form(_ url: String, fields: [String: String], headers: [String: String] = [:]) throws -> URLRequest {
+        guard let url = URL(string: url) else { throw LyricsError.transport }
+        var components = URLComponents()
+        components.queryItems = fields.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let body = components.percentEncodedQuery?.data(using: .utf8) else { throw LyricsError.transport }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.allHTTPHeaderFields = headers
+        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
         return request
     }
 

@@ -99,8 +99,12 @@ enum QQRCDecoder {
     static func parse(_ source: String, duration _: Double) throws -> [LyricLine] {
         let qrc = extractQRC(source)
         guard !qrc.isEmpty else { throw LyricsError.malformed }
-        let lineRegex = try NSRegularExpression(pattern: #"^\[(\d+),(\d+)\](.*)$"#)
-        let wordRegex = try NSRegularExpression(pattern: #"(.*?)\((\d+),(\d+)\)"#)
+        let lineRegex = try NSRegularExpression(pattern: #"^\[(\d+)\s*,\s*(\d+)\](.*)$"#)
+        let wordRegex = try NSRegularExpression(pattern: #"(.*?)\((\d+)\s*,\s*(\d+)\)"#)
+        let offsetRegex = try NSRegularExpression(pattern: #"(?i)\[offset:([+-]?\d+)\]"#)
+        let nsQRC = qrc as NSString
+        let offset = offsetRegex.firstMatch(in: qrc, range: NSRange(location: 0, length: nsQRC.length))
+            .flatMap { Double(nsQRC.substring(with: $0.range(at: 1))) }.map { max(-60, min(60, $0 / 1000)) } ?? 0
         var result: [LyricLine] = []
         for rawLine in qrc.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -114,11 +118,17 @@ enum QQRCDecoder {
             let nsContent = content as NSString
             let matches = wordRegex.matches(in: content, range: NSRange(location: 0, length: nsContent.length))
             var words: [LyricWord] = []
+            var previousStart = -Double.infinity
             for match in matches {
                 let word = nsContent.substring(with: match.range(at: 1))
-                let wordStart = (Double(nsContent.substring(with: match.range(at: 2))) ?? 0) / 1000
+                let wordStart = (Double(nsContent.substring(with: match.range(at: 2))) ?? 0) / 1000 + offset
                 let wordDuration = (Double(nsContent.substring(with: match.range(at: 3))) ?? 0) / 1000
+                guard wordStart >= previousStart, wordDuration >= 0 else { throw LyricsError.malformed }
                 words.append(LyricWord(text: word, start: wordStart, end: wordStart + max(0, wordDuration)))
+                previousStart = wordStart
+            }
+            if let last = matches.last, NSMaxRange(last.range) < nsContent.length, !words.isEmpty {
+                words[words.count - 1].text += nsContent.substring(from: NSMaxRange(last.range))
             }
             guard !words.isEmpty else { continue }
             let isBackground = (words.first?.text.first == "(" || words.first?.text.first == "（") &&
@@ -129,7 +139,7 @@ enum QQRCDecoder {
             }
             let text = words.map(\.text).joined()
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            let start = startMillis / 1000
+            let start = max(0, startMillis / 1000 + offset)
             let end = max(start, start + durationMillis / 1000)
             result.append(LyricLine(id: "qrc-\(result.count)", text: text, start: start, end: end,
                                     words: words, isBackground: isBackground,
@@ -165,21 +175,29 @@ enum QQRCDecoder {
     }
 
     private static func inflate(_ data: Data) -> Data? {
-        var capacity = max(1024, data.count * 4)
-        for _ in 0 ..< 8 {
-            var output = [UInt8](repeating: 0, count: capacity)
-            let decoded = data.withUnsafeBytes { source -> Int in
-                output.withUnsafeMutableBytes { destination -> Int in
-                    guard let sourceBase = source.bindMemory(to: UInt8.self).baseAddress,
-                          let destinationBase = destination.bindMemory(to: UInt8.self).baseAddress else { return 0 }
-                    return compression_decode_buffer(destinationBase, capacity, sourceBase, data.count, nil, COMPRESSION_ZLIB)
+        var inputs = [data]
+        var trimmed = data
+        for _ in 0 ..< 7 where trimmed.last == 0 {
+            trimmed.removeLast()
+            inputs.append(trimmed)
+        }
+        for input in inputs {
+            var capacity = max(1024, input.count * 4)
+            for _ in 0 ..< 8 {
+                var output = [UInt8](repeating: 0, count: capacity)
+                let decoded = input.withUnsafeBytes { source -> Int in
+                    output.withUnsafeMutableBytes { destination -> Int in
+                        guard let sourceBase = source.bindMemory(to: UInt8.self).baseAddress,
+                              let destinationBase = destination.bindMemory(to: UInt8.self).baseAddress else { return 0 }
+                        return compression_decode_buffer(destinationBase, capacity, sourceBase, input.count, nil, COMPRESSION_ZLIB)
+                    }
                 }
+                if decoded > 0 {
+                    output.removeSubrange(decoded ..< output.count)
+                    return Data(output)
+                }
+                capacity *= 2
             }
-            if decoded > 0 {
-                output.removeSubrange(decoded ..< output.count)
-                return Data(output)
-            }
-            capacity *= 2
         }
         return nil
     }

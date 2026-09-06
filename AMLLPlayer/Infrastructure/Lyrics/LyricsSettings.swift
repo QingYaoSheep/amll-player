@@ -99,6 +99,10 @@ final class AppleLyricsCredentials {
         return value
     }
 
+    func optionalMediaToken() throws -> String? {
+        try media.load().flatMap { String(data: $0, encoding: .utf8) }.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     func cachedBearer() throws -> AppleBearerInfo? {
         guard let value = try automatic.load().flatMap({ String(data: $0, encoding: .utf8) }) else { return nil }
         return try? AppleBearerInfo(value)

@@ -140,7 +140,6 @@ enum TTMLLyricsParser {
         func normalized(_ value: String, trim: Bool = true) -> String {
             var value = value.replacingOccurrences(of: "\u{00A0}", with: " ")
                 .replacingOccurrences(of: "\u{202F}", with: " ")
-                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             if trim {
                 value = value.trimmingCharacters(in: .whitespacesAndNewlines)
             }

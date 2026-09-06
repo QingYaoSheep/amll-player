@@ -155,6 +155,12 @@ final class LyricsParserTests: XCTestCase {
         XCTAssertTrue(document.lines[1].isBackground)
     }
 
+    func testQRCPreservesUntimedTrailingPunctuation() throws {
+        let lines = try QQRCDecoder.parse("[1000,1000]Hello(1000,900)!", duration: 3)
+        XCTAssertEqual(lines.first?.text, "Hello!")
+        XCTAssertEqual(lines.first?.words.first?.text, "Hello!")
+    }
+
     func testQQEncryptedQRCFixtureUsesCustomCipherAndZlib() throws {
         let encrypted = "c90db2e3f6940a43538b45865eb6753863c981f936a71a093b450246d48b65f09ea70dc2b1510075f51ddfb35bdd67a91b2353ae0e4225c227d0571074570c21"
         let decrypted = try XCTUnwrap(QQRCDecoder.decrypt(encrypted))
@@ -163,6 +169,39 @@ final class LyricsParserTests: XCTestCase {
         XCTAssertEqual(line.text, "Hi")
         XCTAssertEqual(line.words.first?.start, 1)
         XCTAssertEqual(line.words.first?.end, 2)
+    }
+
+    func testYRCIsDetectedAndParsedAsRealWordTiming() throws {
+        let source = "[1000,2000](1000,500,0)你(1500,1500,0)好"
+        XCTAssertEqual(LyricsFormatDetector.detect(source, hint: .lrc), .yrc)
+        let line = try XCTUnwrap(YRCLyricsParser.parse(source, duration: 4).first)
+        XCTAssertEqual(line.text, "你好")
+        XCTAssertEqual(line.words.map(\.text), ["你", "好"])
+        XCTAssertEqual(line.words.map(\.start), [1, 1.5])
+        XCTAssertEqual(line.words.map(\.end), [1.5, 3])
+        XCTAssertEqual(line.precision, .word)
+    }
+
+    func testAssetBundleDetectsActualFormatAndMergesAuxiliaryLinesOnce() throws {
+        let candidate = LyricCandidate(source: .netease, sourceID: "1", title: "Fixture", artists: [])
+        let bundle = LyricsAssetBundle(
+            primary: LyricsAsset(format: .lrc, text: "[1000,2000](1000,500,0)你(1500,1500,0)好"),
+            translationAssets: [LyricsAsset(format: .lrc, text: "[00:01.050]Hello")],
+            romanizationAssets: [LyricsAsset(format: .lrc, text: "[00:01]ni hao")]
+        )
+        let document = try bundle.parse(candidate: candidate, duration: 4)
+        XCTAssertEqual(document.precision, .word)
+        XCTAssertEqual(document.lines.first?.translation, "Hello")
+        XCTAssertEqual(document.lines.first?.romanization, "ni hao")
+        XCTAssertEqual(document.wordTimedLineRatio, 1)
+        XCTAssertEqual(document.translationCoverage, 1)
+    }
+
+    func testVersionTwoPayloadDecodesIntoAssetBundle() throws {
+        let json = #"{"format":"lrc","original":"[00:01]Old","translation":"[00:01]旧","romanization":"","language":"zh-Hans-CN","selectionReason":"legacy","isInstrumental":false}"#
+        let bundle = try JSONDecoder().decode(LyricsAssetBundle.self, from: Data(json.utf8))
+        XCTAssertEqual(bundle.primary.format, .lrc)
+        XCTAssertEqual(bundle.translationAssets.first?.text, "[00:01]旧")
     }
 
     func testRTLDoesNotTreatJapaneseAsRightToLeft() throws {

@@ -33,7 +33,7 @@ final class LyricsCoordinator {
     @ObservationIgnored private var epoch = UUID()
     @ObservationIgnored private var searchEpoch = UUID()
     @ObservationIgnored private var previewEpoch = UUID()
-    @ObservationIgnored private var previewPayload: LyricsPayload?
+    @ObservationIgnored private var previewPayload: LyricsAssetBundle?
     @ObservationIgnored private var previewTrackID: String?
     @ObservationIgnored private var foreground = true
 
@@ -140,9 +140,6 @@ final class LyricsCoordinator {
                 guard let provider = providers.first(where: { $0.source == source }) else { continue }
                 do {
                     try Task.checkCancellation()
-                    if source == .apple, let apple {
-                        _ = try apple.credentials.mediaToken()
-                    }
                     let matches: [LyricCandidate] = if let manual {
                         [manual]
                     } else {
@@ -150,15 +147,24 @@ final class LyricsCoordinator {
                     }
                     guard !matches.isEmpty else { throw LyricsError.notFound }
                     var failure: Error = LyricsError.notFound
+                    var best: (payload: LyricsAssetBundle, document: LyricsDocument, quality: Int)?
                     for candidate in matches.prefix(3) {
                         do {
                             let payload = try await provider.lyrics(candidate: candidate, settings: config)
                             let parsed = try await Self.parse(payload, candidate: candidate, duration: track.duration)
-                            guard epoch == ticket, foreground, !Task.isCancelled else { return }
-                            install(payload, document: parsed, track: track, settings: config)
-                            return
+                            let quality = Int(parsed.wordTimedLineRatio * 1_000_000_000) +
+                                Int(parsed.translationCoverage * 1_000_000) +
+                                Int(parsed.romanizationCoverage * 1000) + candidate.score
+                            if best == nil || quality > best!.quality {
+                                best = (payload, parsed, quality)
+                            }
                         } catch is CancellationError { return }
                         catch { failure = error }
+                    }
+                    if let best {
+                        guard epoch == ticket, foreground, !Task.isCancelled else { return }
+                        install(best.payload, document: best.document, track: track, settings: config)
+                        return
                     }
                     throw failure
                 } catch is CancellationError { return }
@@ -175,12 +181,12 @@ final class LyricsCoordinator {
         }
     }
 
-    private static func parse(_ payload: LyricsPayload, candidate: LyricCandidate, duration: Double) async throws -> LyricsDocument {
+    private static func parse(_ payload: LyricsAssetBundle, candidate: LyricCandidate, duration: Double) async throws -> LyricsDocument {
         let task = Task.detached(priority: .userInitiated) { try payload.parse(candidate: candidate, duration: duration) }
         return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
     }
 
-    private func install(_ payload: LyricsPayload, document: LyricsDocument, track: TrackIdentity, settings: LyricsSettings) {
+    private func install(_ payload: LyricsAssetBundle, document: LyricsDocument, track: TrackIdentity, settings: LyricsSettings) {
         self.document = document; status = document.isInstrumental ? .instrumental : .ready; savedAt = Date()
         if settings.cacheEnabled {
             do { try cache.save(LyricsCacheEntry(track: track, payload: payload, document: document, savedAt: savedAt ?? Date()), settings: settings) }

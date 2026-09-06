@@ -8,12 +8,13 @@ final class AppleLyricsProvider: LyricsProvider {
     private var discovery: Task<AppleBearerInfo, Error>?
     private var discoveryID: UUID?
     private var discoveryWaiters: Set<UUID> = []
+    private var accountContext: (generation: UUID, storefront: String, language: String)?
     init(http: any LyricsHTTPProviding, credentials: AppleLyricsCredentials) {
         self.http = http; self.credentials = credentials
     }
 
     func invalidateDiscovery() {
-        discovery?.cancel(); discovery = nil; discoveryID = nil; discoveryWaiters = []
+        discovery?.cancel(); discovery = nil; discoveryID = nil; discoveryWaiters = []; accountContext = nil
     }
 
     private func releaseDiscoveryWaiter(_ waiter: UUID, discoveryID id: UUID) {
@@ -96,18 +97,14 @@ final class AppleLyricsProvider: LyricsProvider {
 
     private enum Access { case catalog, account, lyrics }
     private func api(_ path: String, query: [String: String] = [:], access: Access = .catalog, retry: Bool = true) async throws -> [String: Any] {
-        let media: String? = if access == .catalog {
-            nil
-        } else {
-            try credentials.mediaToken()
+        let media = try credentials.optionalMediaToken()
+        if access == .account, media == nil {
+            throw LyricsError.credentials
         }
         let info = try await bearer()
         var headers = ["Authorization": "Bearer " + info.token, "Origin": info.origin, "Referer": info.origin + "/", "Accept": "application/json"]
-        if access == .account {
+        if access != .catalog, let media {
             headers["Media-User-Token"] = media
-        }
-        if access == .lyrics, let media {
-            headers["Cookie"] = "media-user-token=" + media
         }
         do {
             let data = try await http.data(for: LyricsRequest.make("https://amp-api.music.apple.com/v1" + path, query: query, headers: headers))
@@ -154,14 +151,35 @@ final class AppleLyricsProvider: LyricsProvider {
         _ = try await api("/me/storefront", access: .account)
     }
 
+    private func context(_ settings: LyricsSettings) async -> (storefront: String, language: String) {
+        guard (try? credentials.optionalMediaToken()) != nil else {
+            return (settings.storefront, settings.language)
+        }
+        if let accountContext, accountContext.generation == credentials.generation {
+            return (accountContext.storefront, accountContext.language)
+        }
+        do {
+            let response = try await api("/me/storefront", access: .account)
+            guard let item = (response["data"] as? [[String: Any]])?.first,
+                  let storefront = item["id"] as? String, !storefront.isEmpty else { return (settings.storefront, settings.language) }
+            let attributes = item["attributes"] as? [String: Any]
+            let language = (attributes?["defaultLanguageTag"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? settings.language
+            accountContext = (credentials.generation, storefront.lowercased(), language)
+            return (storefront.lowercased(), language)
+        } catch {
+            return (settings.storefront, settings.language)
+        }
+    }
+
     func search(track: TrackIdentity, query: String, settings: LyricsSettings) async throws -> [LyricCandidate] {
+        let context = await context(settings)
         var songs: [[String: Any]] = []
         if query.isEmpty, let isrc = track.isrc, !isrc.isEmpty {
-            let result = try await api("/catalog/\(settings.storefront)/songs", query: ["filter[isrc]": isrc])
+            let result = try await api("/catalog/\(context.storefront)/songs", query: ["filter[isrc]": isrc])
             songs = result["data"] as? [[String: Any]] ?? []
         }
         if songs.isEmpty || !query.isEmpty {
-            let result = try await api("/catalog/\(settings.storefront)/search", query: ["types": "songs", "limit": "20", "term": query.isEmpty ? track.query : query, "l": settings.language])
+            let result = try await api("/catalog/\(context.storefront)/search", query: ["types": "songs", "limit": "20", "term": query.isEmpty ? track.query : query, "l": context.language])
             let results = result["results"] as? [String: Any]
             songs += ((results?["songs"] as? [String: Any])?["data"] as? [[String: Any]]) ?? []
         }
@@ -180,7 +198,8 @@ final class AppleLyricsProvider: LyricsProvider {
         if let text = value as? String {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             let decoded = trimmed.removingPercentEncoding ?? trimmed
-            if decoded.range(of: #"<tt(?:\s|>)"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            let ttmlPattern = #"<\s*(?:[A-Za-z0-9_-]+:)?tt(?:\s|>)"#
+            if decoded.range(of: ttmlPattern, options: [.regularExpression, .caseInsensitive]) != nil {
                 return [(label, decoded)]
             }
             // A few proxy responses wrap XML in a data URL or URL-safe
@@ -188,10 +207,9 @@ final class AppleLyricsProvider: LyricsProvider {
             // arbitrary encrypted lyric blob as TTML.
             let base64 = decoded.replacingOccurrences(of: "data:application/xml;base64,", with: "", options: .caseInsensitive)
                 .replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-            if base64 != decoded,
-               let data = Data(base64Encoded: base64 + String(repeating: "=", count: (4 - base64.count % 4) % 4)),
+            if let data = Data(base64Encoded: base64 + String(repeating: "=", count: (4 - base64.count % 4) % 4)),
                let xml = String(data: data, encoding: .utf8),
-               xml.range(of: #"<tt(?:\s|>)"#, options: [.regularExpression, .caseInsensitive]) != nil
+               xml.range(of: ttmlPattern, options: [.regularExpression, .caseInsensitive]) != nil
             {
                 return [(label, xml)]
             }
@@ -208,59 +226,85 @@ final class AppleLyricsProvider: LyricsProvider {
         return []
     }
 
-    func lyrics(candidate: LyricCandidate, settings: LyricsSettings) async throws -> LyricsPayload {
+    func lyrics(candidate: LyricCandidate, settings: LyricsSettings) async throws -> LyricsAssetBundle {
         guard candidate.sourceID.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else { throw LyricsError.malformed }
+        let context = await context(settings)
         var languages: [String?] = [settings.language]
+        if context.language != settings.language {
+            languages.append(context.language)
+        }
         if settings.language.lowercased().hasPrefix("zh") {
-            for lang in ["zh-Hans-CN", "zh-Hans", "zh-CN", "zh-Hant-TW", "zh-Hant"] where !languages.contains(where: { $0 == lang }) {
-                languages.append(lang)
+            for language in ["zh-Hans-CN", "zh-Hans", "zh-CN", "zh-Hant-TW", "zh-Hant"]
+                where !languages.contains(where: { $0 == language })
+            {
+                languages.append(language)
             }
         }
-        // `l` is storefront-specific. A preferred translation language can
-        // legitimately return 404 even though the song has timed lyrics in
-        // its default language, so always retry once without `l`.
-        if !languages.contains(where: { $0 == nil }) {
-            languages.append(nil)
-        }
-        var best: (LyricsPayload, Int)?, lastError: Error = LyricsError.notFound
+        languages.append(nil)
+
+        var best: (bundle: LyricsAssetBundle, score: Int, hasWords: Bool, hasTranslation: Bool)?
+        var lastError: Error = LyricsError.notFound
         for language in languages {
             try Task.checkCancellation()
             do {
-                var query = ["extend": "ttmlLocalizations"]
+                var query = ["include[songs]": "syllable-lyrics", "extend": "ttmlLocalizations"]
                 if let language {
                     query["l"] = language
                 }
-                let result = try await api("/catalog/\(settings.storefront)/songs/\(candidate.sourceID)/syllable-lyrics", query: query, access: .lyrics)
-                let item = (result["data"] as? [[String: Any]])?.first
-                guard let attributes = item?["attributes"] as? [String: Any] else { throw LyricsError.notFound }
-                var seen = Set<String>()
-                let variants = ["ttml", "ttmlLocalizations"].flatMap { key in attributes[key].map { Self.ttmlCandidates($0, label: key) } ?? [] }
-                for (label, xml) in variants where seen.insert(xml).inserted {
-                    var payload = LyricsPayload(format: .ttml, original: xml, language: language ?? "", selectionReason: label)
-                    do {
-                        let parsePayload = payload
-                        let parsing = Task.detached { try parsePayload.parse(candidate: candidate, duration: candidate.duration) }
-                        let document = try await withTaskCancellationHandler { try await parsing.value } onCancel: { parsing.cancel() }
-                        let translations = document.lines.filter { !$0.translation.isEmpty }.count
-                        let roman = document.lines.filter { !$0.romanization.isEmpty || $0.words.contains { $0.romanWord != nil } }.count
-                        let score = translations * 100_000 + roman * 1000 + document.lines.reduce(0) { $0 + $1.words.count } * 10 + document.lines.count
-                        payload.selectionReason = "\(label); language=\(language ?? "default"); translations=\(translations); roman=\(roman); quality=\(score)"
-                        if best == nil || score > best!.1 {
-                            best = (payload, score)
-                        }
-                    } catch { lastError = error }
+                let response = try await api("/catalog/\(context.storefront)/songs/\(candidate.sourceID)", query: query, access: .lyrics)
+                let song = (response["data"] as? [[String: Any]])?.first
+                let relationships = song?["relationships"] as? [String: Any]
+                let containers: [(String, [String: Any])] = ["syllable-lyrics", "lyrics"].compactMap { relationship in
+                    let container = relationships?[relationship] as? [String: Any]
+                    let item = (container?["data"] as? [[String: Any]])?.first
+                    guard let attributes = item?["attributes"] as? [String: Any] else { return nil }
+                    return (relationship, attributes)
                 }
-                if let best, best.1 >= 100_000 {
+                guard !containers.isEmpty else { throw LyricsError.notFound }
+
+                var seen = Set<String>()
+                for (relationship, attributes) in containers {
+                    let variants = ["ttmlLocalizations", "ttml"].flatMap { key in
+                        attributes[key].map { Self.ttmlCandidates($0, label: relationship + "." + key) } ?? []
+                    }
+                    for (label, xml) in variants where seen.insert(xml).inserted {
+                        var bundle = LyricsAssetBundle(
+                            primary: LyricsAsset(format: .ttml, text: xml, language: language ?? "", origin: label),
+                            language: language ?? "", selectionReason: label,
+                            degradationReason: relationship == "lyrics" ? "Apple syllable lyrics unavailable; using line lyrics" : nil
+                        )
+                        do {
+                            let parseBundle = bundle
+                            let parsing = Task.detached { try parseBundle.parse(candidate: candidate, duration: candidate.duration) }
+                            let document = try await withTaskCancellationHandler { try await parsing.value } onCancel: { parsing.cancel() }
+                            let wordLines = document.lines.filter { $0.precision == .word && !$0.words.isEmpty }.count
+                            let translations = document.lines.filter { !$0.translation.isEmpty }.count
+                            let romanizations = document.lines.filter { !$0.romanization.isEmpty || $0.words.contains { $0.romanWord != nil } }.count
+                            let score = wordLines * 1_000_000 + translations * 10000 + romanizations * 100 + document.lines.count
+                            bundle.selectionReason = "\(label); language=\(language ?? "default"); words=\(wordLines); translations=\(translations); roman=\(romanizations); quality=\(score)"
+                            if best == nil || score > best!.score {
+                                best = (bundle, score, wordLines > 0, translations > 0)
+                            }
+                        } catch {
+                            lastError = error
+                        }
+                    }
+                }
+                if let best, best.hasWords, best.hasTranslation {
                     break
                 }
-            } catch is CancellationError { throw CancellationError() }
-            catch {
-                lastError = error; if error as? LyricsError == .credentials || error as? LyricsError == .permission || error as? LyricsError == .account || error as? LyricsError == .bearer {
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+                if error as? LyricsError == .credentials || error as? LyricsError == .permission ||
+                    error as? LyricsError == .account || error as? LyricsError == .bearer
+                {
                     break
                 }
             }
         }
         guard let best else { throw lastError }
-        return best.0
+        return best.bundle
     }
 }

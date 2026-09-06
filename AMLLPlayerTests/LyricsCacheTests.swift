@@ -37,4 +37,18 @@ final class LyricsCacheTests: XCTestCase {
         try cache.resetSelections()
         XCTAssertNil(try cache.selection(for: "song").candidate); XCTAssertEqual(try cache.selection(for: "song").offset, 2.5)
     }
+
+    func testMemoryCacheAlsoReparsesStaleDocuments() throws {
+        let cache = MemoryLyricsCache(), settings = LyricsSettings()
+        let track = TrackIdentity(spotifyID: "memory", title: "Fixture", artists: [], duration: 10)
+        let candidate = LyricCandidate(source: .qq, sourceID: "qq", title: "Fixture", artists: [])
+        let payload = LyricsPayload(format: .lrc, original: "[00:01]Fresh parser")
+        var document = try payload.parse(candidate: candidate, duration: 10)
+        document.lines[0].text = "Old parser"
+        try cache.save(LyricsCacheEntry(track: track, payload: payload, document: document,
+                                        savedAt: Date(timeIntervalSince1970: 100), parserVersion: 0), settings: settings)
+        let restored = try cache.read(track: track, source: .qq, settings: settings)
+        XCTAssertEqual(restored?.document.lines.first?.text, "Fresh parser")
+        XCTAssertEqual(restored?.parserVersion, LyricsDocument.parserVersion)
+    }
 }

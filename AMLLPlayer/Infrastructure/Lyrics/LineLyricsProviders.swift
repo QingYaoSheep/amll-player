@@ -14,6 +14,54 @@ final class QQLyricsProvider: LyricsProvider {
         return try LyricsRequest.object(data)
     }
 
+    /// QQ has returned the same lyric payload under `lrc`, `lyric`, and a
+    /// nested `{ lyric: ... }` object over time. Keep the provider tolerant of
+    /// those wire variants while still rejecting encrypted/non-LRC data below.
+    private static func stringValue(_ value: Any?) -> String {
+        if let value = value as? String {
+            return value
+        }
+        if let value = value as? [String: Any] {
+            for key in ["lrc", "lyric", "text", "content"] {
+                if let nested = value[key] {
+                    let result = stringValue(nested)
+                    if !result.isEmpty {
+                        return result
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
+    private static func decoded(_ value: Any?) -> String {
+        let raw = stringValue(value)
+        guard !raw.isEmpty else { return "" }
+        return (try? LRCLyricsParser.decodeField(raw)) ?? ""
+    }
+
+    private static func decryptedOrDecoded(_ value: Any?) -> String {
+        let raw = stringValue(value)
+        guard !raw.isEmpty else { return "" }
+        if let decrypted = QQRCDecoder.decrypt(raw) {
+            return decrypted
+        }
+        return (try? LRCLyricsParser.decodeField(raw)) ?? ""
+    }
+
+    private static func isEnabled(_ value: Any?) -> Bool {
+        if let number = value as? NSNumber {
+            return number.intValue != 0
+        }
+        if let value = value as? Int {
+            return value != 0
+        }
+        if let value = value as? String {
+            return value == "1" || value.caseInsensitiveCompare("true") == .orderedSame
+        }
+        return false
+    }
+
     func search(track: TrackIdentity, query: String, settings _: LyricsSettings) async throws -> [LyricCandidate] {
         let query = query.isEmpty ? track.query : query
         var songs: [[String: Any]] = []
@@ -40,7 +88,7 @@ final class QQLyricsProvider: LyricsProvider {
             let singers = (song["singer"] as? [[String: Any]]) ?? (song["singers"] as? [[String: Any]]) ?? []
             let album = song["album"] as? [String: Any]
             let candidate = LyricCandidate(source: .qq, sourceID: id, numericID: numeric, title: (song["title"] as? String) ?? (song["songname"] as? String) ?? (song["name"] as? String) ?? "",
-                                           artists: singers.compactMap { $0["name"] as? String }, album: (album?["name"] as? String) ?? (song["albumname"] as? String) ?? "", duration: (song["interval"] as? Double) ?? 0)
+                                           artists: singers.compactMap { $0["name"] as? String }, album: (album?["name"] as? String) ?? (song["albumname"] as? String) ?? "", duration: (song["interval"] as? NSNumber).map(\.doubleValue) ?? (song["interval"] as? Double) ?? 0)
             return LyricsMatcher.scored(candidate, against: track)
         }.sorted { $0.score > $1.score }
     }
@@ -48,11 +96,21 @@ final class QQLyricsProvider: LyricsProvider {
     func lyrics(candidate: LyricCandidate, settings _: LyricsSettings) async throws -> LyricsPayload {
         var original = "", translation = "", roman = ""
         do {
-            let result = try await request("https://u.y.qq.com/cgi-bin/musicu.fcg", body: ["comm": ["ct": 19, "cv": 0, "tmeAppID": "qqmusiclight"], "req_0": ["module": "music.musichallSong.PlayLyricInfo", "method": "GetPlayLyricInfo", "param": ["songMID": candidate.sourceID, "songID": Int(candidate.numericID ?? "") ?? 0, "platform": 0, "needNew": 1, "crypt": 1]]])
+            let result = try await request("https://u.y.qq.com/cgi-bin/musicu.fcg", body: ["comm": ["ct": 19, "cv": 0, "tmeAppID": "qqmusiclight"], "req_0": ["module": "music.musichallSong.PlayLyricInfo", "method": "GetPlayLyricInfo", "param": ["songMID": candidate.sourceID, "songID": Int(candidate.numericID ?? "") ?? 0, "platform": 0, "needNew": 1, "crypt": 1, "qrc": 1, "trans": 1, "roma": 1]]])
             let data = (result["req_0"] as? [String: Any])?["data"] as? [String: Any]
-            original = try LRCLyricsParser.decodeField((data?["lrc"] as? String) ?? "")
-            translation = (try? LRCLyricsParser.decodeField((data?["trans"] as? String) ?? "")) ?? ""
-            roman = (try? LRCLyricsParser.decodeField((data?["roma"] as? String) ?? "")) ?? ""
+            if Self.isEnabled(data?["qrc"]),
+               let decrypted = QQRCDecoder.decrypt(Self.stringValue(data?["lyric"])),
+               let qrcLines = try? QQRCDecoder.parse(decrypted, duration: candidate.duration),
+               !qrcLines.isEmpty
+            {
+                let translation = Self.decryptedOrDecoded(data?["trans"])
+                let roman = Self.decryptedOrDecoded(data?["roma"])
+                return LyricsPayload(format: .qrc, original: decrypted, translation: translation, romanization: roman,
+                                     selectionReason: "QQ synchronized word timings")
+            }
+            original = Self.decoded(data?["lrc"] ?? data?["lyric"])
+            translation = Self.decoded(data?["trans"])
+            roman = Self.decoded(data?["roma"])
             if (try? LRCLyricsParser.rows(original).isEmpty) != false {
                 original = ""
             }
@@ -63,9 +121,9 @@ final class QQLyricsProvider: LyricsProvider {
             if let code = result["code"] as? Int, code != 0 {
                 throw LyricsError.malformed
             }
-            original = try LRCLyricsParser.decodeField((result["lyric"] as? String) ?? "")
-            translation = (try? LRCLyricsParser.decodeField((result["trans"] as? String) ?? "")) ?? ""
-            roman = (try? LRCLyricsParser.decodeField((result["roma"] as? String) ?? "")) ?? ""
+            original = Self.decoded(result["lyric"] ?? result["lrc"])
+            translation = Self.decoded(result["trans"])
+            roman = Self.decoded(result["roma"])
         }
         guard !original.isEmpty else { throw LyricsError.notFound }
         return LyricsPayload(format: .lrc, original: original, translation: translation, romanization: roman, selectionReason: "QQ synchronized lines")

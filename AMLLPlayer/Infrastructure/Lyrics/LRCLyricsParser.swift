@@ -39,29 +39,31 @@ enum LRCLyricsParser {
         return result.enumerated().sorted { $0.element.time == $1.element.time ? $0.offset < $1.offset : $0.element.time < $1.element.time }.map(\.element)
     }
 
+    static func alignedText(_ rows: [Row], at time: Double, tolerance: Double = 0.250_001) -> String {
+        var low = 0, high = rows.count
+        while low < high {
+            let mid = (low + high) / 2
+            if rows[mid].time < time {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        var closest: Row?
+        var closestDistance = Double.infinity
+        for index in [low - 1, low] where rows.indices.contains(index) {
+            let candidate = rows[index]
+            let distance = abs(candidate.time - time)
+            if distance <= tolerance, distance < closestDistance {
+                closest = candidate
+                closestDistance = distance
+            }
+        }
+        return closest?.text ?? ""
+    }
+
     static func parse(_ original: String, translation: String = "", romanization: String = "", duration: Double) throws -> [LyricLine] {
         let main = try rows(original), translations = try rows(translation), romans = try rows(romanization)
-        func aligned(_ rows: [Row], _ time: Double) -> String {
-            var low = 0, high = rows.count
-            while low < high {
-                let mid = (low + high) / 2; if rows[mid].time < time {
-                    low = mid + 1
-                } else {
-                    high = mid
-                }
-            }
-            var closest: Row?
-            var closestDistance = Double.infinity
-            for index in [low - 1, low] where rows.indices.contains(index) {
-                let candidate = rows[index]
-                let distance = abs(candidate.time - time)
-                if distance <= 0.250_001, distance < closestDistance {
-                    closest = candidate
-                    closestDistance = distance
-                }
-            }
-            return closest?.text ?? ""
-        }
         var ends = Array(repeating: 0.0, count: main.count)
         var next: Double?
         for i in main.indices.reversed() {
@@ -72,8 +74,8 @@ enum LRCLyricsParser {
         }
         return main.enumerated().map { index, row in
             LyricLine(id: "lrc-\(index)", text: row.text, start: row.time,
-                      end: ends[index], translation: aligned(translations, row.time),
-                      romanization: aligned(romans, row.time))
+                      end: ends[index], translation: alignedText(translations, at: row.time),
+                      romanization: alignedText(romans, at: row.time))
         }
     }
 }

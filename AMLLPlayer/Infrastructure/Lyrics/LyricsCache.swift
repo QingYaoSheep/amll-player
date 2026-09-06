@@ -141,7 +141,16 @@ final class MemoryLyricsCache: LyricsCacheProviding {
     }
 
     func read(track: TrackIdentity, source: LyricsSource, settings: LyricsSettings) throws -> LyricsCacheEntry? {
-        entries[key(track.spotifyID, source, settings)]
+        let cacheKey = key(track.spotifyID, source, settings)
+        guard var entry = entries[cacheKey] else { return nil }
+        guard entry.track.spotifyID == track.spotifyID,
+              entry.document.candidate.source == source else { throw LyricsError.cache }
+        if entry.parserVersion != LyricsDocument.parserVersion {
+            entry.document = try entry.payload.parse(candidate: entry.document.candidate, duration: track.duration)
+            entry.parserVersion = LyricsDocument.parserVersion
+            entries[cacheKey] = entry
+        }
+        return entry
     }
 
     func save(_ entry: LyricsCacheEntry, settings: LyricsSettings) throws {

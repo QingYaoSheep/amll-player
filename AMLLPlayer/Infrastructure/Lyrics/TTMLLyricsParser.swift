@@ -55,7 +55,7 @@ enum TTMLLyricsParser {
         func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI _: String?, qualifiedName _: String?, attributes attributeDict: [String: String]) {
             count += 1
             guard stack.count < 64, count <= 40000, !Task.isCancelled else { rejected = true; parser.abortParsing(); return }
-            let node = Node(elementName.split(separator: ":").last.map(String.init) ?? elementName, attributeDict, parent: stack.last)
+            let node = Node((elementName.split(separator: ":").last.map(String.init) ?? elementName).lowercased(), attributeDict, parent: stack.last)
             if let parent = stack.last {
                 parent.content.append(.node(node))
             } else {
@@ -129,6 +129,89 @@ enum TTMLLyricsParser {
             case let .node(child): excluding(child) ? "" : child.name == "br" ? "\n" : text(child, excluding: excluding)
             }
         }.joined()
+    }
+
+    /// TTML often places timing spans around punctuation or whitespace that
+    /// is also present in the paragraph text. Align the timed tokens back to
+    /// that full text before Core Text lays out glyph fragments; otherwise a
+    /// missing space or a composed character makes the mask cursor drift and
+    /// the final words disappear.
+    private static func alignWords(_ words: [LyricWord], to fullText: String) -> [LyricWord] {
+        func normalized(_ value: String, trim: Bool = true) -> String {
+            var value = value.replacingOccurrences(of: "\u{00A0}", with: " ")
+                .replacingOccurrences(of: "\u{202F}", with: " ")
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            if trim {
+                value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return value
+        }
+
+        let full = normalized(fullText)
+        guard !full.isEmpty, !words.isEmpty else { return words }
+        let fullCharacters = Array(full)
+        var result = words.compactMap { word -> LyricWord? in
+            let value = normalized(word.text)
+            guard !value.isEmpty else { return nil }
+            var copy = word; copy.text = value; return copy
+        }
+        guard !result.isEmpty else { return [] }
+
+        /// Use Character offsets rather than String.Index values from a
+        /// separately lowercased string. Lowercasing can change the number of
+        /// Unicode scalars (for example, Turkish İ), which would otherwise
+        /// make a successful fallback point into the wrong glyph cluster.
+        func match(_ token: String, from cursor: Int, insensitive: Bool) -> Range<Int>? {
+            let tokenCharacters = Array(token)
+            guard !tokenCharacters.isEmpty, cursor <= fullCharacters.count - tokenCharacters.count else { return nil }
+            let lastStart = fullCharacters.count - tokenCharacters.count
+            for start in max(0, cursor) ... lastStart {
+                let candidate = String(fullCharacters[start ..< start + tokenCharacters.count])
+                if insensitive {
+                    if candidate.caseInsensitiveCompare(token) == .orderedSame {
+                        return start ..< start + tokenCharacters.count
+                    }
+                } else if candidate == token {
+                    return start ..< start + tokenCharacters.count
+                }
+            }
+            return nil
+        }
+
+        var cursor = 0
+        var lastMatched = -1
+        for index in result.indices {
+            let token = result[index].text
+            let location = match(token, from: cursor, insensitive: false)
+                ?? match(token, from: cursor, insensitive: true)
+            guard let location else { continue }
+            let start = location.lowerBound
+            let end = location.upperBound
+            if index == result.startIndex, start > cursor {
+                result[index].text = String(fullCharacters[cursor ..< start]) + result[index].text
+            } else if lastMatched >= 0, start > cursor {
+                result[lastMatched].text += String(fullCharacters[cursor ..< start])
+            }
+            cursor = end; lastMatched = index
+        }
+        if lastMatched >= 0, cursor < full.count {
+            result[lastMatched].text += String(fullCharacters[cursor...])
+        }
+        return result
+    }
+
+    private static func normalizedKey(_ value: String?) -> String? {
+        guard var value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        while value.first == "#" {
+            value.removeFirst()
+        }
+        return value.isEmpty ? nil : value
+    }
+
+    private static func cleanEmptyMarkers(_ value: String) -> String {
+        value.replacingOccurrences(of: #"(?:\(\s*\)|（\s*）|﹙\s*﹚|\[\s*\]|［\s*］|〔\s*〕|【\s*】|\{\s*\}|｛\s*｝)"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func whitespace(_ text: String, preserve: Bool) -> String {
@@ -241,18 +324,36 @@ enum TTMLLyricsParser {
         var sidecars: [String: [String: [Node]]] = [:]
         for kind in ["translation", "transliteration"] {
             for node in root.descendants(kind).flatMap({ $0.descendants("text") }) {
-                if let key = node.attr("for") {
+                if let key = normalizedKey(node.attr("for")) {
                     sidecars[kind, default: [:]][key, default: []].append(node)
                 }
             }
         }
         func auxiliary(_ p: Node, kind: String, bg: Int?) -> Node? {
-            let key = p.attr("key") ?? p.attr("id") ?? ""
+            guard let key = normalizedKey(p.attr("key") ?? p.attr("id")) else { return nil }
             let choices = sidecars[kind]?[key] ?? []
             let ranked = choices.sorted { a, b in
                 func score(_ n: Node) -> Int {
-                    let lang = n.inherited("lang") ?? ""
-                    return lang.caseInsensitiveCompare(preferredLanguage) == .orderedSame ? 3 : lang.split(separator: "-").first == preferredLanguage.split(separator: "-").first ? 2 : 0
+                    let lang = (n.inherited("lang") ?? "").lowercased()
+                    let preferred = preferredLanguage.lowercased()
+                    if !preferred.isEmpty, lang == preferred {
+                        return 50
+                    }
+                    if !preferred.isEmpty,
+                       lang.split(separator: "-").first == preferred.split(separator: "-").first
+                    {
+                        return 40
+                    }
+                    // When the caller did not specify a supported language,
+                    // retain AMLL's Chinese-first behavior before falling
+                    // back to the first available localization.
+                    if lang == "zh-hans-cn" {
+                        return 30
+                    }
+                    if ["zh-hans", "zh-cn", "zh-hant-tw", "zh-hant", "zh-tw", "zh-hk"].contains(lang) {
+                        return 25
+                    }
+                    return lang.isEmpty ? 10 : 0
                 }
                 return score(a) > score(b)
             }
@@ -287,13 +388,17 @@ enum TTMLLyricsParser {
                 if bg {
                     timedWords = cleanBackground(timedWords)
                 }
-                func inline(_ role: String) -> Node? {
-                    node.descendants("span").first { $0.role.contains(role) && (bg || !$0.ancestorsContainBackground) }
+                timedWords = alignWords(timedWords, to: lineText)
+                func inline(_ roles: [String]) -> Node? {
+                    node.descendants("span").first { span in
+                        roles.contains(where: { role in !role.isEmpty && span.role.contains(role) })
+                            && (bg || !span.ancestorsContainBackground)
+                    }
                 }
-                let translation = auxiliary(p, kind: "translation", bg: bg ? voice - 1 : nil) ?? inline("translation")
-                let roman = auxiliary(p, kind: "transliteration", bg: bg ? voice - 1 : nil) ?? inline("roman")
-                let trText = translation.map { text($0, excluding: { $0.role.contains("bg") }) } ?? ""
-                let roText = roman.map { text($0, excluding: { $0.role.contains("bg") }) } ?? ""
+                let translation = auxiliary(p, kind: "translation", bg: bg ? voice - 1 : nil) ?? inline(["translation"])
+                let roman = auxiliary(p, kind: "transliteration", bg: bg ? voice - 1 : nil) ?? inline(["roman", "transliteration"])
+                let trText = translation.map { cleanEmptyMarkers(text($0, excluding: { $0.role.contains("bg") })) } ?? ""
+                let roText = roman.map { cleanEmptyMarkers(text($0, excluding: { $0.role.contains("bg") })) } ?? ""
                 if let roman {
                     let romanWords = words(roman, duration: duration, mode: timingMode)
                     var cursor = 0

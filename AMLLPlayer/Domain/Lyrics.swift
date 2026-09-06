@@ -75,7 +75,10 @@ struct LyricLine: Codable, Equatable, Sendable, Identifiable {
 }
 
 struct LyricsDocument: Codable, Equatable, Sendable {
-    static let parserVersion = 1
+    // Bump when the TTML/LRC semantic mapping changes. Existing cached
+    // documents are reparsed from their payload so provider fixes become
+    // visible without asking the user to clear the lyric cache.
+    static let parserVersion = 2
     var candidate: LyricCandidate
     var lines: [LyricLine]
     var language: String
@@ -89,7 +92,7 @@ struct LyricsDocument: Codable, Equatable, Sendable {
 }
 
 struct LyricsPayload: Codable, Equatable, Sendable {
-    enum Format: String, Codable, Sendable { case ttml, lrc }
+    enum Format: String, Codable, Sendable { case ttml, lrc, qrc }
     var format: Format
     var original: String
     var translation = ""
@@ -104,8 +107,26 @@ struct LyricsPayload: Codable, Equatable, Sendable {
             lines = []
         } else {
             switch format {
-            case .ttml: lines = try TTMLLyricsParser.parse(original, preferredLanguage: language, duration: duration)
+            case .ttml:
+                // A request without `l` uses the storefront's default
+                // language. Keep Chinese as the preferred sidecar when the
+                // response contains several localizations and the payload
+                // does not carry a language tag.
+                lines = try TTMLLyricsParser.parse(
+                    original,
+                    preferredLanguage: language.isEmpty ? "zh-Hans-CN" : language,
+                    duration: duration
+                )
             case .lrc: lines = try LRCLyricsParser.parse(original, translation: translation, romanization: romanization, duration: duration)
+            case .qrc:
+                var timed = try QQRCDecoder.parse(original, duration: duration)
+                let translations = try LRCLyricsParser.rows(translation)
+                let romanizations = try LRCLyricsParser.rows(romanization)
+                for index in timed.indices {
+                    timed[index].translation = LRCLyricsParser.alignedText(translations, at: timed[index].start)
+                    timed[index].romanization = LRCLyricsParser.alignedText(romanizations, at: timed[index].start)
+                }
+                lines = timed
             }
             guard !lines.isEmpty else { throw LyricsError.notFound }
         }

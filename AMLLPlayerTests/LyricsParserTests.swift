@@ -109,6 +109,62 @@ final class LyricsParserTests: XCTestCase {
         XCTAssertEqual(line.precision, .line); XCTAssertTrue(line.words.isEmpty)
     }
 
+    func testSidecarChoosesChineseWhenPreferredLanguageIsUnavailable() throws {
+        let xml = #"""
+        <tt xmlns:ttm="urn:metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+          <head><metadata><itunes:iTunesMetadata><itunes:translations>
+            <itunes:translation xml:lang="en-US"><itunes:text for="L1">English translation</itunes:text></itunes:translation>
+            <itunes:translation xml:lang="zh-Hans-CN"><itunes:text for="L1">中文翻译</itunes:text></itunes:translation>
+          </itunes:translations></itunes:iTunesMetadata></metadata></head>
+          <body><p begin="1s" end="3s" ttm:key="L1"><span begin="1s" end="3s">Original</span></p></body>
+        </tt>
+        """#
+        let line = try XCTUnwrap(TTMLLyricsParser.parse(xml, preferredLanguage: "").first)
+        XCTAssertEqual(line.translation, "中文翻译")
+    }
+
+    func testInlineTransliterationRoleAndTimedWordSpacingRemainAligned() throws {
+        let xml = #"""
+        <tt xmlns:ttm="urn:metadata"><body><p begin="1s" end="4s">
+          <span begin="1s" end="2s">Hello</span> <span begin="2s" end="4s">world</span>
+          <span ttm:role="x-transliteration">heh wo</span>
+        </p></body></tt>
+        """#
+        let line = try XCTUnwrap(TTMLLyricsParser.parse(xml).first)
+        XCTAssertEqual(line.text, "Hello world")
+        XCTAssertEqual(line.words.map(\.text), ["Hello ", "world"])
+        XCTAssertEqual(line.romanization, "heh wo")
+    }
+
+    func testQRCWordTimingsTranslationAndBackgroundVoice() throws {
+        let original = #"""
+        <Lyric_1 LyricType="1" LyricContent="[1000,2000]你(1000,500)好(1500,1500)
+        [3500,1000]（回(3500,400)声）(3900,600)"/>
+        """#
+        let candidate = LyricCandidate(source: .qq, sourceID: "qq", title: "Fixture", artists: [])
+        let payload = LyricsPayload(format: .qrc, original: original,
+                                    translation: "[00:01.050]Hello\n[00:03.500]Echo",
+                                    romanization: "[00:01]ni hao")
+        let document = try payload.parse(candidate: candidate, duration: 8)
+        XCTAssertEqual(document.precision, .word)
+        XCTAssertEqual(document.lines.map(\.text), ["你好", "回声"])
+        XCTAssertEqual(document.lines[0].words.map(\.text), ["你", "好"])
+        XCTAssertEqual(document.lines[0].words.map(\.start), [1, 1.5])
+        XCTAssertEqual(document.lines[0].translation, "Hello")
+        XCTAssertEqual(document.lines[0].romanization, "ni hao")
+        XCTAssertTrue(document.lines[1].isBackground)
+    }
+
+    func testQQEncryptedQRCFixtureUsesCustomCipherAndZlib() throws {
+        let encrypted = "c90db2e3f6940a43538b45865eb6753863c981f936a71a093b450246d48b65f09ea70dc2b1510075f51ddfb35bdd67a91b2353ae0e4225c227d0571074570c21"
+        let decrypted = try XCTUnwrap(QQRCDecoder.decrypt(encrypted))
+        XCTAssertTrue(decrypted.contains(#"LyricContent="[1000,2000]Hi(1000,1000)"#))
+        let line = try XCTUnwrap(QQRCDecoder.parse(decrypted, duration: 4).first)
+        XCTAssertEqual(line.text, "Hi")
+        XCTAssertEqual(line.words.first?.start, 1)
+        XCTAssertEqual(line.words.first?.end, 2)
+    }
+
     func testRTLDoesNotTreatJapaneseAsRightToLeft() throws {
         let japanese = try TTMLLyricsParser.parse(#"<tt xml:lang="ja"><body><p begin="1s" end="2s">こんにちは</p></body></tt>"#)
         let arabic = try TTMLLyricsParser.parse(#"<tt xml:lang="ar"><body><p begin="1s" end="2s">مرحبا</p></body></tt>"#)

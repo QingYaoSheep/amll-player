@@ -192,11 +192,13 @@ struct FullscreenLyricsPlayer: View {
                                  canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
                                  position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
                                  resumeToken: resumeToken, browsing: { browsing = $0 })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
                     .buttonStyle(.bordered).accessibilityIdentifier("resumeLyricsFollowing")
                     .frame(height: 48).opacity(browsing ? 1 : 0).disabled(!browsing).accessibilityHidden(!browsing)
                 credits
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 16) {
                 Spacer()

@@ -17,7 +17,8 @@ enum AMLLMotionMetrics {
     static func verticalSpring(lineInterval: TimeInterval?, seeking: Bool, interlude: Bool) -> AMLLSpringParameters {
         guard !seeking, !interlude, let lineInterval else { return .verticalDefault }
         let interval = min(0.8, max(0.1, lineInterval))
-        let ratio = pow(1 - (interval - 0.1) / 0.7, 0.2)
+        let normalized = min(1, max(0, (interval - 0.1) / 0.7))
+        let ratio = pow(1 - normalized, 0.2)
         let stiffness = 170 + ratio * 50
         return AMLLSpringParameters(mass: 0.9, damping: sqrt(stiffness) * 2.2, stiffness: stiffness)
     }
@@ -116,17 +117,17 @@ enum AMLLInterludeMotion {
     static func presentation(time: TimeInterval, start: TimeInterval, end: TimeInterval, playing: Bool) -> AMLLInterludePresentation? {
         _ = playing // AMLL freezes the last dot frame while paused instead of removing the interlude.
         guard time >= start, time <= end, end > start else { return nil }
-        let duration = (end - start) * 1_000
-        let current = (time - start) * 1_000
-        let breatheDuration = duration / ceil(duration / 1_500)
+        let duration = (end - start) * 1000
+        let current = (time - start) * 1000
+        let breatheDuration = duration / ceil(duration / 1500)
         var scale = sin(1.5 * .pi - current / breatheDuration * 2) / 20 + 1
         var opacity = 1.0
-        if current < 2_000 {
-            scale *= easeOutExpo(current / 2_000)
+        if current < 2000 {
+            scale *= easeOutExpo(current / 2000)
         }
         if current < 500 {
             opacity = 0
-        } else if current < 1_000 {
+        } else if current < 1000 {
             opacity *= (current - 500) / 500
         }
         let remaining = duration - current
@@ -279,7 +280,9 @@ enum AMLLWordMotion {
         for _ in 0 ..< 8 {
             let current = bezier(parameter, x1, x2) - target
             let derivative = bezierDerivative(parameter, x1, x2)
-            if abs(derivative) < 0.000_001 { break }
+            if abs(derivative) < 0.000_001 {
+                break
+            }
             parameter = min(1, max(0, parameter - current / derivative))
         }
         return bezier(parameter, y1, y2)

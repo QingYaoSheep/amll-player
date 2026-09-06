@@ -90,6 +90,7 @@ targets:
       - package: SpotifyiOS
         product: SpotifyiOS
       - sdk: AuthenticationServices.framework
+      - sdk: Compression.framework
       - sdk: Security.framework
 
   AMLLPlayerTests:

@@ -52,6 +52,49 @@ final class LyricsProviderTests: XCTestCase {
         XCTAssertEqual(requests.count, 2)
     }
 
+    func testQQModernLyricFieldCarriesTranslationWithoutFallback() async throws {
+        let translation = Data("[00:01.050]翻译".utf8).base64EncodedString()
+        let http = try LyricsHTTPFixture([.success(json([
+            "req_0": ["data": [
+                "lyric": "[00:01]原文",
+                "trans": translation,
+                "roma": "",
+            ]],
+        ]))])
+        let candidate = LyricCandidate(source: .qq, sourceID: "mid", numericID: "1", title: "Title", artists: [])
+        let payload = try await QQLyricsProvider(http: http).lyrics(candidate: candidate, settings: LyricsSettings())
+        let document = try payload.parse(candidate: candidate, duration: 10)
+        XCTAssertEqual(document.lines.first?.text, "原文")
+        XCTAssertEqual(document.lines.first?.translation, "翻译")
+        XCTAssertEqual(document.precision, .line)
+        let requests = await http.requests
+        XCTAssertEqual(requests.count, 1)
+        let body = try XCTUnwrap(requests.first?.httpBody)
+        let requestJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let requestData = try XCTUnwrap(requestJSON["req_0"] as? [String: Any])
+        let requestParameters = try XCTUnwrap(requestData["param"] as? [String: Any])
+        XCTAssertEqual((requestParameters["qrc"] as? NSNumber)?.intValue, 1)
+        XCTAssertEqual((requestParameters["trans"] as? NSNumber)?.intValue, 1)
+        XCTAssertEqual((requestParameters["roma"] as? NSNumber)?.intValue, 1)
+    }
+
+    func testQQEncryptedQRCBecomesWordTimedPayload() async throws {
+        let encrypted = "c90db2e3f6940a43538b45865eb6753863c981f936a71a093b450246d48b65f09ea70dc2b1510075f51ddfb35bdd67a91b2353ae0e4225c227d0571074570c21"
+        let translation = Data("[00:01]Translation".utf8).base64EncodedString()
+        let http = try LyricsHTTPFixture([.success(json([
+            "req_0": ["data": ["qrc": 1, "lyric": encrypted, "trans": translation, "roma": ""]],
+        ]))])
+        let candidate = LyricCandidate(source: .qq, sourceID: "mid", numericID: "1", title: "Title", artists: [], duration: 4)
+        let payload = try await QQLyricsProvider(http: http).lyrics(candidate: candidate, settings: LyricsSettings())
+        let document = try payload.parse(candidate: candidate, duration: 4)
+        XCTAssertEqual(payload.format, .qrc)
+        XCTAssertEqual(document.precision, .word)
+        XCTAssertEqual(document.lines.first?.text, "Hi")
+        XCTAssertEqual(document.lines.first?.translation, "Translation")
+        let requests = await http.requests
+        XCTAssertEqual(requests.count, 1)
+    }
+
     func testNetEaseInstrumentalAndNoLyricsAreDifferent() async throws {
         let candidate = LyricCandidate(source: .netease, sourceID: "1", title: "Title", artists: [])
         let http = try LyricsHTTPFixture([.success(json(["code": 200, "nolyric": true])), .success(json(["code": 200]))])
@@ -89,7 +132,7 @@ final class LyricsProviderTests: XCTestCase {
 
     func testAppleLyrics404IsClassifiedAsNotFound() async throws {
         let credentials = credentials(); try credentials.saveManual(token()); try credentials.saveMedia("fixture-user")
-        let http = try LyricsHTTPFixture([.failure(.http(404))])
+        let http = try LyricsHTTPFixture([.failure(.http(404)), .failure(.http(404))])
         let provider = AppleLyricsProvider(http: http, credentials: credentials)
         var settings = LyricsSettings(); settings.language = "en-US"
         let candidate = LyricCandidate(source: .apple, sourceID: "1", title: "Title", artists: [])
@@ -100,7 +143,23 @@ final class LyricsProviderTests: XCTestCase {
             XCTAssertEqual(error as? LyricsError, .notFound)
         }
         let requests = await http.requests
-        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    func testAppleLyricsFallsBackToDefaultLanguageAfterPreferred404() async throws {
+        let credentials = credentials(); try credentials.saveManual(token()); try credentials.saveMedia("fixture-user")
+        let xml = #"<tt><body><p begin="1s" end="2s">Default language</p></body></tt>"#
+        let http = try LyricsHTTPFixture([.failure(.http(404)), .success(json(["data": [["attributes": ["ttml": xml]]]]))])
+        let provider = AppleLyricsProvider(http: http, credentials: credentials)
+        var settings = LyricsSettings(); settings.language = "en-US"
+        let candidate = LyricCandidate(source: .apple, sourceID: "1", title: "Title", artists: [])
+        let payload = try await provider.lyrics(candidate: candidate, settings: settings)
+        XCTAssertEqual(payload.language, "")
+        XCTAssertEqual(try payload.parse(candidate: candidate, duration: 10).lines.first?.text, "Default language")
+        let requests = await http.requests
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertNotNil(try URLComponents(url: XCTUnwrap(requests[0].url), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "l" })
+        XCTAssertNil(try URLComponents(url: XCTUnwrap(requests[1].url), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "l" })
     }
 
     func testAppleLyricsRetriesAfterRejectedAutomaticBearerIsReplaced() async throws {

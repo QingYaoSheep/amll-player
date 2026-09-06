@@ -104,7 +104,9 @@ final class LyricTextLayout {
 
     func image(scale: CGFloat, blurRadius: CGFloat = 0) -> UIImage {
         let key = RasterKey(scale: scale, blurRadius: blurRadius)
-        if let cached = rasters[key] { return cached }
+        if let cached = rasters[key] {
+            return cached
+        }
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale; format.opaque = false
         let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
@@ -214,7 +216,11 @@ final class LyricRowView: UIView {
             mask.locations = [0, NSNumber(value: max(0, progress - feather)), NSNumber(value: progress), 1]
             // A completed word is entirely filled, including its final glyph edge.
             piece.mask = progress >= 1 ? nil : mask
-            piece.opacity = active && progress > 0 ? Float(lineOpacity) : 0
+            // The mask controls how much of a glyph is filled. Keep the
+            // highlight layer opaque for the whole active line so the mask
+            // can reveal the first edge smoothly instead of popping each
+            // glyph in as its interval begins.
+            piece.opacity = active ? Float(lineOpacity) : 0
             let motion = AMLLWordMotion.presentation(
                 time: time, wordStart: fragment.start, wordEnd: fragment.end,
                 characterIndex: fragment.characterIndex, characterCount: fragment.characterCount,

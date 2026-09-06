@@ -178,10 +178,24 @@ final class AppleLyricsProvider: LyricsProvider {
     static func ttmlCandidates(_ value: Any, label: String = "", depth: Int = 0) -> [(String, String)] {
         guard depth < 16 else { return [] }
         if let text = value as? String {
-            if text.contains("<tt") {
-                return [(label, text)]
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let decoded = trimmed.removingPercentEncoding ?? trimmed
+            if decoded.range(of: #"<tt(?:\s|>)"#, options: [.regularExpression, .caseInsensitive]) != nil {
+                return [(label, decoded)]
             }
-            if let data = text.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) {
+            // A few proxy responses wrap XML in a data URL or URL-safe
+            // base64. Accept those transport wrappers but never treat an
+            // arbitrary encrypted lyric blob as TTML.
+            let base64 = decoded.replacingOccurrences(of: "data:application/xml;base64,", with: "", options: .caseInsensitive)
+                .replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            if base64 != decoded,
+               let data = Data(base64Encoded: base64 + String(repeating: "=", count: (4 - base64.count % 4) % 4)),
+               let xml = String(data: data, encoding: .utf8),
+               xml.range(of: #"<tt(?:\s|>)"#, options: [.regularExpression, .caseInsensitive]) != nil
+            {
+                return [(label, xml)]
+            }
+            if let data = decoded.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) {
                 return ttmlCandidates(object, label: label, depth: depth + 1)
             }
         }
@@ -196,23 +210,33 @@ final class AppleLyricsProvider: LyricsProvider {
 
     func lyrics(candidate: LyricCandidate, settings: LyricsSettings) async throws -> LyricsPayload {
         guard candidate.sourceID.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else { throw LyricsError.malformed }
-        var languages = [settings.language]
+        var languages: [String?] = [settings.language]
         if settings.language.lowercased().hasPrefix("zh") {
-            for lang in ["zh-Hans-CN", "zh-Hans", "zh-CN", "zh-Hant-TW", "zh-Hant"] where !languages.contains(lang) {
+            for lang in ["zh-Hans-CN", "zh-Hans", "zh-CN", "zh-Hant-TW", "zh-Hant"] where !languages.contains(where: { $0 == lang }) {
                 languages.append(lang)
             }
+        }
+        // `l` is storefront-specific. A preferred translation language can
+        // legitimately return 404 even though the song has timed lyrics in
+        // its default language, so always retry once without `l`.
+        if !languages.contains(where: { $0 == nil }) {
+            languages.append(nil)
         }
         var best: (LyricsPayload, Int)?, lastError: Error = LyricsError.notFound
         for language in languages {
             try Task.checkCancellation()
             do {
-                let result = try await api("/catalog/\(settings.storefront)/songs/\(candidate.sourceID)/syllable-lyrics", query: ["l": language, "extend": "ttmlLocalizations"], access: .lyrics)
+                var query = ["extend": "ttmlLocalizations"]
+                if let language {
+                    query["l"] = language
+                }
+                let result = try await api("/catalog/\(settings.storefront)/songs/\(candidate.sourceID)/syllable-lyrics", query: query, access: .lyrics)
                 let item = (result["data"] as? [[String: Any]])?.first
                 guard let attributes = item?["attributes"] as? [String: Any] else { throw LyricsError.notFound }
                 var seen = Set<String>()
                 let variants = ["ttml", "ttmlLocalizations"].flatMap { key in attributes[key].map { Self.ttmlCandidates($0, label: key) } ?? [] }
                 for (label, xml) in variants where seen.insert(xml).inserted {
-                    var payload = LyricsPayload(format: .ttml, original: xml, language: language, selectionReason: label)
+                    var payload = LyricsPayload(format: .ttml, original: xml, language: language ?? "", selectionReason: label)
                     do {
                         let parsePayload = payload
                         let parsing = Task.detached { try parsePayload.parse(candidate: candidate, duration: candidate.duration) }
@@ -220,7 +244,7 @@ final class AppleLyricsProvider: LyricsProvider {
                         let translations = document.lines.filter { !$0.translation.isEmpty }.count
                         let roman = document.lines.filter { !$0.romanization.isEmpty || $0.words.contains { $0.romanWord != nil } }.count
                         let score = translations * 100_000 + roman * 1000 + document.lines.reduce(0) { $0 + $1.words.count } * 10 + document.lines.count
-                        payload.selectionReason = "\(label); language=\(language); translations=\(translations); roman=\(roman); quality=\(score)"
+                        payload.selectionReason = "\(label); language=\(language ?? "default"); translations=\(translations); roman=\(roman); quality=\(score)"
                         if best == nil || score > best!.1 {
                             best = (payload, score)
                         }

@@ -1,5 +1,5 @@
-import SwiftUI
 import QuartzCore
+import SwiftUI
 
 /// Apple Music supplies only the spatial shell. The lyric canvas embedded here is AMLL's native port.
 struct AppleMusicLyricsPlayer: View {
@@ -48,7 +48,9 @@ struct AppleMusicLyricsPlayer: View {
         .sheet(isPresented: $devices) { DevicePickerView(model: model) }
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }
         .alert("error.title", isPresented: Binding(get: { model.presentedError != nil }, set: {
-            if !$0 { model.presentedError = nil }
+            if !$0 {
+                model.presentedError = nil
+            }
         })) {
             Button("common.ok", role: .cancel) { model.presentedError = nil }
         } message: { Text(model.presentedError?.localizedDescription ?? "") }
@@ -137,6 +139,11 @@ struct AppleMusicLyricsPlayer: View {
                     position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
                     resumeToken: resumeToken, browsing: { browsing = $0 }
                 )
+                // UIViewRepresentable has no intrinsic height. Give the
+                // lyric viewport the whole shell so its scroll view can
+                // compute the anchor and spring target instead of collapsing
+                // to the metadata's ideal size.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
                     .buttonStyle(.borderedProminent)
                     .tint(.white.opacity(0.18))
@@ -147,10 +154,13 @@ struct AppleMusicLyricsPlayer: View {
                     .accessibilityHidden(!browsing)
                     .accessibilityIdentifier("resumeLyricsFollowing")
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 16) {
                 Spacer()
-                if model.lyrics.isLoading { ProgressView() }
+                if model.lyrics.isLoading {
+                    ProgressView()
+                }
                 Image(systemName: model.lyrics.document?.isInstrumental == true ? "pianokeys" : "text.quote").font(.largeTitle)
                 Text(LocalizedStringKey("lyrics.status." + model.lyrics.status.rawValue)).multilineTextAlignment(.center)
                 Button("lyrics.find") { search = true }
@@ -172,6 +182,12 @@ struct AppleMusicLyricsPlayer: View {
                 }
                 if configuration.showAlbum, let album = item.albumTitle {
                     Text(album).font(.system(size: 14)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
+                }
+                if model.lyrics.selection.candidate != nil {
+                    Text("lyrics.match.manual")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.68))
+                        .accessibilityIdentifier("lyricsManualLock")
                 }
             }
             Spacer(minLength: 8)

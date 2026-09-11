@@ -29,7 +29,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
 
 @MainActor
 final class AMLLNativeCanvas: UIView {
-    private final class LinkTarget: NSObject {
+    @MainActor private final class LinkTarget: NSObject {
         weak var owner: AMLLNativeCanvas?
         @objc func tick(_ link: CADisplayLink) {
             owner?.tick(link)

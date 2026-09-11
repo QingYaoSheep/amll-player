@@ -367,7 +367,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     }
 }
 
-private final class AMLLInterludeDotsView: UIView {
+final class AMLLInterludeDotsView: UIView {
     private let dots = (0 ..< 3).map { _ in CALayer() }
 
     override init(frame: CGRect) {

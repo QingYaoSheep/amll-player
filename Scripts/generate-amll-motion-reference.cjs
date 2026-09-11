@@ -23,6 +23,17 @@ vm.runInContext(stripTypeScriptTypes(`class AlphaReference {
   ${alphaMethods}
 }`), context);
 vm.runInContext('const clamp01 = x => Math.min(1,Math.max(0,x)); const LyricLineRenderMode = {SOLID:0,GRADIENT:1};', context);
+const maskMethod = domLine.slice(domLine.indexOf('\tprivate generateWebAnimationBasedMaskImage('), domLine.indexOf('\tgetElement(): HTMLElement'));
+const gradientFunction = domLine.slice(domLine.indexOf('function generateFadeGradient('), domLine.indexOf('export class LyricLineEl'));
+vm.runInContext(stripTypeScriptTypes(`${gradientFunction}
+const clamp = (x,min,max) => Math.min(max,Math.max(min,x));
+const clampPositive = x => Math.max(0,x);
+class MaskReference {
+  supportMaskImage = true;
+  lyricPlayer = {supportMaskImage:true,getWordFadeWidth:()=>.5};
+  getRubySegments() { return []; }
+  ${maskMethod}
+}`), context);
 const fixture = vm.runInContext(`(() => {
   const traces = [60, 120].map(fps => {
     const spring = new Spring(0);
@@ -76,7 +87,22 @@ const fixture = vm.runInContext(`(() => {
     }
     return {fps,frames};
   });
-  return {traces,breaks,groups,timeline,original,optimized,alpha};
+  const mask = new MaskReference();
+  mask.lyricLine = {startTime:400,endTime:5000};
+  mask.splittedWords = [
+    {word:'hold',startTime:1000,endTime:2300,width:80,height:38.4,padding:32},
+    {word:'me',startTime:2800,endTime:3200,width:42,height:38.4,padding:32},
+    {word:'近',startTime:3200,endTime:4600,width:32,height:38.4,padding:32}
+  ].map(word => ({...word,maskAnimations:[],mainElement:{style:{},animate(frames,options) {
+    this.capture = {frames,options}; return {pause(){},cancel(){}};
+  }}}));
+  mask.generateWebAnimationBasedMaskImage();
+  const masks = mask.splittedWords.map(word => ({start:word.startTime/1000,end:word.endTime/1000,width:word.width,
+    padding:word.padding,feather:word.height*.5,frames:word.mainElement.capture.frames.map(frame => ({
+      time:(mask.lyricLine.startTime+frame.offset*word.mainElement.capture.options.duration)/1000,
+      edge:parseFloat(frame.maskPosition)+word.width+word.padding
+    }))}));
+  return {traces,breaks,groups,timeline,original,optimized,alpha,masks};
 })()`, context);
 const target = path.join(root, 'AMLLPlayerTests/Fixtures/amll-motion-reference.json');
 const bytes = JSON.stringify(fixture, null, 2) + '\n';

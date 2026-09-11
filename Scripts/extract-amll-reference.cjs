@@ -3,16 +3,57 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const legacy = path.resolve(process.argv[2] || path.join(root, '..', 'AMLL-OLD'));
+const legacy = path.resolve(process.argv.slice(2).find(value => !value.startsWith('--')) || path.join(root, '..', 'AMLL-OLD'));
 const destination = path.join(root, '.build-tools', 'amll-reference');
 const store = path.join(legacy, 'node_modules', '.pnpm');
-const manifest = { schema: 1, packages: [], files: [] };
+const manifest = { schema: 2, packages: [], files: [], dependencies: [] };
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+const visited = new Set();
+function dependencyDirectory(directory, name) {
+  for (let parent = directory; ; parent = path.dirname(parent)) {
+    const candidate = path.join(parent, 'node_modules', name);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) return fs.realpathSync(candidate);
+    // The user's copied pnpm tree retains junctions to its former workspace.
+    // Resolve that exact store-relative target without repairing or changing AMLL-OLD.
+    try {
+      const target = fs.readlinkSync(candidate).replaceAll('\\', '/');
+      const marker = '/node_modules/.pnpm/';
+      const offset = target.indexOf(marker);
+      if (offset >= 0) {
+        const relocated = path.join(store, target.slice(offset + marker.length));
+        if (fs.existsSync(path.join(relocated, 'package.json'))) return fs.realpathSync(relocated);
+      }
+    } catch {}
+    if (parent === path.dirname(parent)) throw Error(`Missing installed dependency ${name}`);
+  }
+}
+function pinDependencies(directory) {
+  const real = fs.realpathSync(directory);
+  if (visited.has(real)) return;
+  visited.add(real);
+  const bytes = fs.readFileSync(path.join(real, 'package.json'));
+  const metadata = JSON.parse(bytes);
+  const record = { name: metadata.name, version: metadata.version, license: metadata.license || null,
+    installation: path.relative(store, real).split(path.sep).join('/'), sha256: hash(bytes), dependencies: [] };
+  manifest.dependencies.push(record);
+  const required = {...metadata.dependencies, ...metadata.peerDependencies};
+  for (const name of Object.keys(required || {}).sort()) {
+    let child;
+    try { child = dependencyDirectory(real, name); }
+    catch (error) {
+      if (metadata.peerDependenciesMeta?.[name]?.optional || metadata.optionalDependencies?.[name]) continue;
+      throw error;
+    }
+    record.dependencies.push({name, installation:path.relative(store, child).split(path.sep).join('/')});
+    pinDependencies(child);
+  }
+}
 for (const name of ['core', 'react-full']) {
   const candidates = fs.readdirSync(store).map(entry => path.join(store, entry, 'node_modules', '@applemusic-like-lyrics', name))
     .filter(entry => fs.existsSync(path.join(entry, 'package.json')));
   if (candidates.length !== 1) throw Error(`Expected one installed ${name}, found ${candidates.length}`);
   const directory = candidates[0];
+  pinDependencies(directory);
   const packageBytes = fs.readFileSync(path.join(directory, 'package.json'));
   const metadata = JSON.parse(packageBytes);
   manifest.packages.push({ name: metadata.name, version: metadata.version, license: metadata.license, sha256: hash(packageBytes) });
@@ -29,7 +70,8 @@ for (const name of ['core', 'react-full']) {
     fs.writeFileSync(target, map.sourcesContent[index]);
     manifest.files.push({ path: relative, sha256: hash(Buffer.from(map.sourcesContent[index])) });
   });
-  for (const file of ['dist/style.css', 'package.json']) {
+  // The bundles contain SVG paths and GLSL strings absent from sourcesContent.
+  for (const file of ['dist/style.css', 'package.json', `dist/${mapFile.slice(0, -4)}`]) {
     const bytes = fs.readFileSync(path.join(directory, file));
     const target = path.join(destination, name, file);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -37,6 +79,7 @@ for (const name of ['core', 'react-full']) {
     manifest.files.push({ path: `${name}/${file}`, sha256: hash(bytes) });
   }
 }
+manifest.dependencies.sort((a,b) => a.installation.localeCompare(b.installation, 'en'));
 for (const relative of ['packages/player/src/components/AMLLWrapper/index.tsx', 'packages/player/src/components/AMLLWrapper/index.module.css', 'pnpm-lock.yaml']) {
   manifest.files.push({ path: relative, sha256: hash(fs.readFileSync(path.join(legacy, relative))) });
 }

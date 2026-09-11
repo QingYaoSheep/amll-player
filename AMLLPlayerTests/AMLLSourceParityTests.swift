@@ -54,6 +54,17 @@ final class AMLLSourceParityTests: XCTestCase {
         }
 
         var alpha: [AlphaTrace]
+        struct Mask: Decodable {
+            struct Frame: Decodable { var time: Double; var edge: Double }
+            var start: Double
+            var end: Double
+            var width: Double
+            var padding: Double
+            var feather: Double
+            var frames: [Frame]
+        }
+
+        var masks: [Mask]
     }
 
     private func reference() throws -> Reference {
@@ -93,6 +104,20 @@ final class AMLLSourceParityTests: XCTestCase {
                 alpha.update(scale: frame.scale, gradient: frame.gradient, delta: frame.delta)
                 XCTAssertEqual(alpha.bright, frame.bright, accuracy: 0.000_001, "\(trace.fps) Hz alpha frame \(index)")
                 XCTAssertEqual(alpha.dark, frame.dark, accuracy: 0.000_001, "\(trace.fps) Hz alpha frame \(index)")
+            }
+        }
+    }
+
+    func testConnectedMaskTravelMatchesOriginalKeyframesAndGapHolds() throws {
+        let masks = try reference().masks
+        let words = masks.map { AMLLWordMask.Word(start: $0.start, end: $0.end, width: $0.width) }
+        for (index, mask) in masks.enumerated() {
+            for frame in mask.frames {
+                let edge = AMLLWordMask.edge(time: frame.time, index: index, words: words, feather: mask.feather)
+                // Source clamps the CSS mask to its padded element; the native gradient
+                // may extend outside the fragment, with identical visible coverage.
+                let clipped = min(mask.width + mask.padding, max(-mask.padding - mask.feather, edge))
+                XCTAssertEqual(clipped, frame.edge, accuracy: 0.000_001, "word \(index) at \(frame.time)")
             }
         }
     }

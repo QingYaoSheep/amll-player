@@ -202,7 +202,8 @@ struct AMLLFrameEngine {
             let progress = min(1, max(0, 1 - abs(motion.slide.position) / 80))
             let bgFirst = group.backgroundFirst && !environment.alwaysPostpositionBackground
             let bgHeight = group.background.map(height) ?? 0
-            let bgAdvance = bgFirst ? bgHeight * progress + (motion.active ? environment.fontSize * 0.3 : 0) : 0
+            let backgroundVisible = motion.active || !input.playing
+            let bgAdvance = bgFirst ? bgHeight * progress + (backgroundVisible ? environment.fontSize * 0.3 : 0) : 0
             let y = (motion.y.position * 10).rounded() / 10
             rows.append(.init(lineIndex: group.main, groupIndex: index, y: y + padding + bgAdvance,
                               scale: motion.mainScale.position / 100, brightAlpha: motion.mainAlpha.bright,
@@ -213,7 +214,7 @@ struct AMLLFrameEngine {
                 rows.append(.init(lineIndex: background, groupIndex: index, y: top + bgHeight * motion.slide.position / 100,
                                   scale: motion.backgroundScale.position / 100 * (0.8 + progress * 0.2),
                                   brightAlpha: motion.backgroundAlpha.bright, darkAlpha: motion.backgroundAlpha.dark,
-                                  opacity: motion.opacity * (motion.active ? 1 : 0), blur: min(5, motion.blur),
+                                  opacity: motion.opacity * (backgroundVisible ? 1 : 0), blur: min(5, motion.blur),
                                   active: motion.active, hidden: !motion.active && progress == 0))
             }
         }
@@ -245,7 +246,7 @@ struct AMLLFrameEngine {
         let active = motions.indices.map { timeline.buffered.contains($0) || ($0 >= timeline.focus && $0 < latest) }
         let groupHeights = document.groups.enumerated().map { index, group in
             height(group.main) + environment.fontSize * 0.8
-                + (active[index] ? group.background.map { height($0) + environment.fontSize * 0.3 } ?? 0 : 0)
+                + (active[index] || !playing ? group.background.map { height($0) + environment.fontSize * 0.3 } ?? 0 : 0)
         }
         let preceding = groupHeights.prefix(timeline.focus).reduce(0, +)
         scrollMinimum = -preceding

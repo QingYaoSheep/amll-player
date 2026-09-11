@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "packages": [
     {
       "name": "@applemusic-like-lyrics/core",
@@ -154,6 +154,10 @@
     {
       "path": "core/package.json",
       "sha256": "d295cfe41da12fcd0793d1318004e34890653a71baadc1b1f1474b1e794e51be"
+    },
+    {
+      "path": "core/dist/amll-core.mjs",
+      "sha256": "26f599d2269a48fedb0a612f4b25a2fd0e545b022898b8b04fada8b8acec5748"
     },
     {
       "path": "react-full/dist/amll-react-framework.mjs.map",
@@ -312,6 +316,10 @@
       "sha256": "ffd702d34b656e87f34ec21a516c6124451513b63a15cd2815cbda3b70d03342"
     },
     {
+      "path": "react-full/dist/amll-react-framework.mjs",
+      "sha256": "cc36402c3303cccef1b4e56ce38bd3df3190d5e9a6c2c55d3d5513c78956bf7e"
+    },
+    {
       "path": "packages/player/src/components/AMLLWrapper/index.tsx",
       "sha256": "5537d936e1e0fe14339054c3230189c1662906086ec82600d163f88a497a2f28"
     },
@@ -322,6 +330,1620 @@
     {
       "path": "pnpm-lock.yaml",
       "sha256": "4f0c977b4be8f8f1894f22dbf79999f1de7774929297da069785a99f29e98eda"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "@applemusic-like-lyrics/core",
+      "version": "0.5.2",
+      "license": "AGPL-3.0-only",
+      "installation": "@applemusic-like-lyrics+cor_1df7a569b9e1a1f9916652879e532347/node_modules/@applemusic-like-lyrics/core",
+      "sha256": "d295cfe41da12fcd0793d1318004e34890653a71baadc1b1f1474b1e794e51be",
+      "dependencies": [
+        {
+          "name": "@pixi/app",
+          "installation": "@pixi+app@7.4.3_@pixi+core@_7cb147e44d08e75a632289e139792c08/node_modules/@pixi/app"
+        },
+        {
+          "name": "@pixi/core",
+          "installation": "@pixi+core@7.4.3/node_modules/@pixi/core"
+        },
+        {
+          "name": "@pixi/display",
+          "installation": "@pixi+display@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/display"
+        },
+        {
+          "name": "@pixi/filter-blur",
+          "installation": "@pixi+filter-blur@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-blur"
+        },
+        {
+          "name": "@pixi/filter-bulge-pinch",
+          "installation": "@pixi+filter-bulge-pinch@5.1.1_@pixi+core@7.4.3/node_modules/@pixi/filter-bulge-pinch"
+        },
+        {
+          "name": "@pixi/filter-color-matrix",
+          "installation": "@pixi+filter-color-matrix@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-color-matrix"
+        },
+        {
+          "name": "@pixi/sprite",
+          "installation": "@pixi+sprite@7.4.3_@pixi+co_40c882742cdd2813b1eefc420a0063f6/node_modules/@pixi/sprite"
+        },
+        {
+          "name": "@ungap/structured-clone",
+          "installation": "@ungap+structured-clone@1.3.0/node_modules/@ungap/structured-clone"
+        },
+        {
+          "name": "bezier-easing",
+          "installation": "bezier-easing@3.0.0/node_modules/bezier-easing"
+        },
+        {
+          "name": "deep-freeze",
+          "installation": "deep-freeze@0.0.1/node_modules/deep-freeze"
+        },
+        {
+          "name": "gl-matrix",
+          "installation": "gl-matrix@4.0.0-beta.2/node_modules/gl-matrix"
+        }
+      ]
+    },
+    {
+      "name": "@applemusic-like-lyrics/react",
+      "version": "0.5.2",
+      "license": "AGPL-3.0-only",
+      "installation": "@applemusic-like-lyrics+rea_00664d0719ea55b3144667265721d4cf/node_modules/@applemusic-like-lyrics/react",
+      "sha256": "496b0f67489777fdf97960e26720f4360ec6ca176ce8fb1478683dea6f25923a",
+      "dependencies": [
+        {
+          "name": "@applemusic-like-lyrics/core",
+          "installation": "@applemusic-like-lyrics+cor_1df7a569b9e1a1f9916652879e532347/node_modules/@applemusic-like-lyrics/core"
+        },
+        {
+          "name": "@pixi/app",
+          "installation": "@pixi+app@7.4.3_@pixi+core@_7cb147e44d08e75a632289e139792c08/node_modules/@pixi/app"
+        },
+        {
+          "name": "@pixi/core",
+          "installation": "@pixi+core@7.4.3/node_modules/@pixi/core"
+        },
+        {
+          "name": "@pixi/display",
+          "installation": "@pixi+display@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/display"
+        },
+        {
+          "name": "@pixi/filter-blur",
+          "installation": "@pixi+filter-blur@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-blur"
+        },
+        {
+          "name": "@pixi/filter-color-matrix",
+          "installation": "@pixi+filter-color-matrix@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-color-matrix"
+        },
+        {
+          "name": "@pixi/sprite",
+          "installation": "@pixi+sprite@7.4.3_@pixi+co_40c882742cdd2813b1eefc420a0063f6/node_modules/@pixi/sprite"
+        },
+        {
+          "name": "react",
+          "installation": "react@19.2.7/node_modules/react"
+        },
+        {
+          "name": "react-dom",
+          "installation": "react-dom@19.2.7_react@19.2.7/node_modules/react-dom"
+        }
+      ]
+    },
+    {
+      "name": "@applemusic-like-lyrics/react-full",
+      "version": "0.4.2",
+      "license": "AGPL-3.0-only",
+      "installation": "@applemusic-like-lyrics+rea_3482f621d054bcfbe5df7e572f6a921b/node_modules/@applemusic-like-lyrics/react-full",
+      "sha256": "ffd702d34b656e87f34ec21a516c6124451513b63a15cd2815cbda3b70d03342",
+      "dependencies": [
+        {
+          "name": "@applemusic-like-lyrics/core",
+          "installation": "@applemusic-like-lyrics+cor_1df7a569b9e1a1f9916652879e532347/node_modules/@applemusic-like-lyrics/core"
+        },
+        {
+          "name": "@applemusic-like-lyrics/react",
+          "installation": "@applemusic-like-lyrics+rea_00664d0719ea55b3144667265721d4cf/node_modules/@applemusic-like-lyrics/react"
+        },
+        {
+          "name": "@ungap/structured-clone",
+          "installation": "@ungap+structured-clone@1.3.0/node_modules/@ungap/structured-clone"
+        },
+        {
+          "name": "classnames",
+          "installation": "classnames@2.5.1/node_modules/classnames"
+        },
+        {
+          "name": "corner-smoothing",
+          "installation": "corner-smoothing@0.1.5_react@19.2.7/node_modules/corner-smoothing"
+        },
+        {
+          "name": "framer-motion",
+          "installation": "framer-motion@12.40.0_react_7ea1b4820433ad8864f2f384f03a8795/node_modules/framer-motion"
+        },
+        {
+          "name": "jotai",
+          "installation": "jotai@2.20.1_@babel+core@7._5d12a3f5b2f7603bd07e5092e4da562b/node_modules/jotai"
+        },
+        {
+          "name": "react",
+          "installation": "react@19.2.7/node_modules/react"
+        },
+        {
+          "name": "react-dom",
+          "installation": "react-dom@19.2.7_react@19.2.7/node_modules/react-dom"
+        },
+        {
+          "name": "react-toastify",
+          "installation": "react-toastify@11.1.0_react_37d47a11ecedf6c3bcbabaf4690d9cdc/node_modules/react-toastify"
+        }
+      ]
+    },
+    {
+      "name": "@babel/code-frame",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+code-frame@7.29.7/node_modules/@babel/code-frame",
+      "sha256": "f9cccb2e601db93851f10935b4e723c95a730c467f187462eb54b16bb353b036",
+      "dependencies": [
+        {
+          "name": "@babel/helper-validator-identifier",
+          "installation": "@babel+helper-validator-identifier@7.29.7/node_modules/@babel/helper-validator-identifier"
+        },
+        {
+          "name": "js-tokens",
+          "installation": "js-tokens@4.0.0/node_modules/js-tokens"
+        },
+        {
+          "name": "picocolors",
+          "installation": "picocolors@1.1.1/node_modules/picocolors"
+        }
+      ]
+    },
+    {
+      "name": "@babel/compat-data",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+compat-data@7.29.7/node_modules/@babel/compat-data",
+      "sha256": "a871a1f7397a91d00f877751ab2da88904ff1dd30c5bb4ab2e5badd9f3adf6d4",
+      "dependencies": []
+    },
+    {
+      "name": "@babel/core",
+      "version": "7.29.0",
+      "license": "MIT",
+      "installation": "@babel+core@7.29.0/node_modules/@babel/core",
+      "sha256": "75da9f340b343cdc8ca4caa986b594b5f99333d1c198710ec13f6b3d3c8bde57",
+      "dependencies": [
+        {
+          "name": "@babel/code-frame",
+          "installation": "@babel+code-frame@7.29.7/node_modules/@babel/code-frame"
+        },
+        {
+          "name": "@babel/generator",
+          "installation": "@babel+generator@7.29.7/node_modules/@babel/generator"
+        },
+        {
+          "name": "@babel/helper-compilation-targets",
+          "installation": "@babel+helper-compilation-targets@7.29.7/node_modules/@babel/helper-compilation-targets"
+        },
+        {
+          "name": "@babel/helper-module-transforms",
+          "installation": "@babel+helper-module-transforms@7.29.7_@babel+core@7.29.0/node_modules/@babel/helper-module-transforms"
+        },
+        {
+          "name": "@babel/helpers",
+          "installation": "@babel+helpers@7.29.7/node_modules/@babel/helpers"
+        },
+        {
+          "name": "@babel/parser",
+          "installation": "@babel+parser@7.29.7/node_modules/@babel/parser"
+        },
+        {
+          "name": "@babel/template",
+          "installation": "@babel+template@7.29.7/node_modules/@babel/template"
+        },
+        {
+          "name": "@babel/traverse",
+          "installation": "@babel+traverse@7.29.7/node_modules/@babel/traverse"
+        },
+        {
+          "name": "@babel/types",
+          "installation": "@babel+types@7.29.7/node_modules/@babel/types"
+        },
+        {
+          "name": "@jridgewell/remapping",
+          "installation": "@jridgewell+remapping@2.3.5/node_modules/@jridgewell/remapping"
+        },
+        {
+          "name": "convert-source-map",
+          "installation": "convert-source-map@2.0.0/node_modules/convert-source-map"
+        },
+        {
+          "name": "debug",
+          "installation": "debug@4.4.3/node_modules/debug"
+        },
+        {
+          "name": "gensync",
+          "installation": "gensync@1.0.0-beta.2/node_modules/gensync"
+        },
+        {
+          "name": "json5",
+          "installation": "json5@2.2.3/node_modules/json5"
+        },
+        {
+          "name": "semver",
+          "installation": "semver@6.3.1/node_modules/semver"
+        }
+      ]
+    },
+    {
+      "name": "@babel/generator",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+generator@7.29.7/node_modules/@babel/generator",
+      "sha256": "3812cb663aeb46e2988c9e5d6334742d6f226f1a24a6e8a9ed140134d2edae8a",
+      "dependencies": [
+        {
+          "name": "@babel/parser",
+          "installation": "@babel+parser@7.29.7/node_modules/@babel/parser"
+        },
+        {
+          "name": "@babel/types",
+          "installation": "@babel+types@7.29.7/node_modules/@babel/types"
+        },
+        {
+          "name": "@jridgewell/gen-mapping",
+          "installation": "@jridgewell+gen-mapping@0.3.13/node_modules/@jridgewell/gen-mapping"
+        },
+        {
+          "name": "@jridgewell/trace-mapping",
+          "installation": "@jridgewell+trace-mapping@0.3.31/node_modules/@jridgewell/trace-mapping"
+        },
+        {
+          "name": "jsesc",
+          "installation": "jsesc@3.1.0/node_modules/jsesc"
+        }
+      ]
+    },
+    {
+      "name": "@babel/helper-compilation-targets",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+helper-compilation-targets@7.29.7/node_modules/@babel/helper-compilation-targets",
+      "sha256": "6ac5b42b124c964fb3c0feed98cd2c13aaf5c5827021374db6884bab91f206d2",
+      "dependencies": [
+        {
+          "name": "@babel/compat-data",
+          "installation": "@babel+compat-data@7.29.7/node_modules/@babel/compat-data"
+        },
+        {
+          "name": "@babel/helper-validator-option",
+          "installation": "@babel+helper-validator-option@7.29.7/node_modules/@babel/helper-validator-option"
+        },
+        {
+          "name": "browserslist",
+          "installation": "browserslist@4.28.6/node_modules/browserslist"
+        },
+        {
+          "name": "lru-cache",
+          "installation": "lru-cache@5.1.1/node_modules/lru-cache"
+        },
+        {
+          "name": "semver",
+          "installation": "semver@6.3.1/node_modules/semver"
+        }
+      ]
+    },
+    {
+      "name": "@babel/helper-globals",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+helper-globals@7.29.7/node_modules/@babel/helper-globals",
+      "sha256": "c06a17222ad81933dbae3768fe59cd6737ebdcfa88b84097f3a8e659e28d2c9f",
+      "dependencies": []
+    },
+    {
+      "name": "@babel/helper-module-imports",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+helper-module-imports@7.29.7/node_modules/@babel/helper-module-imports",
+      "sha256": "fa2e7c54b6b86e250770f9b2703571bcff0c8166995e01c756539745859fedb7",
+      "dependencies": [
+        {
+          "name": "@babel/traverse",
+          "installation": "@babel+traverse@7.29.7/node_modules/@babel/traverse"
+        },
+        {
+          "name": "@babel/types",
+          "installation": "@babel+types@7.29.7/node_modules/@babel/types"
+        }
+      ]
+    },
+    {
+      "name": "@babel/helper-module-transforms",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+helper-module-transforms@7.29.7_@babel+core@7.29.0/node_modules/@babel/helper-module-transforms",
+      "sha256": "4f5010bdec7a80d93d84a1ecff8fbdd0a9a865f1bd22ceb5b0215a07255de3b3",
+      "dependencies": [
+        {
+          "name": "@babel/core",
+          "installation": "@babel+core@7.29.0/node_modules/@babel/core"
+        },
+        {
+          "name": "@babel/helper-module-imports",
+          "installation": "@babel+helper-module-imports@7.29.7/node_modules/@babel/helper-module-imports"
+        },
+        {
+          "name": "@babel/helper-validator-identifier",
+          "installation": "@babel+helper-validator-identifier@7.29.7/node_modules/@babel/helper-validator-identifier"
+        },
+        {
+          "name": "@babel/traverse",
+          "installation": "@babel+traverse@7.29.7/node_modules/@babel/traverse"
+        }
+      ]
+    },
+    {
+      "name": "@babel/helper-string-parser",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+helper-string-parser@7.29.7/node_modules/@babel/helper-string-parser",
+      "sha256": "ecbd1aaffa9ad000d3bc5a526067b89244cb3ec64c738fbae8b64a9e805f401b",
+      "dependencies": []
+    },
+    {
+      "name": "@babel/helper-validator-identifier",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+helper-validator-identifier@7.29.7/node_modules/@babel/helper-validator-identifier",
+      "sha256": "1ad6aeced8b186ac259da45fea50ab9d65d3d958f6458c80e3c8013649d1b12d",
+      "dependencies": []
+    },
+    {
+      "name": "@babel/helper-validator-option",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+helper-validator-option@7.29.7/node_modules/@babel/helper-validator-option",
+      "sha256": "b2d7eca451e536f18f4757a54be48df604385ad978508e32ce8f2edb4973f257",
+      "dependencies": []
+    },
+    {
+      "name": "@babel/helpers",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+helpers@7.29.7/node_modules/@babel/helpers",
+      "sha256": "df7df113698c9c45f0bb08c2e4fe097131dabf58dbeb23c676eb355f782c4aa3",
+      "dependencies": [
+        {
+          "name": "@babel/template",
+          "installation": "@babel+template@7.29.7/node_modules/@babel/template"
+        },
+        {
+          "name": "@babel/types",
+          "installation": "@babel+types@7.29.7/node_modules/@babel/types"
+        }
+      ]
+    },
+    {
+      "name": "@babel/parser",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+parser@7.29.7/node_modules/@babel/parser",
+      "sha256": "808c30900ff9e55aafff6361e55c21a39556bdcd2d349e0474fde1e985d855af",
+      "dependencies": [
+        {
+          "name": "@babel/types",
+          "installation": "@babel+types@7.29.7/node_modules/@babel/types"
+        }
+      ]
+    },
+    {
+      "name": "@babel/template",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+template@7.29.7/node_modules/@babel/template",
+      "sha256": "82b96cbb7f576768c6298b816600c0cfb2d8487c963050406d2bd895e3724145",
+      "dependencies": [
+        {
+          "name": "@babel/code-frame",
+          "installation": "@babel+code-frame@7.29.7/node_modules/@babel/code-frame"
+        },
+        {
+          "name": "@babel/parser",
+          "installation": "@babel+parser@7.29.7/node_modules/@babel/parser"
+        },
+        {
+          "name": "@babel/types",
+          "installation": "@babel+types@7.29.7/node_modules/@babel/types"
+        }
+      ]
+    },
+    {
+      "name": "@babel/traverse",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+traverse@7.29.7/node_modules/@babel/traverse",
+      "sha256": "1d5b17dd0935fa06cc5dfa344ce2c68e9b4a099c91080dc4116d05184723fe0c",
+      "dependencies": [
+        {
+          "name": "@babel/code-frame",
+          "installation": "@babel+code-frame@7.29.7/node_modules/@babel/code-frame"
+        },
+        {
+          "name": "@babel/generator",
+          "installation": "@babel+generator@7.29.7/node_modules/@babel/generator"
+        },
+        {
+          "name": "@babel/helper-globals",
+          "installation": "@babel+helper-globals@7.29.7/node_modules/@babel/helper-globals"
+        },
+        {
+          "name": "@babel/parser",
+          "installation": "@babel+parser@7.29.7/node_modules/@babel/parser"
+        },
+        {
+          "name": "@babel/template",
+          "installation": "@babel+template@7.29.7/node_modules/@babel/template"
+        },
+        {
+          "name": "@babel/types",
+          "installation": "@babel+types@7.29.7/node_modules/@babel/types"
+        },
+        {
+          "name": "debug",
+          "installation": "debug@4.4.3/node_modules/debug"
+        }
+      ]
+    },
+    {
+      "name": "@babel/types",
+      "version": "7.29.7",
+      "license": "MIT",
+      "installation": "@babel+types@7.29.7/node_modules/@babel/types",
+      "sha256": "cf060ee0e8063ec7e48a504170e90b6dd9658bdcb7c037776db67b817474a036",
+      "dependencies": [
+        {
+          "name": "@babel/helper-string-parser",
+          "installation": "@babel+helper-string-parser@7.29.7/node_modules/@babel/helper-string-parser"
+        },
+        {
+          "name": "@babel/helper-validator-identifier",
+          "installation": "@babel+helper-validator-identifier@7.29.7/node_modules/@babel/helper-validator-identifier"
+        }
+      ]
+    },
+    {
+      "name": "@jridgewell/gen-mapping",
+      "version": "0.3.13",
+      "license": "MIT",
+      "installation": "@jridgewell+gen-mapping@0.3.13/node_modules/@jridgewell/gen-mapping",
+      "sha256": "6264fca78382a9782f8e8d5e653e7bf43dc8aa6d469f3322a82e531093896a01",
+      "dependencies": [
+        {
+          "name": "@jridgewell/sourcemap-codec",
+          "installation": "@jridgewell+sourcemap-codec@1.5.5/node_modules/@jridgewell/sourcemap-codec"
+        },
+        {
+          "name": "@jridgewell/trace-mapping",
+          "installation": "@jridgewell+trace-mapping@0.3.31/node_modules/@jridgewell/trace-mapping"
+        }
+      ]
+    },
+    {
+      "name": "@jridgewell/remapping",
+      "version": "2.3.5",
+      "license": "MIT",
+      "installation": "@jridgewell+remapping@2.3.5/node_modules/@jridgewell/remapping",
+      "sha256": "cc535fb0665977104146fb8fe6c81ff63d2c9ae7f7b783d86e7f7db064cde57a",
+      "dependencies": [
+        {
+          "name": "@jridgewell/gen-mapping",
+          "installation": "@jridgewell+gen-mapping@0.3.13/node_modules/@jridgewell/gen-mapping"
+        },
+        {
+          "name": "@jridgewell/trace-mapping",
+          "installation": "@jridgewell+trace-mapping@0.3.31/node_modules/@jridgewell/trace-mapping"
+        }
+      ]
+    },
+    {
+      "name": "@jridgewell/resolve-uri",
+      "version": "3.1.2",
+      "license": "MIT",
+      "installation": "@jridgewell+resolve-uri@3.1.2/node_modules/@jridgewell/resolve-uri",
+      "sha256": "0793e722ffe08f3b4f1862c4dc96d920a62d6811a3648b4feb02f06c63227e8b",
+      "dependencies": []
+    },
+    {
+      "name": "@jridgewell/sourcemap-codec",
+      "version": "1.5.5",
+      "license": "MIT",
+      "installation": "@jridgewell+sourcemap-codec@1.5.5/node_modules/@jridgewell/sourcemap-codec",
+      "sha256": "398fc774628ec1592c794e8c14ecdc0096206a2521545e527e5a06429dac6006",
+      "dependencies": []
+    },
+    {
+      "name": "@jridgewell/trace-mapping",
+      "version": "0.3.31",
+      "license": "MIT",
+      "installation": "@jridgewell+trace-mapping@0.3.31/node_modules/@jridgewell/trace-mapping",
+      "sha256": "7f5eacc669d36013f9b792ab15721a97d48b26b093100122aa6c8691ebe656be",
+      "dependencies": [
+        {
+          "name": "@jridgewell/resolve-uri",
+          "installation": "@jridgewell+resolve-uri@3.1.2/node_modules/@jridgewell/resolve-uri"
+        },
+        {
+          "name": "@jridgewell/sourcemap-codec",
+          "installation": "@jridgewell+sourcemap-codec@1.5.5/node_modules/@jridgewell/sourcemap-codec"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/app",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+app@7.4.3_@pixi+core@_7cb147e44d08e75a632289e139792c08/node_modules/@pixi/app",
+      "sha256": "b4e1a5762c701568c880efa070c0d8beb744ad38642ac6739f18c6203fa6930c",
+      "dependencies": [
+        {
+          "name": "@pixi/core",
+          "installation": "@pixi+core@7.4.3/node_modules/@pixi/core"
+        },
+        {
+          "name": "@pixi/display",
+          "installation": "@pixi+display@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/display"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/color",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+color@7.4.3/node_modules/@pixi/color",
+      "sha256": "f40a6df879154716d3193c47a735e8bf49accd9deef2c6931b8878be94ed660c",
+      "dependencies": [
+        {
+          "name": "@pixi/colord",
+          "installation": "@pixi+colord@2.9.6/node_modules/@pixi/colord"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/colord",
+      "version": "2.9.6",
+      "license": "MIT",
+      "installation": "@pixi+colord@2.9.6/node_modules/@pixi/colord",
+      "sha256": "d92aec39b7b030ebb6419b8ca4da12fd1a9b7bbd12d2979ab019308b417507e8",
+      "dependencies": []
+    },
+    {
+      "name": "@pixi/constants",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+constants@7.4.3/node_modules/@pixi/constants",
+      "sha256": "277d58fd1befa1ab0b72ace2ff5f484501c79132450e75957af011c726854015",
+      "dependencies": []
+    },
+    {
+      "name": "@pixi/core",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+core@7.4.3/node_modules/@pixi/core",
+      "sha256": "48ab36623d3708de749631f1bcacadc87342bbcca6cf3a46aa73d2aa51fcfa08",
+      "dependencies": [
+        {
+          "name": "@pixi/color",
+          "installation": "@pixi+color@7.4.3/node_modules/@pixi/color"
+        },
+        {
+          "name": "@pixi/constants",
+          "installation": "@pixi+constants@7.4.3/node_modules/@pixi/constants"
+        },
+        {
+          "name": "@pixi/extensions",
+          "installation": "@pixi+extensions@7.4.3/node_modules/@pixi/extensions"
+        },
+        {
+          "name": "@pixi/math",
+          "installation": "@pixi+math@7.4.3/node_modules/@pixi/math"
+        },
+        {
+          "name": "@pixi/runner",
+          "installation": "@pixi+runner@7.4.3/node_modules/@pixi/runner"
+        },
+        {
+          "name": "@pixi/settings",
+          "installation": "@pixi+settings@7.4.3/node_modules/@pixi/settings"
+        },
+        {
+          "name": "@pixi/ticker",
+          "installation": "@pixi+ticker@7.4.3/node_modules/@pixi/ticker"
+        },
+        {
+          "name": "@pixi/utils",
+          "installation": "@pixi+utils@7.4.3/node_modules/@pixi/utils"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/display",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+display@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/display",
+      "sha256": "8ce165314ddb6d55604e699f803adb49f35020293f7854d61e026b3d4a099dae",
+      "dependencies": [
+        {
+          "name": "@pixi/core",
+          "installation": "@pixi+core@7.4.3/node_modules/@pixi/core"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/extensions",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+extensions@7.4.3/node_modules/@pixi/extensions",
+      "sha256": "550e7eb8ba7354234efc661934c0047b3f86103b0265d93c587f33ea4485aa2f",
+      "dependencies": []
+    },
+    {
+      "name": "@pixi/filter-blur",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+filter-blur@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-blur",
+      "sha256": "132095e248affec878644f5634cef2eef18436e0da301e61184628bd8e818af1",
+      "dependencies": [
+        {
+          "name": "@pixi/core",
+          "installation": "@pixi+core@7.4.3/node_modules/@pixi/core"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/filter-bulge-pinch",
+      "version": "5.1.1",
+      "license": "MIT",
+      "installation": "@pixi+filter-bulge-pinch@5.1.1_@pixi+core@7.4.3/node_modules/@pixi/filter-bulge-pinch",
+      "sha256": "134d3892334cde44785a9c68964fad0859fde75e1c45c81d0ded9217d8f311bb",
+      "dependencies": [
+        {
+          "name": "@pixi/core",
+          "installation": "@pixi+core@7.4.3/node_modules/@pixi/core"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/filter-color-matrix",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+filter-color-matrix@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-color-matrix",
+      "sha256": "6e21b330e9291640cb7d7c877442462f1c6a0d97ec9674c4b6e046f2c95df78f",
+      "dependencies": [
+        {
+          "name": "@pixi/core",
+          "installation": "@pixi+core@7.4.3/node_modules/@pixi/core"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/math",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+math@7.4.3/node_modules/@pixi/math",
+      "sha256": "999e4b2c10de0b28bb3be63aa018b293672c9285ac1d9ea44a3f280336992488",
+      "dependencies": []
+    },
+    {
+      "name": "@pixi/runner",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+runner@7.4.3/node_modules/@pixi/runner",
+      "sha256": "b36ab59f49df1b01d67d84084c5c6e42d38ce52db5b2eb89a39a89c5590cb1c1",
+      "dependencies": []
+    },
+    {
+      "name": "@pixi/settings",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+settings@7.4.3/node_modules/@pixi/settings",
+      "sha256": "d9c9fb31b77a6925e9a34a325f20d176a653c7c8d01df6dda7f625520e6911fc",
+      "dependencies": [
+        {
+          "name": "@pixi/constants",
+          "installation": "@pixi+constants@7.4.3/node_modules/@pixi/constants"
+        },
+        {
+          "name": "@types/css-font-loading-module",
+          "installation": "@types+css-font-loading-module@0.0.12/node_modules/@types/css-font-loading-module"
+        },
+        {
+          "name": "ismobilejs",
+          "installation": "ismobilejs@1.1.1/node_modules/ismobilejs"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/sprite",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+sprite@7.4.3_@pixi+co_40c882742cdd2813b1eefc420a0063f6/node_modules/@pixi/sprite",
+      "sha256": "fdcb934776e3a24dc53610ec0f3bd6ad48002c5a6687ad53d92d3201d5764c4f",
+      "dependencies": [
+        {
+          "name": "@pixi/core",
+          "installation": "@pixi+core@7.4.3/node_modules/@pixi/core"
+        },
+        {
+          "name": "@pixi/display",
+          "installation": "@pixi+display@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/display"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/ticker",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+ticker@7.4.3/node_modules/@pixi/ticker",
+      "sha256": "d4016c50979bc34acb40c520152467da4387f1bb36e3dcebbe795c7a256179d0",
+      "dependencies": [
+        {
+          "name": "@pixi/extensions",
+          "installation": "@pixi+extensions@7.4.3/node_modules/@pixi/extensions"
+        },
+        {
+          "name": "@pixi/settings",
+          "installation": "@pixi+settings@7.4.3/node_modules/@pixi/settings"
+        },
+        {
+          "name": "@pixi/utils",
+          "installation": "@pixi+utils@7.4.3/node_modules/@pixi/utils"
+        }
+      ]
+    },
+    {
+      "name": "@pixi/utils",
+      "version": "7.4.3",
+      "license": "MIT",
+      "installation": "@pixi+utils@7.4.3/node_modules/@pixi/utils",
+      "sha256": "35f686b924f5bf80e461aef15582c67174d0b06ddf342630d86d809311ff5dc8",
+      "dependencies": [
+        {
+          "name": "@pixi/color",
+          "installation": "@pixi+color@7.4.3/node_modules/@pixi/color"
+        },
+        {
+          "name": "@pixi/constants",
+          "installation": "@pixi+constants@7.4.3/node_modules/@pixi/constants"
+        },
+        {
+          "name": "@pixi/settings",
+          "installation": "@pixi+settings@7.4.3/node_modules/@pixi/settings"
+        },
+        {
+          "name": "@types/earcut",
+          "installation": "@types+earcut@2.1.4/node_modules/@types/earcut"
+        },
+        {
+          "name": "earcut",
+          "installation": "earcut@2.2.4/node_modules/earcut"
+        },
+        {
+          "name": "eventemitter3",
+          "installation": "eventemitter3@4.0.7/node_modules/eventemitter3"
+        },
+        {
+          "name": "url",
+          "installation": "url@0.11.4/node_modules/url"
+        }
+      ]
+    },
+    {
+      "name": "@types/css-font-loading-module",
+      "version": "0.0.12",
+      "license": "MIT",
+      "installation": "@types+css-font-loading-module@0.0.12/node_modules/@types/css-font-loading-module",
+      "sha256": "f66950849b19edba059508e7366d6a5ed6b27c9a20ff4fd7ccfcd9ec0a937fc0",
+      "dependencies": []
+    },
+    {
+      "name": "@types/earcut",
+      "version": "2.1.4",
+      "license": "MIT",
+      "installation": "@types+earcut@2.1.4/node_modules/@types/earcut",
+      "sha256": "a01e26d2490835f531f2a2f431b0feb68e0ae8190ffc11e27879c1f3fb84c148",
+      "dependencies": []
+    },
+    {
+      "name": "@types/react",
+      "version": "19.2.17",
+      "license": "MIT",
+      "installation": "@types+react@19.2.17/node_modules/@types/react",
+      "sha256": "36496fc09a9dcf31b0ca969ce5677c9ce9ebb5c89da9bd6212e0c89b6fae3f88",
+      "dependencies": [
+        {
+          "name": "csstype",
+          "installation": "csstype@3.2.3/node_modules/csstype"
+        }
+      ]
+    },
+    {
+      "name": "@ungap/structured-clone",
+      "version": "1.3.0",
+      "license": "ISC",
+      "installation": "@ungap+structured-clone@1.3.0/node_modules/@ungap/structured-clone",
+      "sha256": "d4549d78e3008edb04ec8bdf66170f9d159ee50451d05752e27e849d8f6d15b2",
+      "dependencies": []
+    },
+    {
+      "name": "baseline-browser-mapping",
+      "version": "2.10.43",
+      "license": "Apache-2.0",
+      "installation": "baseline-browser-mapping@2.10.43/node_modules/baseline-browser-mapping",
+      "sha256": "d277c8cfa19e63c67aaf6cab04484244f50d1063df4c06f0aff3199ca2005b8a",
+      "dependencies": []
+    },
+    {
+      "name": "bezier-easing",
+      "version": "3.0.0",
+      "license": "MIT",
+      "installation": "bezier-easing@3.0.0/node_modules/bezier-easing",
+      "sha256": "7f116e0196415455387aec1acf2d7e7ca3d3d9b4ab90ef8558315e120c08997b",
+      "dependencies": []
+    },
+    {
+      "name": "browserslist",
+      "version": "4.28.6",
+      "license": "MIT",
+      "installation": "browserslist@4.28.6/node_modules/browserslist",
+      "sha256": "4e33bb7831001109c6d8b622a3f6f69199852060c6a9926659987ac34140bf2f",
+      "dependencies": [
+        {
+          "name": "baseline-browser-mapping",
+          "installation": "baseline-browser-mapping@2.10.43/node_modules/baseline-browser-mapping"
+        },
+        {
+          "name": "caniuse-lite",
+          "installation": "caniuse-lite@1.0.30001805/node_modules/caniuse-lite"
+        },
+        {
+          "name": "electron-to-chromium",
+          "installation": "electron-to-chromium@1.5.389/node_modules/electron-to-chromium"
+        },
+        {
+          "name": "node-releases",
+          "installation": "node-releases@2.0.51/node_modules/node-releases"
+        },
+        {
+          "name": "update-browserslist-db",
+          "installation": "update-browserslist-db@1.2.3_browserslist@4.28.6/node_modules/update-browserslist-db"
+        }
+      ]
+    },
+    {
+      "name": "call-bind-apply-helpers",
+      "version": "1.0.2",
+      "license": "MIT",
+      "installation": "call-bind-apply-helpers@1.0.2/node_modules/call-bind-apply-helpers",
+      "sha256": "59639b628c6846f674857c6a613fd47e2e4d2a24036cdf0f7a62ac634f4c8a5f",
+      "dependencies": [
+        {
+          "name": "es-errors",
+          "installation": "es-errors@1.3.0/node_modules/es-errors"
+        },
+        {
+          "name": "function-bind",
+          "installation": "function-bind@1.1.2/node_modules/function-bind"
+        }
+      ]
+    },
+    {
+      "name": "call-bound",
+      "version": "1.0.4",
+      "license": "MIT",
+      "installation": "call-bound@1.0.4/node_modules/call-bound",
+      "sha256": "dcc8abb3c4ad3774234272149020cb36d7b1a3d377a419454d1e7adb368dd9c3",
+      "dependencies": [
+        {
+          "name": "call-bind-apply-helpers",
+          "installation": "call-bind-apply-helpers@1.0.2/node_modules/call-bind-apply-helpers"
+        },
+        {
+          "name": "get-intrinsic",
+          "installation": "get-intrinsic@1.3.0/node_modules/get-intrinsic"
+        }
+      ]
+    },
+    {
+      "name": "caniuse-lite",
+      "version": "1.0.30001805",
+      "license": "CC-BY-4.0",
+      "installation": "caniuse-lite@1.0.30001805/node_modules/caniuse-lite",
+      "sha256": "3c196c691638b53f9ea8b44c830d0a4c06d8f642c8ddfde21d18a6b6fe5138cf",
+      "dependencies": []
+    },
+    {
+      "name": "classnames",
+      "version": "2.5.1",
+      "license": "MIT",
+      "installation": "classnames@2.5.1/node_modules/classnames",
+      "sha256": "d3164167a241350c19ddeaa3d19c8cc3e0044db1e78ef369d17177f0eae793f4",
+      "dependencies": []
+    },
+    {
+      "name": "clsx",
+      "version": "2.1.1",
+      "license": "MIT",
+      "installation": "clsx@2.1.1/node_modules/clsx",
+      "sha256": "a5e616b9883177fb47c1fca22b6a4ab42be1c3ed6ffae8595a5c7d88630eeec2",
+      "dependencies": []
+    },
+    {
+      "name": "convert-source-map",
+      "version": "2.0.0",
+      "license": "MIT",
+      "installation": "convert-source-map@2.0.0/node_modules/convert-source-map",
+      "sha256": "e6bf802e6ee220d66321808ce3d619fbb85ff4d5729ea4f649bd65dfe9ee8956",
+      "dependencies": []
+    },
+    {
+      "name": "corner-smoothing",
+      "version": "0.1.5",
+      "license": "MIT",
+      "installation": "corner-smoothing@0.1.5_react@19.2.7/node_modules/corner-smoothing",
+      "sha256": "47a8d92604295dd40011f560105998033545cdd2c44c003e65723535e69a6026",
+      "dependencies": [
+        {
+          "name": "figma-squircle",
+          "installation": "figma-squircle@0.3.1/node_modules/figma-squircle"
+        },
+        {
+          "name": "react",
+          "installation": "react@19.2.7/node_modules/react"
+        }
+      ]
+    },
+    {
+      "name": "csstype",
+      "version": "3.2.3",
+      "license": "MIT",
+      "installation": "csstype@3.2.3/node_modules/csstype",
+      "sha256": "c818b74a9bc1556488b7ec2a65399224738f6619228f9a6491c5c02ca91f849e",
+      "dependencies": []
+    },
+    {
+      "name": "debug",
+      "version": "4.4.3",
+      "license": "MIT",
+      "installation": "debug@4.4.3/node_modules/debug",
+      "sha256": "ea8e33d63fe5f3a4c36609b6c3df8e2ef1f8b8ba2fc3a2e1e53cb27291f384af",
+      "dependencies": [
+        {
+          "name": "ms",
+          "installation": "ms@2.1.3/node_modules/ms"
+        }
+      ]
+    },
+    {
+      "name": "deep-freeze",
+      "version": "0.0.1",
+      "license": "public domain",
+      "installation": "deep-freeze@0.0.1/node_modules/deep-freeze",
+      "sha256": "7cb25d6f1f26bcb69318df523c2429edd58a8e3a7bb7224e1160e6ed4360fa26",
+      "dependencies": []
+    },
+    {
+      "name": "dunder-proto",
+      "version": "1.0.1",
+      "license": "MIT",
+      "installation": "dunder-proto@1.0.1/node_modules/dunder-proto",
+      "sha256": "24df71008e4225c858f389dd2728b76cf66b752256d42a38ed7930aacae7fe2b",
+      "dependencies": [
+        {
+          "name": "call-bind-apply-helpers",
+          "installation": "call-bind-apply-helpers@1.0.2/node_modules/call-bind-apply-helpers"
+        },
+        {
+          "name": "es-errors",
+          "installation": "es-errors@1.3.0/node_modules/es-errors"
+        },
+        {
+          "name": "gopd",
+          "installation": "gopd@1.2.0/node_modules/gopd"
+        }
+      ]
+    },
+    {
+      "name": "earcut",
+      "version": "2.2.4",
+      "license": "ISC",
+      "installation": "earcut@2.2.4/node_modules/earcut",
+      "sha256": "7329172340c46ec4bc9babe4950806fa4379b6db3ecf812ff2193f49849a2e4b",
+      "dependencies": []
+    },
+    {
+      "name": "electron-to-chromium",
+      "version": "1.5.389",
+      "license": "ISC",
+      "installation": "electron-to-chromium@1.5.389/node_modules/electron-to-chromium",
+      "sha256": "34e1e776eb92fdfccf235f7df210136bad1a778fe23e46e62dd92c297781b9c8",
+      "dependencies": []
+    },
+    {
+      "name": "es-define-property",
+      "version": "1.0.1",
+      "license": "MIT",
+      "installation": "es-define-property@1.0.1/node_modules/es-define-property",
+      "sha256": "3a2cb30dae30a96705dcd9aa2d5fb190cf8200f27badccfa5a81a4374e5708b4",
+      "dependencies": []
+    },
+    {
+      "name": "es-errors",
+      "version": "1.3.0",
+      "license": "MIT",
+      "installation": "es-errors@1.3.0/node_modules/es-errors",
+      "sha256": "1a0a0bcccc76b915cb64073317312840cf6363e9144b96f406d0059774dd5278",
+      "dependencies": []
+    },
+    {
+      "name": "es-object-atoms",
+      "version": "1.1.2",
+      "license": "MIT",
+      "installation": "es-object-atoms@1.1.2/node_modules/es-object-atoms",
+      "sha256": "e4b7882975d10c68457945c883e1060d0b058af5b1216215c872263f42e12fc9",
+      "dependencies": [
+        {
+          "name": "es-errors",
+          "installation": "es-errors@1.3.0/node_modules/es-errors"
+        }
+      ]
+    },
+    {
+      "name": "escalade",
+      "version": "3.2.0",
+      "license": "MIT",
+      "installation": "escalade@3.2.0/node_modules/escalade",
+      "sha256": "acd22b264ecbea162e320a360dab0ad0f3e5438fa4382288df844fa08b484e73",
+      "dependencies": []
+    },
+    {
+      "name": "eventemitter3",
+      "version": "4.0.7",
+      "license": "MIT",
+      "installation": "eventemitter3@4.0.7/node_modules/eventemitter3",
+      "sha256": "2e9612fd0b3b723d4e27dbd741752f84ad840f3151973250820be782650cb7e1",
+      "dependencies": []
+    },
+    {
+      "name": "figma-squircle",
+      "version": "0.3.1",
+      "license": "MIT",
+      "installation": "figma-squircle@0.3.1/node_modules/figma-squircle",
+      "sha256": "58ff3ca3ee08adf8ee0b9e17343a39f3d5619470e7ebc6e3d9107cc19ccfcb18",
+      "dependencies": []
+    },
+    {
+      "name": "framer-motion",
+      "version": "12.40.0",
+      "license": "MIT",
+      "installation": "framer-motion@12.40.0_react_7ea1b4820433ad8864f2f384f03a8795/node_modules/framer-motion",
+      "sha256": "8c347ff3a2db814396b6348306eb4e987bcf6dad5ac36e65ed7fcb2d66f527cb",
+      "dependencies": [
+        {
+          "name": "motion-dom",
+          "installation": "motion-dom@12.40.0/node_modules/motion-dom"
+        },
+        {
+          "name": "motion-utils",
+          "installation": "motion-utils@12.39.0/node_modules/motion-utils"
+        },
+        {
+          "name": "react",
+          "installation": "react@19.2.7/node_modules/react"
+        },
+        {
+          "name": "react-dom",
+          "installation": "react-dom@19.2.7_react@19.2.7/node_modules/react-dom"
+        },
+        {
+          "name": "tslib",
+          "installation": "tslib@2.8.1/node_modules/tslib"
+        }
+      ]
+    },
+    {
+      "name": "function-bind",
+      "version": "1.1.2",
+      "license": "MIT",
+      "installation": "function-bind@1.1.2/node_modules/function-bind",
+      "sha256": "edb1c4faf4148e6e3d74ed8dbac1a1dc359a647ff4207aad4851396dc7a3559a",
+      "dependencies": []
+    },
+    {
+      "name": "gensync",
+      "version": "1.0.0-beta.2",
+      "license": "MIT",
+      "installation": "gensync@1.0.0-beta.2/node_modules/gensync",
+      "sha256": "80cddca71baa1ba0cf44f65585e1c1ed7576abdb759ed391007925c961ca6334",
+      "dependencies": []
+    },
+    {
+      "name": "get-intrinsic",
+      "version": "1.3.0",
+      "license": "MIT",
+      "installation": "get-intrinsic@1.3.0/node_modules/get-intrinsic",
+      "sha256": "45b14763baacc59b0fd7b39e3ad983d5d2aaf7f5ed682f2fce9edb469826c999",
+      "dependencies": [
+        {
+          "name": "call-bind-apply-helpers",
+          "installation": "call-bind-apply-helpers@1.0.2/node_modules/call-bind-apply-helpers"
+        },
+        {
+          "name": "es-define-property",
+          "installation": "es-define-property@1.0.1/node_modules/es-define-property"
+        },
+        {
+          "name": "es-errors",
+          "installation": "es-errors@1.3.0/node_modules/es-errors"
+        },
+        {
+          "name": "es-object-atoms",
+          "installation": "es-object-atoms@1.1.2/node_modules/es-object-atoms"
+        },
+        {
+          "name": "function-bind",
+          "installation": "function-bind@1.1.2/node_modules/function-bind"
+        },
+        {
+          "name": "get-proto",
+          "installation": "get-proto@1.0.1/node_modules/get-proto"
+        },
+        {
+          "name": "gopd",
+          "installation": "gopd@1.2.0/node_modules/gopd"
+        },
+        {
+          "name": "has-symbols",
+          "installation": "has-symbols@1.1.0/node_modules/has-symbols"
+        },
+        {
+          "name": "hasown",
+          "installation": "hasown@2.0.4/node_modules/hasown"
+        },
+        {
+          "name": "math-intrinsics",
+          "installation": "math-intrinsics@1.1.0/node_modules/math-intrinsics"
+        }
+      ]
+    },
+    {
+      "name": "get-proto",
+      "version": "1.0.1",
+      "license": "MIT",
+      "installation": "get-proto@1.0.1/node_modules/get-proto",
+      "sha256": "73839e012ac7134a632c9d9fc6bdb700ac9ab5553cce39eb789ba2b65663e734",
+      "dependencies": [
+        {
+          "name": "dunder-proto",
+          "installation": "dunder-proto@1.0.1/node_modules/dunder-proto"
+        },
+        {
+          "name": "es-object-atoms",
+          "installation": "es-object-atoms@1.1.2/node_modules/es-object-atoms"
+        }
+      ]
+    },
+    {
+      "name": "gl-matrix",
+      "version": "4.0.0-beta.2",
+      "license": "MIT",
+      "installation": "gl-matrix@4.0.0-beta.2/node_modules/gl-matrix",
+      "sha256": "c52fdb17cd4c31a7457438edf19078149539e7a0c7ca951628cbc7f12e94a0ac",
+      "dependencies": []
+    },
+    {
+      "name": "gopd",
+      "version": "1.2.0",
+      "license": "MIT",
+      "installation": "gopd@1.2.0/node_modules/gopd",
+      "sha256": "33ace32dc861f6da9d1fd9d0a44c66e8c6ff3b13358d070683c1c2978ff5f19f",
+      "dependencies": []
+    },
+    {
+      "name": "has-symbols",
+      "version": "1.1.0",
+      "license": "MIT",
+      "installation": "has-symbols@1.1.0/node_modules/has-symbols",
+      "sha256": "5190268c0e3308d7446d1f7c036238f329f786938453e6017cb90980b3612e7a",
+      "dependencies": []
+    },
+    {
+      "name": "hasown",
+      "version": "2.0.4",
+      "license": "MIT",
+      "installation": "hasown@2.0.4/node_modules/hasown",
+      "sha256": "40b750c55a8bacf2c5ac316f5299dd44d48acc101c189a00cd59d39376b5eb89",
+      "dependencies": [
+        {
+          "name": "function-bind",
+          "installation": "function-bind@1.1.2/node_modules/function-bind"
+        }
+      ]
+    },
+    {
+      "name": "ismobilejs",
+      "version": "1.1.1",
+      "license": "MIT",
+      "installation": "ismobilejs@1.1.1/node_modules/ismobilejs",
+      "sha256": "fa75a337970c3796eb19f60340a13f301a1a2ead018161753accf7c8de582afd",
+      "dependencies": []
+    },
+    {
+      "name": "jotai",
+      "version": "2.20.1",
+      "license": "MIT",
+      "installation": "jotai@2.20.1_@babel+core@7._5d12a3f5b2f7603bd07e5092e4da562b/node_modules/jotai",
+      "sha256": "9f8f7e738b122751cef1557edf3eb498fb901d3d35f1ce967a59b4dc52afeeca",
+      "dependencies": [
+        {
+          "name": "@babel/core",
+          "installation": "@babel+core@7.29.0/node_modules/@babel/core"
+        },
+        {
+          "name": "@babel/template",
+          "installation": "@babel+template@7.29.7/node_modules/@babel/template"
+        },
+        {
+          "name": "@types/react",
+          "installation": "@types+react@19.2.17/node_modules/@types/react"
+        },
+        {
+          "name": "react",
+          "installation": "react@19.2.7/node_modules/react"
+        }
+      ]
+    },
+    {
+      "name": "js-tokens",
+      "version": "4.0.0",
+      "license": "MIT",
+      "installation": "js-tokens@4.0.0/node_modules/js-tokens",
+      "sha256": "47345931827b3e26db9fe690abb81f856a0d040cbca8af1e69711a64cd58ce0d",
+      "dependencies": []
+    },
+    {
+      "name": "jsesc",
+      "version": "3.1.0",
+      "license": "MIT",
+      "installation": "jsesc@3.1.0/node_modules/jsesc",
+      "sha256": "6127ab2ccfbf576671dcfedcf2a8d97c9bbb3e5e4cff1274b3210b86a97a287c",
+      "dependencies": []
+    },
+    {
+      "name": "json5",
+      "version": "2.2.3",
+      "license": "MIT",
+      "installation": "json5@2.2.3/node_modules/json5",
+      "sha256": "1927c4592e3811cf9b8c86e568df1c41a373b628b4b322f88872395ef87e2ba5",
+      "dependencies": []
+    },
+    {
+      "name": "lru-cache",
+      "version": "5.1.1",
+      "license": "ISC",
+      "installation": "lru-cache@5.1.1/node_modules/lru-cache",
+      "sha256": "f5a3379f52a453412f5d8551bf11fa0bef4316cc88645c9d190a017e1c58a4c2",
+      "dependencies": [
+        {
+          "name": "yallist",
+          "installation": "yallist@3.1.1/node_modules/yallist"
+        }
+      ]
+    },
+    {
+      "name": "math-intrinsics",
+      "version": "1.1.0",
+      "license": "MIT",
+      "installation": "math-intrinsics@1.1.0/node_modules/math-intrinsics",
+      "sha256": "39d74aa5a354153130706286dd60a2d8409ce0c8f66546eff2edcac0afff17e1",
+      "dependencies": []
+    },
+    {
+      "name": "motion-dom",
+      "version": "12.40.0",
+      "license": "MIT",
+      "installation": "motion-dom@12.40.0/node_modules/motion-dom",
+      "sha256": "aa8b6a58c3e73bdc78f456cd849c5a918964eb16a2d76462cd74328be8e5b64b",
+      "dependencies": [
+        {
+          "name": "motion-utils",
+          "installation": "motion-utils@12.39.0/node_modules/motion-utils"
+        }
+      ]
+    },
+    {
+      "name": "motion-utils",
+      "version": "12.39.0",
+      "license": "MIT",
+      "installation": "motion-utils@12.39.0/node_modules/motion-utils",
+      "sha256": "5ca73f94536ed2f8c5361391923bdd791cc8aba861815f394a0b9f67ce930ef2",
+      "dependencies": []
+    },
+    {
+      "name": "ms",
+      "version": "2.1.3",
+      "license": "MIT",
+      "installation": "ms@2.1.3/node_modules/ms",
+      "sha256": "1a6b4d9739790c0b94ab96c8cc0507e281c164c311ff4fbf5e57fb8d26290b40",
+      "dependencies": []
+    },
+    {
+      "name": "node-releases",
+      "version": "2.0.51",
+      "license": "MIT",
+      "installation": "node-releases@2.0.51/node_modules/node-releases",
+      "sha256": "8415b6150a5c0a1aaab110cf339919ea44a97774a60d4defef78483d0c46ebab",
+      "dependencies": []
+    },
+    {
+      "name": "object-inspect",
+      "version": "1.13.4",
+      "license": "MIT",
+      "installation": "object-inspect@1.13.4/node_modules/object-inspect",
+      "sha256": "21c5c63f653705f44a60f5fe93752b231caf6ff07b01805740bd89b71b2d6d8a",
+      "dependencies": []
+    },
+    {
+      "name": "picocolors",
+      "version": "1.1.1",
+      "license": "ISC",
+      "installation": "picocolors@1.1.1/node_modules/picocolors",
+      "sha256": "ef2ac226c4811d312e12c64214c453878653e834482125ae475f27cea60de737",
+      "dependencies": []
+    },
+    {
+      "name": "punycode",
+      "version": "1.4.1",
+      "license": "MIT",
+      "installation": "punycode@1.4.1/node_modules/punycode",
+      "sha256": "891aff52ab119b1886cce762dc26d8587c33b5292eae9ec4e2731823368961bc",
+      "dependencies": []
+    },
+    {
+      "name": "qs",
+      "version": "6.15.3",
+      "license": "BSD-3-Clause",
+      "installation": "qs@6.15.3/node_modules/qs",
+      "sha256": "47477ed1243939a78ab502c3d1d10a3d0571c06f9c2dfa128d7c047dbb010bf4",
+      "dependencies": [
+        {
+          "name": "es-define-property",
+          "installation": "es-define-property@1.0.1/node_modules/es-define-property"
+        },
+        {
+          "name": "side-channel",
+          "installation": "side-channel@1.1.1/node_modules/side-channel"
+        }
+      ]
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.7",
+      "license": "MIT",
+      "installation": "react-dom@19.2.7_react@19.2.7/node_modules/react-dom",
+      "sha256": "447acd72cdb6a966d9db967729e286e7cbb4a09ea61fddd45e12c2a97fd4cfb6",
+      "dependencies": [
+        {
+          "name": "react",
+          "installation": "react@19.2.7/node_modules/react"
+        },
+        {
+          "name": "scheduler",
+          "installation": "scheduler@0.27.0/node_modules/scheduler"
+        }
+      ]
+    },
+    {
+      "name": "react-toastify",
+      "version": "11.1.0",
+      "license": "MIT",
+      "installation": "react-toastify@11.1.0_react_37d47a11ecedf6c3bcbabaf4690d9cdc/node_modules/react-toastify",
+      "sha256": "45e58e2eaec08cff64bddb0b47ad10b55b5c4df3d0284da0bb0c154fcf7f8cd4",
+      "dependencies": [
+        {
+          "name": "clsx",
+          "installation": "clsx@2.1.1/node_modules/clsx"
+        },
+        {
+          "name": "react",
+          "installation": "react@19.2.7/node_modules/react"
+        },
+        {
+          "name": "react-dom",
+          "installation": "react-dom@19.2.7_react@19.2.7/node_modules/react-dom"
+        }
+      ]
+    },
+    {
+      "name": "react",
+      "version": "19.2.7",
+      "license": "MIT",
+      "installation": "react@19.2.7/node_modules/react",
+      "sha256": "51966ae9c8c377ff592b5d69c980966992101bc6791bf83a1e5c7ad9bcefa7f4",
+      "dependencies": []
+    },
+    {
+      "name": "scheduler",
+      "version": "0.27.0",
+      "license": "MIT",
+      "installation": "scheduler@0.27.0/node_modules/scheduler",
+      "sha256": "393bb96b7e481bf50189a1a02c7e0e7f4d01acba5abc6fbe7d214638624462fc",
+      "dependencies": []
+    },
+    {
+      "name": "semver",
+      "version": "6.3.1",
+      "license": "ISC",
+      "installation": "semver@6.3.1/node_modules/semver",
+      "sha256": "aa906c5bf8a2fa68683cae07d18553ae2538ed0d5a567911980b2ef25ee8b9ba",
+      "dependencies": []
+    },
+    {
+      "name": "side-channel-list",
+      "version": "1.0.1",
+      "license": "MIT",
+      "installation": "side-channel-list@1.0.1/node_modules/side-channel-list",
+      "sha256": "90f0c08c6c17f4a3fa3dd61873223957b89da4201f01dc0c8b95b0b9e6a2a59a",
+      "dependencies": [
+        {
+          "name": "es-errors",
+          "installation": "es-errors@1.3.0/node_modules/es-errors"
+        },
+        {
+          "name": "object-inspect",
+          "installation": "object-inspect@1.13.4/node_modules/object-inspect"
+        }
+      ]
+    },
+    {
+      "name": "side-channel-map",
+      "version": "1.0.1",
+      "license": "MIT",
+      "installation": "side-channel-map@1.0.1/node_modules/side-channel-map",
+      "sha256": "914a8bd732b82523d95bb697eec3e6d95badc5eb13b196fb0772e59354a3ab25",
+      "dependencies": [
+        {
+          "name": "call-bound",
+          "installation": "call-bound@1.0.4/node_modules/call-bound"
+        },
+        {
+          "name": "es-errors",
+          "installation": "es-errors@1.3.0/node_modules/es-errors"
+        },
+        {
+          "name": "get-intrinsic",
+          "installation": "get-intrinsic@1.3.0/node_modules/get-intrinsic"
+        },
+        {
+          "name": "object-inspect",
+          "installation": "object-inspect@1.13.4/node_modules/object-inspect"
+        }
+      ]
+    },
+    {
+      "name": "side-channel-weakmap",
+      "version": "1.0.2",
+      "license": "MIT",
+      "installation": "side-channel-weakmap@1.0.2/node_modules/side-channel-weakmap",
+      "sha256": "8c11f0a1c6cfa549588d991a5cb1b04d62953277ed29f47463d415d5946388a8",
+      "dependencies": [
+        {
+          "name": "call-bound",
+          "installation": "call-bound@1.0.4/node_modules/call-bound"
+        },
+        {
+          "name": "es-errors",
+          "installation": "es-errors@1.3.0/node_modules/es-errors"
+        },
+        {
+          "name": "get-intrinsic",
+          "installation": "get-intrinsic@1.3.0/node_modules/get-intrinsic"
+        },
+        {
+          "name": "object-inspect",
+          "installation": "object-inspect@1.13.4/node_modules/object-inspect"
+        },
+        {
+          "name": "side-channel-map",
+          "installation": "side-channel-map@1.0.1/node_modules/side-channel-map"
+        }
+      ]
+    },
+    {
+      "name": "side-channel",
+      "version": "1.1.1",
+      "license": "MIT",
+      "installation": "side-channel@1.1.1/node_modules/side-channel",
+      "sha256": "14da3b013c3762da85cfd8b173290285394dfa41870bc4a1e8243aaa38316f2a",
+      "dependencies": [
+        {
+          "name": "es-errors",
+          "installation": "es-errors@1.3.0/node_modules/es-errors"
+        },
+        {
+          "name": "object-inspect",
+          "installation": "object-inspect@1.13.4/node_modules/object-inspect"
+        },
+        {
+          "name": "side-channel-list",
+          "installation": "side-channel-list@1.0.1/node_modules/side-channel-list"
+        },
+        {
+          "name": "side-channel-map",
+          "installation": "side-channel-map@1.0.1/node_modules/side-channel-map"
+        },
+        {
+          "name": "side-channel-weakmap",
+          "installation": "side-channel-weakmap@1.0.2/node_modules/side-channel-weakmap"
+        }
+      ]
+    },
+    {
+      "name": "tslib",
+      "version": "2.8.1",
+      "license": "0BSD",
+      "installation": "tslib@2.8.1/node_modules/tslib",
+      "sha256": "f02b4851df316f29bdfcd404aa1eb41e4e216b5859015f81fcd3e91caf8be931",
+      "dependencies": []
+    },
+    {
+      "name": "update-browserslist-db",
+      "version": "1.2.3",
+      "license": "MIT",
+      "installation": "update-browserslist-db@1.2.3_browserslist@4.28.6/node_modules/update-browserslist-db",
+      "sha256": "c8bce7050b48895e9d926a4fd61b252a2bf9a99cf624dc607397e5f168a6bb87",
+      "dependencies": [
+        {
+          "name": "browserslist",
+          "installation": "browserslist@4.28.6/node_modules/browserslist"
+        },
+        {
+          "name": "escalade",
+          "installation": "escalade@3.2.0/node_modules/escalade"
+        },
+        {
+          "name": "picocolors",
+          "installation": "picocolors@1.1.1/node_modules/picocolors"
+        }
+      ]
+    },
+    {
+      "name": "url",
+      "version": "0.11.4",
+      "license": "MIT",
+      "installation": "url@0.11.4/node_modules/url",
+      "sha256": "c3b59c6638470d8a0db69e357b41b84fc242648d3a33ab500aa993c649d6d524",
+      "dependencies": [
+        {
+          "name": "punycode",
+          "installation": "punycode@1.4.1/node_modules/punycode"
+        },
+        {
+          "name": "qs",
+          "installation": "qs@6.15.3/node_modules/qs"
+        }
+      ]
+    },
+    {
+      "name": "yallist",
+      "version": "3.1.1",
+      "license": "ISC",
+      "installation": "yallist@3.1.1/node_modules/yallist",
+      "sha256": "27699a6415a43f128c0e8ddcd5bf6e265f6cf3a581a9d959c11b977244fadc34",
+      "dependencies": []
     }
   ]
 }

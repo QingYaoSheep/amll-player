@@ -10,6 +10,7 @@ final class AMLLCoreTextLayout {
         var word: LyricWord
         var range: NSRange
         var rtl: Bool
+        var wordIndex: Int
     }
 
     private struct Row {
@@ -22,6 +23,7 @@ final class AMLLCoreTextLayout {
     let fragments: [WordFragment]
     let breakOffsets: [Int]
     let font: UIFont
+    let maskWords: [AMLLWordMask.Word]
     private let rows: [Row]
 
     init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration) {
@@ -35,6 +37,7 @@ final class AMLLCoreTextLayout {
             chunks = line.text.map { [.init(text: String($0), start: line.start, end: line.end)] }
         }
         let texts = chunks.map { $0.map(\.text).joined() }
+        let timedWords = chunks.flatMap { $0 }
         let text = texts.joined()
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking]
         let attributed = NSAttributedString(string: text, attributes: attributes)
@@ -73,15 +76,15 @@ final class AMLLCoreTextLayout {
             rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: y + font.ascender)))
             if line.precision == .word {
                 var cursor = 0
-                for word in chunks.flatMap({ $0 }) {
+                for (wordIndex, word) in timedWords.enumerated() {
                     let wordRange = NSRange(location: cursor, length: word.text.utf16.count)
                     cursor += wordRange.length
                     let intersection = NSIntersectionRange(range, wordRange)
-                    guard intersection.length > 0 else { continue }
+                    guard intersection.length > 0, !word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                     let first = CTLineGetOffsetForStringIndex(ctLine, intersection.location, nil)
                     let last = CTLineGetOffsetForStringIndex(ctLine, NSMaxRange(intersection), nil)
                     fragments.append(.init(rect: CGRect(x: x + min(first, last), y: y, width: abs(last - first), height: mainHeight),
-                                           word: word, range: intersection, rtl: first > last))
+                                           word: word, range: intersection, rtl: first > last, wordIndex: wordIndex))
                 }
             }
             y += mainHeight
@@ -103,6 +106,11 @@ final class AMLLCoreTextLayout {
         }
         self.rows = rows
         self.fragments = fragments
+        // A wrapped word has several drawable fragments, but only one timing interval.
+        // Pure spaces are DOM text nodes and do not contribute mask travel in AMLL.
+        maskWords = timedWords.enumerated().map { index, word in
+            .init(start: word.start, end: word.end, width: fragments.filter { $0.wordIndex == index }.reduce(0) { $0 + $1.rect.width })
+        }
         size = CGSize(width: availableWidth, height: max(1, y))
     }
 

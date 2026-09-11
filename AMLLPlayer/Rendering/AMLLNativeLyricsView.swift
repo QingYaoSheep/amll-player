@@ -199,6 +199,14 @@ final class AMLLNativeCanvas: UIView {
         CATransaction.commit()
     }
 
+    #if DEBUG
+        /// Manual display-link equivalent for deterministic offscreen validation.
+        func advanceFrame(delta: Double) {
+            layoutIfNeeded()
+            draw(delta: delta)
+        }
+    #endif
+
     override func didMoveToWindow() {
         super.didMoveToWindow(); syncLink()
     }
@@ -299,17 +307,22 @@ private final class AMLLNativeRow: UIView {
     private let textLayout: AMLLCoreTextLayout
     private let base = CALayer()
     private let auxiliary = CALayer()
-    private var words: [(layer: CALayer, mask: CAGradientLayer, fragment: AMLLCoreTextLayout.WordFragment)] = []
+    private var words: [(layer: CALayer, mask: CAGradientLayer, fragment: AMLLCoreTextLayout.WordFragment, maskIndex: Int, advance: Double)] = []
+    private let maskWords: [AMLLWordMask.Word]
     var onSeek: (() -> Void)?
 
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat) {
         self.line = line; textLayout = layout
+        let indexes = layout.maskWords.indices.filter { layout.maskWords[$0].width > 0 }
+        maskWords = indexes.map { layout.maskWords[$0] }
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         let image = layout.raster(scale: scale, auxiliary: false)
         base.contents = image.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
         auxiliary.contents = layout.raster(scale: scale, auxiliary: true).cgImage
         auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
+        var consumed: [Int: Double] = [:]
         for fragment in layout.fragments where fragment.rect.width > 0 {
+            guard let maskIndex = indexes.firstIndex(of: fragment.wordIndex) else { continue }
             let piece = CALayer()
             piece.frame = fragment.rect; piece.contents = image.cgImage; piece.contentsScale = scale
             piece.contentsRect = CGRect(x: fragment.rect.minX / layout.size.width, y: fragment.rect.minY / layout.size.height,
@@ -317,8 +330,11 @@ private final class AMLLNativeRow: UIView {
             let mask = CAGradientLayer(); mask.frame = piece.bounds
             mask.startPoint = CGPoint(x: fragment.rtl ? 1 : 0, y: 0.5); mask.endPoint = CGPoint(x: fragment.rtl ? 0 : 1, y: 0.5)
             piece.mask = mask; layer.addSublayer(piece)
-            words.append((piece, mask, fragment))
+            let advance = consumed[fragment.wordIndex, default: 0]
+            words.append((piece, mask, fragment, maskIndex, advance))
+            consumed[fragment.wordIndex] = advance + fragment.rect.width
         }
+        base.isHidden = !words.isEmpty
         isAccessibilityElement = true; accessibilityLabel = [line.text, line.translation, line.romanization].filter { !$0.isEmpty }.joined(separator: ", ")
         accessibilityTraits = .button
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
@@ -340,15 +356,18 @@ private final class AMLLNativeRow: UIView {
         let bright = row.brightAlpha, dark = row.darkAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
         base.opacity = Float(words.isEmpty ? 1 : dark)
-        let maskWords = words.map { AMLLWordMask.Word(start: $0.fragment.word.start, end: $0.fragment.word.end, width: $0.fragment.rect.width) }
-        for (index, entry) in words.enumerated() {
+        for entry in words {
             let feather = textLayout.font.lineHeight * configuration.gradientWidth
-            let edge = AMLLWordMask.edge(time: time, index: index, words: maskWords, feather: feather)
+            let edge = AMLLWordMask.edge(time: time, index: entry.maskIndex, words: maskWords, feather: feather) - entry.advance
             let width = max(1, entry.fragment.rect.width)
-            entry.mask.colors = [UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor, UIColor.clear.cgColor]
-            entry.mask.locations = [0, NSNumber(value: min(1, max(0, edge / width))), NSNumber(value: min(1, max(0, (edge + feather) / width))), 1]
-            entry.layer.opacity = Float(max(0, bright - dark) / max(0.0001, 1 - dark))
-            entry.layer.isHidden = edge + feather <= 0
+            let start = edge / width, end = (edge + max(0.0001, feather)) / width
+            entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
+            entry.mask.locations = [0, 1]
+            // Let the gradient extend beyond the fragment. Clamping stops to [0,1]
+            // changes the feather slope when a word enters or leaves the mask.
+            entry.mask.startPoint = CGPoint(x: entry.fragment.rtl ? 1 - start : start, y: 0.5)
+            entry.mask.endPoint = CGPoint(x: entry.fragment.rtl ? 1 - end : end, y: 0.5)
+            entry.layer.opacity = 1
         }
     }
 }

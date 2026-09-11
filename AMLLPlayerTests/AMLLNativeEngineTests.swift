@@ -50,4 +50,61 @@ final class AMLLNativeEngineTests: XCTestCase {
         }
         XCTAssertNotNil(layout.raster(scale: 3).cgImage)
     }
+
+    func testPausedBackgroundOccupiesFlowAndKeepsItsOwnMaskScale() throws {
+        let lines = [
+            LyricLine(id: "main", text: "Lead", start: 1, end: 3),
+            LyricLine(id: "background", text: "Echo", start: 1, end: 3, isBackground: true),
+            LyricLine(id: "next", text: "Next", start: 8, end: 10),
+        ]
+        var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+        environment.enableSpring = false
+        var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines), environment: environment, heights: [60, 30, 60])
+        let playing = engine.render(.init(position: 0, playing: true), delta: 0)
+        let paused = engine.render(.init(position: 0, playing: false), delta: 0)
+        let background = try XCTUnwrap(paused.rows.first { $0.lineIndex == 1 })
+        XCTAssertFalse(background.hidden)
+        XCTAssertGreaterThan(background.opacity, 0)
+        XCTAssertEqual(background.scale, 1, accuracy: 0.000_001)
+        XCTAssertEqual(background.darkAlpha, 0.4, accuracy: 0.000_001)
+        // CSS :not(.playing) puts inactive background wrappers back into normal flow.
+        let before = try XCTUnwrap(playing.rows.first { $0.lineIndex == 2 })
+        let after = try XCTUnwrap(paused.rows.first { $0.lineIndex == 2 })
+        XCTAssertEqual(after.y - before.y, 30 + 32 * 0.3, accuracy: 0.000_001)
+    }
+
+    @MainActor
+    func testNativeCanvasExportsActualFramesWithoutAdvancingLiveState() throws {
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        canvas.position = { 6 }
+        canvas.configure(document: LyricsRenderFixture.document, configuration: .init(),
+                         input: .init(position: 6, playing: true), active: false, reduceMotion: false)
+        for _ in 0 ..< 120 {
+            canvas.advanceFrame(delta: 1.0 / 60)
+        }
+        let before = try XCTUnwrap(canvas.frameState)
+        let bytes = try XCTUnwrap(canvas.exportMotionTrace(fps: 60))
+        struct Trace: Decodable {
+            var environment: AMLLRenderEnvironment
+            var fps: Int
+            var lineIDs: [String]
+            var breaks: [[Int]]
+            var frames: [AMLLFrameState]
+        }
+        let trace = try JSONDecoder().decode(Trace.self, from: bytes)
+        XCTAssertEqual(trace.frames.count, 300)
+        XCTAssertEqual(trace.environment.width, 402)
+        XCTAssertEqual(trace.lineIDs.count, trace.breaks.count)
+        XCTAssertEqual(trace.frames.first?.rows.count, before.rows.count)
+        XCTAssertEqual(canvas.frameState?.animationTime, before.animationTime)
+        XCTAssertEqual(canvas.frameState?.rows.map(\.y), before.rows.map(\.y))
+        XCTAssertGreaterThan(canvas.visibleRowCount, 0)
+        XCTAssertLessThan(canvas.cachedLayoutCount, trace.lineIDs.count)
+        XCTAssertTrue(trace.frames.flatMap(\.rows).allSatisfy { $0.y.isFinite && $0.scale.isFinite })
+        let image = UIGraphicsImageRenderer(bounds: canvas.bounds).image { canvas.layer.render(in: $0.cgContext) }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "AMLL-source-port-402pt-unapproved"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 }

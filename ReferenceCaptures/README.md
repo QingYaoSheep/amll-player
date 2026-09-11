@@ -1,11 +1,16 @@
-# Apple Music layout references
+# Pinned AMLL reference
 
-Apple Music screenshots are used only to measure the native player's spatial layout. AMLL source code and the locked `@applemusic-like-lyrics/core@0.5.2` package remain the authority for lyric typography, highlighting, springs, scrolling, voices, translations, romanization, and interlude motion.
+The complete local AMLL player, including its layout, is now the acceptance baseline. Apple Music screenshots and `manifest.json` are historical records only and no longer block acceptance.
 
-Copy original, uncropped files into `ReferenceCaptures/raw/`. That directory is ignored by Git. `manifest.json` records the immutable filename, dimensions, scale, state, and SHA-256 digest; run:
+`amll-source-manifest.json` pins core 0.5.2, react-full 0.4.2, extracted source contents, bundled CSS/JavaScript (including inlined SVG/GLSL), wrapper/lockfile hashes and the installed dependency graph. From the Swift repository, using Node 25:
 
 ```sh
-node Scripts/verify-layout-references.cjs
+node Scripts/extract-amll-reference.cjs ../AMLL-OLD --verify
+node Scripts/generate-amll-motion-reference.cjs --verify
 ```
 
-The two current captures establish the 402×874pt iPhone 16 Pro portrait layout. The exact iOS 26 build and iPad reference captures are still required before pixel-level layout sign-off.
+Omit `--verify` only when deliberately regenerating the baseline. Extracted sources live in ignored `.build-tools/amll-reference/`; numeric fixtures are committed under `AMLLPlayerTests/Fixtures/`. The generator executes original functions/methods with minimal style/animation sinks, not JavaScript copies of the Swift formulas.
+
+Copied pnpm junctions still pointing to the former workspace are resolved to the same local store entry, without modifying the legacy tree. The graph pins dependency manifests and resolution; hashing all transitive code assets and an executable full-page browser runner remain work in P5N-00.
+
+Visual acceptance requires identical Apple-resolved fonts, viewport, settings, lyric data, cover, seed and event sequence. One CSS px maps to one point; scale applies only to rasterization. See [implementation ledger](../Docs/Plan5-AMLL-Port.md). No current screenshot or CI result constitutes 1:1 sign-off.

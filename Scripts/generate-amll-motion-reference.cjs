@@ -6,7 +6,7 @@ const { stripTypeScriptTypes } = require('node:module');
 const root = path.resolve(__dirname, '..');
 const source = path.join(root, '.build-tools/amll-reference/core/src');
 const context = vm.createContext({ Intl });
-for (const file of ['utils/derivative.ts', 'utils/spring.ts', 'utils/is-cjk.ts', 'utils/lyric-line-break.ts', 'utils/eq-set.ts', 'lyric-player/base/timeline.ts']) {
+for (const file of ['utils/derivative.ts', 'utils/spring.ts', 'utils/is-cjk.ts', 'utils/lyric-line-break.ts', 'utils/eq-set.ts', 'lyric-player/base/timeline.ts', 'utils/optimize-lyric.ts']) {
   const stripped = stripTypeScriptTypes(fs.readFileSync(path.join(source, file), 'utf8'))
     .replace(/^import\s.*?;\s*$/gm, '').replace(/\bexport /g, '');
   vm.runInContext(stripped, context, { filename: file });
@@ -42,7 +42,16 @@ const fixture = vm.runInContext(`(() => {
     const result = commitPlayerTimeState({timelineState:state,time,currentGroups:groups,hasBottomContent:false,stateResult:computePlayerTimeState({time,currentGroups:groups,timelineState:state})});
     return {time,seeking:state.isSeeking,hot:[...state.hotGroups].sort(),buffered:[...state.bufferedGroups].sort(),focus:state.scrollToIndex,layout:result.shouldLayout};
   });
-  return {traces,breaks,groups,timeline};
+  const original = [
+    {startTime:1000,endTime:2050,words:[{word:'a  b',startTime:1000,endTime:2050}],isBG:false},
+    {startTime:900,endTime:2100,words:[{word:'echo',startTime:900,endTime:2100}],isBG:true},
+    {startTime:2000,endTime:3000,words:[{word:'duet',startTime:2000,endTime:3000}],isBG:true},
+    {startTime:2900,endTime:4500,words:[{word:'next',startTime:2900,endTime:4500}],isBG:false},
+    {startTime:9000,endTime:10000,words:[{word:'end',startTime:9000,endTime:10000}],isBG:false}
+  ];
+  const optimized = JSON.parse(JSON.stringify(original));
+  optimizeLyricLines(optimized);
+  return {traces,breaks,groups,timeline,original,optimized};
 })()`, context);
 const target = path.join(root, 'AMLLPlayerTests/Fixtures/amll-motion-reference.json');
 const bytes = JSON.stringify(fixture, null, 2) + '\n';

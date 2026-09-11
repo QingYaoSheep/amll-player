@@ -1,5 +1,18 @@
 # Third-party notices
 
+## Apple Music-like Lyrics native rendering port
+
+- Local reference: `AMLL-OLD`, `@applemusic-like-lyrics/core` 0.5.2 and the installed `react-full` package.
+- Project: https://github.com/amll-dev/applemusic-like-lyrics
+- Core package license: AGPL-3.0-only, as declared by the pinned package.
+- Exact package versions, declared licenses and source hashes: `ReferenceCaptures/amll-source-manifest.json`.
+- Swift adaptations: `AMLLSourceSpring`, `AMLLSourceTimeline`, `AMLLBalancedLayout`, `AMLLDisplayDocument`, and `AMLLFrameEngine`.
+- The upstream spring solver includes the source notice `MIT License github.com/pushkine/`.
+
+These are modified native Swift adaptations of the extracted source algorithms.
+The upstream source attribution and package licenses remain applicable to those
+adaptations. Development reference scripts are not included in the iOS bundle.
+
 ## Spotify iOS SDK
 
 - Project: https://github.com/spotify/ios-sdk

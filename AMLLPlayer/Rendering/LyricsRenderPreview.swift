@@ -1,6 +1,6 @@
 #if DEBUG
-    import Foundation
     import Darwin
+    import Foundation
     import SwiftUI
 
     struct LyricsRenderPreview: View {
@@ -15,14 +15,30 @@
         @State private var targetFPS = 60
         @State private var exportURL: URL?
         @State private var visible = false
+        @State private var sourcePort = false
+        @State private var seekRevision = 0
         @Environment(\.scenePhase) private var scenePhase
         var body: some View {
             VStack {
-                PreviewRenderer(configuration: configuration, document: lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document,
-                                position: currentPosition, playing: playing, active: visible && scenePhase == .active,
-                                targetFPS: targetFPS,
-                                resume: resume, browsing: { browsing = $0 }, seek: { position = $0; anchor = ProcessInfo.processInfo.systemUptime },
-                                created: { renderer = $0 })
+                Toggle("AMLL source port · validation", isOn: $sourcePort)
+                if sourcePort {
+                    AMLLNativeLyricsView(document: lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document,
+                                         configuration: configuration,
+                                         input: .init(position: currentPosition(), playing: playing, seekRevision: seekRevision),
+                                         position: currentPosition, interaction: { event in
+                                             if case let .seek(lineID) = event,
+                                                let line = (lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document).lines.first(where: { $0.id == lineID })
+                                             {
+                                                 position = line.start; anchor = ProcessInfo.processInfo.systemUptime; seekRevision += 1
+                                             }
+                                         }, active: visible && scenePhase == .active)
+                } else {
+                    PreviewRenderer(configuration: configuration, document: lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document,
+                                    position: currentPosition, playing: playing, active: visible && scenePhase == .active,
+                                    targetFPS: targetFPS,
+                                    resume: resume, browsing: { browsing = $0 }, seek: { position = $0; anchor = ProcessInfo.processInfo.systemUptime },
+                                    created: { renderer = $0 })
+                }
                 Button("render.returnCurrent") { resume += 1 }
                     .frame(height: 44).opacity(browsing ? 1 : 0).disabled(!browsing).accessibilityHidden(!browsing)
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
@@ -30,7 +46,7 @@
                                 renderer?.frameMilliseconds ?? 0, renderer?.visibleRowCount ?? 0, renderer?.cachedLayoutCount ?? 0, memoryMB()))
                         .font(.caption.monospaced()).accessibilityIdentifier("renderMetrics")
                 }
-                Slider(value: Binding(get: { currentPosition() }, set: { position = $0; anchor = ProcessInfo.processInfo.systemUptime }), in: 0 ... 1800)
+                Slider(value: Binding(get: { currentPosition() }, set: { position = $0; anchor = ProcessInfo.processInfo.systemUptime; seekRevision += 1 }), in: 0 ... 1800)
                     .accessibilityLabel(Text("render.progress"))
                 HStack {
                     Button(playing ? "player.pause" : "player.play") { position = currentPosition(); anchor = ProcessInfo.processInfo.systemUptime; playing.toggle() }
@@ -74,7 +90,7 @@
         }
 
         private func step(by frames: Int) {
-            position = min(1_800, max(0, currentPosition() + Double(frames) / Double(targetFPS)))
+            position = min(1800, max(0, currentPosition() + Double(frames) / Double(targetFPS)))
             anchor = ProcessInfo.processInfo.systemUptime
             playing = false
         }

@@ -30,6 +30,16 @@ final class AMLLSourceParityTests: XCTestCase {
         var breaks: [Layout]
         var groups: [AMLLGroupTiming]
         var timeline: [State]
+        struct SourceLine: Decodable {
+            struct Word: Decodable { var word: String; var startTime: Double; var endTime: Double }
+            var startTime: Double
+            var endTime: Double
+            var words: [Word]
+            var isBG: Bool
+        }
+
+        var original: [SourceLine]
+        var optimized: [SourceLine]
     }
 
     private func reference() throws -> Reference {
@@ -72,5 +82,28 @@ final class AMLLSourceParityTests: XCTestCase {
             XCTAssertEqual(timeline.focus, frame.focus)
             XCTAssertEqual(layout, frame.layout)
         }
+    }
+
+    func testDisplayOptimizationMatchesSourceWithoutChangingWordTimes() throws {
+        let fixture = try reference()
+        let input = fixture.original.enumerated().map { index, line in
+            LyricLine(id: String(index), text: line.words.map(\.word).joined(), start: line.startTime / 1000,
+                      end: line.endTime / 1000, words: line.words.map { .init(text: $0.word, start: $0.startTime / 1000, end: $0.endTime / 1000) },
+                      isBackground: line.isBG, precision: .word)
+        }
+        let display = AMLLDisplayDocument(lines: input)
+        for (line, expected) in zip(display.lines, fixture.optimized) {
+            XCTAssertEqual(line.start * 1000, expected.startTime, accuracy: 0.000_001)
+            XCTAssertEqual(line.end * 1000, expected.endTime, accuracy: 0.000_001)
+            XCTAssertEqual(line.isBackground, expected.isBG)
+            XCTAssertEqual(line.text, expected.words.map(\.word).joined())
+            for (word, expectedWord) in zip(line.words, expected.words) {
+                XCTAssertEqual(word.start * 1000, expectedWord.startTime, accuracy: 0.000_001)
+                XCTAssertEqual(word.end * 1000, expectedWord.endTime, accuracy: 0.000_001)
+            }
+        }
+        XCTAssertEqual(input[0].text, "a  b")
+        XCTAssertEqual(display.groups.count, 4)
+        XCTAssertTrue(display.groups[0].backgroundFirst)
     }
 }

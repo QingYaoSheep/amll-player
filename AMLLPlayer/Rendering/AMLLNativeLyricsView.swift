@@ -1,0 +1,270 @@
+import CoreImage
+import SwiftUI
+import UIKit
+
+/// Parallel native port. Kept behind the Debug preview until visual/device sign-off.
+struct AMLLNativeLyricsView: UIViewRepresentable {
+    var document: LyricsDocument
+    var configuration: LyricsRenderConfiguration
+    var input: AMLLPlayerInput
+    var position: () -> Double
+    var interaction: (AMLLInteraction) -> Void
+    var active = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeUIView(context _: Context) -> AMLLNativeCanvas {
+        AMLLNativeCanvas()
+    }
+
+    func updateUIView(_ view: AMLLNativeCanvas, context _: Context) {
+        view.position = position
+        view.onInteraction = interaction
+        view.configure(document: document, configuration: configuration, input: input, active: active, reduceMotion: reduceMotion)
+    }
+
+    static func dismantleUIView(_ view: AMLLNativeCanvas, coordinator _: ()) {
+        view.stop()
+    }
+}
+
+@MainActor
+final class AMLLNativeCanvas: UIView {
+    private final class LinkTarget: NSObject {
+        weak var owner: AMLLNativeCanvas?
+        @objc func tick(_ link: CADisplayLink) {
+            owner?.tick(link)
+        }
+    }
+
+    var position: () -> Double = { 0 }
+    var onInteraction: (AMLLInteraction) -> Void = { _ in }
+    private var source: LyricsDocument?
+    private var display: AMLLDisplayDocument?
+    private var configuration = LyricsRenderConfiguration()
+    private var input = AMLLPlayerInput(position: 0, playing: false)
+    private var engine: AMLLFrameEngine?
+    private var layouts: [Int: AMLLCoreTextLayout] = [:]
+    private var heights: [Double] = []
+    private var rowViews: [Int: AMLLNativeRow] = [:]
+    private var link: CADisplayLink?
+    private var linkTarget: LinkTarget?
+    private var lastTick = 0.0
+    private var measuredSize = CGSize.zero
+    private var dirty = true
+    private var active = true
+    private var reduceMotion = false
+    private var lastTranslation: CGFloat = 0
+    private let dots = AMLLInterludeDotsView()
+    private(set) var frameState: AMLLFrameState?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        clipsToBounds = true
+        addSubview(dots)
+        dots.isHidden = true
+        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(pan(_:))))
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitLegibilityWeight.self]) { (view: AMLLNativeCanvas, _: UITraitCollection) in
+            view.dirty = true; view.setNeedsLayout()
+        }
+    }
+
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    func configure(document: LyricsDocument, configuration: LyricsRenderConfiguration, input: AMLLPlayerInput, active: Bool, reduceMotion: Bool) {
+        if source != document {
+            source = document; display = AMLLDisplayDocument(lines: document.lines); engine = nil; dirty = true
+        }
+        if self.configuration != configuration || self.reduceMotion != reduceMotion {
+            dirty = true
+        }
+        self.configuration = configuration; self.input = input; self.active = active; self.reduceMotion = reduceMotion
+        setNeedsLayout()
+        syncLink()
+        if !dirty {
+            draw(delta: 0)
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width > 0, bounds.height > 0, let display else { return }
+        if dirty || measuredSize != bounds.size {
+            dirty = false; measuredSize = bounds.size
+            layouts.removeAll()
+            rowViews.values.forEach { $0.removeFromSuperview() }; rowViews.removeAll()
+            heights = display.lines.indices.map { makeLayout($0).size.height }
+            layouts.removeAll()
+            let environment = renderEnvironment()
+            if engine == nil {
+                engine = AMLLFrameEngine(document: display, environment: environment, heights: heights)
+            } else {
+                engine?.resize(environment: environment, heights: heights)
+            }
+        }
+        draw(delta: 0)
+    }
+
+    private func renderEnvironment() -> AMLLRenderEnvironment {
+        AMLLRenderEnvironment(width: bounds.width, height: bounds.height, screenWidth: window?.bounds.width ?? bounds.width,
+                              fontSize: configuration.fontSize, alignPosition: 0.1, reduceMotion: reduceMotion,
+                              enableBlur: configuration.blurInactive, dotHeight: max(configuration.fontSize * 0.5, bounds.height * 0.01))
+    }
+
+    private var inset: CGFloat {
+        (window?.bounds.width ?? bounds.width) <= 500 ? 20 : configuration.fontSize
+    }
+
+    private func makeLayout(_ index: Int) -> AMLLCoreTextLayout {
+        if let cached = layouts[index] {
+            return cached
+        }
+        let line = display!.lines[index]
+        let size = max(10, configuration.fontSize * (line.isBackground ? 0.7 : 1))
+        let font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: size, weight: .semibold), compatibleWith: traitCollection)
+        let width = max(1, bounds.width - inset * 2) * (display!.lines.contains(where: \.isDuet) ? 0.85 : 1)
+        return AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration)
+    }
+
+    private func draw(delta: Double) {
+        guard !dirty, var engine, let display else { return }
+        input.position = position()
+        let state = engine.render(input, delta: delta)
+        self.engine = engine; frameState = state
+        let visible = state.rows.filter { !$0.hidden && $0.y + heights[$0.lineIndex] >= -bounds.height * 0.5 && $0.y <= bounds.height * 1.5 }
+        let indexes = Set(visible.map(\.lineIndex))
+        for index in Array(rowViews.keys) where !indexes.contains(index) {
+            rowViews.removeValue(forKey: index)?.removeFromSuperview(); layouts.removeValue(forKey: index)
+        }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        for row in visible {
+            let view: AMLLNativeRow
+            if let existing = rowViews[row.lineIndex] {
+                view = existing
+            } else {
+                let layout = makeLayout(row.lineIndex)
+                layouts[row.lineIndex] = layout
+                view = AMLLNativeRow(line: display.lines[row.lineIndex], layout: layout, scale: window?.screen.scale ?? 2)
+                view.onSeek = { [weak self] in self?.onInteraction(.seek(lineID: display.lines[row.lineIndex].id)) }
+                rowViews[row.lineIndex] = view; addSubview(view)
+            }
+            let line = display.lines[row.lineIndex]
+            let width = layouts[row.lineIndex]?.size.width ?? bounds.width - inset * 2
+            view.layer.anchorPoint = CGPoint(x: line.isDuet ? 1 : 0, y: 0.5)
+            view.bounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
+            view.layer.position = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
+            view.transform = CGAffineTransform(scaleX: row.scale, y: row.scale)
+            view.apply(row: row, time: state.lyricTime, configuration: configuration, delta: delta)
+        }
+        if let interlude = state.interlude,
+           let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
+        {
+            let height = renderEnvironment().dotHeight
+            let width = height * 3 + configuration.fontSize * 0.5 + 12
+            dots.frame = CGRect(x: interlude.duet ? bounds.width - inset - width : inset, y: interlude.y, width: width, height: height)
+            dots.isHidden = false; dots.apply(presentation); bringSubviewToFront(dots)
+        } else {
+            dots.isHidden = true
+        }
+        CATransaction.commit()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow(); syncLink()
+    }
+
+    func stop() {
+        link?.invalidate(); link = nil; linkTarget = nil; lastTick = 0
+    }
+
+    private func syncLink() {
+        guard window != nil, active else { stop(); return }
+        guard link == nil else { return }
+        let target = LinkTarget(); target.owner = self; linkTarget = target
+        let link = CADisplayLink(target: target, selector: #selector(LinkTarget.tick(_:)))
+        let rate = Float(window?.screen.maximumFramesPerSecond ?? 60)
+        link.preferredFrameRateRange = .init(minimum: 60, maximum: rate, preferred: rate)
+        link.add(to: .main, forMode: .common); self.link = link
+    }
+
+    private func tick(_ link: CADisplayLink) {
+        let delta = lastTick == 0 ? 0 : link.timestamp - lastTick
+        lastTick = link.timestamp; draw(delta: delta)
+    }
+
+    @objc private func pan(_ gesture: UIPanGestureRecognizer) {
+        switch gesture.state {
+        case .began: lastTranslation = 0; engine?.handle(.beginBrowsing)
+        case .changed:
+            let value = gesture.translation(in: self).y
+            engine?.handle(.browseBy(lastTranslation - value)); lastTranslation = value
+        case .ended: engine?.handle(.endBrowsing(velocity: gesture.velocity(in: self).y))
+        case .cancelled, .failed: engine?.handle(.endBrowsing(velocity: 0))
+        default: break
+        }
+        draw(delta: 0)
+    }
+}
+
+@MainActor
+private final class AMLLNativeRow: UIView {
+    private let line: LyricLine
+    private let textLayout: AMLLCoreTextLayout
+    private let base = CALayer()
+    private var words: [(layer: CALayer, mask: CAGradientLayer, fragment: AMLLCoreTextLayout.WordFragment)] = []
+    private var bright = 1.0, dark = 0.2
+    var onSeek: (() -> Void)?
+
+    init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat) {
+        self.line = line; textLayout = layout
+        super.init(frame: CGRect(origin: .zero, size: layout.size))
+        let image = layout.raster(scale: scale)
+        base.contents = image.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
+        for fragment in layout.fragments where fragment.rect.width > 0 {
+            let piece = CALayer()
+            piece.frame = fragment.rect; piece.contents = image.cgImage; piece.contentsScale = scale
+            piece.contentsRect = CGRect(x: fragment.rect.minX / layout.size.width, y: fragment.rect.minY / layout.size.height,
+                                        width: fragment.rect.width / layout.size.width, height: fragment.rect.height / layout.size.height)
+            let mask = CAGradientLayer(); mask.frame = piece.bounds
+            mask.startPoint = CGPoint(x: fragment.rtl ? 1 : 0, y: 0.5); mask.endPoint = CGPoint(x: fragment.rtl ? 0 : 1, y: 0.5)
+            piece.mask = mask; layer.addSublayer(piece)
+            words.append((piece, mask, fragment))
+        }
+        isAccessibilityElement = true; accessibilityLabel = [line.text, line.translation, line.romanization].filter { !$0.isEmpty }.joined(separator: ", ")
+        accessibilityTraits = .button
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
+    }
+
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    override func accessibilityActivate() -> Bool {
+        onSeek?(); return onSeek != nil
+    }
+
+    @objc private func tap() {
+        onSeek?()
+    }
+
+    func apply(row: AMLLFrameState.Row, time: Double, configuration: LyricsRenderConfiguration, delta: Double) {
+        let scaleProgress = min(1, max(0, (row.scale - (line.isBackground ? 0.75 : 0.97)) / (line.isBackground ? 0.25 : 0.03)))
+        let targetBright = row.active ? 1 : 0.2 + 0.8 * scaleProgress
+        let targetDark = row.active ? 0.2 : targetBright
+        bright += (targetBright - bright) * (1 - exp(-(targetBright > bright ? 50 : 7) * (delta == 0 ? 0.016 : delta)))
+        dark += (targetDark - dark) * (1 - exp(-(targetDark > dark ? 50 : 7) * (delta == 0 ? 0.016 : delta)))
+        alpha = row.opacity * (line.isBackground ? 0.4 : 1)
+        base.opacity = Float(words.isEmpty ? (row.active ? 1 : 0.2) : dark)
+        let maskWords = words.map { AMLLWordMask.Word(start: $0.fragment.word.start, end: $0.fragment.word.end, width: $0.fragment.rect.width) }
+        for (index, entry) in words.enumerated() {
+            let feather = textLayout.font.lineHeight * configuration.gradientWidth
+            let edge = AMLLWordMask.edge(time: time, index: index, words: maskWords, feather: feather)
+            let width = max(1, entry.fragment.rect.width)
+            entry.mask.colors = [UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor, UIColor.clear.cgColor]
+            entry.mask.locations = [0, NSNumber(value: min(1, max(0, edge / width))), NSNumber(value: min(1, max(0, (edge + feather) / width))), 1]
+            entry.layer.opacity = Float(max(0, bright - dark) / max(0.0001, 1 - dark))
+            entry.layer.isHidden = edge + feather <= 0
+        }
+    }
+}

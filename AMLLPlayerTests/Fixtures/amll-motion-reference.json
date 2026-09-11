@@ -1981,5 +1981,129 @@
       "focus": 2,
       "layout": true
     }
+  ],
+  "original": [
+    {
+      "startTime": 1000,
+      "endTime": 2050,
+      "words": [
+        {
+          "word": "a  b",
+          "startTime": 1000,
+          "endTime": 2050
+        }
+      ],
+      "isBG": false
+    },
+    {
+      "startTime": 900,
+      "endTime": 2100,
+      "words": [
+        {
+          "word": "echo",
+          "startTime": 900,
+          "endTime": 2100
+        }
+      ],
+      "isBG": true
+    },
+    {
+      "startTime": 2000,
+      "endTime": 3000,
+      "words": [
+        {
+          "word": "duet",
+          "startTime": 2000,
+          "endTime": 3000
+        }
+      ],
+      "isBG": true
+    },
+    {
+      "startTime": 2900,
+      "endTime": 4500,
+      "words": [
+        {
+          "word": "next",
+          "startTime": 2900,
+          "endTime": 4500
+        }
+      ],
+      "isBG": false
+    },
+    {
+      "startTime": 9000,
+      "endTime": 10000,
+      "words": [
+        {
+          "word": "end",
+          "startTime": 9000,
+          "endTime": 10000
+        }
+      ],
+      "isBG": false
+    }
+  ],
+  "optimized": [
+    {
+      "startTime": 300,
+      "endTime": 2000,
+      "words": [
+        {
+          "word": "a b",
+          "startTime": 1000,
+          "endTime": 2050
+        }
+      ],
+      "isBG": false
+    },
+    {
+      "startTime": 300,
+      "endTime": 2000,
+      "words": [
+        {
+          "word": "echo",
+          "startTime": 900,
+          "endTime": 2100
+        }
+      ],
+      "isBG": true
+    },
+    {
+      "startTime": 2000,
+      "endTime": 2900,
+      "words": [
+        {
+          "word": "duet",
+          "startTime": 2000,
+          "endTime": 3000
+        }
+      ],
+      "isBG": false
+    },
+    {
+      "startTime": 2900,
+      "endTime": 4500,
+      "words": [
+        {
+          "word": "next",
+          "startTime": 2900,
+          "endTime": 4500
+        }
+      ],
+      "isBG": false
+    },
+    {
+      "startTime": 8400,
+      "endTime": 10000,
+      "words": [
+        {
+          "word": "end",
+          "startTime": 9000,
+          "endTime": 10000
+        }
+      ],
+      "isBG": false
+    }
   ]
 }

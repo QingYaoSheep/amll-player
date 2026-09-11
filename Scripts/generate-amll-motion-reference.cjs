@@ -11,6 +11,18 @@ for (const file of ['utils/derivative.ts', 'utils/spring.ts', 'utils/is-cjk.ts',
     .replace(/^import\s.*?;\s*$/gm, '').replace(/\bexport /g, '');
   vm.runInContext(stripped, context, { filename: file });
 }
+// Run the original DOM class's two numeric methods with a minimal style sink.
+// No copied Swift formulas are used to generate the expected alpha trajectory.
+const domLine = fs.readFileSync(path.join(source, 'lyric-player/dom/lyric-line.ts'), 'utf8');
+const alphaMethods = domLine.slice(domLine.indexOf('\tprivate updateMaskAlphaTargets('), domLine.indexOf('\toverride setTransform('));
+if (!alphaMethods.includes('private applyAlphaToDom')) throw Error('Pinned alpha methods moved');
+vm.runInContext(stripTypeScriptTypes(`class AlphaReference {
+  currentBrightAlpha = 1; currentDarkAlpha = .2;
+  targetBrightAlpha = 1; targetDarkAlpha = .2; renderMode = 0;
+  output = {}; element = {style:{setProperty:(key,value)=>this.output[key]=Number(value)}};
+  ${alphaMethods}
+}`), context);
+vm.runInContext('const clamp01 = x => Math.min(1,Math.max(0,x)); const LyricLineRenderMode = {SOLID:0,GRADIENT:1};', context);
 const fixture = vm.runInContext(`(() => {
   const traces = [60, 120].map(fps => {
     const spring = new Spring(0);
@@ -51,7 +63,20 @@ const fixture = vm.runInContext(`(() => {
   ];
   const optimized = JSON.parse(JSON.stringify(original));
   optimizeLyricLines(optimized);
-  return {traces,breaks,groups,timeline,original,optimized};
+  const alpha = [60,120].map(fps => {
+    const state = new AlphaReference();
+    const frames = [];
+    for(let i=0;i<fps*3;i++) {
+      const delta = i===12 ? .18 : i===0 ? 0 : 1/fps;
+      const scale = i<fps ? .97+.035*Math.sin(i/fps*Math.PI/2) : i<fps*2 ? 1 : .75;
+      const gradient = i<fps*2;
+      state.renderMode = gradient ? 1 : 0;
+      state.updateMaskAlphaTargets(scale); state.applyAlphaToDom(delta);
+      frames.push({delta,scale,gradient,bright:state.output['--bright-mask-alpha'],dark:state.output['--dark-mask-alpha']});
+    }
+    return {fps,frames};
+  });
+  return {traces,breaks,groups,timeline,original,optimized,alpha};
 })()`, context);
 const target = path.join(root, 'AMLLPlayerTests/Fixtures/amll-motion-reference.json');
 const bytes = JSON.stringify(fixture, null, 2) + '\n';

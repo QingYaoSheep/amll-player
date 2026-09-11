@@ -1,6 +1,6 @@
 import Foundation
 
-struct AMLLRenderEnvironment: Equatable, Sendable {
+struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     enum Anchor: String, Codable, Sendable { case top, center, bottom }
     var width: Double
     var height: Double
@@ -41,19 +41,21 @@ enum AMLLInteraction: Sendable {
     case finishDismissal
 }
 
-struct AMLLFrameState: Sendable {
-    struct Row: Sendable {
+struct AMLLFrameState: Codable, Sendable {
+    struct Row: Codable, Sendable {
         var lineIndex: Int
         var groupIndex: Int
         var y: Double
         var scale: Double
+        var brightAlpha: Double
+        var darkAlpha: Double
         var opacity: Double
         var blur: Double
         var active: Bool
         var hidden: Bool
     }
 
-    struct Interlude: Equatable, Sendable {
+    struct Interlude: Codable, Equatable, Sendable {
         var start: Double
         var end: Double
         var anchor: Int
@@ -78,6 +80,8 @@ struct AMLLFrameEngine {
         var slide = AMLLSourceSpring(-80)
         var mainScale = AMLLSourceSpring(100)
         var backgroundScale = AMLLSourceSpring(100)
+        var mainAlpha = AMLLMaskAlpha()
+        var backgroundAlpha = AMLLMaskAlpha()
         var active = false
         var opacity = 1.0
         var blur = 0.0
@@ -187,6 +191,11 @@ struct AMLLFrameEngine {
                 motions[index].mainScale.update(elapsed)
                 motions[index].backgroundScale.update(elapsed)
             }
+            let forceAlpha = touching || environment.reduceMotion || !environment.enableSpring
+            motions[index].mainAlpha.update(scale: motions[index].mainScale.position / 100,
+                                            gradient: motions[index].active, delta: elapsed, force: forceAlpha)
+            motions[index].backgroundAlpha.update(scale: motions[index].backgroundScale.position / 100,
+                                                  gradient: motions[index].active, delta: elapsed, force: forceAlpha)
             let motion = motions[index]
             let group = document.groups[index]
             let padding = environment.fontSize * 0.4
@@ -196,12 +205,14 @@ struct AMLLFrameEngine {
             let bgAdvance = bgFirst ? bgHeight * progress + (motion.active ? environment.fontSize * 0.3 : 0) : 0
             let y = (motion.y.position * 10).rounded() / 10
             rows.append(.init(lineIndex: group.main, groupIndex: index, y: y + padding + bgAdvance,
-                              scale: motion.mainScale.position / 100, opacity: motion.opacity,
+                              scale: motion.mainScale.position / 100, brightAlpha: motion.mainAlpha.bright,
+                              darkAlpha: motion.mainAlpha.dark, opacity: motion.opacity,
                               blur: min(5, motion.blur), active: motion.active, hidden: false))
             if let background = group.background {
                 let top = bgFirst ? y + padding - bgHeight * (1 - progress) : y + padding + height(group.main) + environment.fontSize * 0.3
                 rows.append(.init(lineIndex: background, groupIndex: index, y: top + bgHeight * motion.slide.position / 100,
                                   scale: motion.backgroundScale.position / 100 * (0.8 + progress * 0.2),
+                                  brightAlpha: motion.backgroundAlpha.bright, darkAlpha: motion.backgroundAlpha.dark,
                                   opacity: motion.opacity * (motion.active ? 1 : 0), blur: min(5, motion.blur),
                                   active: motion.active, hidden: !motion.active && progress == 0))
             }

@@ -15,6 +15,7 @@ final class AMLLCoreTextLayout {
     private struct Row {
         var line: CTLine
         var origin: CGPoint
+        var auxiliary = false
     }
 
     let size: CGSize
@@ -95,7 +96,7 @@ final class AMLLCoreTextLayout {
                 let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: cursor, length: count))
                 let rowWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
                 rows.append(.init(line: ctLine, origin: CGPoint(x: line.isDuet || line.isRTL ? availableWidth - rowWidth : 0,
-                                                                y: y + auxiliaryFont.ascender)))
+                                                                y: y + auxiliaryFont.ascender), auxiliary: true))
                 y += auxiliaryFont.pointSize * 1.5
                 cursor += count
             }
@@ -105,7 +106,8 @@ final class AMLLCoreTextLayout {
         size = CGSize(width: availableWidth, height: max(1, y))
     }
 
-    func raster(scale: CGFloat) -> UIImage {
+    /// nil draws both layers for inspection; the renderer composites auxiliary text separately.
+    func raster(scale: CGFloat, auxiliary: Bool? = nil) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         return UIGraphicsImageRenderer(size: size, format: format).image { renderer in
@@ -114,6 +116,9 @@ final class AMLLCoreTextLayout {
             context.translateBy(x: 0, y: size.height)
             context.scaleBy(x: 1, y: -1)
             for row in rows {
+                if let auxiliary, row.auxiliary != auxiliary {
+                    continue
+                }
                 context.textPosition = CGPoint(x: row.origin.x, y: size.height - row.origin.y)
                 CTLineDraw(row.line, context)
             }

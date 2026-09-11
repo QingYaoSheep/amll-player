@@ -11,6 +11,7 @@
         @State private var resume = 0
         @State private var browsing = false
         @State private var renderer: LyricsRenderView?
+        @State private var nativeRenderer: AMLLNativeCanvas?
         @State private var lineTiming = false
         @State private var targetFPS = 60
         @State private var exportURL: URL?
@@ -31,7 +32,8 @@
                                              {
                                                  position = line.start; anchor = ProcessInfo.processInfo.systemUptime; seekRevision += 1
                                              }
-                                         }, active: visible && scenePhase == .active)
+                                         }, active: visible && scenePhase == .active, targetFPS: targetFPS,
+                                         resumeToken: resume, created: { nativeRenderer = $0 }, browsing: { browsing = $0 })
                 } else {
                     PreviewRenderer(configuration: configuration, document: lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document,
                                     position: currentPosition, playing: playing, active: visible && scenePhase == .active,
@@ -42,15 +44,18 @@
                 Button("render.returnCurrent") { resume += 1 }
                     .frame(height: 44).opacity(browsing ? 1 : 0).disabled(!browsing).accessibilityHidden(!browsing)
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    Text(String(format: "%.0f FPS · %.2f ms · %d rows · %d layouts · %.1f MB", renderer?.measuredFPS ?? 0,
-                                renderer?.frameMilliseconds ?? 0, renderer?.visibleRowCount ?? 0, renderer?.cachedLayoutCount ?? 0, memoryMB()))
+                    Text(String(format: "%.0f FPS · %.2f ms · %d rows · %d layouts · %.1f MB",
+                                sourcePort ? nativeRenderer?.measuredFPS ?? 0 : renderer?.measuredFPS ?? 0,
+                                sourcePort ? nativeRenderer?.frameMilliseconds ?? 0 : renderer?.frameMilliseconds ?? 0,
+                                sourcePort ? nativeRenderer?.visibleRowCount ?? 0 : renderer?.visibleRowCount ?? 0,
+                                sourcePort ? nativeRenderer?.cachedLayoutCount ?? 0 : renderer?.cachedLayoutCount ?? 0, memoryMB()))
                         .font(.caption.monospaced()).accessibilityIdentifier("renderMetrics")
                 }
                 Slider(value: Binding(get: { currentPosition() }, set: { position = $0; anchor = ProcessInfo.processInfo.systemUptime; seekRevision += 1 }), in: 0 ... 1800)
                     .accessibilityLabel(Text("render.progress"))
                 HStack {
                     Button(playing ? "player.pause" : "player.play") { position = currentPosition(); anchor = ProcessInfo.processInfo.systemUptime; playing.toggle() }
-                    Button("render.restart") { position = 0; anchor = ProcessInfo.processInfo.systemUptime; resume += 1 }
+                    Button("render.restart") { position = 0; anchor = ProcessInfo.processInfo.systemUptime; resume += 1; seekRevision += 1 }
                     Toggle("render.translation", isOn: $configuration.translation)
                 }
                 HStack {
@@ -63,7 +68,7 @@
                     Button("render.stepForward", systemImage: "forward.frame") { step(by: 1) }.labelStyle(.iconOnly)
                 }
                 HStack {
-                    Button("render.exportMotion") { exportURL = exportMotionTrack() }
+                    Button("render.exportMotion") { exportURL = exportMotionTrack() }.disabled(!sourcePort)
                     if let exportURL {
                         ShareLink(item: exportURL) { Label("render.shareMotion", systemImage: "square.and.arrow.up") }
                     }
@@ -77,7 +82,8 @@
             }.foregroundStyle(.white)
             .navigationTitle("render.debug")
             .onAppear { visible = true }
-            .onDisappear { position = currentPosition(); playing = false; visible = false; renderer?.stop() }
+            .onDisappear { position = currentPosition(); playing = false; visible = false; renderer?.stop(); nativeRenderer?.stop() }
+            .onChange(of: sourcePort) { _, _ in exportURL = nil; browsing = false }
             .onChange(of: scenePhase) {
                 _, phase in if phase != .active {
                     position = currentPosition(); playing = false
@@ -93,14 +99,11 @@
             position = min(1800, max(0, currentPosition() + Double(frames) / Double(targetFPS)))
             anchor = ProcessInfo.processInfo.systemUptime
             playing = false
+            seekRevision += 1
         }
 
         private func exportMotionTrack() -> URL? {
-            let samples = (0 ..< targetFPS * 5).map { frame in
-                ["frame": frame, "time": Double(frame) / Double(targetFPS)] as [String: Any]
-            }
-            guard JSONSerialization.isValidJSONObject(samples),
-                  let data = try? JSONSerialization.data(withJSONObject: samples, options: [.prettyPrinted]) else { return nil }
+            guard sourcePort, let data = nativeRenderer?.exportMotionTrace(fps: targetFPS) else { return nil }
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("amll-motion-track.json")
             do {
                 try data.write(to: url, options: .atomic)

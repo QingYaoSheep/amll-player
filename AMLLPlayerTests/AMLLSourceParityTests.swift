@@ -40,6 +40,20 @@ final class AMLLSourceParityTests: XCTestCase {
 
         var original: [SourceLine]
         var optimized: [SourceLine]
+        struct AlphaTrace: Decodable {
+            struct Frame: Decodable {
+                var delta: Double
+                var scale: Double
+                var gradient: Bool
+                var bright: Double
+                var dark: Double
+            }
+
+            var fps: Int
+            var frames: [Frame]
+        }
+
+        var alpha: [AlphaTrace]
     }
 
     private func reference() throws -> Reference {
@@ -69,6 +83,17 @@ final class AMLLSourceParityTests: XCTestCase {
         for layout in try reference().breaks {
             XCTAssertEqual(AMLLBalancedLayout.breaks(children: layout.children, width: layout.width,
                                                      cjkBoundaries: Set(layout.boundaries)), layout.breaks)
+        }
+    }
+
+    func testMaskAttackReleaseMatchesEveryOriginalFrame() throws {
+        for trace in try reference().alpha {
+            var alpha = AMLLMaskAlpha()
+            for (index, frame) in trace.frames.enumerated() {
+                alpha.update(scale: frame.scale, gradient: frame.gradient, delta: frame.delta)
+                XCTAssertEqual(alpha.bright, frame.bright, accuracy: 0.000_001, "\(trace.fps) Hz alpha frame \(index)")
+                XCTAssertEqual(alpha.dark, frame.dark, accuracy: 0.000_001, "\(trace.fps) Hz alpha frame \(index)")
+            }
         }
     }
 

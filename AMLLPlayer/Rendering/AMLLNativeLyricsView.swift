@@ -10,16 +10,25 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
     var position: () -> Double
     var interaction: (AMLLInteraction) -> Void
     var active = true
+    var targetFPS = 120
+    var resumeToken = 0
+    var created: (AMLLNativeCanvas) -> Void = { _ in }
+    var browsing: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeUIView(context _: Context) -> AMLLNativeCanvas {
-        AMLLNativeCanvas()
+        let view = AMLLNativeCanvas()
+        DispatchQueue.main.async { created(view) }
+        return view
     }
 
     func updateUIView(_ view: AMLLNativeCanvas, context _: Context) {
         view.position = position
         view.onInteraction = interaction
+        view.onBrowsing = browsing
+        view.setFrameRate(targetFPS)
         view.configure(document: document, configuration: configuration, input: input, active: active, reduceMotion: reduceMotion)
+        view.resumeFollowing(token: resumeToken)
     }
 
     static func dismantleUIView(_ view: AMLLNativeCanvas, coordinator _: ()) {
@@ -38,6 +47,7 @@ final class AMLLNativeCanvas: UIView {
 
     var position: () -> Double = { 0 }
     var onInteraction: (AMLLInteraction) -> Void = { _ in }
+    var onBrowsing: (Bool) -> Void = { _ in }
     private var source: LyricsDocument?
     private var display: AMLLDisplayDocument?
     private var configuration = LyricsRenderConfiguration()
@@ -54,8 +64,23 @@ final class AMLLNativeCanvas: UIView {
     private var active = true
     private var reduceMotion = false
     private var lastTranslation: CGFloat = 0
+    private var resumeToken = 0
+    private var targetFPS = 120
+    private var framesInSample = 0
+    private var sampleDuration = 0.0
+    private var sampleWork = 0.0
+    private var hasDuet = false
     private let dots = AMLLInterludeDotsView()
     private(set) var frameState: AMLLFrameState?
+    private(set) var measuredFPS = 0.0
+    private(set) var frameMilliseconds = 0.0
+    var visibleRowCount: Int {
+        rowViews.count
+    }
+
+    var cachedLayoutCount: Int {
+        layouts.count
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -75,6 +100,7 @@ final class AMLLNativeCanvas: UIView {
     func configure(document: LyricsDocument, configuration: LyricsRenderConfiguration, input: AMLLPlayerInput, active: Bool, reduceMotion: Bool) {
         if source != document {
             source = document; display = AMLLDisplayDocument(lines: document.lines); engine = nil; dirty = true
+            hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
         if self.configuration != configuration || self.reduceMotion != reduceMotion {
             dirty = true
@@ -123,7 +149,7 @@ final class AMLLNativeCanvas: UIView {
         let line = display!.lines[index]
         let size = max(10, configuration.fontSize * (line.isBackground ? 0.7 : 1))
         let font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: size, weight: .semibold), compatibleWith: traitCollection)
-        let width = max(1, bounds.width - inset * 2) * (display!.lines.contains(where: \.isDuet) ? 0.85 : 1)
+        let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
         return AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration)
     }
 
@@ -131,6 +157,9 @@ final class AMLLNativeCanvas: UIView {
         guard !dirty, var engine, let display else { return }
         input.position = position()
         let state = engine.render(input, delta: delta)
+        if frameState?.browsing != state.browsing {
+            DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) }
+        }
         self.engine = engine; frameState = state
         let visible = state.rows.filter { !$0.hidden && $0.y + heights[$0.lineIndex] >= -bounds.height * 0.5 && $0.y <= bounds.height * 1.5 }
         let indexes = Set(visible.map(\.lineIndex))
@@ -178,19 +207,76 @@ final class AMLLNativeCanvas: UIView {
         link?.invalidate(); link = nil; linkTarget = nil; lastTick = 0
     }
 
+    func resumeFollowing(token: Int) {
+        guard resumeToken != token else { return }
+        resumeToken = token
+        engine?.handle(.resumeFollowing)
+        draw(delta: 0)
+    }
+
+    func setFrameRate(_ fps: Int) {
+        guard targetFPS != fps else { return }
+        targetFPS = fps
+        if let link {
+            applyFrameRate(link)
+        }
+    }
+
+    private func applyFrameRate(_ link: CADisplayLink) {
+        let rate = Float(min(max(60, targetFPS), window?.screen.maximumFramesPerSecond ?? 60))
+        link.preferredFrameRateRange = .init(minimum: 60, maximum: rate, preferred: rate)
+    }
+
+    #if DEBUG
+        /// Simulates a bounded five-second continuation of the actual engine state.
+        /// Unlike a list of timestamps, these frames contain every group's sampled transforms.
+        func exportMotionTrace(fps: Int) -> Data? {
+            guard var replay = engine, !dirty else { return nil }
+            struct Trace: Encodable {
+                var schema = 1
+                var coreVersion = "0.5.2"
+                var environment: AMLLRenderEnvironment
+                var fps: Int
+                var lineIDs: [String]
+                var breaks: [[Int]]
+                var frames: [AMLLFrameState]
+            }
+            let rate = fps == 120 ? 120 : 60
+            let start = position()
+            var replayInput = input
+            var frames: [AMLLFrameState] = []
+            for frame in 0 ..< rate * 5 {
+                replayInput.position = start + (input.playing ? Double(frame) / Double(rate) : 0)
+                frames.append(replay.render(replayInput, delta: frame == 0 ? 0 : 1 / Double(rate)))
+            }
+            let trace = Trace(environment: renderEnvironment(), fps: rate,
+                              lineIDs: display?.lines.map(\.id) ?? [],
+                              breaks: heights.indices.map { makeLayout($0).breakOffsets }, frames: frames)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            return try? encoder.encode(trace)
+        }
+    #endif
+
     private func syncLink() {
         guard window != nil, active else { stop(); return }
         guard link == nil else { return }
         let target = LinkTarget(); target.owner = self; linkTarget = target
         let link = CADisplayLink(target: target, selector: #selector(LinkTarget.tick(_:)))
-        let rate = Float(window?.screen.maximumFramesPerSecond ?? 60)
-        link.preferredFrameRateRange = .init(minimum: 60, maximum: rate, preferred: rate)
+        applyFrameRate(link)
         link.add(to: .main, forMode: .common); self.link = link
     }
 
     private func tick(_ link: CADisplayLink) {
+        let start = CACurrentMediaTime()
         let delta = lastTick == 0 ? 0 : link.timestamp - lastTick
         lastTick = link.timestamp; draw(delta: delta)
+        framesInSample += 1; sampleDuration += delta; sampleWork += CACurrentMediaTime() - start
+        if sampleDuration >= 1 {
+            measuredFPS = Double(framesInSample) / sampleDuration
+            frameMilliseconds = sampleWork * 1000 / Double(framesInSample)
+            framesInSample = 0; sampleDuration = 0; sampleWork = 0
+        }
     }
 
     @objc private func pan(_ gesture: UIPanGestureRecognizer) {
@@ -212,15 +298,17 @@ private final class AMLLNativeRow: UIView {
     private let line: LyricLine
     private let textLayout: AMLLCoreTextLayout
     private let base = CALayer()
+    private let auxiliary = CALayer()
     private var words: [(layer: CALayer, mask: CAGradientLayer, fragment: AMLLCoreTextLayout.WordFragment)] = []
-    private var bright = 1.0, dark = 0.2
     var onSeek: (() -> Void)?
 
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat) {
         self.line = line; textLayout = layout
         super.init(frame: CGRect(origin: .zero, size: layout.size))
-        let image = layout.raster(scale: scale)
+        let image = layout.raster(scale: scale, auxiliary: false)
         base.contents = image.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
+        auxiliary.contents = layout.raster(scale: scale, auxiliary: true).cgImage
+        auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
         for fragment in layout.fragments where fragment.rect.width > 0 {
             let piece = CALayer()
             piece.frame = fragment.rect; piece.contents = image.cgImage; piece.contentsScale = scale
@@ -248,14 +336,10 @@ private final class AMLLNativeRow: UIView {
         onSeek?()
     }
 
-    func apply(row: AMLLFrameState.Row, time: Double, configuration: LyricsRenderConfiguration, delta: Double) {
-        let scaleProgress = min(1, max(0, (row.scale - (line.isBackground ? 0.75 : 0.97)) / (line.isBackground ? 0.25 : 0.03)))
-        let targetBright = row.active ? 1 : 0.2 + 0.8 * scaleProgress
-        let targetDark = row.active ? 0.2 : targetBright
-        bright += (targetBright - bright) * (1 - exp(-(targetBright > bright ? 50 : 7) * (delta == 0 ? 0.016 : delta)))
-        dark += (targetDark - dark) * (1 - exp(-(targetDark > dark ? 50 : 7) * (delta == 0 ? 0.016 : delta)))
+    func apply(row: AMLLFrameState.Row, time: Double, configuration: LyricsRenderConfiguration, delta _: Double) {
+        let bright = row.brightAlpha, dark = row.darkAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
-        base.opacity = Float(words.isEmpty ? (row.active ? 1 : 0.2) : dark)
+        base.opacity = Float(words.isEmpty ? 1 : dark)
         let maskWords = words.map { AMLLWordMask.Word(start: $0.fragment.word.start, end: $0.fragment.word.end, width: $0.fragment.rect.width) }
         for (index, entry) in words.enumerated() {
             let feather = textLayout.font.lineHeight * configuration.gradientWidth

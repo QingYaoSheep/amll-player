@@ -161,19 +161,35 @@ enum QQRCDecoder {
             inputs.append(trimmed)
         }
         for input in inputs {
-            var capacity = max(1024, input.count * 4)
-            for _ in 0 ..< 8 {
+            // Compression consumes RFC 1951 raw DEFLATE, not the RFC 1950 envelope.
+            // Validate both the header and Adler-32 so DES padding cannot mask corruption.
+            let bytes = Array(input)
+            guard bytes.count > 6, bytes[0] & 0x0F == 8, bytes[0] >> 4 <= 7,
+                  (Int(bytes[0]) * 256 + Int(bytes[1])) % 31 == 0,
+                  bytes[1] & 0x20 == 0 else { continue }
+            let payload = Data(bytes[2 ..< bytes.count - 4])
+            let expected = bytes.suffix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+            var capacity = min(16_777_216, max(1024, payload.count * 4))
+            while capacity <= 16_777_216 {
                 var output = [UInt8](repeating: 0, count: capacity)
-                let decoded = input.withUnsafeBytes { source -> Int in
+                let decoded = payload.withUnsafeBytes { source -> Int in
                     output.withUnsafeMutableBytes { destination -> Int in
                         guard let sourceBase = source.bindMemory(to: UInt8.self).baseAddress,
                               let destinationBase = destination.bindMemory(to: UInt8.self).baseAddress else { return 0 }
-                        return compression_decode_buffer(destinationBase, capacity, sourceBase, input.count, nil, COMPRESSION_ZLIB)
+                        return compression_decode_buffer(destinationBase, capacity, sourceBase, payload.count, nil, COMPRESSION_ZLIB)
                     }
                 }
-                if decoded > 0 {
+                if decoded > 0, decoded < capacity {
                     output.removeSubrange(decoded ..< output.count)
-                    return Data(output)
+                    var a: UInt32 = 1, b: UInt32 = 0
+                    for byte in output {
+                        a = (a + UInt32(byte)) % 65521
+                        b = (b + a) % 65521
+                    }
+                    if (b << 16) | a == expected {
+                        return Data(output)
+                    }
+                    break
                 }
                 capacity *= 2
             }

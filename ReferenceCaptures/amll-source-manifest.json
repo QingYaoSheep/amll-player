@@ -1,0 +1,327 @@
+{
+  "schema": 1,
+  "packages": [
+    {
+      "name": "@applemusic-like-lyrics/core",
+      "version": "0.5.2",
+      "license": "AGPL-3.0-only",
+      "sha256": "d295cfe41da12fcd0793d1318004e34890653a71baadc1b1f1474b1e794e51be"
+    },
+    {
+      "name": "@applemusic-like-lyrics/react-full",
+      "version": "0.4.2",
+      "license": "AGPL-3.0-only",
+      "sha256": "ffd702d34b656e87f34ec21a516c6124451513b63a15cd2815cbda3b70d03342"
+    }
+  ],
+  "files": [
+    {
+      "path": "core/dist/amll-core.mjs.map",
+      "sha256": "a2a5dc3b0b2449ff865998edc7bca24bd51d7657176633f3a54ca3a16cd35982"
+    },
+    {
+      "path": "core/src/bg-render/base.ts",
+      "sha256": "dbcd6e442db4c1d7140025ce4dd7e7686cc4cc4003ca7180611470cb17c1c96d"
+    },
+    {
+      "path": "core/src/utils/resource.ts",
+      "sha256": "665495d9497f01f6c1551fae7200f153220322fecafef72c70dd5b0333208a87"
+    },
+    {
+      "path": "core/src/bg-render/img.ts",
+      "sha256": "dd7e01ffab35f88f310ee9a47804fe465e9d09c7cf509beb52bca714fa362575"
+    },
+    {
+      "path": "core/src/utils/clamp.ts",
+      "sha256": "716d909ed6fac5c360f7239232d5b790282f68d2006f6ab442610ed919a779ca"
+    },
+    {
+      "path": "core/src/bg-render/mesh-renderer/cp-presets.ts",
+      "sha256": "37fc9d6db3ff7ca223b9f5aec738a8691e832365d7dddc320586bd6471b552ac"
+    },
+    {
+      "path": "core/src/bg-render/mesh-renderer/cp-generate.ts",
+      "sha256": "75ec7afadd5f7f52ed575fcf2a53b201ad20e73d7c792a5522de530a2eaacabe"
+    },
+    {
+      "path": "core/src/bg-render/mesh-renderer/index.ts",
+      "sha256": "bf167290508ff0f559f77e4280a3106720999de77d4ca3b34a4a6cbcdf1bffed"
+    },
+    {
+      "path": "core/src/bg-render/pixi-renderer.ts",
+      "sha256": "cc6438b5f34250d2bce7523ced4e5a51b156f4cbeb49582ef0d6cda8bab924d6"
+    },
+    {
+      "path": "core/src/bg-render/index.ts",
+      "sha256": "10c6e44111206ff48d99bd68539762a489844d7bcc471f0df2db3c1f97da1b08"
+    },
+    {
+      "path": "core/src/styles/lyric-player.module.css",
+      "sha256": "d64eb63618c6367882d4dfad74ea15392461aab948279b84bda866901fa32c69"
+    },
+    {
+      "path": "core/src/utils/optimize-lyric.ts",
+      "sha256": "5ecfc723f09ce858f2b4b1f9f8341821b66c94590fad193cd7ad5720d703646c"
+    },
+    {
+      "path": "core/src/lyric-player/dom/interlude-dots.ts",
+      "sha256": "e8fcb7550ea0fcbe4baab892df9ac9c0cbdda17c21e4e1cef54b8b8f131e77c9"
+    },
+    {
+      "path": "core/src/utils/schedule.ts",
+      "sha256": "c46abf7bed3ee8383111313d2dbc9c02abdfc68c2fed6e574555f1efc9b1c347"
+    },
+    {
+      "path": "core/src/utils/derivative.ts",
+      "sha256": "97553460cdfc7ec099a84cf09f1817c5be0b2d3ce09bc3fd0188ed3c993aae68"
+    },
+    {
+      "path": "core/src/utils/spring.ts",
+      "sha256": "8d8564f80af05b16f94113fcb871ba378ba6ca9609a7d5cff6efed0178d36f4d"
+    },
+    {
+      "path": "core/src/lyric-player/base/bottom-line.ts",
+      "sha256": "6feb4047148352ab48f96db336df7ebbe4394a00ba0833c28e5f33b26b9acc89"
+    },
+    {
+      "path": "core/src/lyric-player/base/consts.ts",
+      "sha256": "5f8275cc5a9dd76f23eea118bf354cbc456e73ac9055312584a8db3f95f01eac"
+    },
+    {
+      "path": "core/src/lyric-player/base/layout.ts",
+      "sha256": "3886f5aa85f6538d7d365521fb3a07ca81f8dae7074fb70255e95197ae47cf8c"
+    },
+    {
+      "path": "core/src/lyric-player/base/scroll.ts",
+      "sha256": "2c5fe13c315479a1fbe4eb1366b1a21ffae7fd735b128249ccdb86e967bdbed2"
+    },
+    {
+      "path": "core/src/utils/eq-set.ts",
+      "sha256": "1523f1bbe8bb2025ea841cd092ff1c5825b0b0710a9eaae9fede2a2a822031fe"
+    },
+    {
+      "path": "core/src/lyric-player/base/timeline.ts",
+      "sha256": "28396cfd8c68350799b901d613ec282044b6d15e816c0be315e4a5aaffeb4f85"
+    },
+    {
+      "path": "core/src/lyric-player/base/index.ts",
+      "sha256": "35b865178c900327da6d34173fd3af635fbec88ac2182a2ddf9341b947e2272e"
+    },
+    {
+      "path": "core/src/lyric-player/base/group.ts",
+      "sha256": "b8dbddff05047739e4109e61e672ecb43a24e7aa9a353a3e56efffa2608a131a"
+    },
+    {
+      "path": "core/src/lyric-player/dom/lyric-group.ts",
+      "sha256": "fe6b9739972251e69e1354208f0b4cfc945e1d1bc6dd4efe2c83e7a78d5dd6ea"
+    },
+    {
+      "path": "core/src/utils/is-cjk.ts",
+      "sha256": "fc72fff8d55667b09b15f8786b11c55fef933782c253789065380be9de509aa6"
+    },
+    {
+      "path": "core/src/lyric-player/base/line.ts",
+      "sha256": "072ceaf7aeadca16c2f2be46d0b432d18a0a941e56e1472b8832bc51c14e9f80"
+    },
+    {
+      "path": "core/src/utils/lyric-line-break.ts",
+      "sha256": "5f8455497e8a7335dc9c1ec983740ecfd751cdfe9503e3b9c77690554455e43f"
+    },
+    {
+      "path": "core/src/utils/line-balancer.ts",
+      "sha256": "a778f0b906c12a0120855a5357963425ddc2110e415ae84430c43e03bb3970bc"
+    },
+    {
+      "path": "core/src/utils/lyric-split-words.ts",
+      "sha256": "0c02db5066df02cd7794e013fb716aa33991f4a80608c63312d949796331b302"
+    },
+    {
+      "path": "core/src/utils/matrix.ts",
+      "sha256": "d4a7f8f3f2f99326a0728bafe26ca8c52455826c2f91a486d846e5b84a9abfc5"
+    },
+    {
+      "path": "core/src/lyric-player/dom/lyric-line.ts",
+      "sha256": "9aaac31401eea0228dee6d56ae6e3ed4e8089ddab08e55674a0efe1c26a879e5"
+    },
+    {
+      "path": "core/src/lyric-player/dom/index.ts",
+      "sha256": "ba8fc64c36035dbd7fac8ee1037f364e47338f28bd66474522f8894301898fd1"
+    },
+    {
+      "path": "core/dist/style.css",
+      "sha256": "f9066f1720756f2301efa3f8c09501be14037856573d44e8053228097b3e98a7"
+    },
+    {
+      "path": "core/package.json",
+      "sha256": "d295cfe41da12fcd0793d1318004e34890653a71baadc1b1f1474b1e794e51be"
+    },
+    {
+      "path": "react-full/dist/amll-react-framework.mjs.map",
+      "sha256": "e1c9e03c5e4b6004496d5f011f9d801538c69ad3de00244a13176d3afbc1a4d7"
+    },
+    {
+      "path": "react-full/src/components/AudioFFTVisualizer/index.tsx",
+      "sha256": "767d334a25b526fc2b17a8949d083a49e1745a49977877fff02cdb7b01d57ca3"
+    },
+    {
+      "path": "react-full/src/components/AudioQualityTag/index.module.css",
+      "sha256": "a74a0b223133d85ebd9fd8e23a54bb1ad21ab6d0a6d2ebe981543c4981a6853a"
+    },
+    {
+      "path": "react-full/src/components/AudioQualityTag/index.tsx",
+      "sha256": "f4e4ac28b66fa021f770d4f6468d3173a19fcc9f7845647de809fcdd1b3fee6c"
+    },
+    {
+      "path": "react-full/src/components/BouncingSlider/index.module.css",
+      "sha256": "c0684db22ba6e797fac4429ae7a79ef78d3e030891ac0782b087e9a28e7fb6ba"
+    },
+    {
+      "path": "react-full/src/components/BouncingSlider/index.tsx",
+      "sha256": "364e49a30b63163a770c9ab9713f20540d57fb5c329249c29aa0f0183d2f896f"
+    },
+    {
+      "path": "react-full/src/components/ControlThumb/index.module.css",
+      "sha256": "b6a3b173cbb4a82b470914644e7387028153692dc830d2f02a9ea895c28cd1e1"
+    },
+    {
+      "path": "react-full/src/components/ControlThumb/index.tsx",
+      "sha256": "ba5608e8cf8eec74dbae1e77555fdb569018c9a1da735a269e0785e012aaede9"
+    },
+    {
+      "path": "react-full/src/components/Cover/index.module.css",
+      "sha256": "c110d3c2955eccfaa1ba1a4cd057b9e48432b046ce262b0b43857fb9320de912"
+    },
+    {
+      "path": "react-full/src/components/Cover/index.tsx",
+      "sha256": "cad50137e7b97e82b8cd40cd6b4e8b09671b0d374d3d86c5ca376fc48c5fb289"
+    },
+    {
+      "path": "react-full/src/components/MediaButton/index.module.css",
+      "sha256": "d064be45fd8fef7e5b3b0410ac38c83e0de6d287995687eb6e2ac7ee240e8bf7"
+    },
+    {
+      "path": "react-full/src/components/MediaButton/index.tsx",
+      "sha256": "49f383fb7d9ffb205165dfc6c5654db613e13ab89f78974a1317bdc23ccc7f20"
+    },
+    {
+      "path": "react-full/src/components/MenuButton/index.module.css",
+      "sha256": "c7fac70681e262c661b0822a77ef7fafe29cbdc1d73b8dc3838e80ba77bf7813"
+    },
+    {
+      "path": "react-full/src/components/MenuButton/index.tsx",
+      "sha256": "24c294f61b8058727c1f0eab5f6027689d19de7586b48dc0ffa9a491c12000db"
+    },
+    {
+      "path": "react-full/src/components/TextMarquee/index.module.css",
+      "sha256": "8368d766a579b900b9c1bec4bf2cc255955feefb7a03a4fe1349e298f5b86894"
+    },
+    {
+      "path": "react-full/src/components/TextMarquee/index.tsx",
+      "sha256": "2447259a14bdb04af48bac7ce6a0a304e3295627b3afd0945680374d501fc0a8"
+    },
+    {
+      "path": "react-full/src/components/MusicInfo/index.module.css",
+      "sha256": "e4ae5912bd1a6dc1767cf0e1c9d80f908db4116ae96a495cc1814fbf0f02e723"
+    },
+    {
+      "path": "react-full/src/components/MusicInfo/index.tsx",
+      "sha256": "1203d10683d87e1f7cf9f283d9f597b13509145fdd644c1c41aab1251668bc46"
+    },
+    {
+      "path": "react-full/src/layout/auto.module.css",
+      "sha256": "71f8aae00f40977f185718eee63f94af664363627b69c2748cfda0a11f7de51c"
+    },
+    {
+      "path": "react-full/src/layout/horizontal.module.css",
+      "sha256": "42829a265b78fa26a3320735047107ce6c33ee5365b335831eb7752ea78bed76"
+    },
+    {
+      "path": "react-full/src/layout/horizontal.tsx",
+      "sha256": "fe53cd0d47307d6febf6e32a87709a70f14ca5a25e73eac3bb9af1bcb503df1a"
+    },
+    {
+      "path": "react-full/src/layout/vertical.module.css",
+      "sha256": "d642a85259b088df8b01cb3ff753756d4b465b15e5e47576d64474ccfb7413a9"
+    },
+    {
+      "path": "react-full/src/layout/vertical.tsx",
+      "sha256": "25c535c29ad6b993ae1c9817159aa341bd3cbb81a2f489668e692840af7c8731"
+    },
+    {
+      "path": "react-full/src/layout/auto.tsx",
+      "sha256": "0ba2e7596de0fd2ffb76e738b4bffd3f1cef710dc5370ac619d19551096b647a"
+    },
+    {
+      "path": "react-full/src/utils/duration.ts",
+      "sha256": "dc0e0a1d3de538bf56bc6d8a6f2cd9ba72af8546804d67b19669ffcc7b1f1a56"
+    },
+    {
+      "path": "react-full/src/components/ToggleIconButton/index.module.css",
+      "sha256": "6840819c863f3377713f39d198d01015df994e2af67e7ae86e8ed8cc875bc44b"
+    },
+    {
+      "path": "react-full/src/components/ToggleIconButton/prebuilt-enum.ts",
+      "sha256": "33e6a638764c3c9c23c48896d51408989846f3031eb70cbe368dcb978024ff38"
+    },
+    {
+      "path": "react-full/src/components/ToggleIconButton/index.tsx",
+      "sha256": "70dd8459e0a52941ae6b7dbd083111d861e34cd1e46e2d1769250a0adc7a4499"
+    },
+    {
+      "path": "react-full/src/components/VolumeControlSlider/index.module.css",
+      "sha256": "54cd3ea30ec17797cc506ab6f2af6525cb3986a805da1a696766f12d21d6a911"
+    },
+    {
+      "path": "react-full/src/components/VolumeControlSlider/index.tsx",
+      "sha256": "c232fd492283e98c76fdb73a0ca4019b086b54cb92562162fb816174d2e5b2c5"
+    },
+    {
+      "path": "react-full/src/states/callbacks.ts",
+      "sha256": "cbb2169917c4c7c3553e3748f53ed8d55cbbe76d7063f01661c81df43f06bf5f"
+    },
+    {
+      "path": "react-full/src/states/configAtoms.ts",
+      "sha256": "88ec745a1ff32d0de3ea18451e20446e9e1fd0ebf449821282243415ccbd02e7"
+    },
+    {
+      "path": "react-full/src/states/controlsAtoms.ts",
+      "sha256": "0400e5e00e59e79e8ecf86b9c9a9e169fda81192e604f856183e39edad87da60"
+    },
+    {
+      "path": "react-full/src/states/dataAtoms.ts",
+      "sha256": "79f67afedc8e5bac26df07b3c24a8028b9ebb6485236360c9e83613fd7586b1d"
+    },
+    {
+      "path": "react-full/src/components/PrebuiltLyricPlayer/index.module.css",
+      "sha256": "f969da94188b002c0bd6d7b4275471e21d344a87e8eeeb2f7ee3ff4d5c0d4977"
+    },
+    {
+      "path": "react-full/src/components/PrebuiltLyricPlayer/index.tsx",
+      "sha256": "885de46be20c6590b2e5d28004c0b95cbd5c77951430c4b324e21f5c27c3b06d"
+    },
+    {
+      "path": "react-full/src/index.ts",
+      "sha256": "c669e1f24fa15069acb34239cfed4b21e3c1fb47457fcda6ea6e6fc039c69d8f"
+    },
+    {
+      "path": "react-full/dist/style.css",
+      "sha256": "ddd95219a9f757a375a2738ef234113ea3d0620511127072421440375dc147f6"
+    },
+    {
+      "path": "react-full/package.json",
+      "sha256": "ffd702d34b656e87f34ec21a516c6124451513b63a15cd2815cbda3b70d03342"
+    },
+    {
+      "path": "packages/player/src/components/AMLLWrapper/index.tsx",
+      "sha256": "5537d936e1e0fe14339054c3230189c1662906086ec82600d163f88a497a2f28"
+    },
+    {
+      "path": "packages/player/src/components/AMLLWrapper/index.module.css",
+      "sha256": "d1d1951d9ef8d2359fd5ce0f97e5254c0ab0e5d0fcb8357585b396ce28378642"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "4f0c977b4be8f8f1894f22dbf79999f1de7774929297da069785a99f29e98eda"
+    }
+  ]
+}

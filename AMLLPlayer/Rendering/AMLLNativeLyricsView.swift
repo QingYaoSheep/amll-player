@@ -107,7 +107,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private func renderEnvironment() -> AMLLRenderEnvironment {
-        AMLLRenderEnvironment(width: bounds.width, height: bounds.height, screenWidth: window?.bounds.width ?? bounds.width,
+        AMLLRenderEnvironment(width: bounds.width, height: bounds.height, screenWidth: Double(window?.bounds.width ?? bounds.width),
                               fontSize: configuration.fontSize, alignPosition: 0.1, reduceMotion: reduceMotion,
                               enableBlur: configuration.blurInactive, dotHeight: max(configuration.fontSize * 0.5, bounds.height * 0.01))
     }

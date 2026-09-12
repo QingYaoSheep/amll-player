@@ -1,6 +1,6 @@
 # Plan 5 — complete native AMLL port
 
-Updated 2026-09-12. Specification: the user's approved “计划 5 替换稿：完整原生移植 AMLL 歌词播放器”, reflected in workspace `../Plan.md`. All Apple Music layout requirements are superseded. Scope is the complete player and all natively supportable layouts, backgrounds, effects, controls and transitions. Playback services, lyric providers, manual matching and offsets remain intact.
+Updated 2026-09-12. Specification: the user's approved “计划 5 替换稿：完整原生移植 AMLL 歌词播放器”, refined so the unified AMLL page keeps the previously added Apple Music-derived page geometry while all lyric motion and rendering remain native AMLL. Playback services, lyric providers, manual matching and offsets remain intact.
 
 Status: **in progress; not visually signed off; not the production default**.
 

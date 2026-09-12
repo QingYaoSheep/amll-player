@@ -10,7 +10,7 @@
 
 本轮已闭合一部分接线缺项，但没有宣称计划完成：
 
-- 新增 `.amll` 渲染配置，并让“恢复 AMLL 默认”恢复独立 AMLL 配置；Apple Music 和旧自定义配置继续保留为兼容/对照路径。
+- `.amll` 现在是唯一内置主布局：采用之前 Apple Music-derived 的页面外壳并嵌入 AMLL 原生歌词引擎；旧 Apple Music profile 已从设置中移除，旧存储值会迁移到 `.amll`，`.custom` 仍保留为回退/对照路径。
 - 新增 `AMLLLyricsDisplay`，真实全屏歌词页可把 `LyricsCoordinator` 文档、Spotify 快照、实时进度、逐曲 offset、显式 seek revision、封面和设置传入 `AMLLNativeLyricsView`。
 - 点击新引擎歌词会通过 `LyricsTimeline.seekTarget` 回到现有 `AppModel.seek(to:)`；没有新增音频播放实现。
 - `AMLLPlayerInput`、`AMLLRenderEnvironment`、`AMLLFrameState` 已增加文档、快照、封面、安全区、显示缩放、辅助功能、背景和控件状态字段。
@@ -21,23 +21,23 @@
 
 - `LyricWord` 的解码现在兼容旧缓存中缺失的 `isObscene`、`rubySegments` 和其他可选元数据；逐词分割后的显示词保留自己的 `LyricWord`，不会再用原始数组索引越界。
 - Core Text 将主歌词、timed ruby 和翻译/罗马音拆为互不采样的缓存栅格；ruby 为主排版预留高度，字符图层实际消费源版强调关键帧、缩放、位移和发光。
-- 静态逐行歌词的断行子项改为 NLTokenizer 的单词和空白段，保留原始空格；新增 AMLL 七档响应式字号，`.amll` 使用独立 medium 基准，Apple Music 兼容配置继续使用旧显式字号。
+- 静态逐行歌词的断行子项改为 NLTokenizer 的单词和空白段，保留原始空格；新增 AMLL 七档响应式字号，统一 `.amll` 页面使用 medium 基准；旧 `appleMusic26` 存储值兼容迁移到该 profile。
 - 非弹簧 opacity/blur 过渡会在目标处精确收敛；Reduce Transparency 同时禁用引擎行模糊和背景透明材质。以上是实现接线和回归证据，不等同于真机视觉签收。
 
 ## 必须补齐的实现缺口
 
 | 编号 | 计划要求 | 当前代码证据与影响 | 补齐条件 |
 |---|---|---|---|
-| G01 | 真实歌词数据与统一回调 | `.amll` 通过 `AMLLLyricsDisplay` 接入 `LyricsCoordinator`、Spotify 快照、offset、进度、seek revision 和封面；旧 renderer 仍为回退，完整整页默认切换尚未签收。 | 在 iPhone/iPad 真实页面完成所有布局和交互验收后再切默认；播放能力继续复用现有 Spotify 服务。 |
+| G01 | 真实歌词数据与统一回调 | 统一 `.amll` 页面通过 `AMLLLyricsDisplay` 接入 `LyricsCoordinator`、Spotify 快照、offset、进度、seek revision 和封面；`.custom` 仍为旧 renderer 回退。 | 在 iPhone/iPad 真实页面完成所有布局和交互验收后再宣称完成；播放能力继续复用现有 Spotify 服务。 |
 | G02 | 长音强调、字符浮动、缩放、发光 | Core Text 已输出字符簇；`AMLLNativeRow` 创建字符图层并消费 `CharacterAnimation.sample`，短词使用普通 float，长音/CJK 使用源版强调谓词。复杂跨行词、ruby 锚点和全场景轨迹尚未完成。 | 建立塑形后的字形簇夹具，验证 32 帧曲线、延迟、长音/末词增强、发光合成及打断生命周期。 |
 | G03 | 行模糊、透明度和 CSS 过渡 | 行视图已缓存主/ruby/辅助 sharp/near/far Core Image 栅格并按 `Row.blur` 切换，透明度和 400ms opacity/blur transition 已接线；连续滤镜数值和完整源曲线仍待对照。 | 逐帧复现源曲线，并比较中断、暂停、Reduce Transparency 和设置切换轨迹。 |
 | G04 | 非弹簧选项及全部原生效果设置 | `AMLLNativeCanvas` 已将安全区、响应式字号、anchor、advance、辅助功能和模糊能力传入 Environment；关闭弹簧使用引擎 transition，seek/首帧/Reduce Motion 立即定位。完整原生参数矩阵和源曲线对照仍待完成。 | 对每个设置做从界面到实际帧输出的验收，并以源录屏校准 transition 曲线和时长。 |
 | G05 | `line-balancer`、非逐字断行与原 CSS 排版 | 已移植断行代价函数；静态逐行子项使用 NLTokenizer 单词/空白段，逐行路径没有虚构词时间；七档响应式字号已可选且 `.amll` 默认使用 medium。浏览器测量校准、字基线、行高和动态断行全矩阵仍待对照。 | 独立覆盖逐行/逐字断行、字号档位、字重/字距、主辅歌词基线与组高度反馈。 |
 | G06 | 逐词罗马音、ruby 和无损适配 | `LyricWord` 已增加 timed ruby、voice 和 obscene 可选字段；主/ruby/辅助栅格分离，ruby 保留布局高度，逐词罗马音可回退到行级辅助文本。逐词 ruby 遮罩配对和复杂跨行元数据诊断仍未完成。 | 完成逐词罗马音/ruby 排版、时间与遮罩；对无法对应的字符情况保留明确诊断。 |
-| G07 | 完整页面布局、封面、控件和 SVG | 尚无新 `PrebuiltLyricPlayer` 原生整页；横竖宽高比、普通/沉浸封面、反射/遮罩、跑马灯、原滑块、原 SVG、菜单与所有显隐组合没有在新路径完成。旧页面存在同名功能不能证明几何与交互一致。 | 按原 TSX/CSS/SVG 逐项接入，并建立手机/iPad/紧凑窗口状态矩阵。 |
+| G07 | 完整页面布局、封面、控件和 SVG | `.amll` 已使用 Apple Music-derived 紧凑信息区、大封面控制栈、顶部把手和 iPad 双栏；旧 Apple Music profile 已合并删除。原 AMLL SVG 路径、反射/遮罩细节和完整显隐矩阵仍待对照。 | 按原 TSX/CSS/SVG 逐项校准，并建立手机/iPad/紧凑窗口状态矩阵。 |
 | G08 | 包装层转场及统一手势 | 新接口枚举声明了关闭等事件，但引擎 `handle` 只处理浏览与恢复跟随；新整页关闭/取消/键盘路径不存在。当前生产入口仍使用系统 `fullScreenCover`。 | 移植原位移、圆角、延迟、曲线；仲裁歌词滚动、进度拖动、交互关闭，并验证取消/反向打断。 |
-| G09 | Mesh/Pixi/纯色或 CSS 背景及上下文连续性 | `AMLLMeshBackground` 已接入 `.amll` 真实页面，固定 seed 已进入 frame state，封面异步加载不会重置 mesh clock；Pixi 完整对等管线、固定种子逐帧比较和旋转/切歌人工签收仍缺失。 | 完成原图像处理、网格、滤镜、采样、混合和随机过程；验证旋转/切歌不闪屏、不归零；原生不可表达的任意 CSS 不新增解释器。 |
-| G10 | 独立 AMLL 配置与无损迁移 | 已有 `.amll` profile、独立恢复入口、旧 custom 备份和 medium responsive baseline；默认仍保持兼容 profile，完整旧值转换和设置矩阵尚未完成。 | 完成版本化迁移、来源/人工匹配/offset 保留和签收后的默认切换。 |
+| G09 | Mesh/Pixi/纯色或 CSS 背景及上下文连续性 | `AMLLMeshBackground` 已接入统一 `.amll` 页面，固定 seed 已进入 frame state，封面异步加载不会重置 mesh clock；Pixi 完整对等管线、固定种子逐帧比较和旋转/切歌人工签收仍缺失。 | 完成原图像处理、网格、滤镜、采样、混合和随机过程；验证旋转/切歌不闪屏、不归零；原生不可表达的任意 CSS 不新增解释器。 |
+| G10 | 独立 AMLL 配置与无损迁移 | `.amll` profile 已成为唯一内置主布局，恢复入口使用 unified AMLL baseline；旧 `appleMusic26` v2 值和 v1 设置迁移到 `.amll`，custom 备份仍保留。完整旧值转换和设置矩阵尚未完成。 | 完成版本化迁移、来源/人工匹配/offset 保留和真机签收矩阵。 |
 | G11 | 完整接口与状态归属 | `AMLLPlayerInput`、Environment、FrameState 已增加歌词、快照、封面、安全区、辅助功能、背景、控件和旧 trace 解码默认；真实页面适配器已接入，统一交互仲裁和所有事件回放仍未完成。 | 两条路径使用同一输入和事件序列，完整交互与状态归属通过回放夹具。 |
 | G12 | 独立辅助功能变体 | 新路径有 VoiceOver label、seek 自定义动作、UIFontMetrics、Reduce Motion 和 Reduce Transparency 接线；歌词行扩展 44pt 命中区域。完整阅读上下文、Dynamic Type 极端尺寸和页面控件 44pt 矩阵仍缺少真机验证。 | 建立独立变体和测试矩阵，保留阅读/操作，并与默认金标区分。 |
 

@@ -1,8 +1,10 @@
 import QuartzCore
 import SwiftUI
 
-/// Apple Music supplies only the spatial shell. The lyric canvas embedded here is AMLL's native port.
-struct AppleMusicLyricsPlayer: View {
+/// Unified AMLL lyric page. Its shell follows the previously added
+/// Apple Music-derived geometry while the lyric viewport uses the native AMLL
+/// motion and glyph engine.
+struct AMLLLyricsPlayer: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -131,18 +133,17 @@ struct AppleMusicLyricsPlayer: View {
     private func lyricCanvas(_ snapshot: PlaybackSnapshot) -> some View {
         if let document = model.lyrics.document, !document.lines.isEmpty {
             ZStack(alignment: .bottom) {
-                NativeLyricsView(
-                    document: document, configuration: configuration, offset: model.lyrics.selection.offset,
-                    duration: snapshot.duration, playing: snapshot.isPlaying,
+                AMLLLyricsDisplay(
+                    model: model,
+                    snapshot: snapshot,
+                    configuration: configuration,
                     active: scenePhase == .active && !search && !devices,
-                    canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
-                    position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
-                    resumeToken: resumeToken, browsing: { browsing = $0 }
+                    resumeToken: resumeToken,
+                    browsing: { browsing = $0 }
                 )
                 // UIViewRepresentable has no intrinsic height. Give the
-                // lyric viewport the whole shell so its scroll view can
-                // compute the anchor and spring target instead of collapsing
-                // to the metadata's ideal size.
+                // lyric viewport the whole shell so its display link and
+                // layout cache use the complete Apple Music-derived viewport.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
                     .buttonStyle(.borderedProminent)

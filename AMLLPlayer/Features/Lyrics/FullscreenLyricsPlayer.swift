@@ -39,7 +39,6 @@ struct FullscreenLyricsPlayer: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var search = false
     @State private var devices = false
@@ -55,21 +54,8 @@ struct FullscreenLyricsPlayer: View {
         NavigationStack {
             GeometryReader { geometry in
                 ZStack {
-                    if model.renderPreferences.profile == .amll {
-                        if reduceTransparency {
-                            Color(white: 0.08)
-                        } else {
-                            AMLLMeshBackground(
-                                artworkURL: model.playbackSnapshot?.item?.artworkURL,
-                                active: pageVisible && scenePhase == .active && !search && !devices,
-                                blur: configuration.backgroundBlur
-                            )
-                            Color.black.opacity(0.16)
-                        }
-                    } else {
-                        AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
-                                               blur: configuration.backgroundBlur)
-                    }
+                    AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
+                                           blur: configuration.backgroundBlur)
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         let columns = geometry.size.width >= 700 || (geometry.size.width > geometry.size.height && geometry.size.width >= 550)
                         VStack(spacing: 8) {
@@ -202,18 +188,12 @@ struct FullscreenLyricsPlayer: View {
             Spacer(minLength: 0)
         } else if let document = model.lyrics.document, !document.lines.isEmpty {
             VStack(spacing: 0) {
-                if model.renderPreferences.profile == .amll {
-                    AMLLLyricsDisplay(model: model, snapshot: snapshot, configuration: configuration,
-                                      active: pageVisible && scenePhase == .active && !search && !devices,
-                                      resumeToken: resumeToken, browsing: { browsing = $0 })
-                } else {
-                    NativeLyricsView(document: document, configuration: configuration, offset: model.lyrics.selection.offset,
-                                     duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices,
-                                     canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
-                                     position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
-                                     resumeToken: resumeToken, browsing: { browsing = $0 })
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                NativeLyricsView(document: document, configuration: configuration, offset: model.lyrics.selection.offset,
+                                 duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices,
+                                 canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
+                                 position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
+                                 resumeToken: resumeToken, browsing: { browsing = $0 })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
                     .buttonStyle(.bordered).accessibilityIdentifier("resumeLyricsFollowing")
                     .frame(height: 48).opacity(browsing ? 1 : 0).disabled(!browsing).accessibilityHidden(!browsing)

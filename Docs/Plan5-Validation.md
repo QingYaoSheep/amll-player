@@ -11,7 +11,7 @@
 | P5R-00 | `ReferenceCaptures/manifest.json`、`Scripts/verify-layout-references.cjs`：登记两张 iPhone 16 Pro 原图的状态、1206×2622 像素、@3x 和 SHA-256；原图放在 Git 忽略目录 | 本地脚本逐字节校验；精确 iOS build 和 iPad 原图待补 |
 | P5R-01 | `Rendering/AMLLMotionModel.swift`、`LyricsTimeline.swift`：AMLL 解析弹簧、按行间隔变化的纵向参数、字级强调、间奏三点及浏览/返回/seek/关闭状态 | `AMLLMotionModelTests`、`LyricsTimelineTests` 中固定数值和中断测试 |
 | P5R-02 | `Rendering/LyricTextLayout.swift`、`LyricsRenderView.swift`：TextKit 字形布局、真实词时间遮罩、0.5em 羽化、主/辅助/背景声部比例、近远景模糊、滚动与行缩放 | `LyricTextLayoutTests`、`LyricsRenderViewTests` 与固定时间截图附件 |
-| P5R-03 | `Features/Lyrics/AppleMusicLyricsPlayer.swift`、`Rendering/AppleMusicLayoutReference.swift`：显示歌词时的紧凑信息区、隐藏歌词时的大封面控制栈、顶部把手及 iPad 双栏 | `AppleMusicLayoutReferenceTests`、全屏 UI 测试；原图叠片待真机导出 |
+| P5R-03 | `Features/Lyrics/AMLLLyricsPlayer.swift`、`Rendering/AppleMusicLayoutReference.swift`：统一 AMLL 页面使用 Apple Music-derived 的紧凑信息区、隐藏歌词时的大封面控制栈、顶部把手及 iPad 双栏，歌词区接入 AMLL 原生引擎 | `AppleMusicLayoutReferenceTests`、全屏 UI 测试；原图叠片待真机导出 |
 | P5R-04 | `Rendering/AMLLMeshBackground.swift/.metal`：移植封面颜色变换、模糊采样、旋转、镜像、抖动和暗角；前景单独合成 | Xcode 26/27 Metal 编译及 60/120Hz 真机性能待验收 |
 | P5R-05 | `LyricsRenderConfiguration.swift`、`LyricsAppearanceView.swift`：Apple Music 布局/自定义档位、v2 存储、旧设置备份迁移和 AMLL 默认值恢复 | `LyricsRenderPreferencesTests` |
 

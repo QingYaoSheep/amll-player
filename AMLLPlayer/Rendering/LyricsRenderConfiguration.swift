@@ -2,11 +2,21 @@ import Foundation
 import Observation
 
 enum LyricsPresentationProfile: String, Codable, CaseIterable, Sendable {
-    /// The native AMLL page and motion engine. It is kept selectable until
-    /// reference-device sign-off promotes it to the production default.
+    /// The unified AMLL page: the Apple Music-derived shell with the native
+    /// AMLL lyric motion engine. It is the only built-in presentation profile.
     case amll
-    case appleMusic26
     case custom
+
+    /// `appleMusic26` was the temporary name used by the previous build. Map
+    /// that stored value to the unified AMLL profile instead of invalidating
+    /// existing preferences during the merge.
+    init?(rawValue: String) {
+        switch rawValue {
+        case "amll", "appleMusic26": self = .amll
+        case "custom": self = .custom
+        default: return nil
+        }
+    }
 }
 
 /// The seven responsive font presets exposed by AMLL's react-full player.
@@ -172,14 +182,14 @@ final class LyricsRenderPreferences {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        profile = .appleMusic26
-        configuration = .init()
+        profile = .amll
+        configuration = .amllDefault
         if let data = defaults.data(forKey: Self.key),
            let stored = try? JSONDecoder().decode(Stored.self, from: data), stored.version == 2
         {
             profile = stored.profile
-            if stored.profile == .appleMusic26 || stored.profile == .amll {
-                let baseline = stored.profile == .amll ? LyricsRenderConfiguration.amllDefault : .init()
+            if stored.profile == .amll {
+                let baseline = LyricsRenderConfiguration.amllDefault
                 configuration = baseline
                 migratedCustomConfiguration = stored.migratedCustomConfiguration?.validated()
                     ?? (stored.configuration == baseline ? nil : stored.configuration.validated())
@@ -216,8 +226,8 @@ final class LyricsRenderPreferences {
                 decoded.gradientWidth /= max(1, decoded.fontSize)
             }
             migratedCustomConfiguration = decoded.validated()
-            profile = .appleMusic26
-            configuration = .init()
+            profile = .amll
+            configuration = .amllDefault
             persist()
         }
     }
@@ -231,7 +241,6 @@ final class LyricsRenderPreferences {
         profile = newProfile
         configuration = switch newProfile {
         case .amll: .amllDefault
-        case .appleMusic26: .init()
         case .custom: migratedCustomConfiguration ?? .init()
         }
         switchingProfile = false

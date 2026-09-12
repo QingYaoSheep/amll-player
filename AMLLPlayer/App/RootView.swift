@@ -25,8 +25,8 @@ struct RootView: View {
             }
         }
         .fullScreenCover(isPresented: $showingPlayer) {
-            if model.renderPreferences.profile == .appleMusic26 {
-                AppleMusicLyricsPlayer(model: model)
+            if model.renderPreferences.profile == .amll {
+                AMLLLyricsPlayer(model: model)
             } else {
                 FullscreenLyricsPlayer(model: model)
             }
@@ -46,7 +46,11 @@ struct RootView: View {
             "error.title",
             isPresented: Binding(
                 get: { model.presentedError != nil },
-                set: { if !$0 { model.presentedError = nil } }
+                set: {
+                    if !$0 {
+                        model.presentedError = nil
+                    }
+                }
             ),
             presenting: model.presentedError
         ) { _ in

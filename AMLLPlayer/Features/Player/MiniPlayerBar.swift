@@ -1,5 +1,70 @@
 import SwiftUI
 
+struct PlayerZoomTransition: ViewModifier {
+    let namespace: Namespace.ID
+    var enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.navigationTransition(.zoom(sourceID: "nowPlaying", in: namespace))
+        } else {
+            content
+        }
+    }
+}
+
+/// The tab bar supplies its own glass and animates between stacked and inline
+/// placement. Do not put a second glass container inside the accessory.
+@available(iOS 26.0, *)
+struct TabMusicAccessory: View {
+    @Bindable var model: AppModel
+    let snapshot: PlaybackSnapshot
+    let namespace: Namespace.ID
+    var openPlayer: () -> Void
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: openPlayer) {
+                HStack(spacing: 8) {
+                    AsyncImage(url: snapshot.item?.artworkURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.secondary.opacity(0.2).overlay { Image(systemName: "music.note") }
+                    }
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(snapshot.item?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text(snapshot.item?.artistLine ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("openNowPlaying")
+            Button { Task { await model.togglePlayPause() } } label: {
+                Label(snapshot.isPlaying ? "player.pause" : "player.play", systemImage: snapshot.isPlaying ? "pause.fill" : "play.fill")
+                    .labelStyle(.iconOnly).frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isPerformingAction || (snapshot.isPlaying ? !snapshot.restrictions.canPause : !snapshot.restrictions.canResume))
+            if placement != .inline {
+                Button { Task { await model.skipNext() } } label: {
+                    Label("player.next", systemImage: "forward.fill").labelStyle(.iconOnly).frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isPerformingAction || !snapshot.restrictions.canSkipNext)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 52)
+        .matchedTransitionSource(id: "nowPlaying", in: namespace)
+        .accessibilityIdentifier("miniPlayerBar")
+    }
+}
+
 struct MiniPlayerBar: View {
     @Bindable var model: AppModel
     let snapshot: PlaybackSnapshot
@@ -137,7 +202,6 @@ private struct MiniPlayerGlassSurface: ViewModifier {
 
     private let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
 
-    @ViewBuilder
     func body(content: Content) -> some View {
         if reduceTransparency {
             content

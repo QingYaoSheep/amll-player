@@ -3,29 +3,50 @@ import SwiftUI
 struct SpotifyBrowserView: View {
     @Bindable var model: AppModel
     @State private var showingDevices = false
+    let playerNamespace: Namespace.ID
+    var openPlayer: () -> Void
 
     var body: some View {
-        TabView {
-            navigation {
-                CatalogHomeView(model: model, store: model.catalog)
-            }
-            .tabItem { Label("catalog.home", systemImage: "house") }
-            navigation {
-                CatalogSearchView(model: model, store: model.catalog)
-            }
-            .tabItem { Label("catalog.search", systemImage: "magnifyingglass") }
-            navigation {
-                List(SpotifyLibrarySection.library, id: \.self) { section in
-                    NavigationLink(value: CatalogRoute.collection(section)) {
-                        Label(section.title, systemImage: section.symbol)
+        Group {
+            if #available(iOS 26.0, *) {
+                tabs
+                    .tabBarMinimizeBehavior(.onScrollDown)
+                    .tabViewBottomAccessory {
+                        if let snapshot = model.playbackSnapshot, snapshot.item != nil, model.sessionState.isAuthenticated {
+                            TabMusicAccessory(model: model, snapshot: snapshot, namespace: playerNamespace, openPlayer: openPlayer)
+                        }
                     }
-                }
-                .navigationTitle("catalog.library")
-                .accessibilityIdentifier("catalogLibrary")
+            } else {
+                tabs
             }
-            .tabItem { Label("catalog.library", systemImage: "square.stack") }
         }
         .sheet(isPresented: $showingDevices) { DevicePickerView(model: model) }
+    }
+
+    private var tabs: some View {
+        TabView {
+            Tab("catalog.home", systemImage: "house") {
+                navigation {
+                    CatalogHomeView(model: model, store: model.catalog)
+                }
+            }
+            Tab("catalog.search", systemImage: "magnifyingglass", role: .search) {
+                navigation {
+                    CatalogSearchView(model: model, store: model.catalog)
+                }
+            }
+            Tab("catalog.library", systemImage: "square.stack") {
+                navigation {
+                    List(SpotifyLibrarySection.library, id: \.self) { section in
+                        NavigationLink(value: CatalogRoute.collection(section)) {
+                            Label(section.title, systemImage: section.symbol)
+                        }
+                    }
+                    .navigationTitle("catalog.library")
+                    .accessibilityIdentifier("catalogLibrary")
+                }
+            }
+        }
     }
 
     private func navigation<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -107,7 +128,9 @@ private struct CatalogHomeSection: View {
         } header: {
             Label(section.title, systemImage: section.symbol)
         } footer: {
-            if section == .topTracks { Text("catalog.topRange") }
+            if section == .topTracks {
+                Text("catalog.topRange")
+            }
         }
         .task { await load(force: false) }
     }
@@ -173,8 +196,12 @@ private struct CatalogSearchView: View {
         .searchable(text: $store.searchText, prompt: "catalog.searchPrompt")
         .task(id: query) {
             let current = query
-            if displayedQuery == current, store.page(current).loadedAt != nil { return }
-            if let old = displayedQuery, old != current { store.discardSearch(old) }
+            if displayedQuery == current, store.page(current).loadedAt != nil {
+                return
+            }
+            if let old = displayedQuery, old != current {
+                store.discardSearch(old)
+            }
             displayedQuery = nil
             guard !store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }

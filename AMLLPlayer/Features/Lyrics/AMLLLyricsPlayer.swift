@@ -6,6 +6,7 @@ import SwiftUI
 /// motion and glyph engine.
 struct AMLLLyricsPlayer: View {
     @Bindable var model: AppModel
+    var usesSystemZoom = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -330,7 +331,7 @@ struct AMLLLyricsPlayer: View {
         .accessibilityLabel(Text("common.done"))
         .accessibilityIdentifier("closeLyricsPlayer")
         .contentShape(Rectangle())
-        .gesture(dismissGesture)
+        .gesture(dismissGesture, including: usesSystemZoom ? .none : .all)
     }
 
     private var dismissGesture: some Gesture {
@@ -359,7 +360,7 @@ struct AMLLLyricsPlayer: View {
     }
 
     private func dismissalTransform(height: CGFloat) -> (offset: CGFloat, scale: CGFloat, radius: CGFloat, opacity: Double) {
-        guard !reduceMotion, height > 0 else { return (0, 1, 0, 1) }
+        guard !usesSystemZoom, !reduceMotion, height > 0 else { return (0, 1, 0, 1) }
         let clamped = min(height * 0.88, max(0, dismissalDrag))
         let resistance = 1 - min(0.14, clamped / height * 0.18)
         let offset = clamped * resistance

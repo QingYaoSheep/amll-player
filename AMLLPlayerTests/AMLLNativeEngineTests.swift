@@ -14,11 +14,31 @@ final class AMLLNativeEngineTests: XCTestCase {
         engine.handle(.beginBrowsing)
         engine.handle(.browseBy(40))
         engine.handle(.endBrowsing(velocity: 0))
-        let discontinuity = engine.render(.init(position: 12, playing: true), delta: 0.18)
+        let discontinuity = engine.render(.init(position: 12, playing: false), delta: 0.18)
         XCTAssertTrue(discontinuity.browsing)
         let seek = engine.render(.init(position: 2, playing: false, seekRevision: 1), delta: 0)
         XCTAssertFalse(seek.browsing)
         XCTAssertEqual(seek.focusGroup, 0)
+    }
+
+    func testBrowsingWaitsForActualNextLineAndThenSpringsBack() {
+        let lines = (0 ..< 4).map { index in
+            LyricLine(id: String(index), text: "Line", start: Double(index * 10), end: Double(index * 10 + 9))
+        }
+        var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines),
+                                     environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32), heights: [60, 60, 60, 60])
+        let initial = engine.render(.init(position: 1, playing: true), delta: 0)
+        engine.handle(.beginBrowsing)
+        engine.handle(.browseBy(40))
+        let dragged = engine.render(.init(position: 1, playing: true), delta: 0)
+        XCTAssertEqual(dragged.rows[0].y, initial.rows[0].y - 40, accuracy: 0.1)
+        engine.handle(.endBrowsing(velocity: 1200))
+        XCTAssertTrue(engine.render(.init(position: 8, playing: true), delta: 7).browsing)
+        XCTAssertTrue(engine.render(.init(position: 9.8, playing: true), delta: 0.1).browsing)
+        let resumed = engine.render(.init(position: 10, playing: true), delta: 0)
+        XCTAssertFalse(resumed.browsing)
+        let moving = engine.render(.init(position: 10.02, playing: true), delta: 0.02)
+        XCTAssertNotEqual(resumed.rows[0].y, moving.rows[0].y)
     }
 
     func testDifferentRowsRetainIndependentSpringDelays() {

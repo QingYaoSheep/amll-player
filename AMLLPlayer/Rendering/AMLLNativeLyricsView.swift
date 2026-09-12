@@ -558,8 +558,11 @@ private final class AMLLNativeRow: UIView {
         let bright = row.brightAlpha, dark = row.darkAlpha
         let radius = min(5, max(0, row.blur))
         let sharpWeight = Float(max(0, 1 - radius / 2))
-        nearBlur.opacity = Float(radius <= 2 ? radius / 2 : (5 - radius) / 3)
-        farBlur.opacity = Float(max(0, (radius - 2) / 3))
+        // A blurred bitmap has no word mask. Preserve the same unplayed
+        // brightness instead of displaying its white pixels at full alpha.
+        let blurredAlpha = Float(words.isEmpty ? 1 : dark)
+        nearBlur.opacity = Float(radius <= 2 ? radius / 2 : (5 - radius) / 3) * blurredAlpha
+        farBlur.opacity = Float(max(0, (radius - 2) / 3)) * blurredAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
         ruby.opacity = sharpWeight
         auxiliary.opacity = sharpWeight

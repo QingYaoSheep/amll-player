@@ -252,12 +252,14 @@ struct AMLLFrameEngine {
     private var timeline = AMLLSourceTimeline()
     private var animationTime = 0.0
     private var scrollOffset = 0.0
+    private var previousPreceding = 0.0
     private var scrollVelocity = 0.0
     private var scrollMinimum = 0.0
     private var scrollMaximum = 0.0
     private var lastInteraction = 0.0
     private var browsing = false
     private var touching = false
+    private var resumeAtLineStart: Double?
     private var dirty = true
     private var firstFrame = true
     private var previousInput: AMLLPlayerInput?
@@ -302,14 +304,19 @@ struct AMLLFrameEngine {
         switch interaction {
         case .beginBrowsing:
             touching = true; browsing = true; scrollVelocity = 0
+            resumeAtLineStart = nil
         case let .browseBy(delta):
             guard delta.isFinite else { return }
             scrollOffset = min(scrollMaximum, max(scrollMinimum, scrollOffset + delta))
-        case let .endBrowsing(velocity):
+        case .endBrowsing:
             touching = false
-            scrollVelocity = velocity.isFinite && abs(velocity) >= 100 ? velocity / 1000 : 0
+            scrollVelocity = 0
+            let releasedTime = (previousInput?.position ?? 0) - (previousInput?.offset ?? 0)
+            resumeAtLineStart = document.groups.map { document.lines[$0.main].start }
+                .filter { $0 > releasedTime }.min()
         case .resumeFollowing:
             touching = false; browsing = false; scrollOffset = 0; scrollVelocity = 0
+            resumeAtLineStart = nil
         default: return
         }
         lastInteraction = animationTime; dirty = true
@@ -328,13 +335,14 @@ struct AMLLFrameEngine {
         let seeking = firstFrame || input.seeking || eventRequiresSeek || previousInput?.seekRevision != input.seekRevision
         if seeking {
             scrollOffset = 0; scrollVelocity = 0; touching = false; browsing = false
+            resumeAtLineStart = nil
         }
         if !touching, abs(scrollVelocity) > 0.05, elapsed > 0, elapsed <= 0.1 {
             scrollOffset = min(scrollMaximum, max(scrollMinimum, scrollOffset - scrollVelocity * elapsed * 1000))
             scrollVelocity *= pow(0.95, elapsed * 1000 / 16)
             dirty = true
         }
-        if browsing, !touching, abs(scrollVelocity) <= 0.05, animationTime - lastInteraction >= 5 {
+        if browsing, !touching, input.playing, let start = resumeAtLineStart, time / 1000 >= start {
             handle(.resumeFollowing)
         }
         let oldFocus = timeline.focus
@@ -375,7 +383,7 @@ struct AMLLFrameEngine {
                     }
                 }
             }
-            layoutGroups(playing: input.playing, seeking: seeking, force: touching || environment.reduceMotion)
+            layoutGroups(playing: input.playing, seeking: seeking, force: browsing || environment.reduceMotion)
             dirty = false
         }
         var rows: [AMLLFrameState.Row] = []
@@ -488,6 +496,12 @@ struct AMLLFrameEngine {
                 + (active[index] || !playing ? group.background.map { height($0) + environment.fontSize * 0.3 } ?? 0 : 0)
         }
         let preceding = groupHeights.prefix(timeline.focus).reduce(0, +)
+        if browsing {
+            // Automatic focus can advance while the user is reading. Keep
+            // the browsed content stationary until the release boundary.
+            scrollOffset += previousPreceding - preceding
+        }
+        previousPreceding = preceding
         scrollMinimum = -preceding
         var y = -scrollOffset - preceding + environment.height * environment.alignPosition
         if let interlude, interlude.anchor != -1 {

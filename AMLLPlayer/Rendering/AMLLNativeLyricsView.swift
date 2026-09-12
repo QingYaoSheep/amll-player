@@ -270,6 +270,7 @@ final class AMLLNativeCanvas: UIView {
         guard resumeToken != token else { return }
         resumeToken = token
         engine?.handle(.resumeFollowing)
+        onInteraction(.resumeFollowing)
         draw(delta: 0)
     }
 
@@ -340,12 +341,22 @@ final class AMLLNativeCanvas: UIView {
 
     @objc private func pan(_ gesture: UIPanGestureRecognizer) {
         switch gesture.state {
-        case .began: lastTranslation = 0; engine?.handle(.beginBrowsing)
+        case .began:
+            lastTranslation = 0
+            onInteraction(.beginBrowsing)
+            engine?.handle(.beginBrowsing)
         case .changed:
             let value = gesture.translation(in: self).y
-            engine?.handle(.browseBy(lastTranslation - value)); lastTranslation = value
-        case .ended: engine?.handle(.endBrowsing(velocity: gesture.velocity(in: self).y))
-        case .cancelled, .failed: engine?.handle(.endBrowsing(velocity: 0))
+            let delta = lastTranslation - value
+            onInteraction(.browseBy(delta))
+            engine?.handle(.browseBy(delta)); lastTranslation = value
+        case .ended:
+            let velocity = gesture.velocity(in: self).y
+            onInteraction(.endBrowsing(velocity: velocity))
+            engine?.handle(.endBrowsing(velocity: velocity))
+        case .cancelled, .failed:
+            onInteraction(.endBrowsing(velocity: 0))
+            engine?.handle(.endBrowsing(velocity: 0))
         default: break
         }
         draw(delta: 0)

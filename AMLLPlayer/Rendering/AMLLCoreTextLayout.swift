@@ -149,7 +149,11 @@ final class AMLLCoreTextLayout {
         var rows: [Row] = []
         var fragments: [WordFragment] = []
         var characterFragments: [CharacterFragment] = []
-        var y: CGFloat = 0
+        // lyricBgLine's nested main line carries 1.2em vertical padding in
+        // the source CSS; the ordinary wrapper padding is supplied by the
+        // frame engine, so only the background-specific inset belongs here.
+        let backgroundPadding = line.isBackground ? font.pointSize * 1.2 : 0
+        var y: CGFloat = backgroundPadding
         let mainHeight = max(font.lineHeight, font.pointSize * 1.2)
         let rubyFont = font.withSize(max(10, font.pointSize * 0.5))
         let rubyHeight = timedWords.contains { !$0.rubySegments.isEmpty || !($0.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
@@ -237,6 +241,12 @@ final class AMLLCoreTextLayout {
             }
             y += rubyHeight
         }
+        // lyricLineWrapper uses a .3em flex gap between the main and
+        // auxiliary rows. Keeping it in the cached layout also keeps the
+        // engine's measured group height aligned with the pixels.
+        if !configuration.auxiliaryText(for: line).isEmpty {
+            y += font.pointSize * 0.3
+        }
         for auxiliary in configuration.auxiliaryText(for: line) {
             let auxiliaryFont = rubyFont
             let value = NSAttributedString(string: auxiliary, attributes: [.font: auxiliaryFont, .foregroundColor: UIColor.white.withAlphaComponent(0.3)])
@@ -251,6 +261,9 @@ final class AMLLCoreTextLayout {
                 y += auxiliaryFont.pointSize * 1.5
                 cursor += count
             }
+        }
+        if line.isBackground {
+            y += backgroundPadding
         }
         self.rows = rows
         self.fragments = fragments

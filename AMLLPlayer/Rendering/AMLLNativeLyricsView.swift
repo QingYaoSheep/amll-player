@@ -143,30 +143,34 @@ final class AMLLNativeCanvas: UIView {
         let safeArea = safeAreaInsets
         let traits = traitCollection
         let typeScale = UIFontMetrics(forTextStyle: .body).scaledValue(for: 1)
-        return AMLLRenderEnvironment(
-            width: bounds.width,
-            height: bounds.height,
-            screenWidth: Double(window?.bounds.width ?? bounds.width),
-            fontSize: configuration.fontSize,
-            safeArea: .init(top: safeArea.top, leading: safeArea.left, bottom: safeArea.bottom, trailing: safeArea.right),
-            displayScale: Double(window?.screen.scale ?? 1),
-            maximumFPS: window?.screen.maximumFramesPerSecond ?? 60,
-            localeIdentifier: Locale.current.identifier,
-            layoutDirection: effectiveUserInterfaceLayoutDirection == .rightToLeft ? "rtl" : "ltr",
-            alignPosition: configuration.anchor,
-            reduceMotion: reduceMotion,
-            reduceTransparency: UIAccessibility.isReduceTransparencyEnabled,
-            boldText: traits.legibilityWeight == .bold,
-            dynamicTypeScale: typeScale,
-            voiceOver: UIAccessibility.isVoiceOverRunning,
-            enableSpring: configuration.enableSpring,
-            enableScale: configuration.enableScale,
-            hidePassedLines: configuration.hidePassedLines,
-            alwaysPostpositionBackground: configuration.alwaysPostpositionBackground,
-            enableBlur: configuration.blurInactive && !UIAccessibility.isReduceTransparencyEnabled,
-            advance: configuration.advance,
-            dotHeight: max(configuration.fontSize * 0.5, bounds.height * 0.01)
-        )
+        let screen = window?.screen
+        let direction = effectiveUserInterfaceLayoutDirection == .rightToLeft ? "rtl" : "ltr"
+        let reduceTransparencyEnabled = UIAccessibility.isReduceTransparencyEnabled
+        let safe = AMLLSafeArea(top: safeArea.top, leading: safeArea.left,
+                                bottom: safeArea.bottom, trailing: safeArea.right)
+        var environment = AMLLRenderEnvironment(width: bounds.width,
+                                                height: bounds.height,
+                                                screenWidth: Double(window?.bounds.width ?? bounds.width),
+                                                fontSize: configuration.fontSize)
+        environment.safeArea = safe
+        environment.displayScale = Double(screen?.scale ?? 1)
+        environment.maximumFPS = screen?.maximumFramesPerSecond ?? 60
+        environment.localeIdentifier = Locale.current.identifier
+        environment.layoutDirection = direction
+        environment.alignPosition = configuration.anchor
+        environment.reduceMotion = reduceMotion
+        environment.reduceTransparency = reduceTransparencyEnabled
+        environment.boldText = traits.legibilityWeight == .bold
+        environment.dynamicTypeScale = typeScale
+        environment.voiceOver = UIAccessibility.isVoiceOverRunning
+        environment.enableSpring = configuration.enableSpring
+        environment.enableScale = configuration.enableScale
+        environment.enableBlur = configuration.blurInactive && !reduceTransparencyEnabled
+        environment.hidePassedLines = configuration.hidePassedLines
+        environment.alwaysPostpositionBackground = configuration.alwaysPostpositionBackground
+        environment.advance = configuration.advance
+        environment.dotHeight = max(configuration.fontSize * 0.5, bounds.height * 0.01)
+        return environment
     }
 
     private var inset: CGFloat {

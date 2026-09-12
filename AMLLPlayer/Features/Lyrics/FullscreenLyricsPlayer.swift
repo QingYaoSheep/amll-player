@@ -257,7 +257,7 @@ struct LyricsProgressControl: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.25, paused: !snapshot.isPlaying || scenePhase != .active)) { _ in
             VStack(spacing: 0) {
-                Slider(value: Binding(get: { editing ? draft : model.progress() }, set: { draft = $0 }), in: 0 ... max(1, snapshot.duration)) { value in
+                LyricsCapsuleSlider(value: Binding(get: { editing ? draft : model.progress() }, set: { draft = $0 }), maximum: max(1, snapshot.duration)) { value in
                     if value {
                         draft = model.progress(); editing = true
                     } else {
@@ -270,12 +270,12 @@ struct LyricsProgressControl: View {
                     } label: {
                         let position = editing ? draft : model.progress()
                         Text(model.renderPreferences.configuration.remainingTime ? "−" + time(snapshot.duration - position) : time(position))
-                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                            .frame(minWidth: 44, minHeight: 24, alignment: .leading)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text(model.renderPreferences.configuration.remainingTime ? "render.remainingTime" : "render.elapsedTime"))
                     .accessibilityHint(Text("render.toggleTime"))
-                    Spacer(); Text(time(snapshot.duration))
+                    Spacer(); Text("−" + time(snapshot.duration - (editing ? draft : model.progress())))
                 }
                 .font(.caption.monospacedDigit()).opacity(0.7)
             }
@@ -297,7 +297,7 @@ struct LyricsVolumeControl: View {
     var body: some View {
         HStack {
             Image(systemName: "speaker.fill")
-            Slider(value: Binding(get: { editing ? draft : Double(volume) }, set: { draft = $0 }), in: 0 ... 100) { value in
+            LyricsCapsuleSlider(value: Binding(get: { editing ? draft : Double(volume) }, set: { draft = $0 }), maximum: 100) { value in
                 if value {
                     draft = Double(volume); editing = true
                 } else {
@@ -306,5 +306,49 @@ struct LyricsVolumeControl: View {
             }.accessibilityLabel(Text("render.volume")).disabled(device.isRestricted || model.isPerformingAction)
             Image(systemName: "speaker.wave.3.fill")
         }.font(.caption)
+    }
+}
+
+/// A capsule track without a resting thumb, with a larger accessible hit area.
+struct LyricsCapsuleSlider: View {
+    @Binding var value: Double
+    var maximum: Double
+    var editingChanged: (Bool) -> Void
+    @State private var dragging = false
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        GeometryReader { geometry in
+            let fraction = min(1, max(0, value / max(1, maximum)))
+            Capsule().fill(.white.opacity(0.25))
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(.white.opacity(0.55)).frame(width: geometry.size.width * fraction)
+                }
+                .clipShape(Capsule())
+                .frame(height: dragging ? 10 : 7)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { event in
+                        guard enabled else { return }
+                        if !dragging {
+                            dragging = true; editingChanged(true)
+                        }
+                        value = min(maximum, max(0, event.location.x / max(1, geometry.size.width) * maximum))
+                    }
+                    .onEnded { _ in
+                        guard dragging else { return }
+                        dragging = false; editingChanged(false)
+                    })
+        }
+        .frame(height: 44)
+        .accessibilityElement()
+        .accessibilityValue(Text("\(Int(min(100, max(0, value / max(1, maximum) * 100))))%"))
+        .accessibilityAdjustableAction { direction in
+            guard enabled else { return }
+            editingChanged(true)
+            value = min(maximum, max(0, value + (direction == .increment ? 1 : -1) * maximum / 20))
+            editingChanged(false)
+        }
     }
 }

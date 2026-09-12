@@ -74,6 +74,18 @@ struct AMLLLyricsPlayer: View {
         ZStack(alignment: .top) {
             lyricCanvas(snapshot)
                 .padding(.horizontal, max(0, metrics.horizontalInset - 20))
+                .mask {
+                    GeometryReader { proxy in
+                        let top = (configuration.showMetadata ?? true) ? metrics.compactArtworkTop + metrics.compactArtworkSize + 12 : 44
+                        LinearGradient(stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .clear, location: min(0.8, top / max(1, proxy.size.height))),
+                            .init(color: .black, location: min(0.9, (top + 64) / max(1, proxy.size.height))),
+                            .init(color: .black, location: 0.82),
+                            .init(color: .clear, location: 1),
+                        ].sorted { $0.location < $1.location }, startPoint: .top, endPoint: .bottom)
+                    }
+                }
             if configuration.showMetadata ?? true {
                 compactMetadata(item: item, metrics: metrics)
                     .padding(.horizontal, metrics.horizontalInset)
@@ -89,8 +101,10 @@ struct AMLLLyricsPlayer: View {
                 .padding(.top, metrics.expandedArtworkTop)
             fullMetadata(item: item)
                 .padding(.top, metrics.expandedMetadataGap)
+                .padding(.horizontal, 8)
             if configuration.showControls {
                 LyricsProgressControl(model: model, snapshot: snapshot)
+                    .padding(.horizontal, 8)
                     .padding(.top, metrics.metadataToProgressGap)
                 transport(snapshot)
                     .padding(.top, metrics.transportTopGap)
@@ -98,6 +112,7 @@ struct AMLLLyricsPlayer: View {
                    let volume = device.volumePercent
                 {
                     LyricsVolumeControl(model: model, device: device, volume: volume)
+                        .padding(.horizontal, 8)
                         .padding(.top, metrics.volumeTopGap)
                 }
                 bottomActions

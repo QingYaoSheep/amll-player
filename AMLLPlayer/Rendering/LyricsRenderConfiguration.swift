@@ -119,7 +119,9 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     /// legacy renderer and hand-authored fixtures.
     static var amllDefault: Self {
         var value = Self()
-        value.sizePreset = .medium
+        value.sizePreset = nil
+        value.fontSize = 32
+        value.auxiliaryScale = 0.5
         return value
     }
 

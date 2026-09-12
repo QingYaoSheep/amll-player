@@ -58,10 +58,10 @@ struct AppleMusicLyricsLayoutMetrics: Equatable, Sendable {
         expandedArtworkTop: 95,
         expandedArtworkInset: 24,
         expandedMetadataGap: 43,
-        metadataToProgressGap: 31,
-        transportTopGap: 42,
-        volumeTopGap: 55,
-        bottomActionsTopGap: 30
+        metadataToProgressGap: 18,
+        transportTopGap: 10,
+        volumeTopGap: 35,
+        bottomActionsTopGap: 6
     )
 
     static func responsive(in size: CGSize) -> Self {

@@ -29,7 +29,7 @@ struct AMLLLyricsPlayer: View {
                 AMLLMeshBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
                                    active: scenePhase == .active && !search && !devices,
                                    blur: configuration.backgroundBlur)
-                Color.black.opacity(0.16)
+                Color.black.opacity(configuration.backgroundDimming ?? 0.16)
                 if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                     player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
                 } else {
@@ -73,9 +73,11 @@ struct AMLLLyricsPlayer: View {
         ZStack(alignment: .top) {
             lyricCanvas(snapshot)
                 .padding(.horizontal, max(0, metrics.horizontalInset - 20))
-            compactMetadata(item: item, metrics: metrics)
-                .padding(.horizontal, metrics.horizontalInset)
-                .padding(.top, metrics.compactArtworkTop)
+            if configuration.showMetadata ?? true {
+                compactMetadata(item: item, metrics: metrics)
+                    .padding(.horizontal, metrics.horizontalInset)
+                    .padding(.top, metrics.compactArtworkTop)
+            }
         }
     }
 
@@ -221,7 +223,7 @@ struct AMLLLyricsPlayer: View {
         AsyncImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
             placeholder: { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
             .frame(width: side, height: side)
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? radius, style: .continuous))
             .id(item.uri)
             .accessibilityHidden(true)
     }

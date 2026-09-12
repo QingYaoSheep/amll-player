@@ -27,10 +27,14 @@ struct SettingsView: View {
             }
 
             Section("lyrics.title") {
-                NavigationLink("lyrics.settings") { LyricsSettingsView(coordinator: model.lyrics) }
-                NavigationLink("render.settings") { LyricsAppearanceView(preferences: model.renderPreferences) }
+                NavigationLink { LyricsAppearanceView(preferences: model.renderPreferences) } label: {
+                    Label("render.settings", systemImage: "textformat.size")
+                }
+                NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
+                    Label("lyrics.settings", systemImage: "music.note.list")
+                }
                 #if DEBUG
-                NavigationLink("render.debug") { LyricsRenderPreview() }
+                    NavigationLink("render.debug") { LyricsRenderPreview() }
                 #endif
             }
 

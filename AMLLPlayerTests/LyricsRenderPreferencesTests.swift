@@ -3,6 +3,32 @@ import XCTest
 
 @MainActor
 final class LyricsRenderPreferencesTests: XCTestCase {
+    func testPageAdjustmentsDecodeOlderConfigurationAndPersist() throws {
+        let original = LyricsRenderConfiguration()
+        let oldData = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(LyricsRenderConfiguration.self, from: oldData)
+        XCTAssertNil(decoded.horizontalPadding)
+        XCTAssertNil(decoded.auxiliaryScale)
+        let name = "appearance-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        preferences.configuration.horizontalPadding = 36
+        preferences.configuration.paragraphSpacing = 24
+        preferences.configuration.auxiliaryScale = 0.7
+        preferences.configuration.backgroundDimming = 0.4
+        preferences.configuration.artworkCornerRadius = 20
+        preferences.configuration.showMetadata = false
+        XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, preferences.configuration)
+        var invalid = original
+        invalid.horizontalPadding = 999
+        invalid.auxiliaryScale = .nan
+        invalid.backgroundDimming = -1
+        XCTAssertEqual(invalid.validated().horizontalPadding, 60)
+        XCTAssertEqual(invalid.validated().auxiliaryScale, 0.5)
+        XCTAssertEqual(invalid.validated().backgroundDimming, 0)
+    }
+
     func testSettingsSurviveRelaunchAndReset() throws {
         let name = "render-tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

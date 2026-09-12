@@ -248,7 +248,7 @@ final class AMLLCoreTextLayout {
             y += font.pointSize * 0.3
         }
         for auxiliary in configuration.auxiliaryText(for: line) {
-            let auxiliaryFont = rubyFont
+            let auxiliaryFont = font.withSize(max(10, font.pointSize * (configuration.auxiliaryScale ?? 0.5)))
             let value = NSAttributedString(string: auxiliary, attributes: [.font: auxiliaryFont, .foregroundColor: UIColor.white.withAlphaComponent(0.3)])
             let typesetter = CTTypesetterCreateWithAttributedString(value)
             var cursor = 0
@@ -273,7 +273,7 @@ final class AMLLCoreTextLayout {
         maskWords = timedWords.enumerated().map { index, word in
             .init(start: word.start, end: word.end, width: fragments.filter { $0.wordIndex == index }.reduce(0) { $0 + $1.rect.width })
         }
-        size = CGSize(width: availableWidth, height: max(1, y))
+        size = CGSize(width: availableWidth, height: max(1, y + (configuration.paragraphSpacing ?? 0)))
     }
 
     /// nil draws both layers for inspection; the renderer composites auxiliary text separately.

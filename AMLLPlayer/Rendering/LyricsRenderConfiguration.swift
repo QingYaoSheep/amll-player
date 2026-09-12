@@ -106,6 +106,13 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var marquee = true
     var remainingTime = false
     var backgroundBlur: Double = 40
+    // Optional additions retain decoding compatibility with installed v2 preferences.
+    var horizontalPadding: Double?
+    var paragraphSpacing: Double?
+    var auxiliaryScale: Double?
+    var backgroundDimming: Double?
+    var artworkCornerRadius: Double?
+    var showMetadata: Bool?
 
     /// AMLL's source player chooses the medium responsive preset by default;
     /// the explicit point size remains as a compatibility fallback for the
@@ -143,6 +150,11 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         copy.anchor = anchor.isFinite ? min(0.7, max(0.2, anchor)) : 0.35
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         copy.backgroundBlur = backgroundBlur.isFinite ? min(80, max(0, backgroundBlur)) : 40
+        copy.horizontalPadding = horizontalPadding.map { $0.isFinite ? min(60, max(12, $0)) : 20 }
+        copy.paragraphSpacing = paragraphSpacing.map { $0.isFinite ? min(60, max(0, $0)) : 0 }
+        copy.auxiliaryScale = auxiliaryScale.map { $0.isFinite ? min(1, max(0.3, $0)) : 0.5 }
+        copy.backgroundDimming = backgroundDimming.map { $0.isFinite ? min(0.8, max(0, $0)) : 0.16 }
+        copy.artworkCornerRadius = artworkCornerRadius.map { $0.isFinite ? min(40, max(0, $0)) : 12 }
         return copy
     }
 }

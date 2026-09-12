@@ -182,7 +182,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private var inset: CGFloat {
-        (window?.bounds.width ?? bounds.width) <= 500 ? 20 : resolvedPointSize
+        configuration.horizontalPadding ?? ((window?.bounds.width ?? bounds.width) <= 500 ? 20 : resolvedPointSize)
     }
 
     private var resolvedPointSize: CGFloat {

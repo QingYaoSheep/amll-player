@@ -64,7 +64,7 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         for raw in ["invalid", #"{"version":99,"configuration":{"fontSize":40}}"#] {
             let data = Data(raw.utf8)
             defaults.set(data, forKey: "lyrics.render.v1")
-            XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, .init())
+            XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, .amllDefault)
             XCTAssertEqual(defaults.data(forKey: "lyrics.render.v1"), data)
         }
     }

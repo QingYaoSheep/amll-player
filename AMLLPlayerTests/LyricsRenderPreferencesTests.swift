@@ -31,12 +31,10 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         preferences.configuration.fontSize = 41
         preferences.activate(.amll)
         XCTAssertEqual(preferences.configuration, .amllDefault)
-        preferences.activate(.appleMusic26)
-        XCTAssertEqual(preferences.configuration, .init())
         preferences.activate(.custom)
         XCTAssertEqual(preferences.configuration.fontSize, 41)
         preferences.configuration.fontSize = 43
-        preferences.activate(.appleMusic26)
+        preferences.activate(.amll)
         preferences.activate(.custom)
         XCTAssertEqual(preferences.configuration.fontSize, 43)
     }
@@ -47,8 +45,8 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         defaults.set(Data(#"{"fontSize":999,"translation":false,"backgroundBlur":-4,"credits":"preferred"}"#.utf8), forKey: "lyrics.render.v1")
         let preferences = LyricsRenderPreferences(defaults: defaults)
-        XCTAssertEqual(preferences.profile, .appleMusic26)
-        XCTAssertEqual(preferences.configuration, .init())
+        XCTAssertEqual(preferences.profile, .amll)
+        XCTAssertEqual(preferences.configuration, .amllDefault)
         let migrated = try XCTUnwrap(preferences.migratedCustomConfiguration)
         XCTAssertEqual(migrated.fontSize, 52)
         XCTAssertEqual(migrated.backgroundBlur, 0)
@@ -78,6 +76,25 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         defaults.set(Data(#"{"fontSize":40,"gradientWidth":20}"#.utf8), forKey: "lyrics.render.v1")
         let preferences = LyricsRenderPreferences(defaults: defaults)
         XCTAssertEqual(try XCTUnwrap(preferences.migratedCustomConfiguration).gradientWidth, 0.5)
+    }
+
+    func testStoredAppleMusicProfileMigratesToUnifiedAMLLPage() throws {
+        let name = "render-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let encodedConfiguration = try JSONEncoder().encode(LyricsRenderConfiguration())
+        let configuration = try JSONSerialization.jsonObject(with: encodedConfiguration)
+        let object: [String: Any] = [
+            "version": 2,
+            "profile": "appleMusic26",
+            "configuration": configuration,
+        ]
+        let encoded = try JSONSerialization.data(withJSONObject: object)
+        defaults.set(encoded, forKey: "lyrics.render.v2")
+
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        XCTAssertEqual(preferences.profile, .amll)
+        XCTAssertEqual(preferences.configuration, .amllDefault)
     }
 
     func testCreditModesSelectTypesAndOnlyPreferredModesFallBack() {

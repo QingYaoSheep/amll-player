@@ -93,7 +93,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var alwaysPostpositionBackground = false
     /// AMLL stores the feather width as an em value; 0.5 tracks the rendered font size.
     var gradientWidth: Double = AMLLMotionMetrics.wordFadeWidthInEms
-    var anchor: Double = 0.35
+    var anchor: Double = 0.28
     var advance: Double = 0.3
     var showLyrics = true
     var coverLayout: CoverLayout = .automatic
@@ -149,7 +149,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         copy.tracking = tracking.isFinite ? min(3, max(-1, tracking)) : 0
         copy.gradientWidth = gradientWidth.isFinite
             ? min(1, max(0, gradientWidth)) : AMLLMotionMetrics.wordFadeWidthInEms
-        copy.anchor = anchor.isFinite ? min(0.7, max(0.2, anchor)) : 0.35
+        copy.anchor = anchor.isFinite ? min(0.7, max(0.2, anchor)) : 0.28
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         copy.backgroundBlur = backgroundBlur.isFinite ? min(80, max(0, backgroundBlur)) : 40
         copy.horizontalPadding = horizontalPadding.map { $0.isFinite ? min(60, max(12, $0)) : 20 }

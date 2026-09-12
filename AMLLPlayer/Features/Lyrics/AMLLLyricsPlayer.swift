@@ -76,7 +76,7 @@ struct AMLLLyricsPlayer: View {
                 .padding(.horizontal, max(0, metrics.horizontalInset - 20))
                 .mask {
                     GeometryReader { proxy in
-                        let top = (configuration.showMetadata ?? true) ? metrics.compactArtworkTop + metrics.compactArtworkSize + 12 : 44
+                        let top = (configuration.showMetadata ?? true) ? metrics.compactArtworkTop + metrics.compactArtworkSize : 44
                         LinearGradient(stops: [
                             .init(color: .clear, location: 0),
                             .init(color: .clear, location: min(0.8, top / max(1, proxy.size.height))),

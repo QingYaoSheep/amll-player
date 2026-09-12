@@ -184,7 +184,7 @@ final class AMLLNativeCanvas: UIView {
             view.bounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
             view.layer.position = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
             view.transform = CGAffineTransform(scaleX: row.scale, y: row.scale)
-            view.apply(row: row, time: state.lyricTime, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
+            view.apply(row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
         }
         if let interlude = state.interlude,
            let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
@@ -352,7 +352,7 @@ private final class AMLLNativeRow: UIView {
         onSeek?()
     }
 
-    func apply(row: AMLLFrameState.Row, time: Double, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
+    func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
         let bright = row.brightAlpha, dark = row.darkAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
         base.opacity = Float(words.isEmpty ? 1 : dark)
@@ -363,7 +363,9 @@ private final class AMLLNativeRow: UIView {
                                                           isBackground: line.isBackground)
             entry.layer.setAffineTransform(CGAffineTransform(translationX: 0, y: motionEnabled ? float * textLayout.font.pointSize : 0))
             let feather = textLayout.font.lineHeight * configuration.gradientWidth
-            let edge = AMLLWordMask.edge(time: time, index: entry.maskIndex, words: maskWords, feather: feather) - entry.advance
+            // Original mask WAAPI animations advance independently between enable/seek
+            // events, pause with playback and retain their current time on disable.
+            let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex, words: maskWords, feather: feather) - entry.advance
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
             entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]

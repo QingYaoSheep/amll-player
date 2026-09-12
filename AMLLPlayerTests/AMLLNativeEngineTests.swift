@@ -112,6 +112,55 @@ final class AMLLNativeEngineTests: XCTestCase {
         canvas.removeFromSuperview()
     }
 
+    @MainActor
+    func testPausedMaskPixelsRemainFrozenUntilExplicitSeek() throws {
+        let line = LyricLine(id: "held", text: "Held note", start: 1, end: 10,
+                             words: [.init(text: "Held note", start: 1, end: 10)], precision: .word)
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "mask-clock", title: "Clock fixture", artists: ["Test"]),
+                                      lines: [line], language: "en", selectionReason: "Synthetic clock fixture")
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        defer { canvas.removeFromSuperview() }
+        canvas.backgroundColor = .black
+        var position = 3.0
+        canvas.position = { position }
+        canvas.configure(document: document, configuration: .init(), input: .init(position: position, playing: false), active: false, reduceMotion: false)
+        for _ in 0 ..< 180 {
+            canvas.advanceFrame(delta: 1.0 / 60)
+        }
+        func pixels() throws -> Data {
+            try XCTUnwrap(UIGraphicsImageRenderer(bounds: canvas.bounds).image { canvas.layer.render(in: $0.cgContext) }.pngData())
+        }
+        XCTAssertGreaterThan(canvas.visibleRowCount, 0)
+        let before = try pixels()
+        position = 7
+        canvas.advanceFrame(delta: 0)
+        XCTAssertEqual(try pixels(), before, "A paused snapshot correction must not move the visible fill")
+        canvas.configure(document: document, configuration: .init(), input: .init(position: position, playing: false, seekRevision: 1), active: false, reduceMotion: false)
+        XCTAssertNotEqual(try pixels(), before, "Explicit seek must update the actual rendered mask")
+    }
+
+    func testMaskClockIgnoresSnapshotCorrectionsAndReanchorsOnlyOnSeek() throws {
+        let line = LyricLine(id: "held", text: "Held", start: 1, end: 10,
+                             words: [.init(text: "Held", start: 1, end: 10)], precision: .word)
+        let document = AMLLDisplayDocument(lines: [line])
+        var engine = AMLLFrameEngine(document: document,
+                                     environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32), heights: [60])
+        let initial = engine.render(.init(position: 2, playing: true), delta: 0)
+        let startTime = try XCTUnwrap(initial.rows.first).wordClock.time
+        let corrected = engine.render(.init(position: 4, playing: true), delta: 0.18)
+        XCTAssertEqual(try XCTUnwrap(corrected.rows.first).wordClock.time, startTime + 0.18, accuracy: 0.000_001)
+        _ = engine.render(.init(position: 4, playing: false), delta: 0)
+        let paused = engine.render(.init(position: 5, playing: false), delta: 3)
+        XCTAssertEqual(try XCTUnwrap(paused.rows.first).wordClock.time, startTime + 0.18, accuracy: 0.000_001)
+        let seek = engine.render(.init(position: 1.5, playing: false, seekRevision: 1), delta: 0)
+        XCTAssertEqual(try XCTUnwrap(seek.rows.first).wordClock.time, 1.5 - document.lines[0].start, accuracy: 0.000_001)
+        _ = engine.render(.init(position: 1.5, playing: true, seekRevision: 1), delta: 0)
+        let resumed = engine.render(.init(position: 1.5, playing: true, seekRevision: 1), delta: 1.0 / 120)
+        XCTAssertEqual(try XCTUnwrap(resumed.rows.first).wordClock.time, 1.5 - document.lines[0].start + 1.0 / 120, accuracy: 0.000_001)
+    }
+
     func testWordFloatClockPausesSeeksAndReversesFromEachWordsOwnEnd() {
         var clock = AMLLWordAnimationClock()
         clock.enable(at: 2)

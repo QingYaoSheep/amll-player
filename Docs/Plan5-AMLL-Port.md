@@ -25,7 +25,7 @@ Paths below are relative to the pinned core/react-full `src` directories extract
 | Mesh/Pixi/GLSL/CSS backgrounds | Old path only | Shader bundle pinned; exact pipelines/seeded frame comparison pending |
 | player AMLLWrapper TSX/CSS | Not yet ported | Enter/exit displacement, radius, delays, cancellation/keyboard rules pending |
 | config/data/callback atoms | Minimal frame/input types | Full contracts and lossless profile migration pending; AMLL defaults must not be labeled appleMusic26 |
-| Debug/reference workflow | `LyricsRenderPreview`, native trace export | A/B switch, native timing/cache counters, rate selection, return-current, five-second real transform export; animation freeze/history stepping, side-by-side/overlay and browser runner pending |
+| Debug/reference workflow | `LyricsRenderPreview`, native trace export, `Scripts/reference-browser` | A/B switch, native timing/cache counters, rate selection, return-current, five-second real transform export; original core browser host with geometry/WAAPI export and bounded opt-in trace. Full-page host, animation freeze/history stepping and side-by-side/overlay pending |
 
 ## Validation record
 
@@ -37,6 +37,10 @@ Paths below are relative to the pinned core/react-full `src` directories extract
 - Independent standards/spec review agents were attempted but both returned usage-limit errors without reviewing. No independent-review pass is claimed.
 - `9a0f1b37`: [CI 34669487513](https://github.com/QingYaoSheep/amll-player/actions/runs/34669487513) fully passed Xcode 26 unit/UI, iPad build/archive and Xcode 27 build/archive/IPA. Native attachment was inspected; transparent PNG previews discard alpha, so subsequent test captures explicitly composite onto black and attach the view to a window for correct display scale.
 - Windows has no Swift/Xcode. Local checks verify source hashes/fixtures and formatting/diffs; Swift execution evidence comes from CI.
+
+- `c89c20b2`: [CI 34669889393](https://github.com/QingYaoSheep/amll-player/actions/runs/34669889393) fully passed Xcode 26/27, including original emphasis keyframes and native word-clock tests.
+- Original core browser host was built from the pinned bundle with 265 module hashes. Local browser verification confirmed visible lead/background/duet/translation text, seek by 1/60 s, playback, pause and a 1200-sample bound, with no console errors. This Windows font capture is development evidence only. CSS/WAAPI remain on browser wall time; the seek buttons are explicitly not deterministic animation stepping.
+- Native masks now sample the engine-owned word clock rather than playback snapshots. A regression covers snapshot corrections, pause, explicit seek and 120 Hz resume. CI for this follow-up remains pending.
 
 QQ fix validates/removes the zlib envelope before Apple's raw-DEFLATE decoder, verifies Adler-32 and tolerates DES zero padding. Other provider/cache behavior remains outside this rendering rewrite.
 

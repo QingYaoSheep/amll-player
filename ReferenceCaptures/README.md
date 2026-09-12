@@ -13,4 +13,17 @@ Omit `--verify` only when deliberately regenerating the baseline. Extracted sour
 
 Copied pnpm junctions still pointing to the former workspace are resolved to the same local store entry, without modifying the legacy tree. The graph pins dependency manifests and resolution; hashing all transitive code assets and an executable full-page browser runner remain work in P5N-00.
 
+## Original core browser host (development only)
+
+On the current Windows checkout with Node 25 and the original installed dev dependencies:
+
+```sh
+node Scripts/build-amll-browser-reference.cjs
+node Scripts/serve-amll-browser-reference.cjs
+```
+
+Open `http://127.0.0.1:4178/`. Optional `width`, `height` and `font` query parameters set the content viewport and font size in CSS px. The harness bundles the original core, verifies the source baseline first and writes module hashes to ignored `.build-tools/amll-reference/browser/build-manifest.json`. It neither repairs old pnpm junctions nor enters the Swift app bundle. The compiler bootstrap currently targets the installed Windows rolldown binary; an Apple-hosted build remains pending.
+
+Playback, pause, seek and opt-in geometry capture are available. At most 1200 samples are retained; exports include current original WAAPI keyframes. Geometry capture forces browser layout and must not be used as performance evidence. Buttons labeled `Seek + 1/60 s` / `Seek + 1/120 s` perform seeks, not frozen-animation steps: CSS/WAAPI still use browser time. This is a core-only harness, not full react-full page or deterministic visual acceptance.
+
 Visual acceptance requires identical Apple-resolved fonts, viewport, settings, lyric data, cover, seed and event sequence. One CSS px maps to one point; scale applies only to rasterization. See [implementation ledger](../Docs/Plan5-AMLL-Port.md). No current screenshot or CI result constitutes 1:1 sign-off.

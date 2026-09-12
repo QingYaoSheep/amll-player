@@ -109,10 +109,11 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     func auxiliaryText(for line: LyricLine) -> [String] {
         let translationText = translation ? line.translation : ""
         let wordRomanization = line.words.compactMap(\.romanWord).joined(separator: " ")
-        let hasTimedRuby = line.words.contains { !$0.rubySegments.isEmpty }
-        let rubyText = hasTimedRuby ? "" : line.words.compactMap(\.ruby).joined(separator: " ")
+        // Ruby is rendered by Core Text above the matching word. Legacy
+        // string ruby is also promoted to that layer, so it must never leak
+        // into the translation/romanization rows a second time.
         let romanizationText = romanization
-            ? (line.romanization.isEmpty ? (wordRomanization.isEmpty ? rubyText : wordRomanization) : line.romanization)
+            ? (line.romanization.isEmpty ? wordRomanization : line.romanization)
             : ""
         return (romanizationFirst ? [romanizationText, translationText] : [translationText, romanizationText])
             .filter { !$0.isEmpty }

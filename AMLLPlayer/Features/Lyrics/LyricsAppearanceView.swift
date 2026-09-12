@@ -18,7 +18,16 @@ struct LyricsAppearanceView: View {
             Section("render.typography") {
                 Text("render.sample").font(.system(size: preferences.configuration.fontSize, weight: preferences.configuration.bold ? .bold : .medium))
                     .tracking(preferences.configuration.tracking).frame(minHeight: 70)
-                Picker("render.fontSize", selection: $preferences.configuration.fontSize) {
+                Picker("render.fontSize", selection: Binding(
+                    get: { preferences.configuration.fontSize },
+                    set: {
+                        // A concrete size is an explicit override of AMLL's
+                        // responsive preset. Clear the preset so the choice
+                        // is visible immediately and survives the next frame.
+                        preferences.configuration.fontSize = $0
+                        preferences.configuration.sizePreset = nil
+                    }
+                )) {
                     Text("render.small").tag(26.0); Text("render.medium").tag(32.0)
                     Text("render.large").tag(40.0); Text("render.extraLarge").tag(48.0)
                 }

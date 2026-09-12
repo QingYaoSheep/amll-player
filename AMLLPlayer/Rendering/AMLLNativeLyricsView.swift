@@ -144,7 +144,6 @@ final class AMLLNativeCanvas: UIView {
     private func renderEnvironment() -> AMLLRenderEnvironment {
         let safeArea = safeAreaInsets
         let traits = traitCollection
-        let fontMetrics = UIFontMetrics(forTextStyle: .title1)
         let typeScale = UIFontMetrics(forTextStyle: .body).scaledValue(for: 1)
         let screen = window?.screen
         let direction = effectiveUserInterfaceLayoutDirection == .rightToLeft ? "rtl" : "ltr"
@@ -154,10 +153,10 @@ final class AMLLNativeCanvas: UIView {
         var environment = AMLLRenderEnvironment(width: bounds.width,
                                                 height: bounds.height,
                                                 screenWidth: Double(window?.bounds.width ?? bounds.width),
-                                                fontSize: Double(fontMetrics.scaledValue(
-                                                    for: configuration.resolvedFontSize(width: bounds.width, height: bounds.height),
-                                                    compatibleWith: traits
-                                                )))
+                                                // `resolvedPointSize` already applies Dynamic Type once.
+                                                // Keep the engine's spacing metrics in the same unit as
+                                                // the Core Text layout instead of scaling them again.
+                                                fontSize: Double(resolvedPointSize))
         environment.safeArea = safe
         environment.displayScale = Double(screen?.scale ?? 1)
         environment.maximumFPS = screen?.maximumFramesPerSecond ?? 60
@@ -195,7 +194,10 @@ final class AMLLNativeCanvas: UIView {
         let line = display!.lines[index]
         let baseSize = resolvedPointSize
         let size = max(10, baseSize * (line.isBackground ? 0.7 : 1))
-        let font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: size, weight: configuration.bold ? .semibold : .regular), compatibleWith: traitCollection)
+        // `size` is already Dynamic Type adjusted by `resolvedPointSize`.
+        // Applying UIFontMetrics.scaledFont here would scale the same value a
+        // second time at accessibility text sizes.
+        let font = UIFont.systemFont(ofSize: size, weight: configuration.bold ? .semibold : .regular)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
         return AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration)
     }

@@ -115,4 +115,18 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         configuration.sizePreset = .large
         XCTAssertEqual(configuration.resolvedFontSize(width: 402, height: 700), 42, accuracy: 0.000_001)
     }
+
+    func testLegacyRubyIsRenderedOnlyAsRubyAndNotDuplicatedAsRomanization() {
+        let line = LyricLine(
+            id: "ruby",
+            text: "漢",
+            start: 0,
+            end: 2,
+            words: [.init(text: "漢", start: 0, end: 2, ruby: "かん")],
+            precision: .word
+        )
+        var configuration = LyricsRenderConfiguration()
+        configuration.translation = false
+        XCTAssertTrue(configuration.auxiliaryText(for: line).isEmpty)
+    }
 }

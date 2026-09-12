@@ -218,6 +218,7 @@ final class AMLLNativeCanvas: UIView {
             view.bounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
             view.layer.position = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
             view.transform = CGAffineTransform(scaleX: row.scale, y: row.scale)
+            view.setCanSeek(canSeek)
             view.apply(row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
         }
         if let interlude = state.interlude,
@@ -444,6 +445,15 @@ private final class AMLLNativeRow: UIView {
 
     override func accessibilityActivate() -> Bool {
         onSeek?(); return onSeek != nil
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        bounds.insetBy(dx: -22, dy: -22).contains(point) || super.point(inside: point, with: event)
+    }
+
+    func setCanSeek(_ value: Bool) {
+        accessibilityTraits = value ? .button : []
+        accessibilityHint = value ? NSLocalizedString("render.seekHint", comment: "") : nil
     }
 
     @objc private func tap() {

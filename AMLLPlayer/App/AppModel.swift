@@ -240,6 +240,7 @@ final class AppModel {
     }
 
     func seek(to position: TimeInterval) async {
+        guard !isPerformingAction else { return }
         lyricsSeekRevision &+= 1
         await perform {
             try await environment.spotifyPlayback.seek(to: position)

@@ -39,6 +39,7 @@ struct FullscreenLyricsPlayer: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var search = false
     @State private var devices = false
@@ -55,12 +56,16 @@ struct FullscreenLyricsPlayer: View {
             GeometryReader { geometry in
                 ZStack {
                     if model.renderPreferences.profile == .amll {
-                        AMLLMeshBackground(
-                            artworkURL: model.playbackSnapshot?.item?.artworkURL,
-                            active: pageVisible && scenePhase == .active && !search && !devices,
-                            blur: configuration.backgroundBlur
-                        )
-                        Color.black.opacity(0.16)
+                        if reduceTransparency {
+                            Color(white: 0.08)
+                        } else {
+                            AMLLMeshBackground(
+                                artworkURL: model.playbackSnapshot?.item?.artworkURL,
+                                active: pageVisible && scenePhase == .active && !search && !devices,
+                                blur: configuration.backgroundBlur
+                            )
+                            Color.black.opacity(0.16)
+                        }
                     } else {
                         AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
                                                blur: configuration.backgroundBlur)

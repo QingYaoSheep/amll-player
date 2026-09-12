@@ -36,6 +36,19 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertGreaterThan(abs(movement[0] - movement[3]), 0.01)
     }
 
+    func testNonSpringLineMotionUsesAMLLTransitionCurve() {
+        var transition = AMLLSourceTransition(0)
+        transition.setTarget(100)
+        transition.update(0)
+        XCTAssertEqual(transition.value, 0, accuracy: 0.000_001)
+        transition.update(0.16)
+        XCTAssertGreaterThan(transition.value, 80)
+        XCTAssertLessThan(transition.value, 100)
+        transition.update(0.16)
+        XCTAssertEqual(transition.value, 100, accuracy: 0.000_001)
+        XCTAssertTrue(transition.arrived)
+    }
+
     @MainActor
     func testCoreTextPreservesEmojiCombiningMarksAndBidirectionalText() {
         let text = "مرحبا 👩‍👩‍👦 é 世界"

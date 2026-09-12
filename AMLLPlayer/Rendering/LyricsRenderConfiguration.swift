@@ -190,7 +190,7 @@ final class LyricsRenderPreferences {
             profile = stored.profile
             if stored.profile == .amll {
                 let baseline = LyricsRenderConfiguration.amllDefault
-                configuration = baseline
+                configuration = stored.configuration.validated()
                 migratedCustomConfiguration = stored.migratedCustomConfiguration?.validated()
                     ?? (stored.configuration == baseline ? nil : stored.configuration.validated())
             } else {

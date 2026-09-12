@@ -94,7 +94,37 @@ final class LyricsRenderPreferencesTests: XCTestCase {
 
         let preferences = LyricsRenderPreferences(defaults: defaults)
         XCTAssertEqual(preferences.profile, .amll)
-        XCTAssertEqual(preferences.configuration, .amllDefault)
+        XCTAssertEqual(preferences.configuration, LyricsRenderConfiguration())
+    }
+
+    func testAMLLTypographySurvivesRepeatedRelaunches() throws {
+        let name = "render-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        preferences.configuration.fontSize = 32
+        preferences.configuration.sizePreset = nil
+        preferences.configuration.bold = false
+        for _ in 0 ..< 3 {
+            let restored = LyricsRenderPreferences(defaults: defaults)
+            XCTAssertEqual(restored.profile, .amll)
+            XCTAssertNil(restored.configuration.sizePreset)
+            XCTAssertFalse(restored.configuration.bold)
+            XCTAssertEqual(restored.configuration.resolvedFontSize(width: 402, height: 874), 32)
+            restored.configuration.translation.toggle()
+        }
+    }
+
+    func testAMLLResponsivePresetSurvivesRelaunch() throws {
+        let name = "render-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        preferences.configuration.sizePreset = .small
+        preferences.configuration.bold = false
+        let restored = LyricsRenderPreferences(defaults: defaults)
+        XCTAssertEqual(restored.configuration.sizePreset, .small)
+        XCTAssertFalse(restored.configuration.bold)
     }
 
     func testCreditModesSelectTypesAndOnlyPreferredModesFallBack() {

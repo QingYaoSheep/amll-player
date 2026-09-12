@@ -60,6 +60,8 @@ final class AMLLNativeCanvas: UIView {
     private var layouts: [Int: AMLLCoreTextLayout] = [:]
     private var heights: [Double] = []
     private var rowViews: [Int: AMLLNativeRow] = [:]
+    private var retainedRows: [Int: AMLLNativeRow] = [:]
+    private var retainedOrder: [Int] = []
     private var link: CADisplayLink?
     private var linkTarget: LinkTarget?
     private var lastTick = 0.0
@@ -129,6 +131,7 @@ final class AMLLNativeCanvas: UIView {
             dirty = false; measuredSize = bounds.size
             layouts.removeAll()
             rowViews.values.forEach { $0.removeFromSuperview() }; rowViews.removeAll()
+            retainedRows.removeAll(); retainedOrder.removeAll()
             heights = display.lines.indices.map { makeLayout($0).size.height }
             layouts.removeAll()
             let environment = renderEnvironment()
@@ -197,7 +200,7 @@ final class AMLLNativeCanvas: UIView {
         // `size` is already Dynamic Type adjusted by `resolvedPointSize`.
         // Applying UIFontMetrics.scaledFont here would scale the same value a
         // second time at accessibility text sizes.
-        let font = UIFont.systemFont(ofSize: size, weight: configuration.bold ? .semibold : .regular)
+        let font = UIFont.systemFont(ofSize: size, weight: configuration.bold || traitCollection.legibilityWeight == .bold ? .bold : .regular)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
         return AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration)
     }
@@ -213,13 +216,26 @@ final class AMLLNativeCanvas: UIView {
         let visible = state.rows.filter { !$0.hidden && $0.y + heights[$0.lineIndex] >= -bounds.height * 0.5 && $0.y <= bounds.height * 1.5 }
         let indexes = Set(visible.map(\.lineIndex))
         for index in Array(rowViews.keys) where !indexes.contains(index) {
-            rowViews.removeValue(forKey: index)?.removeFromSuperview(); layouts.removeValue(forKey: index)
+            if let view = rowViews.removeValue(forKey: index) {
+                view.removeFromSuperview()
+                retainedRows[index] = view
+                retainedOrder.append(index)
+            }
+        }
+        while retainedOrder.count > 12 {
+            let index = retainedOrder.removeFirst()
+            retainedRows.removeValue(forKey: index)
+            layouts.removeValue(forKey: index)
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for row in visible {
             let view: AMLLNativeRow
             if let existing = rowViews[row.lineIndex] {
                 view = existing
+            } else if let retained = retainedRows.removeValue(forKey: row.lineIndex) {
+                retainedOrder.removeAll { $0 == row.lineIndex }
+                view = retained
+                rowViews[row.lineIndex] = view; addSubview(view)
             } else {
                 let layout = makeLayout(row.lineIndex)
                 layouts[row.lineIndex] = layout
@@ -361,7 +377,8 @@ final class AMLLNativeCanvas: UIView {
             engine?.handle(.endBrowsing(velocity: 0))
         default: break
         }
-        draw(delta: 0)
+        // The display link consumes gesture state once per frame. Drawing
+        // here as well doubles compositing work during touch tracking.
     }
 }
 
@@ -393,14 +410,11 @@ private final class AMLLNativeRow: UIView {
     private var characters: [CharacterPiece] = []
     private let maskWords: [AMLLWordMask.Word]
     private let sharpImage: UIImage
-    private let nearBlurImage: UIImage
-    private let farBlurImage: UIImage
     private let sharpRubyImage: UIImage
-    private let nearBlurRubyImage: UIImage
-    private let farBlurRubyImage: UIImage
     private let sharpAuxiliaryImage: UIImage
-    private let nearBlurAuxiliaryImage: UIImage
-    private let farBlurAuxiliaryImage: UIImage
+    private let nearBlur = CALayer()
+    private let farBlur = CALayer()
+    private var lastCanSeek: Bool?
     var onSeek: (() -> Void)?
 
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat) {
@@ -411,19 +425,22 @@ private final class AMLLNativeRow: UIView {
         // piece must not sample a ruby or translation row from the full-line
         // bitmap when its contentsRect is animated independently.
         sharpImage = layout.raster(scale: scale, auxiliary: false, ruby: false)
-        nearBlurImage = layout.raster(scale: scale, auxiliary: false, ruby: false, blurRadius: 2)
-        farBlurImage = layout.raster(scale: scale, auxiliary: false, ruby: false, blurRadius: 5)
         sharpRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true)
-        nearBlurRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true, blurRadius: 2)
-        farBlurRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true, blurRadius: 5)
         sharpAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, ruby: false)
-        nearBlurAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, ruby: false, blurRadius: 2)
-        farBlurAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, ruby: false, blurRadius: 5)
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         base.contents = sharpImage.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
         ruby.contents = sharpRubyImage.cgImage; ruby.contentsScale = scale; ruby.frame = bounds; layer.addSublayer(ruby)
         auxiliary.contents = sharpAuxiliaryImage.cgImage
         auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
+        // Blur the entire composed text, including annotations, before any
+        // glyph cropping. Never feed blurred pixels through word masks.
+        for (blurLayer, radius) in [(nearBlur, CGFloat(2)), (farBlur, CGFloat(5))] {
+            blurLayer.contents = layout.raster(scale: min(scale, 1), blurRadius: radius).cgImage
+            blurLayer.contentsScale = min(scale, 1)
+            blurLayer.frame = bounds
+            blurLayer.opacity = 0
+            layer.addSublayer(blurLayer)
+        }
         var consumed: [Int: Double] = [:]
         for fragment in layout.fragments where fragment.rect.width > 0 {
             guard let maskIndex = indexes.firstIndex(of: fragment.wordIndex) else { continue }
@@ -502,6 +519,8 @@ private final class AMLLNativeRow: UIView {
     }
 
     func setCanSeek(_ value: Bool) {
+        guard lastCanSeek != value else { return }
+        lastCanSeek = value
         accessibilityTraits = value ? .button : []
         accessibilityHint = value ? NSLocalizedString("render.seekHint", comment: "") : nil
         accessibilityCustomActions = value ? [
@@ -537,27 +556,28 @@ private final class AMLLNativeRow: UIView {
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
         accessibilityConfiguration = configuration
         let bright = row.brightAlpha, dark = row.darkAlpha
-        let image: UIImage
-        let rubyImage: UIImage
-        let auxiliaryImage: UIImage
-        switch row.blur {
-        case ..<0.5:
-            image = sharpImage; rubyImage = sharpRubyImage; auxiliaryImage = sharpAuxiliaryImage
-        case ..<3.5:
-            image = nearBlurImage; rubyImage = nearBlurRubyImage; auxiliaryImage = nearBlurAuxiliaryImage
-        default:
-            image = farBlurImage; rubyImage = farBlurRubyImage; auxiliaryImage = farBlurAuxiliaryImage
-        }
-        base.contents = image.cgImage
-        ruby.contents = rubyImage.cgImage
-        auxiliary.contents = auxiliaryImage.cgImage
+        let radius = min(5, max(0, row.blur))
+        let sharpWeight = Float(max(0, 1 - radius / 2))
+        nearBlur.opacity = Float(radius <= 2 ? radius / 2 : (5 - radius) / 3)
+        farBlur.opacity = Float(max(0, (radius - 2) / 3))
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
-        ruby.opacity = 1
-        base.opacity = Float(words.isEmpty ? 1 : dark)
+        ruby.opacity = sharpWeight
+        auxiliary.opacity = sharpWeight
+        base.opacity = Float(words.isEmpty ? 1 : dark) * sharpWeight
+        // Fully blurred inactive rows need only two whole-line layers.
+        // Their word clocks remain engine-owned and catch up when sharp.
+        for entry in words {
+            entry.layer.opacity = sharpWeight
+        }
+        for entry in characters {
+            entry.layer.opacity = sharpWeight
+        }
+        if sharpWeight == 0 {
+            return
+        }
         let auxiliaryText = configuration.auxiliaryText(for: line)
         accessibilityLabel = ([line.text] + auxiliaryText).filter { !$0.isEmpty }.joined(separator: ", ")
         for entry in words {
-            entry.layer.contents = image.cgImage
             guard !entry.layer.isHidden else { continue }
             let elapsed = row.wordClock.floatElapsed(wordStart: entry.fragment.word.start - line.start,
                                                      duration: entry.fragment.word.end - entry.fragment.word.start)
@@ -576,10 +596,9 @@ private final class AMLLNativeRow: UIView {
             // changes the feather slope when a word enters or leaves the mask.
             entry.mask.startPoint = CGPoint(x: entry.fragment.rtl ? 1 - start : start, y: 0.5)
             entry.mask.endPoint = CGPoint(x: entry.fragment.rtl ? 1 - end : end, y: 0.5)
-            entry.layer.opacity = 1
+            entry.layer.opacity = sharpWeight
         }
         for entry in characters {
-            entry.layer.contents = image.cgImage
             let word = entry.fragment.word
             let duration = max(0.001, entry.fragment.range.length > 0
                 ? word.end - word.start : 0.001)
@@ -608,7 +627,7 @@ private final class AMLLNativeRow: UIView {
             entry.mask.locations = [0, 1]
             entry.mask.startPoint = CGPoint(x: entry.fragment.rtl ? 1 - start : start, y: 0.5)
             entry.mask.endPoint = CGPoint(x: entry.fragment.rtl ? 1 - end : end, y: 0.5)
-            entry.layer.opacity = 1
+            entry.layer.opacity = sharpWeight
         }
     }
 }

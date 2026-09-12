@@ -277,6 +277,8 @@ final class AMLLCoreTextLayout {
     }
 
     /// nil draws both layers for inspection; the renderer composites auxiliary text separately.
+    private static let rasterContext = CIContext(options: nil)
+
     func raster(scale: CGFloat, auxiliary: Bool? = nil, ruby: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
@@ -299,7 +301,7 @@ final class AMLLCoreTextLayout {
         guard blurRadius > 0, let input = CIImage(image: sharp) else { return sharp }
         let extent = input.extent
         let filtered = input.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale])
-        guard let output = CIContext(options: nil).createCGImage(filtered, from: extent) else { return sharp }
+        guard let output = Self.rasterContext.createCGImage(filtered, from: extent) else { return sharp }
         return UIImage(cgImage: output, scale: scale, orientation: .up)
     }
 }

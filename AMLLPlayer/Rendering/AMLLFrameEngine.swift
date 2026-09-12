@@ -515,7 +515,7 @@ struct AMLLFrameEngine {
                 ? 0.0001 : (hasBuffered ? 0.85 : (nonDynamic ? 0.2 : 1))
             var blur = 0.0
             if environment.enableBlur, !environment.reduceMotion, !touching, abs(scrollVelocity) <= 0.05, !active[index] {
-                blur = index < timeline.focus ? Double(2 + timeline.focus - index) : Double(1 + abs(index - max(timeline.focus, latest)))
+                blur = index < timeline.focus ? Double(2 + timeline.focus - index) : Double(index - timeline.focus)
                 if environment.screenWidth <= 1024 {
                     blur *= 0.8
                 }

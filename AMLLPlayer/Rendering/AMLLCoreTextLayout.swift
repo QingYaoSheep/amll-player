@@ -74,6 +74,32 @@ final class AMLLCoreTextLayout {
         }.sorted { $0.range.location < $1.range.location }
     }
 
+    /// `LineBalancer` receives Intl.Segmenter word nodes for non-dynamic
+    /// lines. NLTokenizer supplies the same word boundaries on Apple
+    /// platforms; the gaps are emitted as independent whitespace children so
+    /// balanced breaks never delete or collapse the original text.
+    private static func staticSegments(_ text: String) -> [String] {
+        guard !text.isEmpty else { return [] }
+        let nsText = text as NSString
+        let tokenizer = NLTokenizer(unit: .word)
+        tokenizer.string = text
+        var result: [String] = []
+        var cursor = 0
+        tokenizer.enumerateTokens(in: text.startIndex ..< text.endIndex) { range, _ in
+            let token = NSRange(range, in: text)
+            if token.location > cursor {
+                result.append(nsText.substring(with: NSRange(location: cursor, length: token.location - cursor)))
+            }
+            result.append(nsText.substring(with: token))
+            cursor = token.location + token.length
+            return true
+        }
+        if cursor < nsText.length {
+            result.append(nsText.substring(from: cursor))
+        }
+        return result.isEmpty ? [text] : result
+    }
+
     let size: CGSize
     let fragments: [WordFragment]
     let characterFragments: [CharacterFragment]
@@ -88,8 +114,10 @@ final class AMLLCoreTextLayout {
         let chunks: [[LyricWord]] = if line.precision == .word {
             AMLLWordSegmentation.chunks(line.words)
         } else {
-            // Static lines have no timed word fragments.
-            line.text.map { [.init(text: String($0), start: line.start, end: line.end)] }
+            // Static lines have no timed word fragments, but their line-break
+            // children still follow source word segmentation rather than one
+            // Swift grapheme per child.
+            Self.staticSegments(line.text).map { [.init(text: $0, start: line.start, end: line.end)] }
         }
         let texts = chunks.map { $0.map(\.text).joined() }
         let timedWords = chunks.flatMap(\.self)

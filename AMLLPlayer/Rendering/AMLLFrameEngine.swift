@@ -525,7 +525,10 @@ struct AMLLFrameEngine {
             let slide = active[index] || !playing ? 0 : hiddenSlide
             let mainScale = !active[index] && playing && environment.enableScale ? 97.0 : 100
             let bgScale = !active[index] && playing && environment.enableScale ? 75.0 : 100
-            let immediate = force || seeking || firstFrame
+            // Reduce Motion is a source-defined accessibility variant: it
+            // keeps the AMLL geometry but resolves every transition in the
+            // same frame instead of leaving opacity/blur on a stale value.
+            let immediate = force || seeking || firstFrame || environment.reduceMotion
             if immediate {
                 motions[index].y.setPosition(y)
                 motions[index].slide.setPosition(slide)

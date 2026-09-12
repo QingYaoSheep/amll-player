@@ -68,6 +68,26 @@ final class AMLLNativeEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testSegmentedProviderWordKeepsAllVisualAtomsInNativeRowData() {
+        let line = LyricLine(
+            id: "segmented",
+            text: "Held note",
+            start: 0,
+            end: 4,
+            words: [.init(text: "Held note", start: 0, end: 4)],
+            precision: .word
+        )
+        let layout = AMLLCoreTextLayout(
+            line: line,
+            width: 320,
+            font: .systemFont(ofSize: 32, weight: .semibold),
+            configuration: .init()
+        )
+        XCTAssertGreaterThanOrEqual(layout.fragments.count, 2)
+        XCTAssertTrue(layout.characterFragments.allSatisfy { $0.word.text != "" })
+    }
+
+    @MainActor
     func testCoreTextPreservesEmojiCombiningMarksAndBidirectionalText() {
         let text = "مرحبا 👩‍👩‍👦 é 世界"
         let line = LyricLine(id: "unicode", text: text, start: 0, end: 4,

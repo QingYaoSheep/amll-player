@@ -18,7 +18,7 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         XCTAssertTrue(restored.configuration.remainingTime)
         XCTAssertEqual(restored.profile, .custom)
         restored.restoreAMLLDefaults()
-        XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, .init())
+        XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, .amllDefault)
         XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).profile, .amll)
     }
 
@@ -30,7 +30,7 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         preferences.activate(.custom)
         preferences.configuration.fontSize = 41
         preferences.activate(.amll)
-        XCTAssertEqual(preferences.configuration, .init())
+        XCTAssertEqual(preferences.configuration, .amllDefault)
         preferences.activate(.appleMusic26)
         XCTAssertEqual(preferences.configuration, .init())
         preferences.activate(.custom)

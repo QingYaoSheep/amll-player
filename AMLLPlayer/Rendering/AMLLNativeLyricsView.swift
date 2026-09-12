@@ -167,7 +167,7 @@ final class AMLLNativeCanvas: UIView {
         environment.voiceOver = UIAccessibility.isVoiceOverRunning
         environment.enableSpring = configuration.enableSpring
         environment.enableScale = configuration.enableScale
-        environment.enableBlur = configuration.blurInactive && !reduceTransparencyEnabled
+        environment.enableBlur = configuration.blurInactive && !environment.reduceTransparency
         environment.hidePassedLines = configuration.hidePassedLines
         environment.alwaysPostpositionBackground = configuration.alwaysPostpositionBackground
         environment.advance = configuration.advance

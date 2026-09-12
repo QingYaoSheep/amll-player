@@ -97,6 +97,15 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var remainingTime = false
     var backgroundBlur: Double = 40
 
+    /// AMLL's source player chooses the medium responsive preset by default;
+    /// the explicit point size remains as a compatibility fallback for the
+    /// legacy renderer and hand-authored fixtures.
+    static var amllDefault: Self {
+        var value = Self()
+        value.sizePreset = .medium
+        return value
+    }
+
     func auxiliaryText(for line: LyricLine) -> [String] {
         let translationText = translation ? line.translation : ""
         let wordRomanization = line.words.compactMap(\.romanWord).joined(separator: " ")
@@ -169,9 +178,10 @@ final class LyricsRenderPreferences {
         {
             profile = stored.profile
             if stored.profile == .appleMusic26 || stored.profile == .amll {
-                configuration = .init()
+                let baseline = stored.profile == .amll ? LyricsRenderConfiguration.amllDefault : .init()
+                configuration = baseline
                 migratedCustomConfiguration = stored.migratedCustomConfiguration?.validated()
-                    ?? (stored.configuration == .init() ? nil : stored.configuration.validated())
+                    ?? (stored.configuration == baseline ? nil : stored.configuration.validated())
             } else {
                 configuration = stored.configuration.validated()
                 migratedCustomConfiguration = configuration
@@ -216,9 +226,11 @@ final class LyricsRenderPreferences {
         }
         switchingProfile = true
         profile = newProfile
-        configuration = newProfile == .appleMusic26 || newProfile == .amll
-            ? .init()
-            : (migratedCustomConfiguration ?? .init())
+        configuration = switch newProfile {
+        case .amll: .amllDefault
+        case .appleMusic26: .init()
+        case .custom: migratedCustomConfiguration ?? .init()
+        }
         switchingProfile = false
         persist()
     }
@@ -226,7 +238,7 @@ final class LyricsRenderPreferences {
     func restoreAMLLDefaults() {
         switchingProfile = true
         profile = .amll
-        configuration = .init()
+        configuration = .amllDefault
         switchingProfile = false
         persist()
     }

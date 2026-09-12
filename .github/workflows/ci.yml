@@ -40,12 +40,17 @@ jobs:
           xcrun swift-format lint --recursive
           AMLLPlayer AMLLPlayerTests AMLLPlayerUITests
 
+      - name: Prepare reference simulators
+        run: |
+          node --test Scripts/prepare-ci-simulators.test.cjs
+          node Scripts/prepare-ci-simulators.cjs
+
       - name: Test on iPhone
         run: >-
           xcodebuild test
           -project AMLLPlayer.xcodeproj
           -scheme AMLLPlayer
-          -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest'
+          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -resultBundlePath build/Plan3-tests.xcresult
           CODE_SIGNING_ALLOWED=NO
 
@@ -79,7 +84,7 @@ jobs:
           xcodebuild build
           -project AMLLPlayer.xcodeproj
           -scheme AMLLPlayer
-          -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4),OS=latest'
+          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
           CODE_SIGNING_ALLOWED=NO
 
       - name: Create unsigned archive

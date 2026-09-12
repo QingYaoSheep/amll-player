@@ -9,6 +9,7 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         let decoded = try JSONDecoder().decode(LyricsRenderConfiguration.self, from: oldData)
         XCTAssertNil(decoded.horizontalPadding)
         XCTAssertNil(decoded.auxiliaryScale)
+        XCTAssertFalse((decoded.hdr ?? .init()).enabled)
         let name = "appearance-tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
@@ -19,6 +20,7 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         preferences.configuration.backgroundDimming = 0.4
         preferences.configuration.artworkCornerRadius = 20
         preferences.configuration.showMetadata = false
+        preferences.configuration.hdr = .init(enabled: true)
         XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, preferences.configuration)
         var invalid = original
         invalid.horizontalPadding = 999

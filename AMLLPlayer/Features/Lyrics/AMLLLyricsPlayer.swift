@@ -10,6 +10,7 @@ struct AMLLLyricsPlayer: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var search = false
     @State private var devices = false
     @State private var browsing = false
@@ -195,12 +196,15 @@ struct AMLLLyricsPlayer: View {
             VStack(alignment: .leading, spacing: 2) {
                 if configuration.showTitle {
                     Text(item.title).font(.system(size: 17, weight: .bold)).lineLimit(1)
+                        .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showArtist {
                     Text(item.artistLine).font(.system(size: 16)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
+                        .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showAlbum, let album = item.albumTitle {
                     Text(album).font(.system(size: 14)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
+                        .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if model.lyrics.selection.candidate != nil {
                     Text("lyrics.match.manual")
@@ -221,12 +225,15 @@ struct AMLLLyricsPlayer: View {
             VStack(alignment: .leading, spacing: 2) {
                 if configuration.showTitle {
                     Text(item.title).font(.system(size: 23, weight: .bold)).lineLimit(1)
+                        .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showArtist {
                     Text(item.artistLine).font(.system(size: 20)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
+                        .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showAlbum, let album = item.albumTitle {
                     Text(album).font(.system(size: 16)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                        .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
             }
             Spacer(minLength: 8)

@@ -113,6 +113,8 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var backgroundDimming: Double?
     var artworkCornerRadius: Double?
     var showMetadata: Bool?
+    /// Absent in older storage; upgrading must not enable extended brightness.
+    var hdr: LyricsHDRConfiguration?
 
     /// AMLL's source player chooses the medium responsive preset by default;
     /// the explicit point size remains as a compatibility fallback for the

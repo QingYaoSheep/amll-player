@@ -4,6 +4,31 @@ import UIKit
 import XCTest
 
 final class AMLLNativeEngineTests: XCTestCase {
+    func testReleaseCoastsAndKeepsBlurOffUntilNextLyric() {
+        let lines = (0 ..< 10).map { index in
+            LyricLine(id: String(index), text: "Line", start: Double(index * 10), end: Double(index * 10 + 9))
+        }
+        var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines),
+                                     environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32),
+                                     heights: Array(repeating: 60, count: 10))
+        _ = engine.render(.init(position: 1, playing: true), delta: 0)
+        engine.handle(.beginBrowsing)
+        engine.handle(.browseBy(40))
+        let drag = engine.render(.init(position: 1, playing: true), delta: 0)
+        XCTAssertTrue(drag.rows.allSatisfy { $0.blur == 0 })
+        engine.handle(.endBrowsing(velocity: -600))
+        let coast = engine.render(.init(position: 1.1, playing: true), delta: 0.1)
+        XCTAssertLessThan(coast.rows[0].y, drag.rows[0].y)
+        XCTAssertLessThan(drag.rows[0].y - coast.rows[0].y, 96)
+        let resting = engine.render(.init(position: 8, playing: true), delta: 6.9)
+        XCTAssertTrue(resting.browsing)
+        XCTAssertTrue(resting.rows.allSatisfy { $0.blur == 0 })
+        _ = engine.render(.init(position: 10, playing: true), delta: 0)
+        let following = engine.render(.init(position: 10.5, playing: true), delta: 0.5)
+        XCTAssertFalse(following.browsing)
+        XCTAssertTrue(following.rows.contains { $0.blur > 0 })
+    }
+
     func testClockDiscontinuityDoesNotPretendToBeASeek() {
         let lines = (0 ..< 4).map { index in
             LyricLine(id: String(index), text: "Line \(index)", start: Double(index * 5), end: Double(index * 5 + 3))

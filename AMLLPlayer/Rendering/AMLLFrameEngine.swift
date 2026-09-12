@@ -308,9 +308,11 @@ struct AMLLFrameEngine {
         case let .browseBy(delta):
             guard delta.isFinite else { return }
             scrollOffset = min(scrollMaximum, max(scrollMinimum, scrollOffset + delta))
-        case .endBrowsing:
+        case let .endBrowsing(velocity):
             touching = false
-            scrollVelocity = 0
+            // A short, bounded coast after release. Units are points/ms;
+            // the decay below integrates independently of display refresh.
+            scrollVelocity = velocity.isFinite ? min(0.8, max(-0.8, velocity / 1000)) : 0
             let releasedTime = (previousInput?.position ?? 0) - (previousInput?.offset ?? 0)
             resumeAtLineStart = document.groups.map { document.lines[$0.main].start }
                 .filter { $0 > releasedTime }.min()
@@ -337,9 +339,12 @@ struct AMLLFrameEngine {
             scrollOffset = 0; scrollVelocity = 0; touching = false; browsing = false
             resumeAtLineStart = nil
         }
-        if !touching, abs(scrollVelocity) > 0.05, elapsed > 0, elapsed <= 0.1 {
-            scrollOffset = min(scrollMaximum, max(scrollMinimum, scrollOffset - scrollVelocity * elapsed * 1000))
-            scrollVelocity *= pow(0.95, elapsed * 1000 / 16)
+        if browsing, !touching, abs(scrollVelocity) > 0.001, elapsed > 0 {
+            let decay = exp(-elapsed / 0.12)
+            let distance = scrollVelocity * 120 * (1 - decay)
+            let nextOffset = min(scrollMaximum, max(scrollMinimum, scrollOffset - distance))
+            scrollVelocity = nextOffset == scrollOffset ? 0 : scrollVelocity * decay
+            scrollOffset = nextOffset
             dirty = true
         }
         if browsing, !touching, input.playing, let start = resumeAtLineStart, time / 1000 >= start {
@@ -528,7 +533,7 @@ struct AMLLFrameEngine {
             motions[index].opacity = environment.hidePassedLines && playing && index < (interlude.map { $0.anchor + 1 } ?? timeline.focus)
                 ? 0.0001 : (hasBuffered ? 0.85 : (nonDynamic ? 0.2 : 1))
             var blur = 0.0
-            if environment.enableBlur, !environment.reduceMotion, !touching, abs(scrollVelocity) <= 0.05, !active[index] {
+            if environment.enableBlur, !environment.reduceMotion, !browsing, !active[index] {
                 blur = index < timeline.focus ? Double(2 + timeline.focus - index) : Double(index - timeline.focus)
                 if environment.screenWidth <= 1024 {
                     blur *= 0.8

@@ -207,8 +207,10 @@ final class LyricsRenderPreferences {
         if let mergedData = try? JSONSerialization.data(withJSONObject: merged),
            var decoded = try? JSONDecoder().decode(LyricsRenderConfiguration.self, from: mergedData)
         {
-            // The replacement plan intentionally activates the new Apple Music layout for every upgrade.
-            // Preserve the old values as an opt-in custom-layout backup without applying them automatically.
+            // Preserve the previous values as an opt-in custom-layout backup.
+            // Keep the existing compatibility profile active until the native
+            // AMLL page has passed device sign-off; migration must not silently
+            // change the user's page geometry.
             if values["gradientWidth"] != nil {
                 decoded.gradientWidth /= max(1, decoded.fontSize)
             }

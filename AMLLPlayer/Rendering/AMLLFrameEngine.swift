@@ -49,6 +49,7 @@ struct AMLLFrameState: Codable, Sendable {
         var scale: Double
         var brightAlpha: Double
         var darkAlpha: Double
+        var wordClock: AMLLWordAnimationClock
         var opacity: Double
         var blur: Double
         var active: Bool
@@ -82,6 +83,8 @@ struct AMLLFrameEngine {
         var backgroundScale = AMLLSourceSpring(100)
         var mainAlpha = AMLLMaskAlpha()
         var backgroundAlpha = AMLLMaskAlpha()
+        var mainWords = AMLLWordAnimationClock()
+        var backgroundWords = AMLLWordAnimationClock()
         var active = false
         var opacity = 1.0
         var blur = 0.0
@@ -164,7 +167,25 @@ struct AMLLFrameEngine {
             handle(.resumeFollowing)
         }
         let oldFocus = timeline.focus
+        let oldHot = timeline.hot, oldBuffered = timeline.buffered
         let layout = timeline.update(time: time, groups: document.timings, seeking: seeking, hasBottomContent: false)
+        for index in motions.indices {
+            motions[index].mainWords.advance(elapsed, playing: previousInput?.playing ?? false)
+            motions[index].backgroundWords.advance(elapsed, playing: previousInput?.playing ?? false)
+            let disabled = seeking
+                ? !timeline.hot.contains(index) && (oldHot.contains(index) || oldBuffered.contains(index))
+                : oldBuffered.contains(index) && !timeline.buffered.contains(index)
+            if disabled {
+                motions[index].mainWords.disable(); motions[index].backgroundWords.disable()
+            }
+            if timeline.hot.contains(index), seeking || !oldHot.contains(index) {
+                let group = document.groups[index]
+                motions[index].mainWords.enable(at: time / 1000 - document.lines[group.main].start)
+                if let background = group.background {
+                    motions[index].backgroundWords.enable(at: time / 1000 - document.lines[background].start)
+                }
+            }
+        }
         let candidate = currentInterlude(time: time)
         let changedInterlude = candidate?.anchor != interlude?.anchor
         if changedInterlude {
@@ -209,13 +230,14 @@ struct AMLLFrameEngine {
             let y = (motion.y.position * 10).rounded() / 10
             rows.append(.init(lineIndex: group.main, groupIndex: index, y: y + padding + bgAdvance,
                               scale: motion.mainScale.position / 100, brightAlpha: motion.mainAlpha.bright,
-                              darkAlpha: motion.mainAlpha.dark, opacity: motion.opacity,
+                              darkAlpha: motion.mainAlpha.dark, wordClock: motion.mainWords, opacity: motion.opacity,
                               blur: min(5, motion.blur), active: motion.active, hidden: false))
             if let background = group.background {
                 let top = bgFirst ? y + padding - bgHeight * (1 - progress) : y + padding + height(group.main) + environment.fontSize * 0.3
                 rows.append(.init(lineIndex: background, groupIndex: index, y: top + bgHeight * motion.slide.position / 100,
                                   scale: motion.backgroundScale.position / 100 * (0.8 + progress * 0.2),
                                   brightAlpha: motion.backgroundAlpha.bright, darkAlpha: motion.backgroundAlpha.dark,
+                                  wordClock: motion.backgroundWords,
                                   opacity: motion.opacity * (backgroundVisible ? 1 : 0), blur: min(5, motion.blur),
                                   active: motion.active, hidden: !motion.active && progress == 0))
             }

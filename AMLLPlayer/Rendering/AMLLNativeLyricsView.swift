@@ -148,7 +148,7 @@ final class AMLLNativeCanvas: UIView {
         }
         let line = display!.lines[index]
         let size = max(10, configuration.fontSize * (line.isBackground ? 0.7 : 1))
-        let font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: size, weight: .semibold), compatibleWith: traitCollection)
+        let font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: size, weight: configuration.bold ? .semibold : .regular), compatibleWith: traitCollection)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
         return AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration)
     }
@@ -184,7 +184,7 @@ final class AMLLNativeCanvas: UIView {
             view.bounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
             view.layer.position = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
             view.transform = CGAffineTransform(scaleX: row.scale, y: row.scale)
-            view.apply(row: row, time: state.lyricTime, configuration: configuration, delta: delta)
+            view.apply(row: row, time: state.lyricTime, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
         }
         if let interlude = state.interlude,
            let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
@@ -352,11 +352,16 @@ private final class AMLLNativeRow: UIView {
         onSeek?()
     }
 
-    func apply(row: AMLLFrameState.Row, time: Double, configuration: LyricsRenderConfiguration, delta _: Double) {
+    func apply(row: AMLLFrameState.Row, time: Double, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
         let bright = row.brightAlpha, dark = row.darkAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
         base.opacity = Float(words.isEmpty ? 1 : dark)
         for entry in words {
+            let elapsed = row.wordClock.floatElapsed(wordStart: entry.fragment.word.start - line.start,
+                                                     duration: entry.fragment.word.end - entry.fragment.word.start)
+            let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: entry.fragment.word.end - entry.fragment.word.start,
+                                                          isBackground: line.isBackground)
+            entry.layer.setAffineTransform(CGAffineTransform(translationX: 0, y: motionEnabled ? float * textLayout.font.pointSize : 0))
             let feather = textLayout.font.lineHeight * configuration.gradientWidth
             let edge = AMLLWordMask.edge(time: time, index: entry.maskIndex, words: maskWords, feather: feather) - entry.advance
             let width = max(1, entry.fragment.rect.width)

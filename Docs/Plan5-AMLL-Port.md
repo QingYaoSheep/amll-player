@@ -20,7 +20,7 @@ Paths below are relative to the pinned core/react-full `src` directories extract
 | DOM `generateWebAnimationBasedMaskImage` | `AMLLWordMask` | Original three-word keyframes/gap holds; ruby timing, overlapping/malformed words and all variants pending |
 | DOM layout/CSS | `AMLLCoreTextLayout` | Core Text + source break cost, independent auxiliary raster, logical timing shared by fragments; bidi runs, ruby, word romanization, ligatures, exact line heights/browser baseline pending |
 | DOM composed layers | `AMLLNativeLyricsView` | Display link, row reuse, single mask composition, unclamped feather slope; group blur, opacity/filter transitions, exact emphasis/glow, full accessibility variants pending |
-| DOM float/emphasis methods | Old path only | `AMLLWordMotion` approximation is not counted as the new port; exact 32-frame character animation/transform composition pending |
+| DOM float/emphasis methods | `AMLLSourceWordAnimation`, `AMLLWordAnimationClock` | Original 32-frame emphasis descriptors ported with delay, ruby anchor count, last-word boost and matrix rounding; source fixture covers eight characters. Normal word float wired with independent pause/enable/reverse clocks. Per-character shaped layers, glow composition and full WAAPI timing parity still pending; old `AMLLWordMotion` is not counted |
 | react-full PrebuiltLyricPlayer/layouts/Cover/sliders/icons | Not yet wired in new player | Entire page, responsive font presets, source SVGs, aspect-ratio rules, gestures and live AppModel adapter pending |
 | Mesh/Pixi/GLSL/CSS backgrounds | Old path only | Shader bundle pinned; exact pipelines/seeded frame comparison pending |
 | player AMLLWrapper TSX/CSS | Not yet ported | Enter/exit displacement, radius, delays, cancellation/keyboard rules pending |
@@ -35,6 +35,7 @@ Paths below are relative to the pinned core/react-full `src` directories extract
 - `9b361ad9`: Xcode 27 passed; Xcode 26 superseded, not counted as a full pass.
 - `e4c5724d`: Xcode 27 build/archive/IPA and all 5 UI tests passed. Of 152 unit tests, the display-optimization source comparison reported three assertions in one test; all other tests passed, including mask/alpha traces and the native canvas attachment/export test. Root cause: second-based arithmetic changed the exact 100 ms overlap threshold. The adapter now retains original millisecond units for optimization and timeline decisions; rerun required.
 - Independent standards/spec review agents were attempted but both returned usage-limit errors without reviewing. No independent-review pass is claimed.
+- `9a0f1b37`: [CI 34669487513](https://github.com/QingYaoSheep/amll-player/actions/runs/34669487513) fully passed Xcode 26 unit/UI, iPad build/archive and Xcode 27 build/archive/IPA. Native attachment was inspected; transparent PNG previews discard alpha, so subsequent test captures explicitly composite onto black and attach the view to a window for correct display scale.
 - Windows has no Swift/Xcode. Local checks verify source hashes/fixtures and formatting/diffs; Swift execution evidence comes from CI.
 
 QQ fix validates/removes the zlib envelope before Apple's raw-DEFLATE decoder, verifies Adler-32 and tolerates DES zero padding. Other provider/cache behavior remains outside this rendering rewrite.

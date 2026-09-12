@@ -6,7 +6,7 @@
 - Project: https://github.com/amll-dev/applemusic-like-lyrics
 - Core package license: AGPL-3.0-only, as declared by the pinned package.
 - Exact package versions, declared licenses and source hashes: `ReferenceCaptures/amll-source-manifest.json`.
-- Swift adaptations: `AMLLSourceSpring`, `AMLLSourceTimeline`, `AMLLBalancedLayout`, `AMLLDisplayDocument`, `AMLLFrameEngine`, `AMLLMaskAlpha`, `AMLLWordMask`, `AMLLWordSegmentation`, `AMLLCoreTextLayout`, and the native layer adapter.
+- Swift adaptations: `AMLLSourceSpring`, `AMLLSourceTimeline`, `AMLLBalancedLayout`, `AMLLDisplayDocument`, `AMLLFrameEngine`, `AMLLMaskAlpha`, `AMLLWordMask`, `AMLLWordSegmentation`, `AMLLCoreTextLayout`, `AMLLSourceWordAnimation`, `AMLLWordAnimationClock`, and the native layer adapter.
 - License text preserved from the supplied upstream tree: [GNU AGPL v3](Licenses/AMLL-AGPL-3.0.txt).
 - The upstream spring solver includes the source notice `MIT License github.com/pushkine/`.
 

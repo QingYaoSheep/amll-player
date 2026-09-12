@@ -65,6 +65,29 @@ final class AMLLSourceParityTests: XCTestCase {
         }
 
         var masks: [Mask]
+        struct Emphasis: Decodable {
+            struct Input: Decodable {
+                var duration: Double
+                var delay: Double
+                var count: Int
+                var rubyCount: Int
+                var last: Bool
+                var background: Bool
+            }
+
+            struct Character: Decodable {
+                var delay: Double
+                var duration: Double
+                var floatDelay: Double
+                var floatDuration: Double
+                var frames: [AMLLSourceWordAnimation.Keyframe]
+            }
+
+            var input: Input
+            var characters: [Character]
+        }
+
+        var emphasis: [Emphasis]
     }
 
     private func reference() throws -> Reference {
@@ -118,6 +141,32 @@ final class AMLLSourceParityTests: XCTestCase {
                 // may extend outside the fragment, with identical visible coverage.
                 let clipped = min(mask.width + mask.padding, max(-mask.padding - mask.feather, edge))
                 XCTAssertEqual(clipped, frame.edge, accuracy: 0.000_001, "word \(index) at \(frame.time)")
+            }
+        }
+    }
+
+    func testEmphasisKeyframesMatchOriginalIncludingLastWordRubyAndBackgroundTiming() throws {
+        for fixture in try reference().emphasis {
+            let input = fixture.input
+            let characters = AMLLSourceWordAnimation.emphasis(duration: input.duration / 1000, delay: input.delay / 1000,
+                                                              characterCount: input.count, rubyCount: input.rubyCount,
+                                                              isLastWord: input.last, isBackground: input.background)
+            XCTAssertEqual(characters.count, fixture.characters.count)
+            for (actual, expected) in zip(characters, fixture.characters) {
+                XCTAssertEqual(actual.delay, expected.delay, accuracy: 0.000_001)
+                XCTAssertEqual(actual.duration, expected.duration, accuracy: 0.000_001)
+                XCTAssertEqual(actual.floatDelay, expected.floatDelay, accuracy: 0.000_001)
+                XCTAssertEqual(actual.floatDuration, expected.floatDuration, accuracy: 0.000_001)
+                XCTAssertEqual(actual.frames.count, 32)
+                for (frame, golden) in zip(actual.frames, expected.frames) {
+                    XCTAssertEqual(frame.offset, golden.offset)
+                    XCTAssertEqual(frame.scale, golden.scale, accuracy: 0.000_001)
+                    XCTAssertEqual(frame.x, golden.x, accuracy: 0.000_001)
+                    XCTAssertEqual(frame.y, golden.y, accuracy: 0.000_001)
+                    XCTAssertEqual(frame.glowRadius, golden.glowRadius, accuracy: 0.000_001)
+                    XCTAssertEqual(frame.glowOpacity, golden.glowOpacity, accuracy: 0.000_001)
+                    XCTAssertEqual(frame.floatY, golden.floatY, accuracy: 0.000_001)
+                }
             }
         }
     }

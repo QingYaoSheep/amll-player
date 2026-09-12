@@ -5,8 +5,12 @@ const vm = require('node:vm');
 const { stripTypeScriptTypes } = require('node:module');
 const root = path.resolve(__dirname, '..');
 const source = path.join(root, '.build-tools/amll-reference/core/src');
-const context = vm.createContext({ Intl });
-for (const file of ['utils/derivative.ts', 'utils/spring.ts', 'utils/is-cjk.ts', 'utils/lyric-line-break.ts', 'utils/eq-set.ts', 'lyric-player/base/timeline.ts', 'utils/optimize-lyric.ts']) {
+const baseline = JSON.parse(fs.readFileSync(path.join(root, 'ReferenceCaptures/amll-source-manifest.json'), 'utf8'));
+const bezierPackage = baseline.dependencies.find(item => item.name === 'bezier-easing');
+const bezierModule = require(path.join(root, '..', 'AMLL-OLD/node_modules/.pnpm', bezierPackage.installation));
+const bezier = bezierModule.default || bezierModule;
+const context = vm.createContext({ Intl, bezier });
+for (const file of ['utils/derivative.ts', 'utils/spring.ts', 'utils/is-cjk.ts', 'utils/lyric-line-break.ts', 'utils/eq-set.ts', 'lyric-player/base/timeline.ts', 'utils/optimize-lyric.ts', 'utils/matrix.ts']) {
   const stripped = stripTypeScriptTypes(fs.readFileSync(path.join(source, file), 'utf8'))
     .replace(/^import\s.*?;\s*$/gm, '').replace(/\bexport /g, '');
   vm.runInContext(stripped, context, { filename: file });
@@ -34,6 +38,11 @@ class MaskReference {
   getRubySegments() { return []; }
   ${maskMethod}
 }`), context);
+const emphasisConstants = domLine.slice(domLine.indexOf('const ANIMATION_FRAME_QUANTITY'), domLine.indexOf('function generateFadeGradient'));
+const emphasisMethods = domLine.slice(domLine.indexOf('\tprivate initFloatAnimation('), domLine.indexOf('\tprivate get totalDuration'));
+vm.runInContext(stripTypeScriptTypes(`${emphasisConstants}
+class EmphasisReference { ${emphasisMethods} }
+`), context);
 const fixture = vm.runInContext(`(() => {
   const traces = [60, 120].map(fps => {
     const spring = new Spring(0);
@@ -102,7 +111,32 @@ const fixture = vm.runInContext(`(() => {
       time:(mask.lyricLine.startTime+frame.offset*word.mainElement.capture.options.duration)/1000,
       edge:parseFloat(frame.maskPosition)+word.width+word.padding
     }))}));
-  return {traces,breaks,groups,timeline,original,optimized,alpha,masks};
+  const emphasis = [
+    {duration:1800,delay:600,count:4,rubyCount:0,last:false,background:false},
+    {duration:3500,delay:0,count:1,rubyCount:0,last:true,background:true},
+    {duration:500,delay:-50,count:3,rubyCount:5,last:true,background:false}
+  ].map(input => {
+    const player = new EmphasisReference();
+    player.lyricLine = {startTime:0,isBG:input.background,words:[{word:input.last?'held':'end'}]};
+    const animations = [];
+    const elements = Array.from({length:input.count},(_,index)=>({textContent:String(index),animate(frames,options) {
+      animations.push({frames,options}); return {pause(){}};
+    }}));
+    player.initEmphasizeAnimation({word:'held'},elements,input.duration,input.delay,input.rubyCount);
+    const characters = elements.map((_,i)=>{
+      const glow = animations[i*2], floating = animations[i*2+1];
+      return {delay:glow.options.delay/1000,duration:glow.options.duration/1000,
+        floatDelay:floating.options.delay/1000,floatDuration:floating.options.duration/1000,
+        frames:glow.frames.map((frame,j)=>{
+          const transform = frame.transform.match(/matrix3d\\((.*?)\\) translate\\((.*?)em, (.*?)em\\)/);
+          const shadow = frame.textShadow.match(/0 0 (.*?)em rgba\\(255, 255, 255, (.*?)\\)/);
+          return {offset:frame.offset,scale:Number(transform[1].split(',')[0]),x:Number(transform[2]),y:Number(transform[3]),
+            glowRadius:Number(shadow[1]),glowOpacity:Number(shadow[2]),floatY:parseFloat(floating.frames[j].transform.slice(11))};
+        })};
+    });
+    return {input,characters};
+  });
+  return {traces,breaks,groups,timeline,original,optimized,alpha,masks,emphasis};
 })()`, context);
 const target = path.join(root, 'AMLLPlayerTests/Fixtures/amll-motion-reference.json');
 const bytes = JSON.stringify(fixture, null, 2) + '\n';

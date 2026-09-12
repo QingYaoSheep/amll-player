@@ -76,6 +76,9 @@ final class AMLLNativeEngineTests: XCTestCase {
     @MainActor
     func testNativeCanvasExportsActualFramesWithoutAdvancingLiveState() throws {
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        canvas.backgroundColor = .black
         canvas.position = { 6 }
         canvas.configure(document: LyricsRenderFixture.document, configuration: .init(),
                          input: .init(position: 6, playing: true), active: false, reduceMotion: false)
@@ -106,5 +109,23 @@ final class AMLLNativeEngineTests: XCTestCase {
         attachment.name = "AMLL-source-port-402pt-unapproved"
         attachment.lifetime = .keepAlways
         add(attachment)
+        canvas.removeFromSuperview()
+    }
+
+    func testWordFloatClockPausesSeeksAndReversesFromEachWordsOwnEnd() {
+        var clock = AMLLWordAnimationClock()
+        clock.enable(at: 2)
+        clock.advance(0.18, playing: true)
+        XCTAssertEqual(clock.time, 2.18, accuracy: 0.000_001)
+        clock.advance(4, playing: false)
+        XCTAssertEqual(clock.time, 2.18, accuracy: 0.000_001)
+        clock.disable()
+        clock.advance(0.2, playing: false)
+        XCTAssertEqual(clock.floatElapsed(wordStart: 0, duration: 1), 0.8, accuracy: 0.000_001)
+        XCTAssertEqual(clock.floatElapsed(wordStart: 1, duration: 2), 0.98, accuracy: 0.000_001)
+        clock.enable(at: 0.4)
+        XCTAssertEqual(clock.time, 0.4, accuracy: 0.000_001)
+        XCTAssertEqual(clock.reverseElapsed, 0)
+        XCTAssertTrue(clock.enabled)
     }
 }

@@ -148,7 +148,9 @@ struct AMLLFrameEngine {
     mutating func render(_ input: AMLLPlayerInput, delta: Double) -> AMLLFrameState {
         let elapsed = delta.isFinite ? max(0, delta) : 0
         animationTime += elapsed
-        let time = ((input.position.isFinite ? input.position : 0) - (input.offset.isFinite ? input.offset : 0)) * 1000
+        let rawTime = ((input.position.isFinite ? input.position : 0) - (input.offset.isFinite ? input.offset : 0)) * 1000
+        // DomLyricPlayer.setCurrentTime uses Math.round (ties toward +infinity).
+        let time = floor(rawTime + 0.5)
         let seeking = firstFrame || input.seeking || previousInput?.seekRevision != input.seekRevision
         if seeking {
             scrollOffset = 0; scrollVelocity = 0; touching = false; browsing = false

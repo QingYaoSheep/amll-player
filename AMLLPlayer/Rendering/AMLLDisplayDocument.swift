@@ -26,6 +26,11 @@ struct AMLLDisplayDocument: Sendable {
                 lines[index].text = lines[index].words.map(\.text).joined()
             }
         }
+        // The source makes threshold decisions in milliseconds. Performing the
+        // same subtraction in seconds makes e.g. 2.1 - 2 exceed 0.1 and changes
+        // overlap classification, hence also the following visual start time.
+        var starts = lines.map { $0.start * 1000 }
+        var ends = lines.map { $0.end * 1000 }
         var backgroundCount = 0
         for index in lines.indices {
             if lines[index].isBackground {
@@ -41,32 +46,32 @@ struct AMLLDisplayDocument: Sendable {
             guard index + 1 < lines.count, lines[index + 1].isBackground else { continue }
             let words = (lines[index].words + lines[index + 1].words).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             if !words.isEmpty {
-                let start = min(words.map(\.start).min() ?? .infinity, lines[index].start, lines[index + 1].start)
-                let end = max(words.map(\.end).max() ?? 0, lines[index].end, lines[index + 1].end)
-                lines[index].start = start; lines[index + 1].start = start
-                lines[index].end = end; lines[index + 1].end = end
+                let start = min(words.map { $0.start * 1000 }.min() ?? .infinity, starts[index], starts[index + 1])
+                let end = max(words.map { $0.end * 1000 }.max() ?? 0, ends[index], ends[index + 1])
+                starts[index] = start; starts[index + 1] = start
+                ends[index] = end; ends[index + 1] = end
             }
         }
         for index in lines.indices where !lines[index].isBackground {
             guard let next = lines.indices.dropFirst(index + 1).first(where: { !lines[$0].isBackground }) else { continue }
-            let overlap = lines[index].end - lines[next].start
-            if overlap > 0, !(overlap > 0.1 && overlap > (lines[next].end - lines[next].start) * 0.1) {
-                lines[index].end = lines[next].start
+            let overlap = ends[index] - starts[next]
+            if overlap > 0, !(overlap > 100 && overlap > (ends[next] - starts[next]) * 0.1) {
+                ends[index] = starts[next]
                 if index + 1 < lines.count, lines[index + 1].isBackground {
-                    lines[index + 1].end = lines[next].start
+                    ends[index + 1] = starts[next]
                 }
             }
         }
         var previousStart = 0.0, previousEnd = 0.0, groupStart = 0.0, groupEnd = 0.0
         var hasPrevious = false
         for index in lines.indices where !lines[index].isBackground {
-            let start = lines[index].start, end = lines[index].end
+            let start = starts[index], end = ends[index]
             let gap = start >= previousEnd
-            let advance = hasPrevious && !gap ? 0.4 : 0.6
+            let advance = hasPrevious && !gap ? 400.0 : 600.0
             let boundary = hasPrevious ? (gap ? groupEnd : previousStart + (previousEnd - previousStart) * 0.3) : 0
-            lines[index].start = min(start, max(boundary, start - advance))
+            starts[index] = min(start, max(boundary, start - advance))
             if index + 1 < lines.count, lines[index + 1].isBackground {
-                lines[index + 1].start = lines[index].start
+                starts[index + 1] = starts[index]
             }
             if hasPrevious, start < groupEnd, end > groupStart {
                 groupStart = min(groupStart, start); groupEnd = max(groupEnd, end)
@@ -74,6 +79,10 @@ struct AMLLDisplayDocument: Sendable {
                 groupStart = start; groupEnd = end
             }
             previousStart = start; previousEnd = end; hasPrevious = true
+        }
+        for index in lines.indices {
+            lines[index].start = starts[index] / 1000
+            lines[index].end = ends[index] / 1000
         }
         var groups: [Group] = []
         for index in lines.indices {
@@ -90,6 +99,6 @@ struct AMLLDisplayDocument: Sendable {
         }
         self.lines = lines
         self.groups = groups
-        timings = groups.map { .init(startTime: lines[$0.main].start * 1000, endTime: lines[$0.main].end * 1000) }
+        timings = groups.map { .init(startTime: starts[$0.main], endTime: ends[$0.main]) }
     }
 }

@@ -32,7 +32,9 @@ Paths below are relative to the pinned core/react-full `src` directories extract
 - `3f2f8260`: [CI 34600005658](https://github.com/QingYaoSheep/amll-player/actions/runs/34600005658) passed Xcode 26 unit/UI, iPad build/archive and Xcode 27 build/archive/IPA, including prior QQ encrypted-QRC/provider regressions and initial source fixtures.
 - `1c81db13` / `be39c973`: native view access/isolation and optional CGFloat compile failures were fixed in `be39c973` / `5189d11c`.
 - `5189d11c`: Xcode 27 passed; Xcode 26 was superseded, not counted as a full pass.
-- `9b361ad9`: Xcode 27 build/archive/IPA passed; Xcode 26 pending at this update.
+- `9b361ad9`: Xcode 27 passed; Xcode 26 superseded, not counted as a full pass.
+- `e4c5724d`: Xcode 27 build/archive/IPA and all 5 UI tests passed. Of 152 unit tests, the display-optimization source comparison reported three assertions in one test; all other tests passed, including mask/alpha traces and the native canvas attachment/export test. Root cause: second-based arithmetic changed the exact 100 ms overlap threshold. The adapter now retains original millisecond units for optimization and timeline decisions; rerun required.
+- Independent standards/spec review agents were attempted but both returned usage-limit errors without reviewing. No independent-review pass is claimed.
 - Windows has no Swift/Xcode. Local checks verify source hashes/fixtures and formatting/diffs; Swift execution evidence comes from CI.
 
 QQ fix validates/removes the zlib envelope before Apple's raw-DEFLATE decoder, verifies Adler-32 and tolerates DES zero padding. Other provider/cache behavior remains outside this rendering rewrite.

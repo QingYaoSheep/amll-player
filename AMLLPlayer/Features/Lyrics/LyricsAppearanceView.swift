@@ -32,6 +32,9 @@ struct LyricsAppearanceView: View {
             Section("render.motion") {
                 Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive)
                 Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords)
+                Toggle("render.spring", isOn: $preferences.configuration.enableSpring)
+                Toggle("render.scale", isOn: $preferences.configuration.enableScale)
+                Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines)
                 Toggle("render.marquee", isOn: $preferences.configuration.marquee)
                 LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
                 Slider(value: $preferences.configuration.gradientWidth, in: 0 ... 1, step: 0.05)

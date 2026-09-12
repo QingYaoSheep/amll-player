@@ -37,6 +37,10 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var tracking: Double = 0
     var blurInactive = true
     var emphasizeWords = true
+    var enableSpring = true
+    var enableScale = true
+    var hidePassedLines = false
+    var alwaysPostpositionBackground = false
     /// AMLL stores the feather width as an em value; 0.5 tracks the rendered font size.
     var gradientWidth: Double = AMLLMotionMetrics.wordFadeWidthInEms
     var anchor: Double = 0.35

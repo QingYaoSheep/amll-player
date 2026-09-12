@@ -24,7 +24,7 @@
 | G01 | 真实歌词数据与统一回调 | `.amll` 通过 `AMLLLyricsDisplay` 接入 `LyricsCoordinator`、Spotify 快照、offset、进度、seek revision 和封面；旧 renderer 仍为回退，完整整页默认切换尚未签收。 | 在 iPhone/iPad 真实页面完成所有布局和交互验收后再切默认；播放能力继续复用现有 Spotify 服务。 |
 | G02 | 长音强调、字符浮动、缩放、发光 | Core Text 已输出字符簇；`AMLLNativeRow` 已创建字符图层并消费 `CharacterAnimation.sample`，但复杂跨行词、ruby 锚点和全场景轨迹尚未完成。 | 建立塑形后的字形簇夹具，验证 32 帧曲线、延迟、长音/末词增强、发光合成及打断生命周期。 |
 | G03 | 行模糊、透明度和 CSS 过渡 | 行视图已缓存 sharp/near/far Core Image 栅格并按 `Row.blur` 切换，透明度已接线；原版 filter/opacity 过渡和非弹簧 transition 仍待对照。 | 逐帧复现源曲线，并比较中断、暂停、Reduce Transparency 和设置切换轨迹。 |
-| G04 | 非弹簧选项及全部原生效果设置 | `AMLLNativeCanvas` 已将安全区、字号、anchor、辅助功能和模糊能力传入 Environment；`layoutGroups` 在 `!enableSpring` 时仍直接 `setPosition`，没有原版 transition 回退，advance 和全部原生选项也未闭合。 | 接通源版参数与各状态；关闭弹簧走原过渡行为；对每个设置做从界面到实际帧输出的验收。 |
+| G04 | 非弹簧选项及全部原生效果设置 | `AMLLNativeCanvas` 已将安全区、字号、anchor、advance、辅助功能和模糊能力传入 Environment；关闭弹簧现在使用引擎内的 320ms ease-out transition，seek/首帧仍立即定位。完整原生参数矩阵和源曲线对照仍待完成。 | 对每个设置做从界面到实际帧输出的验收，并以源录屏校准 transition 曲线和时长。 |
 | G05 | `line-balancer`、非逐字断行与原 CSS 排版 | 当前移植了断行代价函数，尚未完整移植 `line-balancer.ts` 的动态/非动态适配、测量校准等语义。静态行在 Core Text 布局中按 Swift Character 建立子项。原版 7 档响应式字号尚未实现，当前仍是 32 默认值及 24–52 范围。行高/基线与字体分段尚无浏览器同字体对照。 | 独立覆盖逐行/逐字断行、原字号档位、字重/字距、主辅歌词基线与组高度反馈；逐行歌词继续禁止伪造逐字时间。 |
 | G06 | 逐词罗马音、ruby 和无损适配 | `LyricWord` 已增加 ruby、voice 和 obscene 可选字段；行级辅助文本可回退使用逐词罗马音/ruby，但逐词 ruby 的精确排版和遮罩配对仍未完成。 | 完成逐词罗马音/ruby 排版、时间与遮罩；对无法对应的字符情况保留明确诊断。 |
 | G07 | 完整页面布局、封面、控件和 SVG | 尚无新 `PrebuiltLyricPlayer` 原生整页；横竖宽高比、普通/沉浸封面、反射/遮罩、跑马灯、原滑块、原 SVG、菜单与所有显隐组合没有在新路径完成。旧页面存在同名功能不能证明几何与交互一致。 | 按原 TSX/CSS/SVG 逐项接入，并建立手机/iPad/紧凑窗口状态矩阵。 |

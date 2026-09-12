@@ -159,7 +159,12 @@ final class AMLLNativeCanvas: UIView {
             boldText: traits.legibilityWeight == .bold,
             dynamicTypeScale: typeScale,
             voiceOver: UIAccessibility.isVoiceOverRunning,
+            enableSpring: configuration.enableSpring,
+            enableScale: configuration.enableScale,
+            hidePassedLines: configuration.hidePassedLines,
+            alwaysPostpositionBackground: configuration.alwaysPostpositionBackground,
             enableBlur: configuration.blurInactive && !UIAccessibility.isReduceTransparencyEnabled,
+            advance: configuration.advance,
             dotHeight: max(configuration.fontSize * 0.5, bounds.height * 0.01)
         )
     }

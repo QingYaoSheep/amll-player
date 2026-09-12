@@ -54,7 +54,17 @@ struct FullscreenLyricsPlayer: View {
         NavigationStack {
             GeometryReader { geometry in
                 ZStack {
-                    AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL, blur: configuration.backgroundBlur)
+                    if model.renderPreferences.profile == .amll {
+                        AMLLMeshBackground(
+                            artworkURL: model.playbackSnapshot?.item?.artworkURL,
+                            active: pageVisible && scenePhase == .active && !search && !devices,
+                            blur: configuration.backgroundBlur
+                        )
+                        Color.black.opacity(0.16)
+                    } else {
+                        AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
+                                               blur: configuration.backgroundBlur)
+                    }
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         let columns = geometry.size.width >= 700 || (geometry.size.width > geometry.size.height && geometry.size.width >= 550)
                         VStack(spacing: 8) {

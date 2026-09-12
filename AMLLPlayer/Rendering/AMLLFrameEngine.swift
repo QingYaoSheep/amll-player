@@ -30,6 +30,7 @@ struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     var enableBlur = true
     var hidePassedLines = false
     var alwaysPostpositionBackground = false
+    var advance = 0.3
     var dotHeight = 16.0
 }
 
@@ -156,6 +157,10 @@ struct AMLLFrameEngine {
         var slide = AMLLSourceSpring(-80)
         var mainScale = AMLLSourceSpring(100)
         var backgroundScale = AMLLSourceSpring(100)
+        var yTransition = AMLLSourceTransition()
+        var slideTransition = AMLLSourceTransition(-80)
+        var mainScaleTransition = AMLLSourceTransition(100)
+        var backgroundScaleTransition = AMLLSourceTransition(100)
         var mainAlpha = AMLLMaskAlpha()
         var backgroundAlpha = AMLLMaskAlpha()
         var mainWords = AMLLWordAnimationClock()
@@ -243,7 +248,8 @@ struct AMLLFrameEngine {
         }
         let oldFocus = timeline.focus
         let oldHot = timeline.hot, oldBuffered = timeline.buffered
-        let layout = timeline.update(time: time, groups: document.timings, seeking: seeking, hasBottomContent: false)
+        let layout = timeline.update(time: time + environment.advance * 1000,
+                                     groups: document.timings, seeking: seeking, hasBottomContent: false)
         for index in motions.indices {
             motions[index].mainWords.advance(elapsed, playing: previousInput?.playing ?? false)
             motions[index].backgroundWords.advance(elapsed, playing: previousInput?.playing ?? false)
@@ -288,29 +294,42 @@ struct AMLLFrameEngine {
                 motions[index].slide.update(elapsed)
                 motions[index].mainScale.update(elapsed)
                 motions[index].backgroundScale.update(elapsed)
+            } else if !environment.reduceMotion {
+                motions[index].yTransition.update(elapsed)
+                motions[index].slideTransition.update(elapsed)
+                motions[index].mainScaleTransition.update(elapsed)
+                motions[index].backgroundScaleTransition.update(elapsed)
             }
+            let yPosition = environment.enableSpring && !environment.reduceMotion
+                ? motions[index].y.position : motions[index].yTransition.value
+            let slidePosition = environment.enableSpring && !environment.reduceMotion
+                ? motions[index].slide.position : motions[index].slideTransition.value
+            let mainScalePosition = environment.enableSpring && !environment.reduceMotion
+                ? motions[index].mainScale.position : motions[index].mainScaleTransition.value
+            let backgroundScalePosition = environment.enableSpring && !environment.reduceMotion
+                ? motions[index].backgroundScale.position : motions[index].backgroundScaleTransition.value
             let forceAlpha = touching || environment.reduceMotion || !environment.enableSpring
-            motions[index].mainAlpha.update(scale: motions[index].mainScale.position / 100,
+            motions[index].mainAlpha.update(scale: mainScalePosition / 100,
                                             gradient: motions[index].active, delta: elapsed, force: forceAlpha)
-            motions[index].backgroundAlpha.update(scale: motions[index].backgroundScale.position / 100,
+            motions[index].backgroundAlpha.update(scale: backgroundScalePosition / 100,
                                                   gradient: motions[index].active, delta: elapsed, force: forceAlpha)
             let motion = motions[index]
             let group = document.groups[index]
             let padding = environment.fontSize * 0.4
-            let progress = min(1, max(0, 1 - abs(motion.slide.position) / 80))
+            let progress = min(1, max(0, 1 - abs(slidePosition) / 80))
             let bgFirst = group.backgroundFirst && !environment.alwaysPostpositionBackground
             let bgHeight = group.background.map(height) ?? 0
             let backgroundVisible = motion.active || !input.playing
             let bgAdvance = bgFirst ? bgHeight * progress + (backgroundVisible ? environment.fontSize * 0.3 : 0) : 0
-            let y = (motion.y.position * 10).rounded() / 10
+            let y = (yPosition * 10).rounded() / 10
             rows.append(.init(lineIndex: group.main, groupIndex: index, y: y + padding + bgAdvance,
-                              scale: motion.mainScale.position / 100, brightAlpha: motion.mainAlpha.bright,
+                              scale: mainScalePosition / 100, brightAlpha: motion.mainAlpha.bright,
                               darkAlpha: motion.mainAlpha.dark, wordClock: motion.mainWords, opacity: motion.opacity,
                               blur: min(5, motion.blur), active: motion.active, hidden: false))
             if let background = group.background {
                 let top = bgFirst ? y + padding - bgHeight * (1 - progress) : y + padding + height(group.main) + environment.fontSize * 0.3
-                rows.append(.init(lineIndex: background, groupIndex: index, y: top + bgHeight * motion.slide.position / 100,
-                                  scale: motion.backgroundScale.position / 100 * (0.8 + progress * 0.2),
+                rows.append(.init(lineIndex: background, groupIndex: index, y: top + bgHeight * slidePosition / 100,
+                                  scale: backgroundScalePosition / 100 * (0.8 + progress * 0.2),
                                   brightAlpha: motion.backgroundAlpha.bright, darkAlpha: motion.backgroundAlpha.dark,
                                   wordClock: motion.backgroundWords,
                                   opacity: motion.opacity * (backgroundVisible ? 1 : 0), blur: min(5, motion.blur),
@@ -327,7 +346,13 @@ struct AMLLFrameEngine {
             rows: rows,
             interlude: interlude,
             browsing: browsing,
-            settled: motions.allSatisfy { $0.y.arrived && $0.slide.arrived && $0.mainScale.arrived && $0.backgroundScale.arrived },
+            settled: motions.allSatisfy {
+                if environment.enableSpring || environment.reduceMotion {
+                    return $0.y.arrived && $0.slide.arrived && $0.mainScale.arrived && $0.backgroundScale.arrived
+                }
+                return $0.yTransition.arrived && $0.slideTransition.arrived
+                    && $0.mainScaleTransition.arrived && $0.backgroundScaleTransition.arrived
+            },
             background: .init(artworkURL: input.artworkURL,
                               blur: input.configuration?.backgroundBlur ?? 0,
                               progress: progress,
@@ -401,7 +426,21 @@ struct AMLLFrameEngine {
             let slide = active[index] || !playing ? 0 : hiddenSlide
             let mainScale = !active[index] && playing && environment.enableScale ? 97.0 : 100
             let bgScale = !active[index] && playing ? 75.0 : 100
-            if force || !environment.enableSpring {
+            let immediate = force || seeking || firstFrame
+            if immediate {
+                motions[index].y.setPosition(y)
+                motions[index].slide.setPosition(slide)
+                motions[index].mainScale.setPosition(mainScale)
+                motions[index].backgroundScale.setPosition(bgScale)
+                motions[index].yTransition.setPosition(y)
+                motions[index].slideTransition.setPosition(slide)
+                motions[index].mainScaleTransition.setPosition(mainScale)
+                motions[index].backgroundScaleTransition.setPosition(bgScale)
+            } else if !environment.enableSpring {
+                motions[index].yTransition.setTarget(y)
+                motions[index].slideTransition.setTarget(slide)
+                motions[index].mainScaleTransition.setTarget(mainScale)
+                motions[index].backgroundScaleTransition.setTarget(bgScale)
                 motions[index].y.setPosition(y)
                 motions[index].slide.setPosition(slide)
                 motions[index].mainScale.setPosition(mainScale)
@@ -412,6 +451,10 @@ struct AMLLFrameEngine {
                 // DomLyricLine.setTransform deliberately does not delay its scale spring.
                 motions[index].mainScale.setTarget(mainScale)
                 motions[index].backgroundScale.setTarget(bgScale)
+                motions[index].yTransition.setPosition(y)
+                motions[index].slideTransition.setPosition(slide)
+                motions[index].mainScaleTransition.setPosition(mainScale)
+                motions[index].backgroundScaleTransition.setPosition(bgScale)
             }
             y += groupHeights[index]
             if y >= 0, !seeking {

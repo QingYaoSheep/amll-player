@@ -118,7 +118,11 @@ final class AMLLNativeEngineTests: XCTestCase {
         environment.enableSpring = false
         var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines), environment: environment, heights: [60, 30, 60])
         let playing = engine.render(.init(position: 0, playing: true), delta: 0)
-        let paused = engine.render(.init(position: 0, playing: false), delta: 0)
+        _ = engine.render(.init(position: 0, playing: false), delta: 0)
+        var paused = engine.render(.init(position: 0, playing: false), delta: 0)
+        for _ in 0 ..< 30 {
+            paused = engine.render(.init(position: 0, playing: false), delta: 1.0 / 60)
+        }
         let background = try XCTUnwrap(paused.rows.first { $0.lineIndex == 1 })
         XCTAssertFalse(background.hidden)
         XCTAssertGreaterThan(background.opacity, 0)

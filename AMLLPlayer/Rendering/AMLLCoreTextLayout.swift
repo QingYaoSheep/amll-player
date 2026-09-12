@@ -19,6 +19,45 @@ final class AMLLCoreTextLayout {
         var auxiliary = false
     }
 
+    private struct VisualRun {
+        var range: NSRange
+        var left: CGFloat
+        var right: CGFloat
+        var rtl: Bool
+
+        func offset(at index: Int, in line: CTLine) -> CGFloat {
+            // At a bidi boundary Core Text offers two caret offsets. The run's
+            // logical start/end identifies which visual edge owns this fragment.
+            if index == range.location {
+                return rtl ? right : left
+            }
+            if index == NSMaxRange(range) {
+                return rtl ? left : right
+            }
+            var secondary: CGFloat = 0
+            let primary = CTLineGetOffsetForStringIndex(line, index, &secondary)
+            let value = primary >= left && primary <= right ? primary : secondary
+            return min(right, max(left, value))
+        }
+    }
+
+    private static func visualRuns(in line: CTLine) -> [VisualRun] {
+        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+        return runs.compactMap { run -> VisualRun? in
+            let count = CTRunGetGlyphCount(run)
+            guard count > 0 else { return nil }
+            var positions = [CGPoint](repeating: .zero, count: count)
+            var advances = [CGSize](repeating: .zero, count: count)
+            CTRunGetPositions(run, CFRange(location: 0, length: 0), &positions)
+            CTRunGetAdvances(run, CFRange(location: 0, length: 0), &advances)
+            let left = positions.map(\.x).min() ?? 0
+            let right = zip(positions, advances).map { $0.x + $1.width }.max() ?? left
+            let range = CTRunGetStringRange(run)
+            return VisualRun(range: NSRange(location: range.location, length: range.length), left: left, right: right,
+                             rtl: CTRunGetStatus(run).contains(.rightToLeft))
+        }.sorted { $0.range.location < $1.range.location }
+    }
+
     let size: CGSize
     let fragments: [WordFragment]
     let breakOffsets: [Int]
@@ -75,16 +114,21 @@ final class AMLLCoreTextLayout {
             let x = line.isDuet || line.isRTL ? availableWidth - rowWidth : 0
             rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: y + font.ascender)))
             if line.precision == .word {
+                let runs = Self.visualRuns(in: ctLine)
                 var cursor = 0
                 for (wordIndex, word) in timedWords.enumerated() {
                     let wordRange = NSRange(location: cursor, length: word.text.utf16.count)
                     cursor += wordRange.length
                     let intersection = NSIntersectionRange(range, wordRange)
                     guard intersection.length > 0, !word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                    let first = CTLineGetOffsetForStringIndex(ctLine, intersection.location, nil)
-                    let last = CTLineGetOffsetForStringIndex(ctLine, NSMaxRange(intersection), nil)
-                    fragments.append(.init(rect: CGRect(x: x + min(first, last), y: y, width: abs(last - first), height: mainHeight),
-                                           word: word, range: intersection, rtl: first > last, wordIndex: wordIndex))
+                    for run in runs {
+                        let fragment = NSIntersectionRange(intersection, run.range)
+                        guard fragment.length > 0 else { continue }
+                        let first = run.offset(at: fragment.location, in: ctLine)
+                        let last = run.offset(at: NSMaxRange(fragment), in: ctLine)
+                        fragments.append(.init(rect: CGRect(x: x + min(first, last), y: y, width: abs(last - first), height: mainHeight),
+                                               word: word, range: fragment, rtl: run.rtl, wordIndex: wordIndex))
+                    }
                 }
             }
             y += mainHeight

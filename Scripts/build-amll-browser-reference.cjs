@@ -74,7 +74,9 @@ async function main() {
   await build.close();
   compilerResolution.deregister();
   fs.copyFileSync(path.join(core.directory,'dist/style.css'),path.join(output,'style.css'));
-  fs.copyFileSync(path.join(__dirname,'reference-browser/index.html'),path.join(output,'index.html'));
+  for(const file of ['index.html','frame.html','host.js']) {
+    fs.copyFileSync(path.join(__dirname,'reference-browser',file),path.join(output,file));
+  }
   fs.writeFileSync(path.join(output,'build-manifest.json'),JSON.stringify({core:core.version,inputs:[...inputHashes].sort().map(([file,sha256])=>({file,sha256}))},null,2)+'\n');
   console.log(`Original core browser host: ${output}; ${inputHashes.size} module hashes`);
 }

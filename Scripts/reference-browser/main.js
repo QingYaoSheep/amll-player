@@ -2,6 +2,9 @@ import {DomLyricPlayer} from 'pinned-amll-core';
 import fixture from 'pinned-fixture';
 
 const viewport = document.querySelector('#viewport');
+// The renderer lives in its own browsing context so vh/vw and media queries
+// resolve against the reference viewport, not the adjacent measurement toolbar.
+const controls = parent.document;
 const parameters = new URLSearchParams(location.search);
 const dimension = (name,fallback) => {
   const value = Number(parameters.get(name));
@@ -11,7 +14,6 @@ const width = dimension('width',402);
 const height = dimension('height',700);
 const fontSize = dimension('font',Math.max(height*.05,width*.025,14));
 viewport.style.width = width+'px'; viewport.style.height = height+'px';
-document.querySelector('#tools').style.left = (width+24)+'px';
 const player = new DomLyricPlayer();
 const element = player.getElement();
 element.style.fontSize = fontSize+'px'; viewport.appendChild(element);
@@ -53,22 +55,22 @@ function step(delta, time = position + (playing ? delta : 0), seek=false) {
   frameCount++;
   // Geometry reads force style/layout. Opt in for measurement, keeping ordinary
   // playback free from capture overhead. Keyframe arrays are exported only once.
-  if(document.querySelector('#record').checked) {
+  if(controls.querySelector('#record').checked) {
     trace.push(capture()); if(trace.length>1200) trace.shift();
   }
-  document.querySelector('#status').textContent=JSON.stringify({position,playing,groups:player.currentLyricGroups.length,frames:frameCount,samples:trace.length},null,2);
+  controls.querySelector('#status').textContent=JSON.stringify({position,playing,groups:player.currentLyricGroups.length,frames:frameCount,samples:trace.length,viewport:{width:innerWidth,height:innerHeight}},null,2);
 }
 function frame(timestamp) {
   // pause() stops word playback; group springs must still settle every frame.
   step(lastFrame===undefined?0:(timestamp-lastFrame)/1000);
   lastFrame=timestamp; requestAnimationFrame(frame);
 }
-document.querySelector('#step60').onclick=()=>step(1/60,position+1/60,true);
-document.querySelector('#step120').onclick=()=>step(1/120,position+1/120,true);
-document.querySelector('#seek').onclick=()=>step(0,Number(document.querySelector('#time').value)||0,true);
-document.querySelector('#play').onclick=()=>{playing=!playing; playing?player.resume():player.pause();lastFrame=undefined;};
-document.querySelector('#clear').onclick=()=>{trace.length=0;};
-document.querySelector('#export').onclick=()=>{
+controls.querySelector('#step60').onclick=()=>step(1/60,position+1/60,true);
+controls.querySelector('#step120').onclick=()=>step(1/120,position+1/120,true);
+controls.querySelector('#seek').onclick=()=>step(0,Number(controls.querySelector('#time').value)||0,true);
+controls.querySelector('#play').onclick=()=>{playing=!playing; playing?player.resume():player.pause();lastFrame=undefined;};
+controls.querySelector('#clear').onclick=()=>{trace.length=0;};
+controls.querySelector('#export').onclick=()=>{
   const url=URL.createObjectURL(new Blob([JSON.stringify({schema:1,scope:'core-only; CSS/WAAPI use browser time; step buttons seek, not deterministic animation stepping',current:capture(true),trace},null,2)],{type:'application/json'}));
   const link=document.createElement('a');link.href=url;link.download='amll-original-core-trace.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };

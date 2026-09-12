@@ -1,4 +1,5 @@
 @testable import AMLLPlayer
+import CoreText
 import UIKit
 import XCTest
 
@@ -49,6 +50,29 @@ final class AMLLNativeEngineTests: XCTestCase {
             XCTAssertNotNil(Range(NSRange(location: offset, length: 0), in: text))
         }
         XCTAssertNotNil(layout.raster(scale: 3).cgImage)
+    }
+
+    @MainActor
+    func testMixedDirectionWordUsesDisjointVisualRunsWithLogicalMaskOrder() {
+        let text = "abcمرحبا123"
+        let line = LyricLine(id: "mixed", text: text, start: 1, end: 5,
+                             words: [.init(text: text, start: 1, end: 5)], precision: .word)
+        let font = UIFont.systemFont(ofSize: 32, weight: .semibold)
+        let layout = AMLLCoreTextLayout(line: line, width: 400, font: font, configuration: .init())
+        XCTAssertTrue(layout.fragments.contains(where: \.rtl))
+        XCTAssertTrue(layout.fragments.contains { !$0.rtl })
+        XCTAssertEqual(layout.fragments.map(\.range.location), layout.fragments.map(\.range.location).sorted())
+        XCTAssertEqual(layout.fragments.reduce(0) { $0 + $1.range.length }, text.utf16.count)
+        for (index, fragment) in layout.fragments.enumerated() {
+            XCTAssertGreaterThan(fragment.rect.width, 0)
+            for other in layout.fragments.dropFirst(index + 1) {
+                XCTAssertLessThanOrEqual(fragment.rect.intersection(other.rect).width, 0.001)
+            }
+        }
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .kern: 0]
+        let shaped = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+        let expectedWidth = CTLineGetTypographicBounds(shaped, nil, nil, nil)
+        XCTAssertEqual(layout.maskWords.reduce(0) { $0 + $1.width }, expectedWidth, accuracy: 0.01)
     }
 
     func testPausedBackgroundOccupiesFlowAndKeepsItsOwnMaskScale() throws {

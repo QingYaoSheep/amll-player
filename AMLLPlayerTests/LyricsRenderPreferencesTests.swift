@@ -19,7 +19,7 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         XCTAssertEqual(restored.profile, .custom)
         restored.restoreAMLLDefaults()
         XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).configuration, .init())
-        XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).profile, .appleMusic26)
+        XCTAssertEqual(LyricsRenderPreferences(defaults: defaults).profile, .amll)
     }
 
     func testProfileSwitchPreservesEditedCustomValuesAndRestoresAMLLBaseline() throws {
@@ -29,6 +29,8 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         let preferences = LyricsRenderPreferences(defaults: defaults)
         preferences.activate(.custom)
         preferences.configuration.fontSize = 41
+        preferences.activate(.amll)
+        XCTAssertEqual(preferences.configuration, .init())
         preferences.activate(.appleMusic26)
         XCTAssertEqual(preferences.configuration, .init())
         preferences.activate(.custom)

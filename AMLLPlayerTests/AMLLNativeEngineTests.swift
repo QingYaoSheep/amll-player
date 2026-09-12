@@ -44,7 +44,7 @@ final class AMLLNativeEngineTests: XCTestCase {
         let layout = AMLLCoreTextLayout(line: line, width: 160, font: .systemFont(ofSize: 32, weight: .semibold), configuration: .init())
         XCTAssertGreaterThan(layout.size.height, 0)
         XCTAssertFalse(layout.fragments.isEmpty)
-        let combined = AMLLWordSegmentation.chunks(line.words).flatMap { $0 }.map(\.text).joined()
+        let combined = AMLLWordSegmentation.chunks(line.words).flatMap(\.self).map(\.text).joined()
         XCTAssertEqual(combined, text)
         for offset in layout.breakOffsets {
             XCTAssertNotNil(Range(NSRange(location: offset, length: 0), in: text))
@@ -73,6 +73,39 @@ final class AMLLNativeEngineTests: XCTestCase {
         let shaped = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
         let expectedWidth = CTLineGetTypographicBounds(shaped, nil, nil, nil)
         XCTAssertEqual(layout.maskWords.reduce(0) { $0 + $1.width }, expectedWidth, accuracy: 0.01)
+    }
+
+    @MainActor
+    func testNativeLayoutExposesCharacterClustersAndCachedBlurRaster() {
+        let text = "长音 é 👩‍👩‍👦"
+        let line = LyricLine(id: "clusters", text: text, start: 0, end: 4,
+                             words: [.init(text: text, start: 0, end: 4)], precision: .word)
+        let layout = AMLLCoreTextLayout(line: line, width: 360,
+                                        font: .systemFont(ofSize: 32, weight: .semibold), configuration: .init())
+        XCTAssertGreaterThanOrEqual(layout.characterFragments.count, 4)
+        XCTAssertNotNil(layout.raster(scale: 2, blurRadius: 2).cgImage)
+        XCTAssertNotNil(layout.raster(scale: 2, auxiliary: true, blurRadius: 5).cgImage)
+    }
+
+    func testFrameStateCarriesRealPageBackgroundAndControlInput() {
+        let line = LyricLine(id: "page", text: "Page", start: 0, end: 4)
+        var configuration = LyricsRenderConfiguration()
+        configuration.showControls = true
+        configuration.backgroundBlur = 40
+        let item = PlaybackItem(id: "track", uri: "spotify:track:track", title: "Page", artists: ["Test"],
+                                albumTitle: nil, artworkURL: URL(string: "https://example.com/cover.jpg"),
+                                duration: 100, isEpisode: false, isAdvertisement: false)
+        let snapshot = PlaybackSnapshot(item: item, isPlaying: true, position: 25, duration: 100,
+                                        device: nil, restrictions: .unrestricted, source: .webAPI, sampledAtUptime: 0)
+        var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: [line]),
+                                     environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32), heights: [60])
+        let state = engine.render(.init(position: 25, playing: true, playbackSnapshot: snapshot,
+                                        artworkURL: item.artworkURL, configuration: configuration), delta: 0)
+        XCTAssertEqual(state.background.artworkURL, item.artworkURL)
+        XCTAssertEqual(state.background.progress, 0.25, accuracy: 0.000_001)
+        XCTAssertEqual(state.background.blur, 40, accuracy: 0.000_001)
+        XCTAssertTrue(state.controls.visible)
+        XCTAssertEqual(state.controls.progress, 0.25, accuracy: 0.000_001)
     }
 
     func testPausedBackgroundOccupiesFlowAndKeepsItsOwnMaskScale() throws {

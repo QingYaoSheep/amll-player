@@ -1,3 +1,4 @@
+import CoreImage
 import CoreText
 import NaturalLanguage
 import UIKit
@@ -11,6 +12,14 @@ final class AMLLCoreTextLayout {
         var range: NSRange
         var rtl: Bool
         var wordIndex: Int
+    }
+
+    struct CharacterFragment {
+        var rect: CGRect
+        var range: NSRange
+        var rtl: Bool
+        var wordIndex: Int
+        var characterIndex: Int
     }
 
     private struct Row {
@@ -60,6 +69,7 @@ final class AMLLCoreTextLayout {
 
     let size: CGSize
     let fragments: [WordFragment]
+    let characterFragments: [CharacterFragment]
     let breakOffsets: [Int]
     let font: UIFont
     let maskWords: [AMLLWordMask.Word]
@@ -68,15 +78,14 @@ final class AMLLCoreTextLayout {
     init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration) {
         self.font = font
         let availableWidth = max(1, width)
-        let chunks: [[LyricWord]]
-        if line.precision == .word {
-            chunks = AMLLWordSegmentation.chunks(line.words)
+        let chunks: [[LyricWord]] = if line.precision == .word {
+            AMLLWordSegmentation.chunks(line.words)
         } else {
             // Static lines have no timed word fragments.
-            chunks = line.text.map { [.init(text: String($0), start: line.start, end: line.end)] }
+            line.text.map { [.init(text: String($0), start: line.start, end: line.end)] }
         }
         let texts = chunks.map { $0.map(\.text).joined() }
-        let timedWords = chunks.flatMap { $0 }
+        let timedWords = chunks.flatMap(\.self)
         let text = texts.joined()
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking]
         let attributed = NSAttributedString(string: text, attributes: attributes)
@@ -104,6 +113,7 @@ final class AMLLCoreTextLayout {
         let typesetter = CTTypesetterCreateWithAttributedString(attributed)
         var rows: [Row] = []
         var fragments: [WordFragment] = []
+        var characterFragments: [CharacterFragment] = []
         var y: CGFloat = 0
         let mainHeight = max(font.lineHeight, font.pointSize * 1.2)
         for index in 0 ..< rowLimits.count - 1 {
@@ -129,6 +139,34 @@ final class AMLLCoreTextLayout {
                         fragments.append(.init(rect: CGRect(x: x + min(first, last), y: y, width: abs(last - first), height: mainHeight),
                                                word: word, range: fragment, rtl: run.rtl, wordIndex: wordIndex))
                     }
+
+                    // Core Text exposes glyph runs while AMLL addresses
+                    // characters. Build grapheme-sized visual pieces from the
+                    // original Swift string so emoji, combining marks and
+                    // surrogate pairs remain one animation unit.
+                    var localOffset = 0
+                    for (characterIndex, character) in word.text.enumerated() {
+                        let characterText = String(character)
+                        let characterRange = NSRange(location: cursor - word.text.utf16.count + localOffset,
+                                                     length: characterText.utf16.count)
+                        localOffset += characterRange.length
+                        let characterIntersection = NSIntersectionRange(range, characterRange)
+                        guard characterIntersection.length > 0,
+                              !characterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                        for run in runs {
+                            let visual = NSIntersectionRange(characterIntersection, run.range)
+                            guard visual.length > 0 else { continue }
+                            let first = run.offset(at: visual.location, in: ctLine)
+                            let last = run.offset(at: NSMaxRange(visual), in: ctLine)
+                            characterFragments.append(.init(
+                                rect: CGRect(x: x + min(first, last), y: y, width: abs(last - first), height: mainHeight),
+                                range: visual,
+                                rtl: run.rtl,
+                                wordIndex: wordIndex,
+                                characterIndex: characterIndex
+                            ))
+                        }
+                    }
                 }
             }
             y += mainHeight
@@ -150,6 +188,7 @@ final class AMLLCoreTextLayout {
         }
         self.rows = rows
         self.fragments = fragments
+        self.characterFragments = characterFragments
         // A wrapped word has several drawable fragments, but only one timing interval.
         // Pure spaces are DOM text nodes and do not contribute mask travel in AMLL.
         maskWords = timedWords.enumerated().map { index, word in
@@ -159,10 +198,10 @@ final class AMLLCoreTextLayout {
     }
 
     /// nil draws both layers for inspection; the renderer composites auxiliary text separately.
-    func raster(scale: CGFloat, auxiliary: Bool? = nil) -> UIImage {
+    func raster(scale: CGFloat, auxiliary: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
-        return UIGraphicsImageRenderer(size: size, format: format).image { renderer in
+        let sharp = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
             let context = renderer.cgContext
             context.textMatrix = .identity
             context.translateBy(x: 0, y: size.height)
@@ -175,5 +214,10 @@ final class AMLLCoreTextLayout {
                 CTLineDraw(row.line, context)
             }
         }
+        guard blurRadius > 0, let input = CIImage(image: sharp) else { return sharp }
+        let extent = input.extent
+        let filtered = input.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale])
+        guard let output = CIContext(options: nil).createCGImage(filtered, from: extent) else { return sharp }
+        return UIImage(cgImage: output, scale: scale, orientation: .up)
     }
 }

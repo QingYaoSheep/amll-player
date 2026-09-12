@@ -187,12 +187,18 @@ struct FullscreenLyricsPlayer: View {
             Spacer(minLength: 0)
         } else if let document = model.lyrics.document, !document.lines.isEmpty {
             VStack(spacing: 0) {
-                NativeLyricsView(document: document, configuration: configuration, offset: model.lyrics.selection.offset,
-                                 duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices,
-                                 canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
-                                 position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
-                                 resumeToken: resumeToken, browsing: { browsing = $0 })
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if model.renderPreferences.profile == .amll {
+                    AMLLLyricsDisplay(model: model, snapshot: snapshot, configuration: configuration,
+                                      active: pageVisible && scenePhase == .active && !search && !devices,
+                                      resumeToken: resumeToken, browsing: { browsing = $0 })
+                } else {
+                    NativeLyricsView(document: document, configuration: configuration, offset: model.lyrics.selection.offset,
+                                     duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices,
+                                     canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
+                                     position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
+                                     resumeToken: resumeToken, browsing: { browsing = $0 })
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
                 Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
                     .buttonStyle(.bordered).accessibilityIdentifier("resumeLyricsFollowing")
                     .frame(height: 48).opacity(browsing ? 1 : 0).disabled(!browsing).accessibilityHidden(!browsing)

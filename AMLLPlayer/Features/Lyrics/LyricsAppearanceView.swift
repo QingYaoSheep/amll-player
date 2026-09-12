@@ -9,6 +9,7 @@ struct LyricsAppearanceView: View {
                     get: { preferences.profile },
                     set: { preferences.activate($0) }
                 )) {
+                    Text("render.profile.amll").tag(LyricsPresentationProfile.amll)
                     Text("render.profile.appleMusic26").tag(LyricsPresentationProfile.appleMusic26)
                     Text("render.profile.custom").tag(LyricsPresentationProfile.custom)
                 }

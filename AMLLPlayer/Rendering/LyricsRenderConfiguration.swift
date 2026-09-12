@@ -2,6 +2,9 @@ import Foundation
 import Observation
 
 enum LyricsPresentationProfile: String, Codable, CaseIterable, Sendable {
+    /// The native AMLL page and motion engine. It is kept selectable until
+    /// reference-device sign-off promotes it to the production default.
+    case amll
     case appleMusic26
     case custom
 }
@@ -52,7 +55,11 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
 
     func auxiliaryText(for line: LyricLine) -> [String] {
         let translationText = translation ? line.translation : ""
-        let romanizationText = romanization ? line.romanization : ""
+        let wordRomanization = line.words.compactMap(\.romanWord).joined(separator: " ")
+        let rubyText = line.words.compactMap(\.ruby).joined(separator: " ")
+        let romanizationText = romanization
+            ? (line.romanization.isEmpty ? (wordRomanization.isEmpty ? rubyText : wordRomanization) : line.romanization)
+            : ""
         return (romanizationFirst ? [romanizationText, translationText] : [translationText, romanizationText])
             .filter { !$0.isEmpty }
     }
@@ -74,9 +81,12 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
 final class LyricsRenderPreferences {
     var profile: LyricsPresentationProfile {
         didSet {
-            if !switchingProfile { persist() }
+            if !switchingProfile {
+                persist()
+            }
         }
     }
+
     var configuration: LyricsRenderConfiguration {
         didSet {
             guard !switchingProfile else { return }
@@ -86,6 +96,7 @@ final class LyricsRenderPreferences {
             persist()
         }
     }
+
     private(set) var migratedCustomConfiguration: LyricsRenderConfiguration?
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -107,7 +118,7 @@ final class LyricsRenderPreferences {
            let stored = try? JSONDecoder().decode(Stored.self, from: data), stored.version == 2
         {
             profile = stored.profile
-            if stored.profile == .appleMusic26 {
+            if stored.profile == .appleMusic26 || stored.profile == .amll {
                 configuration = .init()
                 migratedCustomConfiguration = stored.migratedCustomConfiguration?.validated()
                     ?? (stored.configuration == .init() ? nil : stored.configuration.validated())
@@ -150,17 +161,21 @@ final class LyricsRenderPreferences {
 
     func activate(_ newProfile: LyricsPresentationProfile) {
         guard newProfile != profile else { return }
-        if profile == .custom { migratedCustomConfiguration = configuration.validated() }
+        if profile == .custom {
+            migratedCustomConfiguration = configuration.validated()
+        }
         switchingProfile = true
         profile = newProfile
-        configuration = newProfile == .appleMusic26 ? .init() : (migratedCustomConfiguration ?? .init())
+        configuration = newProfile == .appleMusic26 || newProfile == .amll
+            ? .init()
+            : (migratedCustomConfiguration ?? .init())
         switchingProfile = false
         persist()
     }
 
     func restoreAMLLDefaults() {
         switchingProfile = true
-        profile = .appleMusic26
+        profile = .amll
         configuration = .init()
         switchingProfile = false
         persist()

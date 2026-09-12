@@ -1,20 +1,44 @@
 import Foundation
 
+struct AMLLSafeArea: Codable, Equatable, Sendable {
+    var top = 0.0
+    var leading = 0.0
+    var bottom = 0.0
+    var trailing = 0.0
+}
+
 struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     enum Anchor: String, Codable, Sendable { case top, center, bottom }
     var width: Double
     var height: Double
     var screenWidth: Double
     var fontSize: Double
+    var safeArea = AMLLSafeArea()
+    var displayScale = 1.0
+    var maximumFPS = 60
+    var localeIdentifier = ""
+    var layoutDirection = "ltr"
     var alignPosition = 0.1
     var alignAnchor = Anchor.top
     var reduceMotion = false
+    var reduceTransparency = false
+    var boldText = false
+    var dynamicTypeScale = 1.0
+    var voiceOver = false
     var enableSpring = true
     var enableScale = true
     var enableBlur = true
     var hidePassedLines = false
     var alwaysPostpositionBackground = false
     var dotHeight = 16.0
+}
+
+enum AMLLPlaybackEvent: Sendable, Equatable {
+    case snapshot
+    case seek(revision: Int)
+    case trackChanged
+    case paused
+    case resumed
 }
 
 struct AMLLPlayerInput: Sendable {
@@ -24,6 +48,28 @@ struct AMLLPlayerInput: Sendable {
     /// Explicit event revision; ordinary clock corrections must not be inferred to be seeks.
     var seekRevision = 0
     var seeking = false
+    var document: LyricsDocument?
+    var playbackSnapshot: PlaybackSnapshot?
+    var artworkURL: URL?
+    var configuration: LyricsRenderConfiguration?
+    var event: AMLLPlaybackEvent?
+
+    init(position: Double, offset: Double = 0, playing: Bool, seekRevision: Int = 0,
+         seeking: Bool = false, document: LyricsDocument? = nil,
+         playbackSnapshot: PlaybackSnapshot? = nil, artworkURL: URL? = nil,
+         configuration: LyricsRenderConfiguration? = nil, event: AMLLPlaybackEvent? = nil)
+    {
+        self.position = position
+        self.offset = offset
+        self.playing = playing
+        self.seekRevision = seekRevision
+        self.seeking = seeking
+        self.document = document
+        self.playbackSnapshot = playbackSnapshot
+        self.artworkURL = artworkURL
+        self.configuration = configuration
+        self.event = event
+    }
 }
 
 enum AMLLInteraction: Sendable {
@@ -64,6 +110,32 @@ struct AMLLFrameState: Codable, Sendable {
         var y: Double
     }
 
+    struct Background: Codable, Equatable, Sendable {
+        var artworkURL: URL?
+        var blur: Double
+        var progress: Double
+        var seed: UInt64
+
+        init(artworkURL: URL? = nil, blur: Double = 0, progress: Double = 0, seed: UInt64 = 0) {
+            self.artworkURL = artworkURL
+            self.blur = blur
+            self.progress = progress
+            self.seed = seed
+        }
+    }
+
+    struct Controls: Codable, Equatable, Sendable {
+        var visible: Bool
+        var progress: Double
+        var enabled: Bool
+
+        init(visible: Bool = false, progress: Double = 0, enabled: Bool = false) {
+            self.visible = visible
+            self.progress = progress
+            self.enabled = enabled
+        }
+    }
+
     var lyricTime: Double
     var animationTime: Double
     var focusGroup: Int
@@ -71,6 +143,9 @@ struct AMLLFrameState: Codable, Sendable {
     var interlude: Interlude?
     var browsing: Bool
     var settled: Bool
+    var background = Background()
+    var controls = Controls()
+    var transitionProgress = 1.0
 }
 
 /// Deterministic native host for the pinned timeline/group/layout/scroll algorithms.
@@ -243,9 +318,25 @@ struct AMLLFrameEngine {
             }
         }
         firstFrame = false; previousInput = input
-        return .init(lyricTime: time / 1000, animationTime: animationTime, focusGroup: timeline.focus,
-                     rows: rows, interlude: interlude, browsing: browsing,
-                     settled: motions.allSatisfy { $0.y.arrived && $0.slide.arrived && $0.mainScale.arrived && $0.backgroundScale.arrived })
+        let duration = input.playbackSnapshot?.duration ?? 0
+        let progress = duration > 0 ? min(1, max(0, input.position / duration)) : 0
+        return .init(
+            lyricTime: time / 1000,
+            animationTime: animationTime,
+            focusGroup: timeline.focus,
+            rows: rows,
+            interlude: interlude,
+            browsing: browsing,
+            settled: motions.allSatisfy { $0.y.arrived && $0.slide.arrived && $0.mainScale.arrived && $0.backgroundScale.arrived },
+            background: .init(artworkURL: input.artworkURL,
+                              blur: input.configuration?.backgroundBlur ?? 0,
+                              progress: progress,
+                              seed: 0),
+            controls: .init(visible: input.configuration?.showControls ?? false,
+                            progress: progress,
+                            enabled: input.playbackSnapshot?.restrictions.canSeek ?? false),
+            transitionProgress: 1
+        )
     }
 
     private func height(_ index: Int) -> Double {

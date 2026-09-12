@@ -55,6 +55,11 @@ struct LyricWord: Codable, Equatable, Sendable {
     var start: Double
     var end: Double
     var romanWord: String? = nil
+    /// Optional AMLL metadata retained by the renderer adapter. Providers may
+    /// omit these fields when their source format has no equivalent.
+    var ruby: String? = nil
+    var voice: String? = nil
+    var isObscene = false
 }
 
 enum LyricsPrecision: String, Codable, Sendable { case line, word }
@@ -78,7 +83,7 @@ struct LyricsDocument: Codable, Equatable, Sendable {
     // Bump when the TTML/LRC semantic mapping changes. Existing cached
     // documents are reparsed from their payload so provider fixes become
     // visible without asking the user to clear the lyric cache.
-    static let parserVersion = 3
+    static let parserVersion = 4
     var candidate: LyricCandidate
     var lines: [LyricLine]
     var language: String

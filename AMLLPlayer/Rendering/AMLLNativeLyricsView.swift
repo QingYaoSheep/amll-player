@@ -2,13 +2,15 @@ import CoreImage
 import SwiftUI
 import UIKit
 
-/// Parallel native port. Kept behind the Debug preview until visual/device sign-off.
+/// Native AMLL lyric canvas used by the real lyric page and the deterministic
+/// Debug preview. The legacy renderer remains available as a comparison path.
 struct AMLLNativeLyricsView: UIViewRepresentable {
     var document: LyricsDocument
     var configuration: LyricsRenderConfiguration
     var input: AMLLPlayerInput
     var position: () -> Double
     var interaction: (AMLLInteraction) -> Void
+    var canSeek = true
     var active = true
     var targetFPS = 120
     var resumeToken = 0
@@ -27,7 +29,8 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
         view.onInteraction = interaction
         view.onBrowsing = browsing
         view.setFrameRate(targetFPS)
-        view.configure(document: document, configuration: configuration, input: input, active: active, reduceMotion: reduceMotion)
+        view.configure(document: document, configuration: configuration, input: input, active: active,
+                       reduceMotion: reduceMotion, canSeek: canSeek)
         view.resumeFollowing(token: resumeToken)
     }
 
@@ -62,6 +65,7 @@ final class AMLLNativeCanvas: UIView {
     private var measuredSize = CGSize.zero
     private var dirty = true
     private var active = true
+    private var canSeek = true
     private var reduceMotion = false
     private var lastTranslation: CGFloat = 0
     private var resumeToken = 0
@@ -97,7 +101,9 @@ final class AMLLNativeCanvas: UIView {
         nil
     }
 
-    func configure(document: LyricsDocument, configuration: LyricsRenderConfiguration, input: AMLLPlayerInput, active: Bool, reduceMotion: Bool) {
+    func configure(document: LyricsDocument, configuration: LyricsRenderConfiguration, input: AMLLPlayerInput,
+                   active: Bool, reduceMotion: Bool, canSeek: Bool = true)
+    {
         if source != document {
             source = document; display = AMLLDisplayDocument(lines: document.lines); engine = nil; dirty = true
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
@@ -105,7 +111,8 @@ final class AMLLNativeCanvas: UIView {
         if self.configuration != configuration || self.reduceMotion != reduceMotion {
             dirty = true
         }
-        self.configuration = configuration; self.input = input; self.active = active; self.reduceMotion = reduceMotion
+        self.configuration = configuration; self.input = input; self.active = active
+        self.canSeek = canSeek; self.reduceMotion = reduceMotion
         setNeedsLayout()
         syncLink()
         if !dirty {
@@ -133,9 +140,28 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private func renderEnvironment() -> AMLLRenderEnvironment {
-        AMLLRenderEnvironment(width: bounds.width, height: bounds.height, screenWidth: Double(window?.bounds.width ?? bounds.width),
-                              fontSize: configuration.fontSize, alignPosition: 0.1, reduceMotion: reduceMotion,
-                              enableBlur: configuration.blurInactive, dotHeight: max(configuration.fontSize * 0.5, bounds.height * 0.01))
+        let safeArea = safeAreaInsets
+        let traits = traitCollection
+        let typeScale = UIFontMetrics(forTextStyle: .body).scaledValue(for: 1)
+        return AMLLRenderEnvironment(
+            width: bounds.width,
+            height: bounds.height,
+            screenWidth: Double(window?.bounds.width ?? bounds.width),
+            fontSize: configuration.fontSize,
+            safeArea: .init(top: safeArea.top, leading: safeArea.left, bottom: safeArea.bottom, trailing: safeArea.right),
+            displayScale: Double(window?.screen.scale ?? 1),
+            maximumFPS: window?.screen.maximumFramesPerSecond ?? 60,
+            localeIdentifier: Locale.current.identifier,
+            layoutDirection: effectiveUserInterfaceLayoutDirection == .rightToLeft ? "rtl" : "ltr",
+            alignPosition: configuration.anchor,
+            reduceMotion: reduceMotion,
+            reduceTransparency: UIAccessibility.isReduceTransparencyEnabled,
+            boldText: traits.legibilityWeight == .bold,
+            dynamicTypeScale: typeScale,
+            voiceOver: UIAccessibility.isVoiceOverRunning,
+            enableBlur: configuration.blurInactive && !UIAccessibility.isReduceTransparencyEnabled,
+            dotHeight: max(configuration.fontSize * 0.5, bounds.height * 0.01)
+        )
     }
 
     private var inset: CGFloat {
@@ -175,7 +201,10 @@ final class AMLLNativeCanvas: UIView {
                 let layout = makeLayout(row.lineIndex)
                 layouts[row.lineIndex] = layout
                 view = AMLLNativeRow(line: display.lines[row.lineIndex], layout: layout, scale: window?.screen.scale ?? 2)
-                view.onSeek = { [weak self] in self?.onInteraction(.seek(lineID: display.lines[row.lineIndex].id)) }
+                view.onSeek = { [weak self] in
+                    guard let self, canSeek else { return }
+                    onInteraction(.seek(lineID: display.lines[row.lineIndex].id))
+                }
                 rowViews[row.lineIndex] = view; addSubview(view)
             }
             let line = display.lines[row.lineIndex]
@@ -303,39 +332,103 @@ final class AMLLNativeCanvas: UIView {
 
 @MainActor
 private final class AMLLNativeRow: UIView {
+    private struct WordPiece {
+        var layer: CALayer
+        var mask: CAGradientLayer
+        var fragment: AMLLCoreTextLayout.WordFragment
+        var maskIndex: Int
+        var advance: Double
+    }
+
+    private struct CharacterPiece {
+        var layer: CALayer
+        var mask: CAGradientLayer
+        var fragment: AMLLCoreTextLayout.CharacterFragment
+        var maskIndex: Int
+        var advance: Double
+        var animation: AMLLSourceWordAnimation.CharacterAnimation?
+    }
+
     private let line: LyricLine
     private let textLayout: AMLLCoreTextLayout
     private let base = CALayer()
     private let auxiliary = CALayer()
-    private var words: [(layer: CALayer, mask: CAGradientLayer, fragment: AMLLCoreTextLayout.WordFragment, maskIndex: Int, advance: Double)] = []
+    private var words: [WordPiece] = []
+    private var characters: [CharacterPiece] = []
     private let maskWords: [AMLLWordMask.Word]
+    private let sharpImage: UIImage
+    private let nearBlurImage: UIImage
+    private let farBlurImage: UIImage
+    private let sharpAuxiliaryImage: UIImage
+    private let nearBlurAuxiliaryImage: UIImage
+    private let farBlurAuxiliaryImage: UIImage
     var onSeek: (() -> Void)?
 
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat) {
         self.line = line; textLayout = layout
         let indexes = layout.maskWords.indices.filter { layout.maskWords[$0].width > 0 }
         maskWords = indexes.map { layout.maskWords[$0] }
+        sharpImage = layout.raster(scale: scale)
+        nearBlurImage = layout.raster(scale: scale, blurRadius: 2)
+        farBlurImage = layout.raster(scale: scale, blurRadius: 5)
+        sharpAuxiliaryImage = layout.raster(scale: scale, auxiliary: true)
+        nearBlurAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, blurRadius: 2)
+        farBlurAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, blurRadius: 5)
         super.init(frame: CGRect(origin: .zero, size: layout.size))
-        let image = layout.raster(scale: scale, auxiliary: false)
-        base.contents = image.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
-        auxiliary.contents = layout.raster(scale: scale, auxiliary: true).cgImage
+        base.contents = sharpImage.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
+        auxiliary.contents = sharpAuxiliaryImage.cgImage
         auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
         var consumed: [Int: Double] = [:]
         for fragment in layout.fragments where fragment.rect.width > 0 {
             guard let maskIndex = indexes.firstIndex(of: fragment.wordIndex) else { continue }
             let piece = CALayer()
-            piece.frame = fragment.rect; piece.contents = image.cgImage; piece.contentsScale = scale
+            piece.frame = fragment.rect; piece.contents = sharpImage.cgImage; piece.contentsScale = scale
             piece.contentsRect = CGRect(x: fragment.rect.minX / layout.size.width, y: fragment.rect.minY / layout.size.height,
                                         width: fragment.rect.width / layout.size.width, height: fragment.rect.height / layout.size.height)
             let mask = CAGradientLayer(); mask.frame = piece.bounds
             mask.startPoint = CGPoint(x: fragment.rtl ? 1 : 0, y: 0.5); mask.endPoint = CGPoint(x: fragment.rtl ? 0 : 1, y: 0.5)
             piece.mask = mask; layer.addSublayer(piece)
             let advance = consumed[fragment.wordIndex, default: 0]
-            words.append((piece, mask, fragment, maskIndex, advance))
+            words.append(.init(layer: piece, mask: mask, fragment: fragment, maskIndex: maskIndex, advance: advance))
             consumed[fragment.wordIndex] = advance + fragment.rect.width
         }
+
+        let nonEmptyWordIndexes = line.words.indices.filter {
+            !line.words[$0].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        let lastWordIndex = nonEmptyWordIndexes.last
+        var characterConsumed: [Int: Double] = [:]
+        var characterWordIndexes = Set<Int>()
+        for fragment in layout.characterFragments where fragment.rect.width > 0 {
+            guard let maskIndex = indexes.firstIndex(of: fragment.wordIndex) else { continue }
+            let piece = CALayer()
+            piece.frame = fragment.rect; piece.contents = sharpImage.cgImage; piece.contentsScale = scale
+            piece.contentsRect = CGRect(x: fragment.rect.minX / layout.size.width, y: fragment.rect.minY / layout.size.height,
+                                        width: fragment.rect.width / layout.size.width, height: fragment.rect.height / layout.size.height)
+            let mask = CAGradientLayer(); mask.frame = piece.bounds
+            mask.startPoint = CGPoint(x: fragment.rtl ? 1 : 0, y: 0.5); mask.endPoint = CGPoint(x: fragment.rtl ? 0 : 1, y: 0.5)
+            piece.mask = mask; layer.addSublayer(piece)
+            let word = line.words[fragment.wordIndex]
+            let characterCount = max(1, word.text.count)
+            let animation = AMLLSourceWordAnimation.emphasis(
+                duration: word.end - word.start,
+                delay: word.start - line.start,
+                characterCount: characterCount,
+                rubyCount: word.ruby?.count ?? word.romanWord?.count ?? 0,
+                isLastWord: lastWordIndex == fragment.wordIndex,
+                isBackground: line.isBackground
+            ).dropFirst(fragment.characterIndex).first
+            let advance = characterConsumed[fragment.wordIndex, default: 0]
+            characters.append(.init(layer: piece, mask: mask, fragment: fragment, maskIndex: maskIndex,
+                                    advance: advance, animation: animation))
+            characterConsumed[fragment.wordIndex] = advance + fragment.rect.width
+            characterWordIndexes.insert(fragment.wordIndex)
+        }
         base.isHidden = !words.isEmpty
-        isAccessibilityElement = true; accessibilityLabel = [line.text, line.translation, line.romanization].filter { !$0.isEmpty }.joined(separator: ", ")
+        for word in words where characterWordIndexes.contains(word.fragment.wordIndex) {
+            word.layer.isHidden = true
+        }
+        isAccessibilityElement = true; accessibilityLabel = line.text
         accessibilityTraits = .button
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
     }
@@ -354,9 +447,25 @@ private final class AMLLNativeRow: UIView {
 
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
         let bright = row.brightAlpha, dark = row.darkAlpha
+        let image: UIImage
+        let auxiliaryImage: UIImage
+        switch row.blur {
+        case ..<0.5:
+            image = sharpImage; auxiliaryImage = sharpAuxiliaryImage
+        case ..<3.5:
+            image = nearBlurImage; auxiliaryImage = nearBlurAuxiliaryImage
+        default:
+            image = farBlurImage; auxiliaryImage = farBlurAuxiliaryImage
+        }
+        base.contents = image.cgImage
+        auxiliary.contents = auxiliaryImage.cgImage
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
         base.opacity = Float(words.isEmpty ? 1 : dark)
+        let auxiliaryText = configuration.auxiliaryText(for: line)
+        accessibilityLabel = ([line.text] + auxiliaryText).filter { !$0.isEmpty }.joined(separator: ", ")
         for entry in words {
+            entry.layer.contents = image.cgImage
+            guard !entry.layer.isHidden else { continue }
             let elapsed = row.wordClock.floatElapsed(wordStart: entry.fragment.word.start - line.start,
                                                      duration: entry.fragment.word.end - entry.fragment.word.start)
             let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: entry.fragment.word.end - entry.fragment.word.start,
@@ -372,6 +481,37 @@ private final class AMLLNativeRow: UIView {
             entry.mask.locations = [0, 1]
             // Let the gradient extend beyond the fragment. Clamping stops to [0,1]
             // changes the feather slope when a word enters or leaves the mask.
+            entry.mask.startPoint = CGPoint(x: entry.fragment.rtl ? 1 - start : start, y: 0.5)
+            entry.mask.endPoint = CGPoint(x: entry.fragment.rtl ? 1 - end : end, y: 0.5)
+            entry.layer.opacity = 1
+        }
+        for entry in characters {
+            entry.layer.contents = image.cgImage
+            let duration = max(0.001, entry.fragment.range.length > 0
+                ? line.words[entry.fragment.wordIndex].end - line.words[entry.fragment.wordIndex].start : 0.001)
+            let elapsed = row.wordClock.floatElapsed(
+                wordStart: line.words[entry.fragment.wordIndex].start - line.start,
+                duration: duration
+            )
+            let presentation = motionEnabled && configuration.emphasizeWords
+                ? entry.animation?.sample(lineTime: row.wordClock.time)
+                : nil
+            let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground)
+            let scale = presentation?.scale ?? 1
+            let x = (presentation?.offsetX ?? 0) * textLayout.font.pointSize
+            let y = ((presentation?.offsetY ?? 0) + (motionEnabled ? float : 0)) * textLayout.font.pointSize
+            entry.layer.setAffineTransform(CGAffineTransform(translationX: x, y: y).scaledBy(x: scale, y: scale))
+            entry.layer.shadowColor = UIColor.white.cgColor
+            entry.layer.shadowRadius = CGFloat(presentation?.glowRadius ?? 0) * textLayout.font.pointSize
+            entry.layer.shadowOpacity = Float(presentation?.glowOpacity ?? 0)
+            entry.layer.shadowOffset = .zero
+            let feather = textLayout.font.lineHeight * configuration.gradientWidth
+            let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
+                                         words: maskWords, feather: feather) - entry.advance
+            let width = max(1, entry.fragment.rect.width)
+            let start = edge / width, end = (edge + max(0.0001, feather)) / width
+            entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
+            entry.mask.locations = [0, 1]
             entry.mask.startPoint = CGPoint(x: entry.fragment.rtl ? 1 - start : start, y: 0.5)
             entry.mask.endPoint = CGPoint(x: entry.fragment.rtl ? 1 - end : end, y: 0.5)
             entry.layer.opacity = 1

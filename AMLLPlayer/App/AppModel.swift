@@ -7,6 +7,9 @@ import SwiftUI
 final class AppModel {
     private(set) var sessionState: SpotifySessionState
     private(set) var playbackSnapshot: PlaybackSnapshot?
+    /// Monotonic lyric-time anchor revision. Renderer input uses this instead
+    /// of guessing a seek from a normal playback snapshot correction.
+    private(set) var lyricsSeekRevision = 0
     private(set) var devicesState: LoadableState<[PlaybackDevice]> = .idle
     private(set) var isPerformingAction = false
     var presentedError: SpotifyServiceError?
@@ -171,6 +174,7 @@ final class AppModel {
         environment.spotifySession.logout()
         sessionState = .signedOut
         playbackSnapshot = nil
+        lyricsSeekRevision = 0
         devicesState = .idle
         clock = PlayerClock()
     }
@@ -200,6 +204,7 @@ final class AppModel {
         catalog = SpotifyCatalogStore(provider: SpotifyCatalogClient(session: environment.spotifySession))
         sessionState = environment.spotifySession.currentState
         playbackSnapshot = nil
+        lyricsSeekRevision = 0
         devicesState = .idle
         clock = PlayerClock()
         presentedError = nil
@@ -235,6 +240,7 @@ final class AppModel {
     }
 
     func seek(to position: TimeInterval) async {
+        lyricsSeekRevision &+= 1
         await perform {
             try await environment.spotifyPlayback.seek(to: position)
         }

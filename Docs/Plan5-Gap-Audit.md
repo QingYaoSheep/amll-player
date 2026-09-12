@@ -1,6 +1,6 @@
 # 计划 5 移植缺项核查
 
-检查日期：2026-09-12。代码基线：`858144e54a3d91c1b9d2e1bbaa7c49993c207a0b`。
+检查日期：2026-09-12。代码基线：`3bd52b943a7b471331fcf579a8c47bcaf2f3730f`。
 
 依据：用户批准的“计划 5 移植缺项核查与闭合计划”，以及本地 `AMLL-OLD` 固定源码。音乐播放能力不属于本审计范围；现有 Spotify 服务只作为播放快照、进度和控制回调来源。
 
@@ -17,22 +17,29 @@
 - Core Text 已导出字符簇和缓存模糊栅格；原生行视图开始消费 `Row.blur`、字符强调关键帧、字符缩放、位移和发光。
 - 仍未完成完整 AMLL 页面几何、非弹簧 transition、完整 line-balancer、背景上下文连续性、辅助功能矩阵、确定性整页对照和真机签收。
 
+### 2026-09-12 后续闭合
+
+- `LyricWord` 的解码现在兼容旧缓存中缺失的 `isObscene`、`rubySegments` 和其他可选元数据；逐词分割后的显示词保留自己的 `LyricWord`，不会再用原始数组索引越界。
+- Core Text 将主歌词、timed ruby 和翻译/罗马音拆为互不采样的缓存栅格；ruby 为主排版预留高度，字符图层实际消费源版强调关键帧、缩放、位移和发光。
+- 静态逐行歌词的断行子项改为 NLTokenizer 的单词和空白段，保留原始空格；新增 AMLL 七档响应式字号，`.amll` 使用独立 medium 基准，Apple Music 兼容配置继续使用旧显式字号。
+- 非弹簧 opacity/blur 过渡会在目标处精确收敛；Reduce Transparency 同时禁用引擎行模糊和背景透明材质。以上是实现接线和回归证据，不等同于真机视觉签收。
+
 ## 必须补齐的实现缺口
 
 | 编号 | 计划要求 | 当前代码证据与影响 | 补齐条件 |
 |---|---|---|---|
 | G01 | 真实歌词数据与统一回调 | `.amll` 通过 `AMLLLyricsDisplay` 接入 `LyricsCoordinator`、Spotify 快照、offset、进度、seek revision 和封面；旧 renderer 仍为回退，完整整页默认切换尚未签收。 | 在 iPhone/iPad 真实页面完成所有布局和交互验收后再切默认；播放能力继续复用现有 Spotify 服务。 |
-| G02 | 长音强调、字符浮动、缩放、发光 | Core Text 已输出字符簇；`AMLLNativeRow` 已创建字符图层并消费 `CharacterAnimation.sample`，但复杂跨行词、ruby 锚点和全场景轨迹尚未完成。 | 建立塑形后的字形簇夹具，验证 32 帧曲线、延迟、长音/末词增强、发光合成及打断生命周期。 |
-| G03 | 行模糊、透明度和 CSS 过渡 | 行视图已缓存 sharp/near/far Core Image 栅格并按 `Row.blur` 切换，透明度已接线；原版 filter/opacity 过渡和非弹簧 transition 仍待对照。 | 逐帧复现源曲线，并比较中断、暂停、Reduce Transparency 和设置切换轨迹。 |
-| G04 | 非弹簧选项及全部原生效果设置 | `AMLLNativeCanvas` 已将安全区、字号、anchor、advance、辅助功能和模糊能力传入 Environment；关闭弹簧现在使用引擎内的 320ms ease-out transition，seek/首帧仍立即定位。完整原生参数矩阵和源曲线对照仍待完成。 | 对每个设置做从界面到实际帧输出的验收，并以源录屏校准 transition 曲线和时长。 |
-| G05 | `line-balancer`、非逐字断行与原 CSS 排版 | 当前移植了断行代价函数，尚未完整移植 `line-balancer.ts` 的动态/非动态适配、测量校准等语义。静态行在 Core Text 布局中按 Swift Character 建立子项。原版 7 档响应式字号尚未实现，当前仍是 32 默认值及 24–52 范围。行高/基线与字体分段尚无浏览器同字体对照。 | 独立覆盖逐行/逐字断行、原字号档位、字重/字距、主辅歌词基线与组高度反馈；逐行歌词继续禁止伪造逐字时间。 |
-| G06 | 逐词罗马音、ruby 和无损适配 | `LyricWord` 已增加 ruby、voice 和 obscene 可选字段；行级辅助文本可回退使用逐词罗马音/ruby，但逐词 ruby 的精确排版和遮罩配对仍未完成。 | 完成逐词罗马音/ruby 排版、时间与遮罩；对无法对应的字符情况保留明确诊断。 |
+| G02 | 长音强调、字符浮动、缩放、发光 | Core Text 已输出字符簇；`AMLLNativeRow` 创建字符图层并消费 `CharacterAnimation.sample`，短词使用普通 float，长音/CJK 使用源版强调谓词。复杂跨行词、ruby 锚点和全场景轨迹尚未完成。 | 建立塑形后的字形簇夹具，验证 32 帧曲线、延迟、长音/末词增强、发光合成及打断生命周期。 |
+| G03 | 行模糊、透明度和 CSS 过渡 | 行视图已缓存主/ruby/辅助 sharp/near/far Core Image 栅格并按 `Row.blur` 切换，透明度和 400ms opacity/blur transition 已接线；连续滤镜数值和完整源曲线仍待对照。 | 逐帧复现源曲线，并比较中断、暂停、Reduce Transparency 和设置切换轨迹。 |
+| G04 | 非弹簧选项及全部原生效果设置 | `AMLLNativeCanvas` 已将安全区、响应式字号、anchor、advance、辅助功能和模糊能力传入 Environment；关闭弹簧使用引擎 transition，seek/首帧/Reduce Motion 立即定位。完整原生参数矩阵和源曲线对照仍待完成。 | 对每个设置做从界面到实际帧输出的验收，并以源录屏校准 transition 曲线和时长。 |
+| G05 | `line-balancer`、非逐字断行与原 CSS 排版 | 已移植断行代价函数；静态逐行子项使用 NLTokenizer 单词/空白段，逐行路径没有虚构词时间；七档响应式字号已可选且 `.amll` 默认使用 medium。浏览器测量校准、字基线、行高和动态断行全矩阵仍待对照。 | 独立覆盖逐行/逐字断行、字号档位、字重/字距、主辅歌词基线与组高度反馈。 |
+| G06 | 逐词罗马音、ruby 和无损适配 | `LyricWord` 已增加 timed ruby、voice 和 obscene 可选字段；主/ruby/辅助栅格分离，ruby 保留布局高度，逐词罗马音可回退到行级辅助文本。逐词 ruby 遮罩配对和复杂跨行元数据诊断仍未完成。 | 完成逐词罗马音/ruby 排版、时间与遮罩；对无法对应的字符情况保留明确诊断。 |
 | G07 | 完整页面布局、封面、控件和 SVG | 尚无新 `PrebuiltLyricPlayer` 原生整页；横竖宽高比、普通/沉浸封面、反射/遮罩、跑马灯、原滑块、原 SVG、菜单与所有显隐组合没有在新路径完成。旧页面存在同名功能不能证明几何与交互一致。 | 按原 TSX/CSS/SVG 逐项接入，并建立手机/iPad/紧凑窗口状态矩阵。 |
 | G08 | 包装层转场及统一手势 | 新接口枚举声明了关闭等事件，但引擎 `handle` 只处理浏览与恢复跟随；新整页关闭/取消/键盘路径不存在。当前生产入口仍使用系统 `fullScreenCover`。 | 移植原位移、圆角、延迟、曲线；仲裁歌词滚动、进度拖动、交互关闭，并验证取消/反向打断。 |
-| G09 | Mesh/Pixi/纯色或 CSS 背景及上下文连续性 | 现有 `AMLLMeshBackground` 属于旧路径，不能作为完整双背景移植证据；无新 Pixi 对等管线和固定种子比较。旧 Mesh 在封面加载成功时重置 `startedAt`，新计划要求的切歌/状态切换时间连续性尚未落实。 | 完成原图像处理、网格、滤镜、采样、混合和随机过程；验证旋转/切歌不闪屏、不归零；原生不可表达的任意 CSS 不新增解释器。 |
-| G10 | 独立 AMLL 配置与无损迁移 | 已有 `.amll` profile、独立恢复入口和旧 custom 备份；默认仍保持兼容 profile，旧数据迁移和设置矩阵尚未完成。 | 完成版本化迁移、来源/人工匹配/offset 保留和签收后的默认切换。 |
-| G11 | 完整接口与状态归属 | `AMLLPlayerInput`、Environment、FrameState 已增加歌词、快照、封面、安全区、辅助功能、背景和控件字段；页面适配器已接入，但统一交互仲裁和所有字段的实际消费仍未完成。 | 两条路径使用同一输入和事件序列，完整交互与状态归属通过回放夹具。 |
-| G12 | 独立辅助功能变体 | 新路径有基本 VoiceOver label、激活动作、UIFontMetrics 和 Reduce Motion，但没有新路径完整 Reduce Transparency/大字/阅读上下文及交互变体。现有行命中高度依赖排版高度，也没有覆盖所有控件的 44pt 命中验证。 | 建立独立变体和测试矩阵，保留阅读/操作，并与默认金标区分。 |
+| G09 | Mesh/Pixi/纯色或 CSS 背景及上下文连续性 | `AMLLMeshBackground` 已接入 `.amll` 真实页面，固定 seed 已进入 frame state，封面异步加载不会重置 mesh clock；Pixi 完整对等管线、固定种子逐帧比较和旋转/切歌人工签收仍缺失。 | 完成原图像处理、网格、滤镜、采样、混合和随机过程；验证旋转/切歌不闪屏、不归零；原生不可表达的任意 CSS 不新增解释器。 |
+| G10 | 独立 AMLL 配置与无损迁移 | 已有 `.amll` profile、独立恢复入口、旧 custom 备份和 medium responsive baseline；默认仍保持兼容 profile，完整旧值转换和设置矩阵尚未完成。 | 完成版本化迁移、来源/人工匹配/offset 保留和签收后的默认切换。 |
+| G11 | 完整接口与状态归属 | `AMLLPlayerInput`、Environment、FrameState 已增加歌词、快照、封面、安全区、辅助功能、背景、控件和旧 trace 解码默认；真实页面适配器已接入，统一交互仲裁和所有事件回放仍未完成。 | 两条路径使用同一输入和事件序列，完整交互与状态归属通过回放夹具。 |
+| G12 | 独立辅助功能变体 | 新路径有 VoiceOver label、seek 自定义动作、UIFontMetrics、Reduce Motion 和 Reduce Transparency 接线；歌词行扩展 44pt 命中区域。完整阅读上下文、Dynamic Type 极端尺寸和页面控件 44pt 矩阵仍缺少真机验证。 | 建立独立变体和测试矩阵，保留阅读/操作，并与默认金标区分。 |
 
 ## 对照和验收缺口
 
@@ -61,12 +68,11 @@
 
 现有 `Plan5-AMLL-Port.md` 已记录多数大块待办；以下应拆成独立验收项，避免只被“效果待完善”一句覆盖：
 
-1. `Row.blur` 到实际绘制的接线，以及 opacity/filter 过渡。
-2. 强调关键帧到字形簇图层的接线与触发条件。
-3. 非弹簧 transition 路径与逐项设置生效测试。
-4. `line-balancer` 的非动态适配/测量校准，与字体预设完整移植。
-5. 逐词罗马音/ruby 元数据的无损适配和可见排版。
-6. 完整新配置与 `restoreAMLLDefaults` 的语义纠正。
-7. 同输入、同 Apple 字体、冻结时钟的完整播放器对照，而非两个不同的预览夹具。
+1. 连续 blur/filter 栅格的源曲线、跨行 ruby 遮罩和字形簇轨迹。
+2. `line-balancer` 的浏览器测量校准、动态断行和同字体基线误差。
+3. 全部原生页面几何、封面/菜单/SVG、包装层转场和统一手势。
+4. Pixi/GLSL 背景逐帧对照、旋转/切歌上下文连续性及固定种子人工叠片。
+5. 完整旧配置转换、Dynamic Type/VoiceOver/Reduce Transparency 真机矩阵。
+6. 同输入、同 Apple 字体、冻结时钟的整页双画面对照，而非两个不同的预览夹具。
 
 建议后续顺序：先闭合歌词引擎的可见效果和排版链路（G02–G06），同时补 V03 的统一对照输入；再完成整页/交互/背景（G01、G07–G09），落实配置和辅助功能（G10–G12），最后执行全部验收门槛。任何阶段都不以 CI 绿灯替代真机视觉签收。

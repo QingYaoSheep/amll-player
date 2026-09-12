@@ -11,20 +11,20 @@ Paths below are relative to the pinned core/react-full `src` directories extract
 | Source | Native implementation | Evidence / remaining gap |
 |---|---|---|
 | `utils/spring.ts`, `derivative.ts` | `AMLLSourceSpring` | 360 original frames at 60/120 Hz, dropped frame, delayed target/retarget/parameters; source finite differences and stop rule |
-| `utils/lyric-line-break.ts` | `AMLLBalancedLayout` | Four original fixed-width break fixtures; browser glyph measurements and segmentation parity pending |
+| `utils/lyric-line-break.ts`, `utils/line-balancer.ts` | `AMLLBalancedLayout`, `AMLLCoreTextLayout.staticSegments` | Four original fixed-width break fixtures; static lines now use NLTokenizer word/gap children and the seven responsive AMLL size presets. Browser glyph calibration and exact baseline parity remain pending |
 | `lyric-player/base/timeline.ts` | `AMLLSourceTimeline` | Nine original overlap/seek states; explicit seek revision |
 | `utils/optimize-lyric.ts` | `AMLLDisplayDocument` | Original vocal/overlap fixture; source word times unchanged |
 | `utils/lyric-split-words.ts` | `AMLLWordSegmentation` | Adapter present; exhaustive UTF-16 fixtures, ruby/obscene metadata incomplete |
-| base group/layout/scroll; DOM group/CSS | `AMLLFrameEngine` | Independent group Y/slide and line scales, browsing, paused background flow test; CSS transitions, measured height feedback, non-spring fallback and full source traces incomplete |
+| base group/layout/scroll; DOM group/CSS | `AMLLFrameEngine` | Independent group Y/slide and line scales, browsing, paused background flow, explicit event seeks, opacity/blur transitions and non-spring fallback; measured height feedback and full source traces remain incomplete |
 | DOM `updateMaskAlphaTargets`, `applyAlphaToDom` | `AMLLMaskAlpha` | 540 original samples; intrinsic scale, force update, attack/release and three-decimal DOM output; state owned by engine |
 | DOM `generateWebAnimationBasedMaskImage` | `AMLLWordMask` | Original three-word keyframes/gap holds; ruby timing, overlapping/malformed words and all variants pending |
-| DOM layout/CSS | `AMLLCoreTextLayout` | Core Text + source break cost, independent auxiliary raster, logical timing shared by fragments. Bidi fragments use shaped visual runs with logical mask ordering; mixed Latin/Arabic geometry regression added. Ruby, word romanization, exhaustive ligature/RTL cases and exact line heights/browser baseline pending |
-| DOM composed layers | `AMLLNativeLyricsView` | Display link, row reuse, single mask composition, unclamped feather slope; group blur, opacity/filter transitions, exact emphasis/glow, full accessibility variants pending |
-| DOM float/emphasis methods | `AMLLSourceWordAnimation`, `AMLLWordAnimationClock` | Original 32-frame emphasis descriptors ported with delay, ruby anchor count, last-word boost and matrix rounding; source fixture covers eight characters. Normal word float wired with independent pause/enable/reverse clocks. Per-character shaped layers, glow composition and full WAAPI timing parity still pending; old `AMLLWordMotion` is not counted |
+| DOM layout/CSS | `AMLLCoreTextLayout` | Core Text + source break cost, static word segmentation, independent main/ruby/auxiliary rasters, logical timing shared by fragments. Bidi fragments use shaped visual runs with logical mask ordering; timed ruby reserves annotation space and segmented provider words retain their source atom. Exhaustive ligature/RTL cases and exact line heights/browser baseline pending |
+| DOM composed layers | `AMLLNativeLyricsView` | Display link, row reuse, disjoint main/ruby/auxiliary layers, cached near/far blur rasters, row opacity/filter transition consumption, per-character emphasis/glow and 44pt/accessibility actions; full accessibility variants and visual sign-off pending |
+| DOM float/emphasis methods | `AMLLSourceWordAnimation`, `AMLLWordAnimationClock` | Original 32-frame emphasis descriptors ported with source predicate, delay, ruby anchor count, last-word boost and matrix rounding; per-character shaped layers consume the sampled transform and glow. Full WAAPI timing parity and complex cross-line fixtures remain pending; old `AMLLWordMotion` is not counted |
 | react-full PrebuiltLyricPlayer/layouts/Cover/sliders/icons | Not yet wired in new player | Entire page, responsive font presets, source SVGs, aspect-ratio rules, gestures and live AppModel adapter pending |
 | Mesh/Pixi/GLSL/CSS backgrounds | Old path only | Shader bundle pinned; exact pipelines/seeded frame comparison pending |
 | player AMLLWrapper TSX/CSS | Not yet ported | Enter/exit displacement, radius, delays, cancellation/keyboard rules pending |
-| config/data/callback atoms | Minimal frame/input types | Full contracts and lossless profile migration pending; AMLL defaults must not be labeled appleMusic26 |
+| config/data/callback atoms | `AMLLPlayerInput`, `AMLLRenderEnvironment`, `AMLLFrameState`, `AMLLInteraction`, `LyricsRenderPreferences` | Real-page input carries document/snapshot/offset/seek revision/artwork/configuration; frame state includes row/background/control fields, old trace payloads decode with defaults, and `.amll` has an independent responsive baseline. Full lossless migration matrix and production default switch remain pending |
 | Debug/reference workflow | `LyricsRenderPreview`, native trace export, `Scripts/reference-browser` | A/B switch, native timing/cache counters, rate selection, return-current, five-second real transform export; original core browser host with geometry/WAAPI export and bounded opt-in trace. Full-page host, animation freeze/history stepping and side-by-side/overlay pending |
 
 ## Validation record
@@ -44,6 +44,9 @@ Paths below are relative to the pinned core/react-full `src` directories extract
 - Browser host now isolates the lyric area in an iframe so CSS media queries use the actual reference viewport. At 402×700, browser inspection confirmed 20px mobile padding (the previous container-only host incorrectly used the desktop 1em rule). This correction does not change the original source.
 
 QQ fix validates/removes the zlib envelope before Apple's raw-DEFLATE decoder, verifies Adler-32 and tolerates DES zero padding. Other provider/cache behavior remains outside this rendering rewrite.
+
+- `aa227852`: native glyph/raster follow-up added timed ruby layers, preserved timed whitespace, retained segmented provider-word metadata, consumed cached row blur/opacity transitions and made old `LyricWord`/frame trace payloads decode with missing optional fields. The Xcode 27 job passed; the Xcode 26 job exposed and was followed by fixes for legacy `isObscene` decoding, segmented-word indexing and transition settling.
+- `3bd52b94`: static line breaking now follows source word/gap segmentation, AMLL uses its medium responsive baseline independently from the Apple Music compatibility profile, Reduce Transparency disables engine blur, and a regression covers segmented provider words. CI for this follow-up is pending.
 
 ## Completion gates
 

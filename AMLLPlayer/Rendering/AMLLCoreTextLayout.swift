@@ -20,12 +20,19 @@ final class AMLLCoreTextLayout {
         var rtl: Bool
         var wordIndex: Int
         var characterIndex: Int
+        /// The shaped/timed atom, rather than an index into the provider's
+        /// original `line.words`. Word segmentation can split one provider
+        /// word into multiple visual atoms, so keeping the value here avoids
+        /// losing its timing and AMLL metadata (or indexing past the source
+        /// array) in the CALayer renderer.
+        var word: LyricWord
     }
 
     private struct Row {
         var line: CTLine
         var origin: CGPoint
         var auxiliary = false
+        var ruby = false
     }
 
     private struct VisualRun {
@@ -116,13 +123,17 @@ final class AMLLCoreTextLayout {
         var characterFragments: [CharacterFragment] = []
         var y: CGFloat = 0
         let mainHeight = max(font.lineHeight, font.pointSize * 1.2)
+        let rubyFont = font.withSize(max(10, font.pointSize * 0.5))
+        let rubyHeight = timedWords.contains { !$0.rubySegments.isEmpty || !($0.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
+            ? rubyFont.pointSize * 1.5
+            : 0
         for index in 0 ..< rowLimits.count - 1 {
             let range = NSRange(location: rowLimits[index], length: rowLimits[index + 1] - rowLimits[index])
             guard range.length > 0 else { continue }
             let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: range.location, length: range.length))
             let rowWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
             let x = line.isDuet || line.isRTL ? availableWidth - rowWidth : 0
-            rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: y + font.ascender)))
+            rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: y + rubyHeight + font.ascender)))
             if line.precision == .word {
                 let runs = Self.visualRuns(in: ctLine)
                 var cursor = 0
@@ -136,7 +147,7 @@ final class AMLLCoreTextLayout {
                         guard fragment.length > 0 else { continue }
                         let first = run.offset(at: fragment.location, in: ctLine)
                         let last = run.offset(at: NSMaxRange(fragment), in: ctLine)
-                        fragments.append(.init(rect: CGRect(x: x + min(first, last), y: y, width: abs(last - first), height: mainHeight),
+                        fragments.append(.init(rect: CGRect(x: x + min(first, last), y: y + rubyHeight, width: abs(last - first), height: mainHeight),
                                                word: word, range: fragment, rtl: run.rtl, wordIndex: wordIndex))
                     }
 
@@ -159,11 +170,12 @@ final class AMLLCoreTextLayout {
                             let first = run.offset(at: visual.location, in: ctLine)
                             let last = run.offset(at: NSMaxRange(visual), in: ctLine)
                             characterFragments.append(.init(
-                                rect: CGRect(x: x + min(first, last), y: y, width: abs(last - first), height: mainHeight),
+                                rect: CGRect(x: x + min(first, last), y: y + rubyHeight, width: abs(last - first), height: mainHeight),
                                 range: visual,
                                 rtl: run.rtl,
                                 wordIndex: wordIndex,
-                                characterIndex: characterIndex
+                                characterIndex: characterIndex,
+                                word: word
                             ))
                         }
                     }
@@ -171,8 +183,34 @@ final class AMLLCoreTextLayout {
             }
             y += mainHeight
         }
+        // Ruby is part of the main glyph layer in AMLL. Reserve one compact
+        // line above the shaped main rows and center each annotation over the
+        // visual run(s) belonging to its timed word. It remains in the sharp
+        // raster so the main word mask and ruby keep one layout origin.
+        if rubyHeight > 0 {
+            for (wordIndex, word) in timedWords.enumerated() {
+                let rubyText = word.rubySegments.map(\.text).joined()
+                    .isEmpty ? (word.ruby ?? "") : word.rubySegments.map(\.text).joined()
+                guard !rubyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                let wordFragments = fragments.filter { $0.wordIndex == wordIndex }
+                guard let first = wordFragments.first else { continue }
+                let minX = wordFragments.map(\.rect.minX).min() ?? first.rect.minX
+                let maxX = wordFragments.map(\.rect.maxX).max() ?? first.rect.maxX
+                let value = NSAttributedString(string: rubyText, attributes: [
+                    .font: rubyFont,
+                    .foregroundColor: UIColor.white.withAlphaComponent(0.3),
+                    .kern: configuration.tracking,
+                ])
+                let rubyLine = CTLineCreateWithAttributedString(value)
+                let rubyWidth = CTLineGetTypographicBounds(rubyLine, nil, nil, nil)
+                let x = minX + max(0, (maxX - minX - rubyWidth) / 2)
+                let rubyTop = first.rect.minY - rubyHeight
+                rows.append(.init(line: rubyLine, origin: CGPoint(x: x, y: rubyTop + rubyFont.ascender), ruby: true))
+            }
+            y += rubyHeight
+        }
         for auxiliary in configuration.auxiliaryText(for: line) {
-            let auxiliaryFont = font.withSize(max(10, font.pointSize * 0.5))
+            let auxiliaryFont = rubyFont
             let value = NSAttributedString(string: auxiliary, attributes: [.font: auxiliaryFont, .foregroundColor: UIColor.white.withAlphaComponent(0.3)])
             let typesetter = CTTypesetterCreateWithAttributedString(value)
             var cursor = 0
@@ -198,7 +236,7 @@ final class AMLLCoreTextLayout {
     }
 
     /// nil draws both layers for inspection; the renderer composites auxiliary text separately.
-    func raster(scale: CGFloat, auxiliary: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
+    func raster(scale: CGFloat, auxiliary: Bool? = nil, ruby: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         let sharp = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
@@ -208,6 +246,9 @@ final class AMLLCoreTextLayout {
             context.scaleBy(x: 1, y: -1)
             for row in rows {
                 if let auxiliary, row.auxiliary != auxiliary {
+                    continue
+                }
+                if let ruby, row.ruby != ruby {
                     continue
                 }
                 context.textPosition = CGPoint(x: row.origin.x, y: size.height - row.origin.y)

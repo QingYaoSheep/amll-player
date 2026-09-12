@@ -16,14 +16,16 @@ enum AMLLWordSegmentation {
             }
         }
         func process(_ atom: LyricWord) {
-            if !atom.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isCJK(atom.text) {
+            let hasRuby = !atom.rubySegments.isEmpty || !(atom.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            if !atom.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isCJK(atom.text), !hasRuby {
                 group.append(atom)
             } else {
                 flush(); result.append([atom])
             }
         }
         for word in words {
-            if word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let hasRuby = !word.rubySegments.isEmpty || !(word.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            if word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasRuby {
                 process(word); continue
             }
             let ns = word.text as NSString
@@ -35,7 +37,7 @@ enum AMLLWordSegmentation {
             for part in parts {
                 if part.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let time = word.start + Double(offset) * unit
-                    process(.init(text: part, start: time, end: time))
+                    process(.init(text: part, start: time, end: time, voice: word.voice, isObscene: word.isObscene))
                 } else if isCJK(part), part.utf16.count > 1, (word.romanWord ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     // Keep surrogate pairs intact at the native shaping boundary. Times still
                     // advance in UTF-16 units, matching the source's offset convention.
@@ -43,12 +45,14 @@ enum AMLLWordSegmentation {
                         let text = String(character)
                         let start = word.start + Double(offset) * unit
                         offset += text.utf16.count
-                        process(.init(text: text, start: start, end: word.start + Double(offset) * unit))
+                        process(.init(text: text, start: start, end: word.start + Double(offset) * unit,
+                                      voice: word.voice, isObscene: word.isObscene))
                     }
                 } else {
                     let start = word.start + Double(offset) * unit
                     offset += part.utf16.count
-                    process(.init(text: part, start: start, end: word.start + Double(offset) * unit, romanWord: word.romanWord))
+                    process(.init(text: part, start: start, end: word.start + Double(offset) * unit,
+                                  romanWord: word.romanWord, voice: word.voice, isObscene: word.isObscene))
                 }
             }
         }

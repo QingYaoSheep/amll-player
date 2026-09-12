@@ -49,6 +49,24 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertTrue(transition.arrived)
     }
 
+    func testDisplayDocumentPreservesTimedWhitespace() {
+        let line = LyricLine(
+            id: "spaces",
+            text: "A  B",
+            start: 0,
+            end: 2,
+            words: [
+                .init(text: "A", start: 0, end: 0.8),
+                .init(text: "  ", start: 0.8, end: 0.8),
+                .init(text: "B", start: 0.8, end: 2),
+            ],
+            precision: .word
+        )
+        let display = AMLLDisplayDocument(lines: [line])
+        XCTAssertEqual(display.lines.first?.text, "A  B")
+        XCTAssertEqual(display.lines.first?.words.map(\.text).joined(), "A  B")
+    }
+
     @MainActor
     func testCoreTextPreservesEmojiCombiningMarksAndBidirectionalText() {
         let text = "مرحبا 👩‍👩‍👦 é 世界"
@@ -100,6 +118,24 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertNotNil(layout.raster(scale: 2, auxiliary: true, blurRadius: 5).cgImage)
     }
 
+    @MainActor
+    func testTimedRubyReservesInlineAnnotationSpace() {
+        let word = LyricWord(text: "漢", start: 0, end: 2,
+                             rubySegments: [.init(text: "かん", start: 0, end: 2)])
+        let line = LyricLine(id: "ruby", text: "漢", start: 0, end: 2,
+                             words: [word], precision: .word)
+        let font = UIFont.systemFont(ofSize: 32, weight: .semibold)
+        let without = AMLLCoreTextLayout(
+            line: LyricLine(id: "plain", text: "漢", start: 0, end: 2,
+                            words: [.init(text: "漢", start: 0, end: 2)], precision: .word),
+            width: 240, font: font, configuration: .init()
+        )
+        let withRuby = AMLLCoreTextLayout(line: line, width: 240, font: font, configuration: .init())
+        XCTAssertGreaterThan(withRuby.size.height, without.size.height)
+        XCTAssertNotNil(withRuby.raster(scale: 2, ruby: true).cgImage)
+        XCTAssertTrue(AMLLWordSegmentation.chunks([word]).flatMap(\.self).count == 1)
+    }
+
     func testFrameStateCarriesRealPageBackgroundAndControlInput() {
         let line = LyricLine(id: "page", text: "Page", start: 0, end: 4)
         var configuration = LyricsRenderConfiguration()
@@ -119,6 +155,20 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertEqual(state.background.blur, 40, accuracy: 0.000_001)
         XCTAssertTrue(state.controls.visible)
         XCTAssertEqual(state.controls.progress, 0.25, accuracy: 0.000_001)
+    }
+
+    func testBackgroundSeedIsStableForTheSameArtwork() {
+        let line = LyricLine(id: "seed", text: "Seed", start: 0, end: 4)
+        let url = URL(string: "https://example.com/artwork.jpg")
+        var engine = AMLLFrameEngine(
+            document: AMLLDisplayDocument(lines: [line]),
+            environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32),
+            heights: [60]
+        )
+        let first = engine.render(.init(position: 0, playing: false, artworkURL: url), delta: 0)
+        let second = engine.render(.init(position: 0, playing: false, artworkURL: url), delta: 0)
+        XCTAssertNotEqual(first.background.seed, 0)
+        XCTAssertEqual(first.background.seed, second.background.seed)
     }
 
     func testPausedBackgroundOccupiesFlowAndKeepsItsOwnMaskScale() throws {

@@ -17,6 +17,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
     var created: (AMLLNativeCanvas) -> Void = { _ in }
     var browsing: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeUIView(context _: Context) -> AMLLNativeCanvas {
         let view = AMLLNativeCanvas()
@@ -30,7 +31,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
         view.onBrowsing = browsing
         view.setFrameRate(targetFPS)
         view.configure(document: document, configuration: configuration, input: input, active: active,
-                       reduceMotion: reduceMotion, canSeek: canSeek)
+                       reduceMotion: reduceMotion, reduceTransparency: reduceTransparency, canSeek: canSeek)
         view.resumeFollowing(token: resumeToken)
     }
 
@@ -67,6 +68,7 @@ final class AMLLNativeCanvas: UIView {
     private var active = true
     private var canSeek = true
     private var reduceMotion = false
+    private var reduceTransparency = false
     private var lastTranslation: CGFloat = 0
     private var resumeToken = 0
     private var targetFPS = 120
@@ -102,17 +104,17 @@ final class AMLLNativeCanvas: UIView {
     }
 
     func configure(document: LyricsDocument, configuration: LyricsRenderConfiguration, input: AMLLPlayerInput,
-                   active: Bool, reduceMotion: Bool, canSeek: Bool = true)
+                   active: Bool, reduceMotion: Bool, reduceTransparency: Bool = false, canSeek: Bool = true)
     {
         if source != document {
             source = document; display = AMLLDisplayDocument(lines: document.lines); engine = nil; dirty = true
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
-        if self.configuration != configuration || self.reduceMotion != reduceMotion {
+        if self.configuration != configuration || self.reduceMotion != reduceMotion || self.reduceTransparency != reduceTransparency {
             dirty = true
         }
         self.configuration = configuration; self.input = input; self.active = active
-        self.canSeek = canSeek; self.reduceMotion = reduceMotion
+        self.canSeek = canSeek; self.reduceMotion = reduceMotion; self.reduceTransparency = reduceTransparency
         setNeedsLayout()
         syncLink()
         if !dirty {
@@ -151,7 +153,7 @@ final class AMLLNativeCanvas: UIView {
         var environment = AMLLRenderEnvironment(width: bounds.width,
                                                 height: bounds.height,
                                                 screenWidth: Double(window?.bounds.width ?? bounds.width),
-                                                fontSize: configuration.fontSize)
+                                                fontSize: configuration.resolvedFontSize(width: bounds.width, height: bounds.height))
         environment.safeArea = safe
         environment.displayScale = Double(screen?.scale ?? 1)
         environment.maximumFPS = screen?.maximumFramesPerSecond ?? 60
@@ -159,7 +161,7 @@ final class AMLLNativeCanvas: UIView {
         environment.layoutDirection = direction
         environment.alignPosition = configuration.anchor
         environment.reduceMotion = reduceMotion
-        environment.reduceTransparency = reduceTransparencyEnabled
+        environment.reduceTransparency = reduceTransparency || reduceTransparencyEnabled
         environment.boldText = traits.legibilityWeight == .bold
         environment.dynamicTypeScale = typeScale
         environment.voiceOver = UIAccessibility.isVoiceOverRunning
@@ -169,12 +171,12 @@ final class AMLLNativeCanvas: UIView {
         environment.hidePassedLines = configuration.hidePassedLines
         environment.alwaysPostpositionBackground = configuration.alwaysPostpositionBackground
         environment.advance = configuration.advance
-        environment.dotHeight = max(configuration.fontSize * 0.5, bounds.height * 0.01)
+        environment.dotHeight = max(environment.fontSize * 0.5, bounds.height * 0.01)
         return environment
     }
 
     private var inset: CGFloat {
-        (window?.bounds.width ?? bounds.width) <= 500 ? 20 : configuration.fontSize
+        (window?.bounds.width ?? bounds.width) <= 500 ? 20 : configuration.resolvedFontSize(width: bounds.width, height: bounds.height)
     }
 
     private func makeLayout(_ index: Int) -> AMLLCoreTextLayout {
@@ -182,7 +184,8 @@ final class AMLLNativeCanvas: UIView {
             return cached
         }
         let line = display!.lines[index]
-        let size = max(10, configuration.fontSize * (line.isBackground ? 0.7 : 1))
+        let baseSize = configuration.resolvedFontSize(width: bounds.width, height: bounds.height)
+        let size = max(10, baseSize * (line.isBackground ? 0.7 : 1))
         let font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: size, weight: configuration.bold ? .semibold : .regular), compatibleWith: traitCollection)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
         return AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration)
@@ -362,6 +365,7 @@ private final class AMLLNativeRow: UIView {
     private let line: LyricLine
     private let textLayout: AMLLCoreTextLayout
     private let base = CALayer()
+    private let ruby = CALayer()
     private let auxiliary = CALayer()
     private var words: [WordPiece] = []
     private var characters: [CharacterPiece] = []
@@ -369,6 +373,9 @@ private final class AMLLNativeRow: UIView {
     private let sharpImage: UIImage
     private let nearBlurImage: UIImage
     private let farBlurImage: UIImage
+    private let sharpRubyImage: UIImage
+    private let nearBlurRubyImage: UIImage
+    private let farBlurRubyImage: UIImage
     private let sharpAuxiliaryImage: UIImage
     private let nearBlurAuxiliaryImage: UIImage
     private let farBlurAuxiliaryImage: UIImage
@@ -378,14 +385,21 @@ private final class AMLLNativeRow: UIView {
         self.line = line; textLayout = layout
         let indexes = layout.maskWords.indices.filter { layout.maskWords[$0].width > 0 }
         maskWords = indexes.map { layout.maskWords[$0] }
-        sharpImage = layout.raster(scale: scale)
-        nearBlurImage = layout.raster(scale: scale, blurRadius: 2)
-        farBlurImage = layout.raster(scale: scale, blurRadius: 5)
-        sharpAuxiliaryImage = layout.raster(scale: scale, auxiliary: true)
-        nearBlurAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, blurRadius: 2)
-        farBlurAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, blurRadius: 5)
+        // Keep the three compositing layers disjoint. In particular, a word
+        // piece must not sample a ruby or translation row from the full-line
+        // bitmap when its contentsRect is animated independently.
+        sharpImage = layout.raster(scale: scale, auxiliary: false, ruby: false)
+        nearBlurImage = layout.raster(scale: scale, auxiliary: false, ruby: false, blurRadius: 2)
+        farBlurImage = layout.raster(scale: scale, auxiliary: false, ruby: false, blurRadius: 5)
+        sharpRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true)
+        nearBlurRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true, blurRadius: 2)
+        farBlurRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true, blurRadius: 5)
+        sharpAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, ruby: false)
+        nearBlurAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, ruby: false, blurRadius: 2)
+        farBlurAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, ruby: false, blurRadius: 5)
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         base.contents = sharpImage.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
+        ruby.contents = sharpRubyImage.cgImage; ruby.contentsScale = scale; ruby.frame = bounds; layer.addSublayer(ruby)
         auxiliary.contents = sharpAuxiliaryImage.cgImage
         auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
         var consumed: [Int: Double] = [:]
@@ -403,10 +417,9 @@ private final class AMLLNativeRow: UIView {
             consumed[fragment.wordIndex] = advance + fragment.rect.width
         }
 
-        let nonEmptyWordIndexes = line.words.indices.filter {
-            !line.words[$0].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        let lastWordIndex = nonEmptyWordIndexes.last
+        // `wordIndex` addresses the display document's segmented timing atoms,
+        // which may be more numerous than the provider's original words.
+        let lastWordIndex = layout.fragments.map(\.wordIndex).max()
         var characterConsumed: [Int: Double] = [:]
         var characterWordIndexes = Set<Int>()
         for fragment in layout.characterFragments where fragment.rect.width > 0 {
@@ -418,28 +431,39 @@ private final class AMLLNativeRow: UIView {
             let mask = CAGradientLayer(); mask.frame = piece.bounds
             mask.startPoint = CGPoint(x: fragment.rtl ? 1 : 0, y: 0.5); mask.endPoint = CGPoint(x: fragment.rtl ? 0 : 1, y: 0.5)
             piece.mask = mask; layer.addSublayer(piece)
-            let word = line.words[fragment.wordIndex]
+            let word = fragment.word
             let characterCount = max(1, word.text.count)
-            let animation = AMLLSourceWordAnimation.emphasis(
-                duration: word.end - word.start,
-                delay: word.start - line.start,
-                characterCount: characterCount,
-                rubyCount: word.ruby?.count ?? word.romanWord?.count ?? 0,
-                isLastWord: lastWordIndex == fragment.wordIndex,
-                isBackground: line.isBackground
-            ).dropFirst(fragment.characterIndex).first
+            let shouldEmphasize = AMLLSourceWordAnimation.shouldEmphasize(word)
+            let rubyCount = word.rubySegments.reduce(0) { $0 + $1.text.count }
+                + (word.rubySegments.isEmpty ? (word.ruby?.count ?? 0) : 0)
+            let animation = shouldEmphasize
+                ? AMLLSourceWordAnimation.emphasis(
+                    duration: word.end - word.start,
+                    delay: word.start - line.start,
+                    characterCount: characterCount,
+                    rubyCount: rubyCount,
+                    isLastWord: lastWordIndex == fragment.wordIndex,
+                    isBackground: line.isBackground
+                ).dropFirst(fragment.characterIndex).first
+                : nil
             let advance = characterConsumed[fragment.wordIndex, default: 0]
             characters.append(.init(layer: piece, mask: mask, fragment: fragment, maskIndex: maskIndex,
                                     advance: advance, animation: animation))
             characterConsumed[fragment.wordIndex] = advance + fragment.rect.width
             characterWordIndexes.insert(fragment.wordIndex)
         }
-        base.isHidden = !words.isEmpty
+        // A shaped run may legitimately have no per-character fragment (for
+        // example a fallback glyph with a zero advance). Keep the cached
+        // whole-line raster visible in that case instead of making the lyric
+        // disappear merely because word timing exists.
+        base.isHidden = !words.isEmpty && !characters.isEmpty
         for word in words where characterWordIndexes.contains(word.fragment.wordIndex) {
             word.layer.isHidden = true
         }
-        isAccessibilityElement = true; accessibilityLabel = line.text
+        isAccessibilityElement = true
+        accessibilityLabel = ([line.text] + layoutLineAuxiliaryText()).filter { !$0.isEmpty }.joined(separator: ", ")
         accessibilityTraits = .button
+        accessibilityIdentifier = "lyricRow." + line.id
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
     }
 
@@ -458,27 +482,55 @@ private final class AMLLNativeRow: UIView {
     func setCanSeek(_ value: Bool) {
         accessibilityTraits = value ? .button : []
         accessibilityHint = value ? NSLocalizedString("render.seekHint", comment: "") : nil
+        accessibilityCustomActions = value ? [
+            UIAccessibilityCustomAction(
+                name: NSLocalizedString("render.seekHint", comment: ""),
+                target: self,
+                selector: #selector(seekFromAccessibility)
+            ),
+        ] : nil
     }
+
+    private func layoutLineAuxiliaryText() -> [String] {
+        // The layout already applies the visibility/profile rules. Repeating
+        // them here keeps VoiceOver in the same order as the pixels without
+        // exposing parser-only metadata.
+        let translation = accessibilityConfiguration.translation ? line.translation : ""
+        let roman = accessibilityConfiguration.romanization ? line.romanization : ""
+        return [translation, roman].filter { !$0.isEmpty }
+    }
+
+    private var accessibilityConfiguration = LyricsRenderConfiguration()
 
     @objc private func tap() {
         onSeek?()
     }
 
+    @objc private func seekFromAccessibility() -> Bool {
+        guard onSeek != nil else { return false }
+        onSeek?()
+        return true
+    }
+
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
+        accessibilityConfiguration = configuration
         let bright = row.brightAlpha, dark = row.darkAlpha
         let image: UIImage
+        let rubyImage: UIImage
         let auxiliaryImage: UIImage
         switch row.blur {
         case ..<0.5:
-            image = sharpImage; auxiliaryImage = sharpAuxiliaryImage
+            image = sharpImage; rubyImage = sharpRubyImage; auxiliaryImage = sharpAuxiliaryImage
         case ..<3.5:
-            image = nearBlurImage; auxiliaryImage = nearBlurAuxiliaryImage
+            image = nearBlurImage; rubyImage = nearBlurRubyImage; auxiliaryImage = nearBlurAuxiliaryImage
         default:
-            image = farBlurImage; auxiliaryImage = farBlurAuxiliaryImage
+            image = farBlurImage; rubyImage = farBlurRubyImage; auxiliaryImage = farBlurAuxiliaryImage
         }
         base.contents = image.cgImage
+        ruby.contents = rubyImage.cgImage
         auxiliary.contents = auxiliaryImage.cgImage
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
+        ruby.opacity = 1
         base.opacity = Float(words.isEmpty ? 1 : dark)
         let auxiliaryText = configuration.auxiliaryText(for: line)
         accessibilityLabel = ([line.text] + auxiliaryText).filter { !$0.isEmpty }.joined(separator: ", ")
@@ -506,10 +558,11 @@ private final class AMLLNativeRow: UIView {
         }
         for entry in characters {
             entry.layer.contents = image.cgImage
+            let word = entry.fragment.word
             let duration = max(0.001, entry.fragment.range.length > 0
-                ? line.words[entry.fragment.wordIndex].end - line.words[entry.fragment.wordIndex].start : 0.001)
+                ? word.end - word.start : 0.001)
             let elapsed = row.wordClock.floatElapsed(
-                wordStart: line.words[entry.fragment.wordIndex].start - line.start,
+                wordStart: word.start - line.start,
                 duration: duration
             )
             let presentation = motionEnabled && configuration.emphasizeWords

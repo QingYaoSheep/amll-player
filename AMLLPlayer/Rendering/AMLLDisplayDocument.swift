@@ -16,10 +16,12 @@ struct AMLLDisplayDocument: Sendable {
     init(lines source: [LyricLine]) {
         var lines = source
         for index in lines.indices {
-            for word in lines[index].words.indices {
-                lines[index].words[word].text = lines[index].words[word].text
-                    .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            }
+            // Keep the display copy lossless. TTML's `xml:space="preserve"`
+            // and QRC/TTML timed whitespace are part of the glyph and mask
+            // cursor geometry; collapsing them here makes the Core Text
+            // layout shorter than the timing stream and drops the final word.
+            // Pretty-printing whitespace has already been removed by the
+            // provider parser, so the renderer must never normalize it again.
             if lines[index].precision == .word, let first = lines[index].words.first, let last = lines[index].words.last {
                 lines[index].start = first.start
                 lines[index].end = last.end

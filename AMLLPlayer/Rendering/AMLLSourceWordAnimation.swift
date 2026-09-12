@@ -43,6 +43,21 @@ enum AMLLSourceWordAnimation {
         }
     }
 
+    /// Exact predicate used by `LyricLineBase.shouldEmphasize` in core 0.5.2.
+    /// Short words stay on the ordinary float path; long notes and CJK words
+    /// receive the per-character 32-frame emphasis animation.
+    static func shouldEmphasize(_ word: LyricWord) -> Bool {
+        let duration = word.end - word.start
+        guard duration.isFinite, duration >= 1 else { return false }
+        let trimmed = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if AMLLWordSegmentation.isCJK(trimmed) {
+            return true
+        }
+        let count = trimmed.count
+        return count > 1 && count <= 7
+    }
+
     static func emphasis(duration: Double, delay: Double, characterCount: Int, rubyCount: Int = 0,
                          isLastWord: Bool, isBackground: Bool) -> [CharacterAnimation]
     {

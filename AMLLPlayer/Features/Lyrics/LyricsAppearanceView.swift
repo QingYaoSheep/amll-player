@@ -22,6 +22,15 @@ struct LyricsAppearanceView: View {
                     Text("render.small").tag(26.0); Text("render.medium").tag(32.0)
                     Text("render.large").tag(40.0); Text("render.extraLarge").tag(48.0)
                 }
+                Picker("render.sizePreset", selection: Binding(
+                    get: { preferences.configuration.sizePreset },
+                    set: { preferences.configuration.sizePreset = $0 }
+                )) {
+                    Text("render.sizeCustom").tag(AMLLLyricSizePreset?.none)
+                    ForEach(AMLLLyricSizePreset.allCases, id: \.self) { preset in
+                        Text(LocalizedStringKey("render.size." + preset.rawValue)).tag(Optional(preset))
+                    }
+                }
                 Toggle("render.bold", isOn: $preferences.configuration.bold)
                 LabeledContent("render.tracking", value: String(format: "%.1f", preferences.configuration.tracking))
                 Slider(value: $preferences.configuration.tracking, in: -1 ... 3, step: 0.25).accessibilityLabel(Text("render.tracking"))

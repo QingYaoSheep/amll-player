@@ -9,7 +9,9 @@ struct AMLLMeshBackground: UIViewRepresentable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeUIView(context: Context) -> MTKView {
         let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
@@ -30,7 +32,9 @@ struct AMLLMeshBackground: UIViewRepresentable {
         view.isPaused = !shouldAnimate
         view.enableSetNeedsDisplay = !shouldAnimate
         view.alpha = reduceTransparency ? 0 : 1
-        if !shouldAnimate { view.setNeedsDisplay() }
+        if !shouldAnimate {
+            view.setNeedsDisplay()
+        }
     }
 
     static func dismantleUIView(_ uiView: MTKView, coordinator: Coordinator) {
@@ -106,7 +110,10 @@ struct AMLLMeshBackground: UIViewRepresentable {
                     guard self?.artworkURL == url else { return }
                     self?.artworkData = data
                     self?.texture = loaded
-                    self?.startedAt = CACurrentMediaTime()
+                    // The mesh clock belongs to the page, not to the artwork
+                    // request. Reloading a cover after a cache miss must not
+                    // reset the animation phase during a track change,
+                    // rotation, or foreground transition.
                     self?.view?.setNeedsDisplay()
                 } catch is CancellationError {
                     return

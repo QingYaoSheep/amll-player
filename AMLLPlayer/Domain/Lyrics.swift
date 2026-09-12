@@ -50,6 +50,23 @@ struct LyricCandidate: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// A ruby annotation attached to one timed word. AMLL represents ruby as a
+/// sequence because a single word can contain multiple annotations with
+/// independent timings. `rubySegments` is additive to the legacy `ruby`
+/// string on `LyricWord`, so cached documents from earlier parser versions
+/// remain readable without throwing away annotation text.
+struct LyricRuby: Codable, Equatable, Sendable {
+    var text: String
+    var start: Double?
+    var end: Double?
+
+    init(text: String, start: Double? = nil, end: Double? = nil) {
+        self.text = text
+        self.start = start
+        self.end = end
+    }
+}
+
 struct LyricWord: Codable, Equatable, Sendable {
     var text: String
     var start: Double
@@ -58,8 +75,56 @@ struct LyricWord: Codable, Equatable, Sendable {
     /// Optional AMLL metadata retained by the renderer adapter. Providers may
     /// omit these fields when their source format has no equivalent.
     var ruby: String? = nil
+    /// Lossless representation of AMLL's timed ruby segments. The optional
+    /// legacy string above is retained for old cache payloads and providers
+    /// which only expose an un-timed annotation.
+    var rubySegments: [LyricRuby] = []
     var voice: String? = nil
     var isObscene = false
+
+    init(text: String, start: Double, end: Double, romanWord: String? = nil, ruby: String? = nil,
+         rubySegments: [LyricRuby] = [], voice: String? = nil, isObscene: Bool = false)
+    {
+        self.text = text
+        self.start = start
+        self.end = end
+        self.romanWord = romanWord
+        self.ruby = ruby
+        self.rubySegments = rubySegments
+        self.voice = voice
+        self.isObscene = isObscene
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text, start, end, romanWord, ruby, rubySegments, voice, isObscene
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        text = try values.decode(String.self, forKey: .text)
+        start = try values.decode(Double.self, forKey: .start)
+        end = try values.decode(Double.self, forKey: .end)
+        romanWord = try values.decodeIfPresent(String.self, forKey: .romanWord)
+        ruby = try values.decodeIfPresent(String.self, forKey: .ruby)
+        rubySegments = try values.decodeIfPresent([LyricRuby].self, forKey: .rubySegments) ?? []
+        voice = try values.decodeIfPresent(String.self, forKey: .voice)
+        // `isObscene` was introduced after the first semantic fixtures and
+        // old cached payloads omit it. Missing metadata is the non-obscene
+        // default used by the source renderer.
+        isObscene = try values.decodeIfPresent(Bool.self, forKey: .isObscene) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(text, forKey: .text)
+        try values.encode(start, forKey: .start)
+        try values.encode(end, forKey: .end)
+        try values.encodeIfPresent(romanWord, forKey: .romanWord)
+        try values.encodeIfPresent(ruby, forKey: .ruby)
+        try values.encode(rubySegments, forKey: .rubySegments)
+        try values.encodeIfPresent(voice, forKey: .voice)
+        try values.encode(isObscene, forKey: .isObscene)
+    }
 }
 
 enum LyricsPrecision: String, Codable, Sendable { case line, word }

@@ -9,6 +9,41 @@ enum LyricsPresentationProfile: String, Codable, CaseIterable, Sendable {
     case custom
 }
 
+/// The seven responsive font presets exposed by AMLL's react-full player.
+/// Values are evaluated in points (CSS px == pt in the reference harness).
+enum AMLLLyricSizePreset: String, Codable, CaseIterable, Sendable {
+    case tiny
+    case extraSmall = "extra-small"
+    case small
+    case medium
+    case large
+    case extraLarge = "extra-large"
+    case huge
+
+    func pointSize(width: Double, height: Double) -> Double {
+        let widthTerm: Double
+        let heightTerm: Double
+        let minimum: Double
+        switch self {
+        case .tiny:
+            heightTerm = 0.025; widthTerm = 0.0125; minimum = 10
+        case .extraSmall:
+            heightTerm = 0.03; widthTerm = 0.015; minimum = 10
+        case .small:
+            heightTerm = 0.04; widthTerm = 0.02; minimum = 12
+        case .medium:
+            heightTerm = 0.05; widthTerm = 0.025; minimum = 14
+        case .large:
+            heightTerm = 0.06; widthTerm = 0.03; minimum = 16
+        case .extraLarge:
+            heightTerm = 0.07; widthTerm = 0.035; minimum = 18
+        case .huge:
+            heightTerm = 0.08; widthTerm = 0.04; minimum = 20
+        }
+        return max(minimum, max(max(0, height) * heightTerm, max(0, width) * widthTerm))
+    }
+}
+
 struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     enum CoverLayout: String, Codable, CaseIterable { case automatic, normal, immersive }
     enum Credits: String, Codable, CaseIterable {
@@ -33,6 +68,11 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var romanization = true
     var romanizationFirst = false
     var fontSize: Double = 32
+    /// `nil` retains the explicit point-size setting used by the old native
+    /// renderer. AMLL profiles can opt into one of the responsive presets;
+    /// keeping this optional makes v1/v2 settings and hand-authored fixtures
+    /// decode without changing their geometry.
+    var sizePreset: AMLLLyricSizePreset? = nil
     var bold = true
     var tracking: Double = 0
     var blurInactive = true
@@ -60,12 +100,18 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     func auxiliaryText(for line: LyricLine) -> [String] {
         let translationText = translation ? line.translation : ""
         let wordRomanization = line.words.compactMap(\.romanWord).joined(separator: " ")
-        let rubyText = line.words.compactMap(\.ruby).joined(separator: " ")
+        let hasTimedRuby = line.words.contains { !$0.rubySegments.isEmpty }
+        let rubyText = hasTimedRuby ? "" : line.words.compactMap(\.ruby).joined(separator: " ")
         let romanizationText = romanization
             ? (line.romanization.isEmpty ? (wordRomanization.isEmpty ? rubyText : wordRomanization) : line.romanization)
             : ""
         return (romanizationFirst ? [romanizationText, translationText] : [translationText, romanizationText])
             .filter { !$0.isEmpty }
+    }
+
+    func resolvedFontSize(width: Double, height: Double) -> Double {
+        let base = sizePreset?.pointSize(width: width, height: height) ?? fontSize
+        return base.isFinite ? max(10, base) : 32
     }
 
     func validated() -> Self {

@@ -37,7 +37,15 @@ struct AMLLSourceTransition: Sendable {
     }
 
     mutating func update(_ delta: Double) {
-        guard delta.isFinite, delta > 0, !arrived else { return }
+        guard delta.isFinite, delta > 0 else { return }
+        if arrived {
+            // Snap the last sub-pixel remainder. Without this, a CSS
+            // transition can remain at 0.399998 for the rest of its life;
+            // that is visually harmless but makes frame traces and settled
+            // state disagree with the source's exact target.
+            value = target
+            return
+        }
         elapsed = min(duration, elapsed + delta)
         let progress = min(1, max(0, elapsed / duration))
         let eased = 1 - pow(1 - progress, 3)

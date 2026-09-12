@@ -101,6 +101,34 @@ struct AMLLFrameState: Codable, Sendable {
         var blur: Double
         var active: Bool
         var hidden: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case lineIndex, groupIndex, y, scale, brightAlpha, darkAlpha, wordClock, opacity, blur, active, hidden
+        }
+
+        init(lineIndex: Int, groupIndex: Int, y: Double, scale: Double, brightAlpha: Double, darkAlpha: Double,
+             wordClock: AMLLWordAnimationClock, opacity: Double = 1, blur: Double = 0,
+             active: Bool = false, hidden: Bool = false)
+        {
+            self.lineIndex = lineIndex; self.groupIndex = groupIndex; self.y = y; self.scale = scale
+            self.brightAlpha = brightAlpha; self.darkAlpha = darkAlpha; self.wordClock = wordClock
+            self.opacity = opacity; self.blur = blur; self.active = active; self.hidden = hidden
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            lineIndex = try values.decode(Int.self, forKey: .lineIndex)
+            groupIndex = try values.decode(Int.self, forKey: .groupIndex)
+            y = try values.decode(Double.self, forKey: .y)
+            scale = try values.decode(Double.self, forKey: .scale)
+            brightAlpha = try values.decode(Double.self, forKey: .brightAlpha)
+            darkAlpha = try values.decode(Double.self, forKey: .darkAlpha)
+            wordClock = try values.decode(AMLLWordAnimationClock.self, forKey: .wordClock)
+            opacity = try values.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
+            blur = try values.decodeIfPresent(Double.self, forKey: .blur) ?? 0
+            active = try values.decodeIfPresent(Bool.self, forKey: .active) ?? false
+            hidden = try values.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
+        }
     }
 
     struct Interlude: Codable, Equatable, Sendable {
@@ -117,11 +145,21 @@ struct AMLLFrameState: Codable, Sendable {
         var progress: Double
         var seed: UInt64
 
+        private enum CodingKeys: String, CodingKey { case artworkURL, blur, progress, seed }
+
         init(artworkURL: URL? = nil, blur: Double = 0, progress: Double = 0, seed: UInt64 = 0) {
             self.artworkURL = artworkURL
             self.blur = blur
             self.progress = progress
             self.seed = seed
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            artworkURL = try values.decodeIfPresent(URL.self, forKey: .artworkURL)
+            blur = try values.decodeIfPresent(Double.self, forKey: .blur) ?? 0
+            progress = try values.decodeIfPresent(Double.self, forKey: .progress) ?? 0
+            seed = try values.decodeIfPresent(UInt64.self, forKey: .seed) ?? 0
         }
     }
 
@@ -130,10 +168,19 @@ struct AMLLFrameState: Codable, Sendable {
         var progress: Double
         var enabled: Bool
 
+        private enum CodingKeys: String, CodingKey { case visible, progress, enabled }
+
         init(visible: Bool = false, progress: Double = 0, enabled: Bool = false) {
             self.visible = visible
             self.progress = progress
             self.enabled = enabled
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            visible = try values.decodeIfPresent(Bool.self, forKey: .visible) ?? false
+            progress = try values.decodeIfPresent(Double.self, forKey: .progress) ?? 0
+            enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         }
     }
 
@@ -147,6 +194,32 @@ struct AMLLFrameState: Codable, Sendable {
     var background = Background()
     var controls = Controls()
     var transitionProgress = 1.0
+
+    private enum CodingKeys: String, CodingKey {
+        case lyricTime, animationTime, focusGroup, rows, interlude, browsing, settled, background, controls, transitionProgress
+    }
+
+    init(lyricTime: Double, animationTime: Double, focusGroup: Int, rows: [Row], interlude: Interlude?, browsing: Bool,
+         settled: Bool, background: Background = .init(), controls: Controls = .init(), transitionProgress: Double = 1)
+    {
+        self.lyricTime = lyricTime; self.animationTime = animationTime; self.focusGroup = focusGroup
+        self.rows = rows; self.interlude = interlude; self.browsing = browsing; self.settled = settled
+        self.background = background; self.controls = controls; self.transitionProgress = transitionProgress
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        lyricTime = try values.decode(Double.self, forKey: .lyricTime)
+        animationTime = try values.decode(Double.self, forKey: .animationTime)
+        focusGroup = try values.decode(Int.self, forKey: .focusGroup)
+        rows = try values.decode([Row].self, forKey: .rows)
+        interlude = try values.decodeIfPresent(Interlude.self, forKey: .interlude)
+        browsing = try values.decode(Bool.self, forKey: .browsing)
+        settled = try values.decode(Bool.self, forKey: .settled)
+        background = try values.decodeIfPresent(Background.self, forKey: .background) ?? .init()
+        controls = try values.decodeIfPresent(Controls.self, forKey: .controls) ?? .init()
+        transitionProgress = try values.decodeIfPresent(Double.self, forKey: .transitionProgress) ?? 1
+    }
 }
 
 /// Deterministic native host for the pinned timeline/group/layout/scroll algorithms.
@@ -161,6 +234,8 @@ struct AMLLFrameEngine {
         var slideTransition = AMLLSourceTransition(-80)
         var mainScaleTransition = AMLLSourceTransition(100)
         var backgroundScaleTransition = AMLLSourceTransition(100)
+        var opacityTransition = AMLLSourceTransition(1)
+        var blurTransition = AMLLSourceTransition()
         var mainAlpha = AMLLMaskAlpha()
         var backgroundAlpha = AMLLMaskAlpha()
         var mainWords = AMLLWordAnimationClock()
@@ -187,6 +262,18 @@ struct AMLLFrameEngine {
     private var firstFrame = true
     private var previousInput: AMLLPlayerInput?
     private var interlude: AMLLFrameState.Interlude?
+
+    private static func backgroundSeed(for artworkURL: URL?) -> UInt64 {
+        guard let value = artworkURL?.absoluteString, !value.isEmpty else { return 0 }
+        // FNV-1a keeps the background deterministic across launches and
+        // devices while avoiding Swift's process-randomized Hasher seed.
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return hash
+    }
 
     init(document: AMLLDisplayDocument, environment: AMLLRenderEnvironment, heights: [Double]) {
         self.document = document
@@ -234,7 +321,11 @@ struct AMLLFrameEngine {
         let rawTime = ((input.position.isFinite ? input.position : 0) - (input.offset.isFinite ? input.offset : 0)) * 1000
         // DomLyricPlayer.setCurrentTime uses Math.round (ties toward +infinity).
         let time = floor(rawTime + 0.5)
-        let seeking = firstFrame || input.seeking || previousInput?.seekRevision != input.seekRevision
+        let eventRequiresSeek = switch input.event {
+        case .seek, .trackChanged: true
+        default: false
+        }
+        let seeking = firstFrame || input.seeking || eventRequiresSeek || previousInput?.seekRevision != input.seekRevision
         if seeking {
             scrollOffset = 0; scrollVelocity = 0; touching = false; browsing = false
         }
@@ -300,6 +391,10 @@ struct AMLLFrameEngine {
                 motions[index].mainScaleTransition.update(elapsed)
                 motions[index].backgroundScaleTransition.update(elapsed)
             }
+            if !environment.reduceMotion {
+                motions[index].opacityTransition.update(elapsed)
+                motions[index].blurTransition.update(elapsed)
+            }
             let yPosition = environment.enableSpring && !environment.reduceMotion
                 ? motions[index].y.position : motions[index].yTransition.value
             let slidePosition = environment.enableSpring && !environment.reduceMotion
@@ -324,15 +419,17 @@ struct AMLLFrameEngine {
             let y = (yPosition * 10).rounded() / 10
             rows.append(.init(lineIndex: group.main, groupIndex: index, y: y + padding + bgAdvance,
                               scale: mainScalePosition / 100, brightAlpha: motion.mainAlpha.bright,
-                              darkAlpha: motion.mainAlpha.dark, wordClock: motion.mainWords, opacity: motion.opacity,
-                              blur: min(5, motion.blur), active: motion.active, hidden: false))
+                              darkAlpha: motion.mainAlpha.dark, wordClock: motion.mainWords,
+                              opacity: motion.opacityTransition.value,
+                              blur: min(5, motion.blurTransition.value), active: motion.active, hidden: false))
             if let background = group.background {
                 let top = bgFirst ? y + padding - bgHeight * (1 - progress) : y + padding + height(group.main) + environment.fontSize * 0.3
                 rows.append(.init(lineIndex: background, groupIndex: index, y: top + bgHeight * slidePosition / 100,
                                   scale: backgroundScalePosition / 100 * (0.8 + progress * 0.2),
                                   brightAlpha: motion.backgroundAlpha.bright, darkAlpha: motion.backgroundAlpha.dark,
                                   wordClock: motion.backgroundWords,
-                                  opacity: motion.opacity * (backgroundVisible ? 1 : 0), blur: min(5, motion.blur),
+                                  opacity: motion.opacityTransition.value * (backgroundVisible ? 1 : 0),
+                                  blur: min(5, motion.blurTransition.value),
                                   active: motion.active, hidden: !motion.active && progress == 0))
             }
         }
@@ -349,14 +446,16 @@ struct AMLLFrameEngine {
             settled: motions.allSatisfy {
                 if environment.enableSpring || environment.reduceMotion {
                     return $0.y.arrived && $0.slide.arrived && $0.mainScale.arrived && $0.backgroundScale.arrived
+                        && $0.opacityTransition.arrived && $0.blurTransition.arrived
                 }
                 return $0.yTransition.arrived && $0.slideTransition.arrived
                     && $0.mainScaleTransition.arrived && $0.backgroundScaleTransition.arrived
+                    && $0.opacityTransition.arrived && $0.blurTransition.arrived
             },
             background: .init(artworkURL: input.artworkURL,
                               blur: input.configuration?.backgroundBlur ?? 0,
                               progress: progress,
-                              seed: 0),
+                              seed: Self.backgroundSeed(for: input.artworkURL)),
             controls: .init(visible: input.configuration?.showControls ?? false,
                             progress: progress,
                             enabled: input.playbackSnapshot?.restrictions.canSeek ?? false),
@@ -425,7 +524,7 @@ struct AMLLFrameEngine {
             let hiddenSlide = group.backgroundFirst && !environment.alwaysPostpositionBackground ? 80.0 : -80.0
             let slide = active[index] || !playing ? 0 : hiddenSlide
             let mainScale = !active[index] && playing && environment.enableScale ? 97.0 : 100
-            let bgScale = !active[index] && playing ? 75.0 : 100
+            let bgScale = !active[index] && playing && environment.enableScale ? 75.0 : 100
             let immediate = force || seeking || firstFrame
             if immediate {
                 motions[index].y.setPosition(y)
@@ -436,6 +535,8 @@ struct AMLLFrameEngine {
                 motions[index].slideTransition.setPosition(slide)
                 motions[index].mainScaleTransition.setPosition(mainScale)
                 motions[index].backgroundScaleTransition.setPosition(bgScale)
+                motions[index].opacityTransition.setPosition(motions[index].opacity)
+                motions[index].blurTransition.setPosition(blur)
             } else if !environment.enableSpring {
                 motions[index].yTransition.setTarget(y)
                 motions[index].slideTransition.setTarget(slide)
@@ -445,6 +546,8 @@ struct AMLLFrameEngine {
                 motions[index].slide.setPosition(slide)
                 motions[index].mainScale.setPosition(mainScale)
                 motions[index].backgroundScale.setPosition(bgScale)
+                motions[index].opacityTransition.setTarget(motions[index].opacity, duration: 0.4)
+                motions[index].blurTransition.setTarget(blur, duration: 0.4)
             } else {
                 motions[index].y.setTarget(y, delay: delay)
                 motions[index].slide.setTarget(slide, delay: delay)
@@ -455,6 +558,8 @@ struct AMLLFrameEngine {
                 motions[index].slideTransition.setPosition(slide)
                 motions[index].mainScaleTransition.setPosition(mainScale)
                 motions[index].backgroundScaleTransition.setPosition(bgScale)
+                motions[index].opacityTransition.setTarget(motions[index].opacity, duration: 0.4)
+                motions[index].blurTransition.setTarget(blur, duration: 0.4)
             }
             y += groupHeights[index]
             if y >= 0, !seeking {

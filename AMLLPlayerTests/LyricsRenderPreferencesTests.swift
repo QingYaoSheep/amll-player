@@ -106,4 +106,13 @@ final class LyricsRenderPreferencesTests: XCTestCase {
         configuration.backgroundBlur = 75
         XCTAssertEqual(configuration.validated().backgroundBlur, 75)
     }
+
+    func testAMLLResponsiveFontPresetsUseViewportFormula() {
+        XCTAssertEqual(AMLLLyricSizePreset.tiny.pointSize(width: 402, height: 700), 17.5, accuracy: 0.000_001)
+        XCTAssertEqual(AMLLLyricSizePreset.medium.pointSize(width: 402, height: 700), 35, accuracy: 0.000_001)
+        XCTAssertEqual(AMLLLyricSizePreset.huge.pointSize(width: 1024, height: 768), 40.96, accuracy: 0.000_001)
+        var configuration = LyricsRenderConfiguration()
+        configuration.sizePreset = .large
+        XCTAssertEqual(configuration.resolvedFontSize(width: 402, height: 700), 42, accuracy: 0.000_001)
+    }
 }

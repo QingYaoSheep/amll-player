@@ -144,6 +144,7 @@ final class AMLLNativeCanvas: UIView {
     private func renderEnvironment() -> AMLLRenderEnvironment {
         let safeArea = safeAreaInsets
         let traits = traitCollection
+        let fontMetrics = UIFontMetrics(forTextStyle: .title1)
         let typeScale = UIFontMetrics(forTextStyle: .body).scaledValue(for: 1)
         let screen = window?.screen
         let direction = effectiveUserInterfaceLayoutDirection == .rightToLeft ? "rtl" : "ltr"
@@ -153,7 +154,10 @@ final class AMLLNativeCanvas: UIView {
         var environment = AMLLRenderEnvironment(width: bounds.width,
                                                 height: bounds.height,
                                                 screenWidth: Double(window?.bounds.width ?? bounds.width),
-                                                fontSize: configuration.resolvedFontSize(width: bounds.width, height: bounds.height))
+                                                fontSize: Double(fontMetrics.scaledValue(
+                                                    for: configuration.resolvedFontSize(width: bounds.width, height: bounds.height),
+                                                    compatibleWith: traits
+                                                )))
         environment.safeArea = safe
         environment.displayScale = Double(screen?.scale ?? 1)
         environment.maximumFPS = screen?.maximumFramesPerSecond ?? 60
@@ -176,7 +180,12 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private var inset: CGFloat {
-        (window?.bounds.width ?? bounds.width) <= 500 ? 20 : configuration.resolvedFontSize(width: bounds.width, height: bounds.height)
+        (window?.bounds.width ?? bounds.width) <= 500 ? 20 : resolvedPointSize
+    }
+
+    private var resolvedPointSize: CGFloat {
+        let metrics = UIFontMetrics(forTextStyle: .title1)
+        return metrics.scaledValue(for: configuration.resolvedFontSize(width: bounds.width, height: bounds.height), compatibleWith: traitCollection)
     }
 
     private func makeLayout(_ index: Int) -> AMLLCoreTextLayout {
@@ -184,7 +193,7 @@ final class AMLLNativeCanvas: UIView {
             return cached
         }
         let line = display!.lines[index]
-        let baseSize = configuration.resolvedFontSize(width: bounds.width, height: bounds.height)
+        let baseSize = resolvedPointSize
         let size = max(10, baseSize * (line.isBackground ? 0.7 : 1))
         let font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: size, weight: configuration.bold ? .semibold : .regular), compatibleWith: traitCollection)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)

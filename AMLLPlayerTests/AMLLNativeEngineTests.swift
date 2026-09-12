@@ -159,6 +159,32 @@ final class AMLLNativeEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testWholeLineBlurExtendsOutsideOriginalLeftEdge() throws {
+        let line = LyricLine(id: "edge", text: "MMMM", start: 0, end: 4)
+        let layout = AMLLCoreTextLayout(line: line, width: 240,
+                                        font: .systemFont(ofSize: 32, weight: .bold), configuration: .init())
+        let sharp = layout.raster(scale: 1)
+        let blurred = layout.raster(scale: 1, blurRadius: 5)
+        XCTAssertGreaterThan(blurred.size.width, sharp.size.width)
+        XCTAssertGreaterThan(blurred.size.height, sharp.size.height)
+        let image = try XCTUnwrap(blurred.cgImage)
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: width, height: height,
+                                                  bitsPerComponent: 8, bytesPerRow: width * 4,
+                                                  space: CGColorSpaceCreateDeviceRGB(),
+                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        let inset = Int((blurred.size.width - layout.size.width) / 2)
+        let hasOutsideInk = (0 ..< height).contains { y in
+            (0 ..< inset).contains { x in pixels[(y * width + x) * 4 + 3] > 0 }
+        }
+        XCTAssertTrue(hasOutsideInk, "Blur must extend into transparent padding left of the text origin")
+    }
+
+    @MainActor
     func testTimedRubyReservesInlineAnnotationSpace() {
         let word = LyricWord(text: "漢", start: 0, end: 2,
                              rubySegments: [.init(text: "かん", start: 0, end: 2)])

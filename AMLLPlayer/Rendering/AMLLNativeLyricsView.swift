@@ -435,9 +435,14 @@ private final class AMLLNativeRow: UIView {
         // Blur the entire composed text, including annotations, before any
         // glyph cropping. Never feed blurred pixels through word masks.
         for (blurLayer, radius) in [(nearBlur, CGFloat(2)), (farBlur, CGFloat(5))] {
-            blurLayer.contents = layout.raster(scale: min(scale, 1), blurRadius: radius).cgImage
+            let image = layout.raster(scale: min(scale, 1), blurRadius: radius)
+            blurLayer.contents = image.cgImage
             blurLayer.contentsScale = min(scale, 1)
-            blurLayer.frame = bounds
+            // Offset the padded texture back to the original text origin.
+            // Layout width, baselines and word masks remain unchanged.
+            let paddingX = (image.size.width - bounds.width) / 2
+            let paddingY = (image.size.height - bounds.height) / 2
+            blurLayer.frame = CGRect(x: -paddingX, y: -paddingY, width: image.size.width, height: image.size.height)
             blurLayer.opacity = 0
             layer.addSublayer(blurLayer)
         }

@@ -280,10 +280,16 @@ final class AMLLCoreTextLayout {
     private static let rasterContext = CIContext(options: nil)
 
     func raster(scale: CGFloat, auxiliary: Bool? = nil, ruby: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
+        // Three Gaussian standard deviations plus a pixel of rounding room.
+        // Transparent padding must exist before filtering, not just on CALayer.
+        let padding = blurRadius > 0 ? ceil(blurRadius * 3 + 1) : 0
+        let rasterSize = CGSize(width: size.width + padding * 2, height: size.height + padding * 2)
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
-        let sharp = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
+        format.opaque = false
+        let sharp = UIGraphicsImageRenderer(size: rasterSize, format: format).image { renderer in
             let context = renderer.cgContext
+            context.translateBy(x: padding, y: padding)
             context.textMatrix = .identity
             context.translateBy(x: 0, y: size.height)
             context.scaleBy(x: 1, y: -1)
@@ -300,7 +306,7 @@ final class AMLLCoreTextLayout {
         }
         guard blurRadius > 0, let input = CIImage(image: sharp) else { return sharp }
         let extent = input.extent
-        let filtered = input.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale])
+        let filtered = input.applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale])
         guard let output = Self.rasterContext.createCGImage(filtered, from: extent) else { return sharp }
         return UIImage(cgImage: output, scale: scale, orientation: .up)
     }

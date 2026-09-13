@@ -195,15 +195,15 @@ struct AMLLLyricsPlayer: View {
             artwork(item, side: metrics.compactArtworkSize, radius: 11)
             VStack(alignment: .leading, spacing: 2) {
                 if configuration.showTitle {
-                    Text(item.title).font(.system(size: 17, weight: .bold)).lineLimit(1)
+                    AMLLMetadataText(text: item.title, size: 17, bold: true, enabled: configuration.marquee)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showArtist {
-                    Text(item.artistLine).font(.system(size: 16)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
+                    AMLLMetadataText(text: item.artistLine, size: 16, enabled: configuration.marquee).opacity(0.72)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showAlbum, let album = item.albumTitle {
-                    Text(album).font(.system(size: 14)).foregroundStyle(.white.opacity(0.58)).lineLimit(1)
+                    AMLLMetadataText(text: album, size: 14, enabled: configuration.marquee).opacity(0.58)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if model.lyrics.selection.candidate != nil {
@@ -224,15 +224,15 @@ struct AMLLLyricsPlayer: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 if configuration.showTitle {
-                    Text(item.title).font(.system(size: 23, weight: .bold)).lineLimit(1)
+                    AMLLMetadataText(text: item.title, size: 23, bold: true, enabled: configuration.marquee)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showArtist {
-                    Text(item.artistLine).font(.system(size: 20)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
+                    AMLLMetadataText(text: item.artistLine, size: 20, enabled: configuration.marquee).opacity(0.62)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showAlbum, let album = item.albumTitle {
-                    Text(album).font(.system(size: 16)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                    AMLLMetadataText(text: album, size: 16, enabled: configuration.marquee).opacity(0.5)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
             }
@@ -313,6 +313,13 @@ struct AMLLLyricsPlayer: View {
             }
             Button("player.devices", systemImage: "airplayaudio") { devices = true; Task { await model.loadDevices() } }
             Button("lyrics.find", systemImage: "magnifyingglass") { search = true }
+            if let document = model.lyrics.document, let credit = configuration.credits.content(in: document) {
+                Section {
+                    Text(credit.names.joined(separator: " · "))
+                } header: {
+                    Text(LocalizedStringKey("render.creditLabel." + credit.kind.rawValue))
+                }
+            }
         } label: {
             Label("render.options", systemImage: "ellipsis")
                 .labelStyle(.iconOnly)

@@ -147,6 +147,27 @@ final class AppleLyricsProvider: LyricsProvider {
         _ = try await api("/catalog/us/search", query: ["types": "songs", "limit": "1", "term": "test"])
     }
 
+    /// Port of the pinned plugin's fetchAppleAnimatedArtwork catalog sequence.
+    /// Kept separate from lyrics(): no lyric selection/cache state is changed.
+    func animatedArtwork(songID: String, settings: LyricsSettings) async throws -> [ArtworkAsset] {
+        guard songID.range(of: #"^[0-9]+$"#, options: .regularExpression) != nil else { throw LyricsError.malformed }
+        let context = await context(settings.validated())
+        try Task.checkCancellation()
+        let song = try await api("/catalog/\(context.storefront)/songs/\(songID)", query: ["include": "albums"])
+        guard let item = (song["data"] as? [[String: Any]])?.first,
+              let relationships = item["relationships"] as? [String: Any],
+              let albums = relationships["albums"] as? [String: Any],
+              let album = (albums["data"] as? [[String: Any]])?.first,
+              let albumID = album["id"] as? String else { return [] }
+        guard albumID.range(of: #"^[0-9]+$"#, options: .regularExpression) != nil else { throw LyricsError.malformed }
+        try Task.checkCancellation()
+        let response = try await api("/catalog/\(context.storefront)/albums/\(albumID)", query: ["extend": "editorialVideo", "platform": "web"])
+        try Task.checkCancellation()
+        guard let album = (response["data"] as? [[String: Any]])?.first,
+              let attributes = album["attributes"] as? [String: Any] else { throw LyricsError.malformed }
+        return ArtworkAsset.catalogAssets(attributes: attributes, albumID: albumID, storefront: context.storefront)
+    }
+
     func probeAccount() async throws {
         _ = try await api("/me/storefront", access: .account)
     }

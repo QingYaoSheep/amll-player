@@ -9,7 +9,7 @@
 | P1 HDR | 已有范围模型、浮点 Metal 着色器/渲染器和 Debug Core Text 字形验证入口；验证入口采集屏幕余量、替换式计算 SDR/HDR 区域并接入 Plus Lighter；新增 GPU 像素读回测试 | **仅 Debug 接线，生产未接入**：实际帧变换、长音发光、淡出/模糊一致性、生产设置及能力提示、持续显示余量变化、真机验证；GPU 测试尚待 CI |
 | P2 | 分段 ruby 已接入 UTF-16/运行段映射与独立遮罩；逐词罗马音接入词下方排版，歧义/超宽回退行级并导出诊断；修复逐行注音留白 | 编译及新增测试待 CI；跨行 ruby 完整排布、原版辅助文字混色/强调、完整断行/复杂文字视觉对照 |
 | P3 | 现有 Mesh 路径 | 完整 Mesh/Pixi 源码对照、模式/种子/上下文管理与背景验收 |
-| P4 | 现有静态封面 | 动态资源查询、方/竖选择、无声视频、默认关闭与 Wi-Fi 策略、200MB LRU、取消请求、统一跑马灯与署名 |
+| P4 | 静态封面；统一页面标题/艺人/专辑已接入原版有限往返跑马灯，设置可控制；菜单展示数据中真实署名 | 跑马灯真机验证；动态资源查询、方/竖选择、无声视频、默认关闭与 Wi-Fi 策略、200MB LRU、取消请求、原版署名位置及混色 |
 | 综合签收 | 无本轮真机报告 | 全部 CI、15 分钟稳定性、60/120Hz、目标设备 HDR/视觉及辅助功能签收 |
 
 HDR 实施语义固定为：每个真实活动句的已填充区域持续高光，直到该句结束；不是仅正在发声的词。逐行歌词激活整行，不制造逐词时间。歌词之外的信息文字保持 SDR；HDR 目标为线性白 1.5 倍并受实时余量限制。关闭 HDR 不关闭 Plus Lighter。普通长音 shadow 不算 HDR。
@@ -17,6 +17,20 @@ HDR 实施语义固定为：每个真实活动句的已填充区域持续高光�
 公开 API 依据：[SwiftUI BlendMode](https://developer.apple.com/documentation/swiftui/blendmode)、[Metal EDR 与浮点输出](https://developer.apple.com/documentation/metal/performing-your-own-tone-mapping)。使用浮点格式本身不代表已完成 HDR，必须验证实际显示输出。
 
 所有阶段保持未勾选；不得用模型测试或 SDR 截图替代 Metal 接线与真机签收。
+
+## 2026-09-13 真实页面跑马灯
+
+- `react-full/src/components/TextMarquee/index.tsx` → `AMLLMarqueeMotion` / `AMLLMetadataText`：保留 95% 宽度阈值、32pt/s、一次往返，静止右侧/运行双侧淡出。没有沿用旧近似无限循环。
+- 紧凑与展开页面的标题、艺人、专辑统一接线并保留原字号及 SDR Plus Lighter；字号遵循 Dynamic Type/Bold Text。跑马灯设置在 AMLL 页面也可操作。
+- 鼠标进入/离开对应原版事件；点击触发/停止为触屏主动适配。减少动态效果、关闭设置、切歌/文字变化、离屏与后台会清除动画；完整文本由 VoiceOver 读取。
+- 数据中的真实歌词作者/歌曲作者可在菜单查看，不生成虚假署名。菜单并非原版署名位置，不计为完整署名视觉移植。
+- 新增轨迹数值与实际 UILabel/CAAnimation 接线测试，尚待 CI；生产 HDR、背景及动态封面仍未完成。
+
+### 动态封面目录发现基础
+
+已按本地插件 0.29.21 实现 `歌曲 include=albums → 专辑 extend=editorialVideo&platform=web`，解析 `motionDetailSquare` / `motionDetailTall` 的字符串、url、href、video 包装。资源结果保留专辑和 storefront；请求取消在跨请求边界检查。缺少专辑关联返回无资源，损坏专辑响应报告错误。
+
+这只是可测试的目录发现方法，尚无页面调用、匹配调度、无声视频、Wi-Fi 策略或媒体缓存。不得把资源 URL 查询当成 P4 完成。新增 URL 形态和请求合约测试；来源 SHA-256 见 `ReferenceCaptures/remaining-visual-source-hashes.json`。
 
 ## 2026-09-13 HDR 浮点绘制验证入口
 

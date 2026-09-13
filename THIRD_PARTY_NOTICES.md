@@ -1,5 +1,11 @@
 # Third-party notices
 
+## Remaining visual source references
+
+- `react-full` TextMarquee TSX/CSS: adapted by `AMLLMarqueeMotion` and `AMLLMetadataText`; the pinned AMLL package attribution and license below apply. Touch activation is a native addition.
+- Local `spotify-multisource-lyrics.js` 0.29.21 declares `@license MIT`. Its `animatedCoverMediaUrl` and `fetchAppleAnimatedArtwork` catalog sequence inform the independent Swift `ArtworkAsset` decoding and `AppleLyricsProvider.animatedArtwork` method. No JavaScript is embedded or executed in the app.
+- Exact source hashes for these references: `ReferenceCaptures/remaining-visual-source-hashes.json`.
+
 ## Apple Music-like Lyrics native rendering port
 
 - Local reference: `AMLL-OLD`, `@applemusic-like-lyrics/core` 0.5.2 and the installed `react-full` package.

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "files": [
+    {
+      "root": "AMLL-OLD",
+      "path": "packages/player/src/builtin-extensions/spotify-multisource-lyrics.js",
+      "version": "0.29.21",
+      "declaredLicense": "MIT",
+      "sha256": "eafc905eb8c1f37e902c3895854eb5594bca7357e3c049d386ffef510806f0c2",
+      "symbols": ["animatedCoverMediaUrl", "fetchAppleAnimatedArtwork"]
+    },
+    {
+      "root": ".build-tools/amll-reference/react-full",
+      "path": "src/components/TextMarquee/index.tsx",
+      "sha256": "2447259a14bdb04af48bac7ce6a0a304e3295627b3afd0945680374d501fc0a8"
+    },
+    {
+      "root": ".build-tools/amll-reference/react-full",
+      "path": "src/components/TextMarquee/index.module.css",
+      "sha256": "8368d766a579b900b9c1bec4bf2cc255955feefb7a03a4fe1349e298f5b86894"
+    }
+  ]
+}

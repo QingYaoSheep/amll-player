@@ -3,6 +3,38 @@ import XCTest
 
 @MainActor
 final class LyricsProviderTests: XCTestCase {
+    func testArtworkDiscoveryUsesSongAlbumRelationshipAndEditorialVideo() async throws {
+        let credentials = credentials()
+        try credentials.saveManual(token())
+        let http = try LyricsHTTPFixture([
+            .success(json(["data": [["relationships": ["albums": ["data": [["id": "42"]]]]]]])),
+            .success(json(["data": [["attributes": ["editorialVideo": [
+                "motionDetailSquare": ["url": "https://example.com/square.m3u8"],
+                "motionDetailTall": ["video": ["href": "https://example.com/tall.m3u8"]],
+            ]]]]])),
+        ])
+        let assets = try await AppleLyricsProvider(http: http, credentials: credentials)
+            .animatedArtwork(songID: "7", settings: .init())
+        XCTAssertEqual(assets.map(\.kind), [.squareVideo, .portraitVideo])
+        let requests = await http.requests
+        XCTAssertEqual(requests.map { $0.url?.path }, ["/v1/catalog/us/songs/7", "/v1/catalog/us/albums/42"])
+        let query = try XCTUnwrap(URLComponents(url: XCTUnwrap(requests.last?.url), resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertTrue(query.contains(URLQueryItem(name: "extend", value: "editorialVideo")))
+        XCTAssertTrue(query.contains(URLQueryItem(name: "platform", value: "web")))
+        XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "Media-User-Token") == nil })
+    }
+
+    func testArtworkWithoutAlbumDoesNotRequestVideoOrLyrics() async throws {
+        let credentials = credentials()
+        try credentials.saveManual(token())
+        let http = try LyricsHTTPFixture([.success(json(["data": [["id": "7"]]]))])
+        let assets = try await AppleLyricsProvider(http: http, credentials: credentials)
+            .animatedArtwork(songID: "7", settings: .init())
+        XCTAssertTrue(assets.isEmpty)
+        let count = await http.requests.count
+        XCTAssertEqual(count, 1)
+    }
+
     private let track = TrackIdentity(spotifyID: "s", title: "Title", artists: ["Artist"], duration: 10)
 
     private func credentials() -> AppleLyricsCredentials {

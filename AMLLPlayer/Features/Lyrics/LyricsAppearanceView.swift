@@ -90,9 +90,7 @@ struct LyricsAppearanceView: View {
                 Toggle("render.scale", isOn: $preferences.configuration.enableScale)
                 DisclosureGroup("appearance.motionDetails") {
                     Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines)
-                    if preferences.profile == .custom {
-                        Toggle("render.marquee", isOn: $preferences.configuration.marquee)
-                    }
+                    Toggle("render.marquee", isOn: $preferences.configuration.marquee)
                     LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
                     Slider(value: $preferences.configuration.gradientWidth, in: 0 ... 1, step: 0.05)
                         .accessibilityLabel(Text("render.gradientWidth"))

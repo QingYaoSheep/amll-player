@@ -311,12 +311,13 @@ final class AMLLNativeCanvas: UIView {
         func exportMotionTrace(fps: Int) -> Data? {
             guard var replay = engine, !dirty else { return nil }
             struct Trace: Encodable {
-                var schema = 1
+                var schema = 2
                 var coreVersion = "0.5.2"
                 var environment: AMLLRenderEnvironment
                 var fps: Int
                 var lineIDs: [String]
                 var breaks: [[Int]]
+                var layoutDiagnostics: [[String]]
                 var frames: [AMLLFrameState]
             }
             let rate = fps == 120 ? 120 : 60
@@ -329,7 +330,8 @@ final class AMLLNativeCanvas: UIView {
             }
             let trace = Trace(environment: renderEnvironment(), fps: rate,
                               lineIDs: display?.lines.map(\.id) ?? [],
-                              breaks: heights.indices.map { makeLayout($0).breakOffsets }, frames: frames)
+                              breaks: heights.indices.map { makeLayout($0).breakOffsets },
+                              layoutDiagnostics: heights.indices.map { makeLayout($0).diagnostics }, frames: frames)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             return try? encoder.encode(trace)
@@ -384,6 +386,14 @@ final class AMLLNativeCanvas: UIView {
 
 @MainActor
 private final class AMLLNativeRow: UIView {
+    private struct RubyPiece {
+        var layer: CALayer
+        var mask: CAGradientLayer
+        var fragment: AMLLCoreTextLayout.RubyFragment
+        var maskWidth: Double
+        var advance: Double
+    }
+
     private struct WordPiece {
         var layer: CALayer
         var mask: CAGradientLayer
@@ -408,6 +418,7 @@ private final class AMLLNativeRow: UIView {
     private let auxiliary = CALayer()
     private var words: [WordPiece] = []
     private var characters: [CharacterPiece] = []
+    private var rubyPieces: [RubyPiece] = []
     private let maskWords: [AMLLWordMask.Word]
     private let sharpImage: UIImage
     private let sharpRubyImage: UIImage
@@ -430,6 +441,27 @@ private final class AMLLNativeRow: UIView {
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         base.contents = sharpImage.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
         ruby.contents = sharpRubyImage.cgImage; ruby.contentsScale = scale; ruby.frame = bounds; layer.addSublayer(ruby)
+        var rubyAdvances: [String: Double] = [:]
+        for fragment in layout.rubyFragments where fragment.rect.width > 0 {
+            let piece = CALayer()
+            piece.frame = fragment.rect
+            piece.contents = sharpRubyImage.cgImage
+            piece.contentsScale = scale
+            piece.contentsRect = CGRect(x: fragment.rect.minX / layout.size.width, y: fragment.rect.minY / layout.size.height,
+                                        width: fragment.rect.width / layout.size.width, height: fragment.rect.height / layout.size.height)
+            let mask = CAGradientLayer()
+            mask.frame = piece.bounds
+            piece.mask = mask
+            layer.addSublayer(piece)
+            let key = "\(fragment.kind.rawValue):\(fragment.wordIndex):\(fragment.segmentIndex)"
+            let maskWidth = layout.rubyFragments.filter {
+                $0.kind == fragment.kind && $0.wordIndex == fragment.wordIndex && $0.segmentIndex == fragment.segmentIndex
+            }.reduce(0.0) { $0 + $1.rect.width }
+            rubyPieces.append(.init(layer: piece, mask: mask, fragment: fragment,
+                                    maskWidth: maskWidth, advance: rubyAdvances[key, default: 0]))
+            rubyAdvances[key, default: 0] += fragment.rect.width
+        }
+        ruby.isHidden = !rubyPieces.isEmpty
         auxiliary.contents = sharpAuxiliaryImage.cgImage
         auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
         // Blur the entire composed text, including annotations, before any
@@ -570,6 +602,27 @@ private final class AMLLNativeRow: UIView {
         farBlur.opacity = Float(max(0, (radius - 2) / 3)) * blurredAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
         ruby.opacity = sharpWeight
+        for entry in rubyPieces {
+            entry.layer.opacity = sharpWeight
+            let fragment = entry.fragment
+            guard let start = fragment.start, let end = fragment.end,
+                  start.isFinite, end.isFinite, end > start
+            else {
+                // Legacy/untimed annotation remains visible; never manufacture
+                // syllable timing from its character count.
+                entry.mask.colors = [UIColor.white.cgColor, UIColor.white.cgColor]
+                continue
+            }
+            let width = max(1, fragment.rect.width)
+            let feather = max(0.0001, textLayout.font.lineHeight * configuration.gradientWidth * 0.5)
+            let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: 0,
+                                         words: [.init(start: start, end: end, width: entry.maskWidth)], feather: feather) - entry.advance
+            let first = edge / width, last = (edge + feather) / width
+            entry.mask.colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
+            entry.mask.locations = [0, 1]
+            entry.mask.startPoint = CGPoint(x: fragment.rtl ? 1 - first : first, y: 0.5)
+            entry.mask.endPoint = CGPoint(x: fragment.rtl ? 1 - last : last, y: 0.5)
+        }
         auxiliary.opacity = sharpWeight
         base.opacity = Float(words.isEmpty ? 1 : dark) * sharpWeight
         // Fully blurred inactive rows need only two whole-line layers.

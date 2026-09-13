@@ -227,6 +227,75 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertTrue(AMLLWordSegmentation.chunks([word]).flatMap(\.self).count == 1)
     }
 
+    @MainActor
+    func testRubySegmentsKeepIndependentTimingAndUTF16Ranges() {
+        let word = LyricWord(text: "漢字", start: 1, end: 5,
+                             rubySegments: [.init(text: "かん", start: 1, end: 2),
+                                            .init(text: "じ", start: 3, end: 5)])
+        let layout = AMLLCoreTextLayout(
+            line: LyricLine(id: "segmented", text: word.text, start: 1, end: 5, words: [word], precision: .word),
+            width: 240, font: .systemFont(ofSize: 32), configuration: .init()
+        )
+        let first = layout.rubyFragments.filter { $0.segmentIndex == 0 }
+        let second = layout.rubyFragments.filter { $0.segmentIndex == 1 }
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertFalse(second.isEmpty)
+        XCTAssertTrue(first.allSatisfy { $0.start == 1 && $0.end == 2 && $0.wordIndex == 0 })
+        XCTAssertTrue(second.allSatisfy { $0.start == 3 && $0.end == 5 && $0.range.location >= 2 })
+        XCTAssertEqual(first.reduce(0) { $0 + $1.range.length }, 2)
+        XCTAssertEqual(second.reduce(0) { $0 + $1.range.length }, 1)
+    }
+
+    @MainActor
+    func testWordRomanizationIsPlacedBelowItsWordAndCanBeDisabled() {
+        let word = LyricWord(text: "漢", start: 1, end: 4, romanWord: "kan", ruby: "かん")
+        let line = LyricLine(id: "roman", text: word.text, start: 1, end: 4, words: [word], precision: .word)
+        let font = UIFont.systemFont(ofSize: 32)
+        let layout = AMLLCoreTextLayout(line: line, width: 240, font: font, configuration: .init())
+        let roman = layout.rubyFragments.filter { $0.kind == .romanization }
+        XCTAssertFalse(roman.isEmpty)
+        XCTAssertTrue(roman.allSatisfy { $0.start == 1 && $0.end == 4 && $0.wordIndex == 0 })
+        XCTAssertEqual(roman.first?.rect.minY, layout.fragments.first?.rect.maxY)
+        XCTAssertTrue(layout.diagnostics.isEmpty)
+        var hidden = LyricsRenderConfiguration()
+        hidden.romanization = false
+        let without = AMLLCoreTextLayout(line: line, width: 240, font: font, configuration: hidden)
+        XCTAssertFalse(without.rubyFragments.contains { $0.kind == .romanization })
+        XCTAssertTrue(without.rubyFragments.contains { $0.kind == .ruby })
+        XCTAssertGreaterThan(layout.size.height, without.size.height)
+    }
+
+    @MainActor
+    func testUnfittableWordRomanizationKeepsLineFallbackAndDiagnostic() throws {
+        let word = LyricWord(text: "字", start: 0, end: 1, romanWord: "a very long pronunciation")
+        let line = LyricLine(id: "fallback", text: word.text, start: 0, end: 1, words: [word], precision: .word)
+        let layout = AMLLCoreTextLayout(line: line, width: 90, font: .systemFont(ofSize: 32), configuration: .init())
+        XCTAssertFalse(layout.rubyFragments.contains { $0.kind == .romanization })
+        XCTAssertFalse(layout.diagnostics.isEmpty)
+        XCTAssertEqual(LyricsRenderConfiguration().auxiliaryText(for: line), try [XCTUnwrap(word.romanWord)])
+    }
+
+    @MainActor
+    func testWrappedRubyRowsDoNotOccupyPreviousMainRow() {
+        let words = (0 ..< 6).map { index in
+            LyricWord(text: "漢字 ", start: Double(index), end: Double(index + 1), ruby: "かんじ")
+        }
+        let layout = AMLLCoreTextLayout(
+            line: LyricLine(id: "wrapped", text: words.map(\.text).joined(), start: 0, end: 6, words: words, precision: .word),
+            width: 90, font: .systemFont(ofSize: 32), configuration: .init()
+        )
+        let mainRows = Set(layout.fragments.map { $0.rect.minY }).sorted()
+        XCTAssertGreaterThan(mainRows.count, 1)
+        for annotation in layout.rubyFragments {
+            let main = layout.fragments.first { $0.wordIndex == annotation.wordIndex }
+            XCTAssertNotNil(main)
+            XCTAssertLessThanOrEqual(annotation.rect.maxY, (main?.rect.minY ?? 0) + 0.01)
+            for previous in layout.fragments where previous.rect.minY < (main?.rect.minY ?? 0) {
+                XCTAssertGreaterThanOrEqual(annotation.rect.minY + 0.01, previous.rect.maxY)
+            }
+        }
+    }
+
     func testFrameStateCarriesRealPageBackgroundAndControlInput() {
         let line = LyricLine(id: "page", text: "Page", start: 0, end: 4)
         var configuration = LyricsRenderConfiguration()

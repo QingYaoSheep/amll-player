@@ -1,5 +1,7 @@
 # Plan 5 — complete native AMLL port
 
+2026-09-13: timed ruby fragments and fitting word romanization now reach cached native annotation layers. Ambiguous/oversized romanization falls back with trace diagnostics; wrapped ruby and full source visual parity remain open. See the remaining-visual ledger for validation status.
+
 Latest remaining-visual specification and evidence: [Remaining-Visual-Port.md](Remaining-Visual-Port.md). HDR currently has a model only; metadata SDR Plus Lighter is wired but not visually signed off. Historical status below does not supersede that ledger.
 
 Updated 2026-09-12. Specification: the user's approved “计划 5 替换稿：完整原生移植 AMLL 歌词播放器”, refined so the unified AMLL page keeps the previously added Apple Music-derived page geometry while all lyric motion and rendering remain native AMLL. Playback services, lyric providers, manual matching and offsets remain intact.

@@ -314,7 +314,7 @@ struct AMLLFrameEngine {
             // the decay below integrates independently of display refresh.
             scrollVelocity = velocity.isFinite ? min(0.8, max(-0.8, velocity / 1000)) : 0
             let releasedTime = (previousInput?.position ?? 0) - (previousInput?.offset ?? 0)
-            resumeAtLineStart = document.groups.map { document.lines[$0.main].start }
+            resumeAtLineStart = document.groups.map { document.actualLineStarts[$0.main] }
                 .filter { $0 > releasedTime }.min()
         case .resumeFollowing:
             touching = false; browsing = false; scrollOffset = 0; scrollVelocity = 0

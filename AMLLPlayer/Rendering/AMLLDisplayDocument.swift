@@ -10,10 +10,15 @@ struct AMLLDisplayDocument: Sendable {
     }
 
     let lines: [LyricLine]
+    /// Source singing boundaries, before the display optimizer advances lines.
+    let actualLineStarts: [Double]
     let groups: [Group]
     let timings: [AMLLGroupTiming]
 
     init(lines source: [LyricLine]) {
+        actualLineStarts = source.map { line in
+            line.precision == .word ? (line.words.first?.start ?? line.start) : line.start
+        }
         var lines = source
         for index in lines.indices {
             // Keep the display copy lossless. TTML's `xml:space="preserve"`

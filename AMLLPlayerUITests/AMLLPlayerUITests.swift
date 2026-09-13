@@ -66,7 +66,7 @@ final class AMLLPlayerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--lyrics-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 5))
+        waitForLyricsEntry(app)
         app.buttons["openNowPlaying"].tap()
         let actions = app.buttons["lyricsActions"]
         XCTAssertTrue(actions.waitForExistence(timeout: 3))
@@ -80,8 +80,8 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Corrected fixture line"].waitForExistence(timeout: 5))
         app.buttons["lyricsApply"].tap()
         XCTAssertTrue(app.staticTexts["Manual · locked"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.scrollViews["nativeLyricsScroll"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Corrected fixture line"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["amllNativeLyricsDisplay"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Corrected fixture line")).firstMatch.waitForExistence(timeout: 3))
         app.buttons["closeLyricsPlayer"].tap()
         XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 3))
     }
@@ -90,9 +90,9 @@ final class AMLLPlayerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["--lyrics-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 5))
+        waitForLyricsEntry(app)
         app.buttons["openNowPlaying"].tap()
-        let lyrics = app.scrollViews["nativeLyricsScroll"]
+        let lyrics = app.descendants(matching: .any)["amllNativeLyricsDisplay"].firstMatch
         XCTAssertTrue(lyrics.waitForExistence(timeout: 5))
         lyrics.swipeUp()
         let resume = app.buttons["resumeLyricsFollowing"]
@@ -100,6 +100,7 @@ final class AMLLPlayerUITests: XCTestCase {
         resume.tap()
         app.buttons["lyricsDisplayOptions"].tap()
         app.buttons["Hide lyrics"].tap()
+        app.buttons["lyricsDisplayOptions"].tap()
         XCTAssertTrue(app.buttons["Show lyrics"].waitForExistence(timeout: 3))
         app.buttons["Show lyrics"].tap()
         XCTAssertTrue(lyrics.waitForExistence(timeout: 3))
@@ -119,5 +120,21 @@ final class AMLLPlayerUITests: XCTestCase {
         app.launchArguments += ["--catalog-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         return app
+    }
+
+    @MainActor private func waitForLyricsEntry(_ app: XCUIApplication) {
+        // Account and playback fixtures arrive independently. Retain the real
+        // tab accessory route and attach evidence if it never becomes visible.
+        let found = app.buttons["openNowPlaying"].waitForExistence(timeout: 15)
+        if !found {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Missing lyric entry hierarchy"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        XCTAssertTrue(found)
     }
 }

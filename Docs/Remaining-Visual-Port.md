@@ -17,3 +17,7 @@ HDR 实施语义固定为：每个真实活动句的已填充区域持续高光�
 公开 API 依据：[SwiftUI BlendMode](https://developer.apple.com/documentation/swiftui/blendmode)、[Metal EDR 与浮点输出](https://developer.apple.com/documentation/metal/performing-your-own-tone-mapping)。使用浮点格式本身不代表已完成 HDR，必须验证实际显示输出。
 
 所有阶段保持未勾选；不得用模型测试或 SDR 截图替代 Metal 接线与真机签收。
+
+## 2026-09-13 基线复核
+
+`0f173e32` 的 CI 34699214261：Xcode 27 build/archive/IPA 通过；模拟器创建成功，Xcode 26 执行 176 个单元测试（3 失败）及 5 个 UI 测试（2 失败）。新 HDR 模型测试通过。浏览恢复真实边界的产品错误已修复；字号与文本保留测试已按来源及主动差异修正。UI 测试更新到当前画布，并为初始入口缺失收集诊断；等待新运行确认，不能宣称已修复全部 UI 问题。

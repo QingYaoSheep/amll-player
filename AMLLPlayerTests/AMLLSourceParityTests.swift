@@ -195,7 +195,11 @@ final class AMLLSourceParityTests: XCTestCase {
             XCTAssertEqual(line.start * 1000, expected.startTime, accuracy: 0.000_001)
             XCTAssertEqual(line.end * 1000, expected.endTime, accuracy: 0.000_001)
             XCTAssertEqual(line.isBackground, expected.isBG)
-            XCTAssertEqual(line.text, expected.words.map(\.word).joined())
+            // Intentional native difference: preserve provider whitespace.
+            // Compare timing/group optimization against the source, but text
+            // against the original stream rather than its collapsed variant.
+            let original = try XCTUnwrap(input.first { $0.id == line.id })
+            XCTAssertEqual(line.text, original.words.map(\.text).joined())
             for (word, expectedWord) in zip(line.words, expected.words) {
                 XCTAssertEqual(word.start * 1000, expectedWord.startTime, accuracy: 0.000_001)
                 XCTAssertEqual(word.end * 1000, expectedWord.endTime, accuracy: 0.000_001)

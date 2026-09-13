@@ -18,9 +18,24 @@
         @State private var visible = false
         @State private var sourcePort = false
         @State private var seekRevision = 0
+        @State private var showHDRProbe = false
+        @State private var hdrProbeTime = 0.0
+        @State private var hdrProbeEnabled = false
+        @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
         @Environment(\.scenePhase) private var scenePhase
         var body: some View {
             VStack {
+                DisclosureGroup("HDR 浮点字形验证（非生产渲染器）", isExpanded: $showHDRProbe) {
+                    if showHDRProbe {
+                        LyricsHDRProbe(time: hdrProbeTime, enabled: hdrProbeEnabled && !reduceTransparency)
+                            .frame(height: 100)
+                            .blendMode(reduceTransparency ? .normal : .plusLighter)
+                        Slider(value: $hdrProbeTime, in: 0 ... 5).accessibilityLabel("HDR 字形验证时间")
+                        Toggle("请求扩展亮度（目标 1.5 倍）", isOn: $hdrProbeEnabled)
+                        Text("使用当前屏幕 EDR 余量；静态验证不会替代完整歌词动画与真机签收。")
+                            .font(.caption)
+                    }
+                }
                 Toggle("AMLL source port · validation", isOn: $sourcePort)
                 if sourcePort {
                     AMLLNativeLyricsView(document: lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document,

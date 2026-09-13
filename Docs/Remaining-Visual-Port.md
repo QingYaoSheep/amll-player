@@ -6,7 +6,7 @@
 |---|---|---|
 | P0 | 已读取基线 CI 34698219471：Xcode 27 build/archive/IPA 成功；Xcode 26 无指定模拟器，测试未启动。新增显式创建 iOS 26 iPhone 16 Pro / iPad Pro 13-inch (M4) 脚本及两项通过的 Node 回归 | 新 CI、完整资源锁定、同输入冻结回放与叠片 |
 | P1 信息文字 | 真实页面标题、艺人、专辑已接入 SwiftUI SDR Plus Lighter；减少透明度使用 normal，仅修改文字 | 实际背景合成真机验证、署名与辅助文字合成 |
-| P1 HDR | 新增配置、能力限制、活动句及原遮罩空间覆盖模型和 Swift 测试；配置可选字段兼容旧存储，默认不启用 | **仅模型，未绘制**：浮点 Metal 图层、实时余量采集、SDR 扣除、逐帧变换/淡出一致性、开关和能力提示、HDR 真机验证 |
+| P1 HDR | 已有范围模型、浮点 Metal 着色器/渲染器和 Debug Core Text 字形验证入口；验证入口采集屏幕余量、替换式计算 SDR/HDR 区域并接入 Plus Lighter；新增 GPU 像素读回测试 | **仅 Debug 接线，生产未接入**：实际帧变换、长音发光、淡出/模糊一致性、生产设置及能力提示、持续显示余量变化、真机验证；GPU 测试尚待 CI |
 | P2 | 分段 ruby 已接入 UTF-16/运行段映射与独立遮罩；逐词罗马音接入词下方排版，歧义/超宽回退行级并导出诊断；修复逐行注音留白 | 编译及新增测试待 CI；跨行 ruby 完整排布、原版辅助文字混色/强调、完整断行/复杂文字视觉对照 |
 | P3 | 现有 Mesh 路径 | 完整 Mesh/Pixi 源码对照、模式/种子/上下文管理与背景验收 |
 | P4 | 现有静态封面 | 动态资源查询、方/竖选择、无声视频、默认关闭与 Wi-Fi 策略、200MB LRU、取消请求、统一跑马灯与署名 |
@@ -17,6 +17,13 @@ HDR 实施语义固定为：每个真实活动句的已填充区域持续高光�
 公开 API 依据：[SwiftUI BlendMode](https://developer.apple.com/documentation/swiftui/blendmode)、[Metal EDR 与浮点输出](https://developer.apple.com/documentation/metal/performing-your-own-tone-mapping)。使用浮点格式本身不代表已完成 HDR，必须验证实际显示输出。
 
 所有阶段保持未勾选；不得用模型测试或 SDR 截图替代 Metal 接线与真机签收。
+
+## 2026-09-13 HDR 浮点绘制验证入口
+
+- 新增 `LyricsHDR.metal` 与 `LyricsHDRRenderer`：RGBA16Float、extendedLinearSRGB、透明 CAMetalLayer。着色器按原字形 alpha 和羽化覆盖计算 SDR/HDR 替换值，不重复叠加普通白字。
+- Debug 歌词预览增加可折叠 HDR 字形验证区，使用真实 Core Text 栅格及 AMLLWordMask，拖动 0–5 秒验证已填充/未填充/失活状态。每次绘制查询窗口屏幕 current/potential EDR headroom，目标不超过 1.5；HDR 关闭仍保留 SDR Plus Lighter，减少透明度采用普通混色。
+- 新增 GPU 浮点像素读回测试：已填充 1.5、未填充 0.3、无字形区域透明；另测图层色彩空间/格式/尺寸。尚未在 Windows 执行这些 Apple GPU 测试。
+- 此入口不是生产歌词引擎。生产动画、blur、shadow、转场和 EDR 合成仍需统一接线及验证；不开放生产 HDR 开关，不标记 P1 完成。
 
 ## 2026-09-13 辅助文字接线
 

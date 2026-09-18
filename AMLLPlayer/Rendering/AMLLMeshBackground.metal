@@ -1,6 +1,28 @@
 #include <metal_stdlib>
 using namespace metal;
 
+struct AMLLCompositeVertex {
+    float4 position [[position]];
+    float2 uv;
+};
+
+vertex AMLLCompositeVertex amllBackgroundQuad(uint id [[vertex_id]]) {
+    const float2 positions[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+    AMLLCompositeVertex result;
+    result.position = float4(positions[id], 0, 1);
+    result.uv = float2((positions[id].x + 1) * 0.5, (1 - positions[id].y) * 0.5);
+    return result;
+}
+
+fragment float4 amllBackgroundComposite(AMLLCompositeVertex input [[stage_in]],
+                                       texture2d<float> image [[texture(0)]],
+                                       constant float &alpha [[buffer(0)]]) {
+    constexpr sampler sampleImage(address::clamp_to_edge, filter::linear);
+    float4 result = image.sample(sampleImage, input.uv);
+    result.a *= alpha;
+    return result;
+}
+
 struct AMLLBackgroundVertex {
     float2 position;
     float2 uv;

@@ -6,11 +6,13 @@ struct AMLLMeshBackground: UIViewRepresentable {
     var artworkURL: URL?
     var active: Bool
     var blur: Double
+    /// Debug/reference playback can inject a seed; production seeds once per context.
+    var seed: UInt32? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(seed: seed ?? UInt32.random(in: 1 ... UInt32.max))
     }
 
     func makeUIView(context: Context) -> MTKView {
@@ -29,6 +31,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
         context.coordinator.setArtwork(artworkURL)
         view.preferredFramesPerSecond = view.window?.screen.maximumFramesPerSecond ?? UIScreen.main.maximumFramesPerSecond
         let shouldAnimate = active && !reduceMotion && !reduceTransparency
+        context.coordinator.setRunning(shouldAnimate)
         view.isPaused = !shouldAnimate
         view.enableSetNeedsDisplay = !shouldAnimate
         view.alpha = reduceTransparency ? 0 : 1
@@ -59,15 +62,32 @@ struct AMLLMeshBackground: UIViewRepresentable {
         private weak var view: MTKView?
         private var queue: MTLCommandQueue?
         private var pipeline: MTLRenderPipelineState?
-        private var vertices: MTLBuffer?
-        private var indices: MTLBuffer?
-        private var indexCount = 0
-        private var texture: MTLTexture?
+        private struct MeshState {
+            var texture: MTLTexture
+            var vertices: MTLBuffer
+            var indices: MTLBuffer
+            var count: Int
+            var alpha: Double
+        }
+
+        private var states: [MeshState] = []
+        private var compositePipeline: MTLRenderPipelineState?
+        private var intermediate: MTLTexture?
+        private var random: AMLLMeshPreset.Random
+        private var lastFrame: CFTimeInterval?
+        private var hasCover = false
+        private var running = false
+        private var animationTime: TimeInterval = 0
+        private let inFlight = DispatchSemaphore(value: 3)
         private var artworkURL: URL?
         private var artworkData: Data?
         private var blurRadius = 2
         private var loadTask: Task<Void, Never>?
-        private var startedAt = CACurrentMediaTime()
+
+        init(seed: UInt32) {
+            random = AMLLMeshPreset.Random(state: seed)
+            super.init()
+        }
 
         func attach(to view: MTKView) {
             self.view = view
@@ -80,12 +100,18 @@ struct AMLLMeshBackground: UIViewRepresentable {
             descriptor.fragmentFunction = fragment
             descriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
             pipeline = try? device.makeRenderPipelineState(descriptor: descriptor)
+            let composite = MTLRenderPipelineDescriptor()
+            composite.vertexFunction = library.makeFunction(name: "amllBackgroundQuad")
+            composite.fragmentFunction = library.makeFunction(name: "amllBackgroundComposite")
+            let attachment = composite.colorAttachments[0]!
+            attachment.pixelFormat = view.colorPixelFormat
+            attachment.isBlendingEnabled = true
+            attachment.sourceRGBBlendFactor = .sourceAlpha
+            attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
+            attachment.sourceAlphaBlendFactor = .one
+            attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            compositePipeline = try? device.makeRenderPipelineState(descriptor: composite)
             queue = device.makeCommandQueue()
-            let mesh = Self.makeMesh()
-            vertices = device.makeBuffer(bytes: mesh.vertices, length: MemoryLayout<Vertex>.stride * mesh.vertices.count)
-            indices = device.makeBuffer(bytes: mesh.indices, length: MemoryLayout<UInt32>.stride * mesh.indices.count)
-            indexCount = mesh.indices.count
-            texture = Self.fallbackTexture(device: device)
             view.delegate = self
         }
 
@@ -95,7 +121,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
             loadTask?.cancel()
             guard let url, let device = view?.device else {
                 artworkData = nil
-                texture = view?.device.flatMap { Self.fallbackTexture(device: $0) }
+                hasCover = false
                 view?.setNeedsDisplay()
                 return
             }
@@ -109,7 +135,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
                     else { throw URLError(.cannotDecodeContentData) }
                     guard self?.artworkURL == url else { return }
                     self?.artworkData = data
-                    self?.texture = loaded
+                    self?.install(loaded, device: device)
                     // The mesh clock belongs to the page, not to the artwork
                     // request. Reloading a cover after a cache miss must not
                     // reset the animation phase during a track change,
@@ -120,7 +146,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 } catch {
                     guard self?.artworkURL == url else { return }
                     // An unavailable replacement leaves the last valid frame.
-                    // The initial canvas already owns the fallback texture.
+                    // Empty canvases retain the neutral clear color.
                     self?.view?.setNeedsDisplay()
                 }
             }
@@ -133,7 +159,9 @@ struct AMLLMeshBackground: UIViewRepresentable {
             guard let artworkData, let device = view?.device,
                   let rebuilt = Self.albumTexture(data: artworkData, device: device, blurRadius: next)
             else { return }
-            texture = rebuilt
+            if !states.isEmpty {
+                states[states.count - 1].texture = rebuilt
+            }
             view?.setNeedsDisplay()
         }
 
@@ -141,28 +169,114 @@ struct AMLLMeshBackground: UIViewRepresentable {
             loadTask?.cancel(); loadTask = nil
         }
 
-        func mtkView(_: MTKView, drawableSizeWillChange _: CGSize) {}
+        func setRunning(_ value: Bool) {
+            guard running != value else { return }
+            running = value
+            lastFrame = nil
+        }
+
+        func mtkView(_: MTKView, drawableSizeWillChange _: CGSize) {
+            intermediate = nil
+        }
+
+        private func install(_ texture: MTLTexture, device: MTLDevice) {
+            let presets = (try? AMLLMeshPreset.loadPresets()) ?? []
+            let preset: AMLLMeshPreset?
+            if random.next() > 0.8 || presets.isEmpty {
+                preset = AMLLMeshPreset.generate(random: &random)
+            } else {
+                preset = presets[Int(random.next() * Double(presets.count))]
+            }
+            let mesh = Self.makeMesh(preset: preset)
+            guard let vertices = device.makeBuffer(bytes: mesh.vertices, length: MemoryLayout<Vertex>.stride * mesh.vertices.count),
+                  let indices = device.makeBuffer(bytes: mesh.indices, length: MemoryLayout<UInt32>.stride * mesh.indices.count) else { return }
+            hasCover = true
+            states.append(MeshState(texture: texture, vertices: vertices, indices: indices, count: mesh.indices.count, alpha: 0))
+        }
 
         func draw(in view: MTKView) {
-            guard let pipeline, let vertices, let indices, let texture, let queue,
+            guard inFlight.wait(timeout: .now()) == .success else { return }
+            var submitted = false
+            defer {
+                if !submitted {
+                    inFlight.signal()
+                }
+            }
+            guard let pipeline, let compositePipeline, let queue, let device = view.device,
                   let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
-                  let command = queue.makeCommandBuffer(), let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return }
+                  let command = queue.makeCommandBuffer() else { return }
+            let now = CACurrentMediaTime()
+            let delta = lastFrame.map { max(0, now - $0) } ?? 0
+            lastFrame = now
+            if running {
+                animationTime += delta
+            }
+            if view.isPaused {
+                if hasCover, let latest = states.last {
+                    states = [latest]; states[0].alpha = 1.1
+                } else {
+                    states.removeAll()
+                }
+            } else if !hasCover {
+                states.removeAll { $0.alpha <= -0.1 }
+                for index in states.indices {
+                    states[index].alpha = max(-0.1, states[index].alpha - delta / 0.5)
+                }
+            } else if let latest = states.last {
+                if latest.alpha >= 1.1 {
+                    states = [latest]
+                } else {
+                    states[states.count - 1].alpha = min(1.1, latest.alpha + delta / 0.5)
+                }
+            }
+            if intermediate == nil {
+                let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: view.colorPixelFormat,
+                                                                          width: max(1, drawable.texture.width), height: max(1, drawable.texture.height), mipmapped: false)
+                descriptor.usage = [.renderTarget, .shaderRead]
+                descriptor.storageMode = .private
+                intermediate = device.makeTexture(descriptor: descriptor)
+            }
+            guard let intermediate else { return }
             let height = max(1, view.drawableSize.height)
             var uniforms = Uniforms(
-                time: Float((CACurrentMediaTime() - startedAt) / 10), volume: 0, alpha: 1,
+                time: Float(animationTime / 10), volume: 0, alpha: 1,
                 aspect: Float(view.drawableSize.width / height)
             )
-            encoder.setRenderPipelineState(pipeline)
-            encoder.setVertexBuffer(vertices, offset: 0, index: 0)
-            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
-            encoder.setFragmentTexture(texture, index: 0)
-            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-            encoder.drawIndexedPrimitives(
-                type: .triangle, indexCount: indexCount, indexType: .uint32,
-                indexBuffer: indices, indexBufferOffset: 0
-            )
-            encoder.endEncoding()
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].clearColor = MTLClearColorMake(0.08, 0.08, 0.08, 1)
+            pass.colorAttachments[0].storeAction = .store
+            // Composite only completed mesh images; blending triangles directly
+            // would double-blend folded/overlapping cells.
+            for state in states {
+                let offscreen = MTLRenderPassDescriptor()
+                offscreen.colorAttachments[0].texture = intermediate
+                offscreen.colorAttachments[0].loadAction = .clear
+                offscreen.colorAttachments[0].storeAction = .store
+                guard let encoder = command.makeRenderCommandEncoder(descriptor: offscreen) else { return }
+                encoder.setRenderPipelineState(pipeline)
+                encoder.setVertexBuffer(state.vertices, offset: 0, index: 0)
+                encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+                encoder.setFragmentTexture(state.texture, index: 0)
+                encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+                encoder.drawIndexedPrimitives(type: .triangle, indexCount: state.count, indexType: .uint32,
+                                              indexBuffer: state.indices, indexBufferOffset: 0)
+                encoder.endEncoding()
+                guard let composite = command.makeRenderCommandEncoder(descriptor: pass) else { return }
+                var alpha = Float((1 - cos(Double.pi * min(1, max(0, state.alpha)))) / 2)
+                composite.setRenderPipelineState(compositePipeline)
+                composite.setFragmentTexture(intermediate, index: 0)
+                composite.setFragmentBytes(&alpha, length: MemoryLayout<Float>.stride, index: 0)
+                composite.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                composite.endEncoding()
+                pass.colorAttachments[0].loadAction = .load
+            }
+            if states.isEmpty {
+                command.makeRenderCommandEncoder(descriptor: pass)?.endEncoding()
+            }
             command.present(drawable)
+            let semaphore = inFlight
+            command.addCompletedHandler { _ in semaphore.signal() }
+            submitted = true
             command.commit()
         }
 
@@ -216,7 +330,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
         }
 
         private static func clampedByte(_ value: Double) -> UInt8 {
-            UInt8(clamping: Int(value.rounded()))
+            UInt8(clamping: Int(value.rounded(.toNearestOrEven)))
         }
 
         private static func blur(_ pixels: inout [UInt8], width: Int, height: Int, radius: Int, quality: Int) {
@@ -322,20 +436,21 @@ struct AMLLMeshBackground: UIViewRepresentable {
             }
         }
 
-        private static func makeMesh() -> (vertices: [Vertex], indices: [UInt32]) {
-            // Preserve the current layout until multi-mesh transitions are
-            // connected, but use the exact pinned preset instead of rounded
-            // literals. Other presets and the generator share this resource.
-            let source = (try? AMLLMeshPreset.loadPresets())?.first
+        private static func makeMesh(preset: AMLLMeshPreset? = nil) -> (vertices: [Vertex], indices: [UInt32]) {
+            // Source presets and generated grids use the same tangent powers.
+            let source = preset ?? (try? AMLLMeshPreset.loadPresets())?.first
             let points: [ControlPoint]
-            if let source, source.width == 5, source.height == 5, source.conf.count == 25 {
-                points = source.conf.sorted { $0.cy * 5 + $0.cx < $1.cy * 5 + $1.cx }.map {
-                    ControlPoint(Float($0.x), Float($0.y), Float($0.ur), Float($0.vr), Float($0.up), Float($0.vp))
+            let controlSide: Int
+            if let source, source.width == source.height, source.width >= 2, source.conf.count == source.width * source.height {
+                controlSide = source.width
+                let power = Float(4) / Float(controlSide - 1)
+                points = source.conf.sorted { $0.cy * controlSide + $0.cx < $1.cy * controlSide + $1.cx }.map {
+                    ControlPoint(Float($0.x), Float($0.y), Float($0.ur), Float($0.vr), Float($0.up) * power, Float($0.vp) * power)
                 }
             } else {
+                controlSide = 5
                 points = amllControlPoints
             }
-            let controlSide = 5
             let subdivisions = 50
             let meshSide = (controlSide - 1) * subdivisions
             var vertices = [Vertex](repeating: Vertex(position: .zero, uv: .zero), count: meshSide * meshSide)
@@ -352,8 +467,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
                             let position = bicubic(point00, point01, point10, point11, u: u, v: v)
                             let meshX = controlY * subdivisions + vertical
                             let meshY = controlX * subdivisions + horizontal
-                            let uvX = Float(controlX) / 4 + Float(horizontal) / Float((subdivisions - 1) * 4)
-                            let uvY = 1 - Float(controlY) / 4 - Float(vertical) / Float((subdivisions - 1) * 4)
+                            let uvX = Float(controlX) / Float(controlSide - 1) + Float(horizontal) / Float((subdivisions - 1) * (controlSide - 1))
+                            let uvY = 1 - Float(controlY) / Float(controlSide - 1) - Float(vertical) / Float((subdivisions - 1) * (controlSide - 1))
                             vertices[meshX + meshY * meshSide] = Vertex(position: position, uv: [uvX, uvY])
                         }
                     }
@@ -409,18 +524,5 @@ struct AMLLMeshBackground: UIViewRepresentable {
             .init(0.5, 0.5), .init(1, 0.5),
             .init(-1, 1), .init(-0.313_783_74, 1), .init(0.261_536_33, 1), .init(0.5, 1), .init(1, 1),
         ]
-
-        private static func fallbackTexture(device: MTLDevice) -> MTLTexture? {
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
-            descriptor.usage = .shaderRead
-            guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
-            let pixel: [UInt8] = [28, 28, 28, 255]
-            pixel.withUnsafeBytes { bytes in
-                if let baseAddress = bytes.baseAddress {
-                    texture.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: baseAddress, bytesPerRow: 4)
-                }
-            }
-            return texture
-        }
     }
 }

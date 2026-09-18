@@ -311,6 +311,7 @@ struct AMLLLyricsPlayer: View {
             Button(configuration.showLyrics ? "render.hideLyrics" : "render.showLyrics", systemImage: "text.quote") {
                 model.renderPreferences.configuration.showLyrics.toggle()
             }
+            .accessibilityIdentifier("toggleLyricsVisibility")
             Button("player.devices", systemImage: "airplayaudio") { devices = true; Task { await model.loadDevices() } }
             Button("lyrics.find", systemImage: "magnifyingglass") { search = true }
             if let document = model.lyrics.document, let credit = configuration.credits.content(in: document) {

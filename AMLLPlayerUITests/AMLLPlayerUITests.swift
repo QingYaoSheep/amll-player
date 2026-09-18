@@ -99,10 +99,10 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(resume.waitForExistence(timeout: 3))
         resume.tap()
         app.buttons["lyricsDisplayOptions"].tap()
-        app.buttons["Hide lyrics"].tap()
+        app.buttons["toggleLyricsVisibility"].tap()
         app.buttons["lyricsDisplayOptions"].tap()
-        XCTAssertTrue(app.buttons["Show lyrics"].waitForExistence(timeout: 3))
-        app.buttons["Show lyrics"].tap()
+        XCTAssertTrue(app.buttons["toggleLyricsVisibility"].waitForExistence(timeout: 3))
+        app.buttons["toggleLyricsVisibility"].tap()
         XCTAssertTrue(lyrics.waitForExistence(timeout: 3))
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }

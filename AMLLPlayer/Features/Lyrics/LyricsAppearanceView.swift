@@ -164,7 +164,18 @@ struct LyricsAppearanceView: View {
                             preferences.configuration.animatedArtwork = settings
                         }
                     ))
-                    Text("默认仅在 Wi-Fi 下加载，缓存上限 200 MB。没有方形视频、离线或开启减少动态效果时显示静态封面。封面视频始终静音。")
+                    Picker("封面布局", selection: Binding(
+                        get: { preferences.configuration.animatedArtwork?.presentation ?? .square },
+                        set: { value in
+                            var settings = preferences.configuration.animatedArtwork ?? .init()
+                            settings.presentation = value
+                            preferences.configuration.animatedArtwork = settings
+                        }
+                    )) {
+                        Text("方形封面").tag(AnimatedArtworkConfiguration.Presentation.square)
+                        Text("竖屏沉浸封面").tag(AnimatedArtworkConfiguration.Presentation.immersive)
+                    }
+                    Text("默认仅在 Wi-Fi 下加载，缓存上限 200 MB。方形布局仅使用方形视频；沉浸布局选择竖形视频，在竖屏背景显示。无对应资源、离线或减少动态效果时回退静态图，横屏恢复普通布局。封面视频始终静音。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("清理动态封面缓存", role: .destructive) { ArtworkMediaCache.shared.clear() }
                 }

@@ -3,6 +3,43 @@ import XCTest
 
 @MainActor
 final class ArtworkMediaTests: XCTestCase {
+    func testLegacyConfigurationKeepsSquareLayout() throws {
+        let data = Data(#"{"enabled":true,"allowCellular":false}"#.utf8)
+        let value = try JSONDecoder().decode(AnimatedArtworkConfiguration.self, from: data)
+        XCTAssertTrue(value.enabled)
+        XCTAssertFalse(value.allowCellular)
+        XCTAssertEqual(value.presentation ?? .square, .square)
+    }
+
+    func testImmersiveModeSelectsTallResourceAndClearsKindOnReset() async {
+        let assets = ArtworkAsset.catalogAssets(attributes: ["editorialVideo": [
+            "motionDetailSquare": "https://example.com/square.m3u8",
+            "motionDetailTall": "https://example.com/tall.m3u8",
+        ]], albumID: "1", storefront: "us")
+        let loader = AnimatedArtworkLoader()
+        await loader.load(trackID: "one", kind: .portraitVideo, assets: { assets }, download: { url in
+            XCTAssertEqual(url.lastPathComponent, "tall.m3u8")
+            return URL(fileURLWithPath: "/tall.movpkg")
+        })
+        XCTAssertEqual(loader.status, .ready)
+        XCTAssertEqual(loader.kind, .portraitVideo)
+        loader.reset()
+        XCTAssertNil(loader.kind)
+        XCTAssertNil(loader.localURL)
+    }
+
+    func testImmersiveCoverUsesSourceSlotCenterAndExtent() {
+        let compact = AMLLImmersiveArtworkGeometry.frame(viewport: CGSize(width: 402, height: 874),
+                                                         slot: CGRect(x: 32, y: 95, width: 72, height: 72))
+        XCTAssertEqual(compact.width, 482.4, accuracy: 0.001)
+        XCTAssertEqual(compact.midX, 68, accuracy: 0.001)
+        XCTAssertEqual(compact.midY, 131, accuracy: 0.001)
+        let expanded = AMLLImmersiveArtworkGeometry.frame(viewport: CGSize(width: 402, height: 874),
+                                                          slot: CGRect(x: 24, y: 95, width: 354, height: 354))
+        XCTAssertEqual(expanded.width, 652.8, accuracy: 0.001)
+        XCTAssertEqual(expanded.midY, 272, accuracy: 0.001)
+    }
+
     func testPackageOwnershipSurvivesCachePurgeAndCorruptPrimaryIndex() throws {
         let sandbox = try temporarySandbox()
         defer { try? FileManager.default.removeItem(at: sandbox) }

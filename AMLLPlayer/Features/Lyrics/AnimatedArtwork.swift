@@ -2,8 +2,15 @@ import AVFoundation
 import SwiftUI
 
 struct AnimatedArtworkConfiguration: Codable, Equatable, Sendable {
+    enum Presentation: String, Codable, CaseIterable, Sendable {
+        case square
+        case immersive
+    }
+
     var enabled = false
     var allowCellular = false
+    /// Optional for decoding previously saved configurations without migration loss.
+    var presentation: Presentation?
 }
 
 /// Static artwork remains underneath until the local video's first frame.

@@ -18,6 +18,8 @@ struct AMLLLyricsPlayer: View {
     @State private var shellMotion = LyricsMotionModel()
     @State private var artworkLoader = AnimatedArtworkLoader()
     @State private var artworkNetwork = ArtworkNetworkPolicy.shared
+    @State private var artworkSlot: CGRect?
+    @State private var artworkPortraitViewport = false
     @GestureState private var dismissalDrag: CGFloat = 0
 
     private var configuration: LyricsRenderConfiguration {
@@ -33,6 +35,13 @@ struct AMLLLyricsPlayer: View {
                 AMLLMeshBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
                                    active: scenePhase == .active && !search && !devices,
                                    blur: configuration.backgroundBlur)
+                if let item = model.playbackSnapshot?.item,
+                   configuration.animatedArtwork?.enabled == true,
+                   configuration.animatedArtwork?.presentation == .immersive,
+                   geometry.size.height > geometry.size.width, let artworkSlot
+                {
+                    immersiveArtwork(item, slot: artworkSlot, size: geometry.size)
+                }
                 Color.black.opacity(configuration.backgroundDimming ?? 0.16)
                 if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                     player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
@@ -40,6 +49,11 @@ struct AMLLLyricsPlayer: View {
                     ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                 }
             }
+            .coordinateSpace(name: "lyricsArtwork")
+            .onChange(of: geometry.size, initial: true) { _, size in
+                artworkPortraitViewport = size.height > size.width
+            }
+            .onPreferenceChange(ArtworkSlotPreference.self) { artworkSlot = $0 }
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
             .scaleEffect(drag.scale)
@@ -251,20 +265,52 @@ struct AMLLLyricsPlayer: View {
             .frame(width: side, height: side)
             .overlay {
                 if configuration.animatedArtwork?.enabled == true, !reduceMotion,
+                   configuration.animatedArtwork?.presentation != .immersive,
+                   artworkLoader.kind == .squareVideo,
                    artworkLoader.trackID == item.uri, let url = artworkLoader.localURL
                 {
                     AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? radius, style: .continuous))
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: ArtworkSlotPreference.self, value: geometry.frame(in: .named("lyricsArtwork")))
+                }
+            }
             .id(item.uri)
+            .accessibilityHidden(true)
+    }
+
+    private func immersiveArtwork(_ item: PlaybackItem, slot: CGRect, size: CGSize) -> some View {
+        let frame = AMLLImmersiveArtworkGeometry.frame(viewport: size, slot: slot)
+        return AsyncImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
+            placeholder: { Color.clear }
+            .frame(width: frame.width, height: frame.height)
+            .overlay {
+                if !reduceMotion, artworkLoader.kind == .portraitVideo,
+                   artworkLoader.trackID == item.uri, let url = artworkLoader.localURL
+                {
+                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices)
+                }
+            }
+            .clipped()
+            .mask {
+                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.7),
+                                       .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom)
+            }
+            .position(x: frame.midX, y: frame.midY)
+            .frame(width: size.width, height: size.height)
+            .clipped()
+            .animation(reduceMotion ? nil : .interpolatingSpring(stiffness: 200, damping: 30), value: frame)
+            .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 
     private var artworkRequestKey: String {
         let settings = configuration.animatedArtwork ?? .init()
         return [model.playbackSnapshot?.item?.uri ?? "", String(settings.enabled), String(settings.allowCellular),
-                String(reduceMotion), String(scenePhase == .active),
+                (settings.presentation ?? .square).rawValue, String(artworkPortraitViewport), String(reduceMotion), String(scenePhase == .active),
                 String(artworkNetwork.permits(allowCellular: settings.allowCellular)),
                 model.lyrics.settings.storefront, model.lyrics.settings.language,
                 model.lyrics.selection.candidate?.id ?? ""].joined(separator: "|")
@@ -273,12 +319,14 @@ struct AMLLLyricsPlayer: View {
     private func loadAnimatedArtwork() async {
         let settings = configuration.animatedArtwork ?? .init()
         guard settings.enabled, !reduceMotion, scenePhase == .active,
+              settings.presentation != .immersive || artworkPortraitViewport,
               artworkNetwork.permits(allowCellular: settings.allowCellular),
               let item = model.playbackSnapshot?.item, let track = TrackIdentity(item),
               let provider = model.lyrics.apple else { artworkLoader.reset(); return }
         let candidate = model.lyrics.selection.candidate
         let lyricsSettings = model.lyrics.settings
-        await artworkLoader.load(trackID: item.uri, assets: {
+        let kind: ArtworkAsset.Kind = settings.presentation == .immersive ? .portraitVideo : .squareVideo
+        await artworkLoader.load(trackID: item.uri, kind: kind, assets: {
             let songID: String
             if let candidate, candidate.source == .apple {
                 songID = candidate.sourceID
@@ -387,7 +435,7 @@ struct AMLLLyricsPlayer: View {
         case .idle: return "动态封面：静态图"
         case .loading: return "动态封面：加载中"
         case .ready: return "动态封面：已缓存，无声播放"
-        case .unavailable: return "动态封面：无匹配方形视频，使用静态图"
+        case .unavailable: return "动态封面：无匹配布局的视频，使用静态图"
         case .failed: return "动态封面：加载失败，使用静态图"
         }
     }
@@ -458,5 +506,14 @@ struct AMLLLyricsPlayer: View {
         let offset = clamped * resistance
         let progress = min(1, max(0, offset / height))
         return (offset, 1 - min(0.038, progress * 0.065), min(30, progress * 70), 1 - min(0.055, progress * 0.09))
+    }
+}
+
+private struct ArtworkSlotPreference: PreferenceKey {
+    static let defaultValue: CGRect? = nil
+    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
+        if let next = nextValue() {
+            value = next
+        }
     }
 }

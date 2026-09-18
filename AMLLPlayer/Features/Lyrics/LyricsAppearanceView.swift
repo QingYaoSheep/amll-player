@@ -137,6 +137,29 @@ struct LyricsAppearanceView: View {
                 Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
                 Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
             }
+            Section("高级视觉") {
+                DisclosureGroup("动态专辑封面") {
+                    Toggle("启用动态封面", isOn: Binding(
+                        get: { preferences.configuration.animatedArtwork?.enabled ?? false },
+                        set: { value in
+                            var settings = preferences.configuration.animatedArtwork ?? .init()
+                            settings.enabled = value
+                            preferences.configuration.animatedArtwork = settings
+                        }
+                    ))
+                    Toggle("允许蜂窝网络加载", isOn: Binding(
+                        get: { preferences.configuration.animatedArtwork?.allowCellular ?? false },
+                        set: { value in
+                            var settings = preferences.configuration.animatedArtwork ?? .init()
+                            settings.allowCellular = value
+                            preferences.configuration.animatedArtwork = settings
+                        }
+                    ))
+                    Text("默认仅在 Wi-Fi 下加载，缓存上限 200 MB。没有方形视频、离线或开启减少动态效果时显示静态封面。封面视频始终静音。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("清理动态封面缓存", role: .destructive) { ArtworkMediaCache.shared.clear() }
+                }
+            }
             Button("render.reset", role: .destructive) { confirmReset = true }
         }
         .navigationTitle("render.settings")

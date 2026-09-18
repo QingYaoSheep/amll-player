@@ -16,6 +16,8 @@ struct AMLLLyricsPlayer: View {
     @State private var browsing = false
     @State private var resumeToken = 0
     @State private var shellMotion = LyricsMotionModel()
+    @State private var artworkLoader = AnimatedArtworkLoader()
+    @State private var artworkNetwork = ArtworkNetworkPolicy.shared
     @GestureState private var dismissalDrag: CGFloat = 0
 
     private var configuration: LyricsRenderConfiguration {
@@ -51,6 +53,7 @@ struct AMLLLyricsPlayer: View {
         .sheet(isPresented: $search) { LyricsSearchView(coordinator: model.lyrics) }
         .sheet(isPresented: $devices) { DevicePickerView(model: model) }
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }
+        .task(id: artworkRequestKey) { await loadAnimatedArtwork() }
         .alert("error.title", isPresented: Binding(get: { model.presentedError != nil }, set: {
             if !$0 {
                 model.presentedError = nil
@@ -246,9 +249,49 @@ struct AMLLLyricsPlayer: View {
         AsyncImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
             placeholder: { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
             .frame(width: side, height: side)
+            .overlay {
+                if configuration.animatedArtwork?.enabled == true, !reduceMotion,
+                   artworkLoader.trackID == item.uri, let url = artworkLoader.localURL
+                {
+                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices)
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? radius, style: .continuous))
             .id(item.uri)
             .accessibilityHidden(true)
+    }
+
+    private var artworkRequestKey: String {
+        let settings = configuration.animatedArtwork ?? .init()
+        return [model.playbackSnapshot?.item?.uri ?? "", String(settings.enabled), String(settings.allowCellular),
+                String(reduceMotion), String(scenePhase == .active),
+                String(artworkNetwork.permits(allowCellular: settings.allowCellular)),
+                model.lyrics.settings.storefront, model.lyrics.settings.language,
+                model.lyrics.selection.candidate?.id ?? ""].joined(separator: "|")
+    }
+
+    private func loadAnimatedArtwork() async {
+        let settings = configuration.animatedArtwork ?? .init()
+        guard settings.enabled, !reduceMotion, scenePhase == .active,
+              artworkNetwork.permits(allowCellular: settings.allowCellular),
+              let item = model.playbackSnapshot?.item, let track = TrackIdentity(item),
+              let provider = model.lyrics.apple else { artworkLoader.reset(); return }
+        let candidate = model.lyrics.selection.candidate
+        let lyricsSettings = model.lyrics.settings
+        await artworkLoader.load(trackID: item.uri, assets: {
+            let songID: String
+            if let candidate, candidate.source == .apple {
+                songID = candidate.sourceID
+            } else {
+                let candidates = try await provider.search(track: track, query: "", settings: lyricsSettings)
+                guard let match = candidates.first(where: { $0.score >= 70 }) else { return [] }
+                songID = match.sourceID
+            }
+            try Task.checkCancellation()
+            return try await provider.animatedArtwork(songID: songID, settings: lyricsSettings)
+        }, download: { url in
+            try await ArtworkMediaDownload.download(url, allowCellular: settings.allowCellular)
+        })
     }
 
     private func transport(_ snapshot: PlaybackSnapshot) -> some View {
@@ -312,6 +355,9 @@ struct AMLLLyricsPlayer: View {
                 model.renderPreferences.configuration.showLyrics.toggle()
             }
             .accessibilityIdentifier("toggleLyricsVisibility")
+            if configuration.animatedArtwork?.enabled == true {
+                Text(artworkStatus)
+            }
             Button("player.devices", systemImage: "airplayaudio") { devices = true; Task { await model.loadDevices() } }
             Button("lyrics.find", systemImage: "magnifyingglass") { search = true }
             if let document = model.lyrics.document, let credit = configuration.credits.content(in: document) {
@@ -328,6 +374,22 @@ struct AMLLLyricsPlayer: View {
                 .frame(width: 44, height: 44)
         }
         .accessibilityIdentifier("lyricsDisplayOptions")
+    }
+
+    private var artworkStatus: String {
+        if reduceMotion {
+            return "动态封面：减少动态效果，使用静态图"
+        }
+        if !artworkNetwork.permits(allowCellular: configuration.animatedArtwork?.allowCellular ?? false) {
+            return "动态封面：等待允许的网络，使用静态图"
+        }
+        switch artworkLoader.status {
+        case .idle: return "动态封面：静态图"
+        case .loading: return "动态封面：加载中"
+        case .ready: return "动态封面：已缓存，无声播放"
+        case .unavailable: return "动态封面：无匹配方形视频，使用静态图"
+        case .failed: return "动态封面：加载失败，使用静态图"
+        }
     }
 
     private var lyricsActionsMenu: some View {

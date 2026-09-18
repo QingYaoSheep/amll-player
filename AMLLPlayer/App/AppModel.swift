@@ -75,6 +75,7 @@ final class AppModel {
             return
         }
         prepared = true
+        ArtworkMediaDownload.recoverAbandonedTransfers()
         environment.spotifyPlayback.start()
 
         sessionTask = Task { [weak self] in

@@ -1,5 +1,10 @@
 # Plan 5 — complete native AMLL port
 
+## 2026-09-18 直接 IPA 构建策略
+
+按用户最新要求，CI 取消 iOS 27 设备/模拟器测试及模拟器构建，使用 Xcode 27 / iOS 27 SDK 直接 Release archive、检查应用包并上传未签名 IPA。保留测试源码，未执行的测试不算通过；HDR/视觉签收与性能仍未完成，不作为本次 IPA 构建前置条件。
+
+
 2026-09-13: timed ruby fragments and fitting word romanization now reach cached native annotation layers. Ambiguous/oversized romanization falls back with trace diagnostics; wrapped ruby and full source visual parity remain open. See the remaining-visual ledger for validation status.
 
 Latest remaining-visual specification and evidence: [Remaining-Visual-Port.md](Remaining-Visual-Port.md). HDR currently has a model only; metadata SDR Plus Lighter is wired but not visually signed off. Historical status below does not supersede that ledger.

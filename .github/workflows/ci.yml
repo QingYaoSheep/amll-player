@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   xcode-27:
-    name: Xcode 27 / iOS 27 tests and archive
+    name: Xcode 27 / direct IPA archive
     runs-on: xcode-27
     timeout-minutes: 90
 
@@ -47,65 +47,6 @@ jobs:
           xcrun swift-format lint --recursive
           AMLLPlayer AMLLPlayerTests AMLLPlayerUITests
 
-      - name: Prepare iOS 27 reference simulators
-        run: |
-          node --test Scripts/prepare-ci-simulators.test.cjs
-          if ! xcrun simctl list runtimes --json | node -e 'const fs = require("node:fs"); const { selectRuntime } = require("./Scripts/prepare-ci-simulators.cjs"); selectRuntime(JSON.parse(fs.readFileSync(0, "utf8")).runtimes)'; then
-            xcodebuild -downloadPlatform iOS
-          fi
-          node Scripts/prepare-ci-simulators.cjs
-
-      - name: Test on iPhone with Xcode 27
-        run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -resultBundlePath build/Xcode27-tests.xcresult
-          CODE_SIGNING_ALLOWED=NO
-
-      - name: Upload Xcode 27 test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: AMLLPlayer-Xcode27-test-results
-          path: build/Xcode27-tests.xcresult
-          if-no-files-found: ignore
-
-      - name: Export visual review attachments
-        if: always()
-        run: |
-          if [[ -d build/Xcode27-tests.xcresult ]]; then
-            xcrun xcresulttool export attachments \
-              --path build/Xcode27-tests.xcresult \
-              --output-path build/Plan5-images
-          fi
-
-      - name: Upload visual review attachments
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: AMLLPlayer-visual-review
-          path: build/Plan5-images
-          if-no-files-found: ignore
-
-      - name: Build for iPad with Xcode 27
-        run: >-
-          xcodebuild build
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
-          CODE_SIGNING_ALLOWED=NO
-
-      - name: Build with iOS 27 SDK
-        run: |
-          xcodebuild build \
-            -project AMLLPlayer.xcodeproj \
-            -scheme AMLLPlayer \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/Xcode27DerivedData \
-            CODE_SIGNING_ALLOWED=NO
-
       - name: Create unsigned device archive and IPA
         run: |
           xcodebuild archive \
@@ -137,13 +78,3 @@ jobs:
           name: AMLLPlayer-Xcode27-unsigned-ipa
           path: build/AMLLPlayer-Xcode27-unsigned.ipa
           if-no-files-found: error
-
-      - name: Remove reference simulators
-        if: always()
-        run: |
-          for DEVICE_ID in "${CI_IPHONE_UDID:-}" "${CI_IPAD_UDID:-}"; do
-            if [[ -n "$DEVICE_ID" ]]; then
-              xcrun simctl shutdown "$DEVICE_ID" || true
-              xcrun simctl delete "$DEVICE_ID"
-            fi
-          done

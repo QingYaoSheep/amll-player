@@ -12,6 +12,7 @@ struct AMLLLyricsDisplay: View {
     let active: Bool
     let resumeToken: Int
     var browsing: (Bool) -> Void = { _ in }
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var document: LyricsDocument? {
         model.lyrics.document
@@ -32,6 +33,7 @@ struct AMLLLyricsDisplay: View {
                 browsing: browsing
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .blendMode(reduceTransparency ? .normal : .plusLighter)
             .accessibilityIdentifier("amllNativeLyricsDisplay")
         } else {
             Color.clear.accessibilityHidden(true)

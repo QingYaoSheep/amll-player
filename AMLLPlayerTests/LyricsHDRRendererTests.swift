@@ -4,6 +4,34 @@ import XCTest
 
 @MainActor
 final class LyricsHDRRendererTests: XCTestCase {
+    func testRealCanvasCreatesAndRemovesReplacementLayersWithHDRSetting() {
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        defer { canvas.stop(); canvas.removeFromSuperview() }
+        let line = LyricLine(id: "hdr", text: "Held", start: 1, end: 10,
+                             words: [.init(text: "Held", start: 1, end: 10)], precision: .word)
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "hdr", title: "HDR", artists: []),
+                                      lines: [line], language: "en", selectionReason: "HDR wiring test")
+        canvas.position = { 3 }
+        var configuration = LyricsRenderConfiguration()
+        configuration.hdr = .init(enabled: true)
+        configuration.blurInactive = false
+        canvas.configure(document: document, configuration: configuration, input: .init(position: 3, playing: false),
+                         active: false, reduceMotion: false)
+        canvas.advanceFrame(delta: 0)
+        func metalLayers(_ layer: CALayer) -> [CAMetalLayer] {
+            (layer as? CAMetalLayer).map { [$0] } ?? (layer.sublayers ?? []).flatMap(metalLayers)
+        }
+        XCTAssertFalse(metalLayers(canvas.layer).isEmpty, "Production canvas must consume the HDR renderer")
+        XCTAssertTrue(metalLayers(canvas.layer).allSatisfy { $0.pixelFormat == .rgba16Float })
+        configuration.hdr = .init(enabled: false)
+        canvas.configure(document: document, configuration: configuration, input: .init(position: 3, playing: false),
+                         active: false, reduceMotion: false)
+        canvas.advanceFrame(delta: 0)
+        XCTAssertTrue(metalLayers(canvas.layer).isEmpty)
+    }
+
     func testFloatOutputBoostsOnlyFilledGlyphAndKeepsTransparentBackground() throws {
         let renderer = try XCTUnwrap(LyricsHDRRenderer(), "Metal shader library must be packaged in the test host")
         let glyphDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 4, height: 1, mipmapped: false)

@@ -79,6 +79,11 @@ final class AMLLNativeCanvas: UIView {
     private var sampleWork = 0.0
     private var hasDuet = false
     private let dots = AMLLInterludeDotsView()
+    private lazy var hdrRenderer = LyricsHDRRenderer()
+    private var hdrTime: Double?
+    private var hdrSeekRevision = 0
+    private var hdrWasPlaying = false
+    private var hdrOffset = 0.0
     private(set) var frameState: AMLLFrameState?
     private(set) var measuredFPS = 0.0
     private(set) var frameMilliseconds = 0.0
@@ -109,6 +114,7 @@ final class AMLLNativeCanvas: UIView {
                    active: Bool, reduceMotion: Bool, reduceTransparency: Bool = false, canSeek: Bool = true)
     {
         if source != document {
+            hdrTime = nil
             source = document; display = AMLLDisplayDocument(lines: document.lines); engine = nil; dirty = true
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
@@ -213,6 +219,17 @@ final class AMLLNativeCanvas: UIView {
             DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) }
         }
         self.engine = engine; frameState = state
+        if hdrTime == nil || input.playing || hdrWasPlaying || input.seeking || hdrSeekRevision != input.seekRevision || hdrOffset != input.offset {
+            hdrTime = state.lyricTime
+        }
+        hdrWasPlaying = input.playing
+        hdrSeekRevision = input.seekRevision
+        hdrOffset = input.offset
+        let hdr = LyricsHDRFrameState.sample(lines: source?.lines ?? [], lyricTime: hdrTime ?? state.lyricTime,
+                                             configuration: configuration.hdr ?? .init(),
+                                             capabilities: .init(supportsEDR: (window?.screen.potentialEDRHeadroom ?? 1) > 1,
+                                                                 headroom: Double(window?.screen.currentEDRHeadroom ?? 1)),
+                                             reduceTransparency: reduceTransparency)
         let visible = state.rows.filter { !$0.hidden && $0.y + heights[$0.lineIndex] >= -bounds.height * 0.5 && $0.y <= bounds.height * 1.5 }
         let indexes = Set(visible.map(\.lineIndex))
         for index in Array(rowViews.keys) where !indexes.contains(index) {
@@ -254,6 +271,9 @@ final class AMLLNativeCanvas: UIView {
             view.transform = CGAffineTransform(scaleX: row.scale, y: row.scale)
             view.setCanSeek(canSeek)
             view.apply(row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
+            view.applyHDR(renderer: configuration.hdr?.enabled == true ? hdrRenderer : nil,
+                          gain: hdr.activeLineIndexes.contains(row.lineIndex) ? hdr.outputBrightness : 1,
+                          row: row, configuration: configuration)
         }
         if let interlude = state.interlude,
            let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
@@ -426,6 +446,7 @@ private final class AMLLNativeRow: UIView {
     private let nearBlur = CALayer()
     private let farBlur = CALayer()
     private var lastCanSeek: Bool?
+    private var hdrRow: LyricsHDRRow?
     var onSeek: (() -> Void)?
 
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat) {
@@ -689,6 +710,53 @@ private final class AMLLNativeRow: UIView {
             entry.mask.startPoint = CGPoint(x: entry.fragment.rtl ? 1 - start : start, y: 0.5)
             entry.mask.endPoint = CGPoint(x: entry.fragment.rtl ? 1 - end : end, y: 0.5)
             entry.layer.opacity = sharpWeight
+        }
+    }
+
+    func applyHDR(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration) {
+        guard let renderer, window != nil else {
+            hdrRow?.layer.removeFromSuperlayer(); hdrRow = nil
+            return
+        }
+        let sharpWeight = Float(max(0, 1 - min(5, max(0, row.blur)) / 2))
+        guard sharpWeight > 0 else { hdrRow?.layer.isHidden = true; return }
+        if hdrRow == nil, let image = sharpImage.cgImage {
+            hdrRow = LyricsHDRRow(renderer: renderer, image: image, size: textLayout.size,
+                                  scale: window?.screen.scale ?? 1, padding: textLayout.font.pointSize * 3)
+            if let hdrRow {
+                layer.addSublayer(hdrRow.layer)
+            }
+        }
+        guard let hdrRow else { return }
+        let feather = textLayout.font.lineHeight * configuration.gradientWidth
+        var pieces: [LyricsHDRRow.Piece] = []
+        if !base.isHidden {
+            let opacity = words.isEmpty ? 1.0 : row.darkAlpha
+            pieces.append(.init(rect: bounds, transform: .identity, rtl: false, edge: bounds.width,
+                                feather: 0, dark: opacity, bright: opacity))
+        } else {
+            for entry in words where !entry.layer.isHidden {
+                let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
+                                             words: maskWords, feather: feather) - entry.advance
+                pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
+                                    rtl: entry.fragment.rtl, edge: edge, feather: feather,
+                                    dark: row.darkAlpha, bright: row.brightAlpha))
+            }
+            for entry in characters {
+                let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
+                                             words: maskWords, feather: feather) - entry.advance
+                pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
+                                    rtl: entry.fragment.rtl, edge: edge, feather: feather,
+                                    dark: row.darkAlpha, bright: row.brightAlpha,
+                                    glowRadius: entry.layer.shadowRadius, glowOpacity: Double(entry.layer.shadowOpacity)))
+            }
+        }
+        // Disable the original pixels only after a replacement frame is submitted.
+        // Failure always returns to the original SDR layers; it never leaves stale HDR.
+        if hdrRow.draw(pieces: pieces, gain: gain, sharpWeight: sharpWeight) {
+            base.opacity = 0
+            words.forEach { $0.layer.opacity = 0 }
+            characters.forEach { $0.layer.opacity = 0 }
         }
     }
 }

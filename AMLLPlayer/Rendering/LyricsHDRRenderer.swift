@@ -10,11 +10,15 @@ final class LyricsHDRRenderer {
         var uv: SIMD2<Float>
         var mask: SIMD2<Float>
         var appearance: SIMD4<Float>
+        /// Atlas crop and optional shadow sampling, in normalized texture units.
+        var crop: SIMD4<Float> = .init(0, 0, 1, 1)
+        var glow: SIMD2<Float> = .zero
     }
 
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
+    private let inFlight = DispatchSemaphore(value: 3)
 
     init?() {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -65,6 +69,14 @@ final class LyricsHDRRenderer {
     func render(vertices: [Vertex], glyphs: MTLTexture, target: MTLTexture,
                 drawable: CAMetalDrawable? = nil) -> MTLCommandBuffer?
     {
+        guard inFlight.wait(timeout: .now()) == .success else { return nil }
+        let gate = inFlight
+        var submitted = false
+        defer {
+            if !submitted {
+                gate.signal()
+            }
+        }
         guard target.pixelFormat == .rgba16Float, !vertices.isEmpty,
               let buffer = device.makeBuffer(bytes: vertices, length: MemoryLayout<Vertex>.stride * vertices.count),
               let command = queue.makeCommandBuffer() else { return nil }
@@ -82,6 +94,8 @@ final class LyricsHDRRenderer {
         if let drawable {
             command.present(drawable)
         }
+        command.addCompletedHandler { _ in gate.signal() }
+        submitted = true
         command.commit()
         return command
     }

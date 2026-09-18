@@ -138,6 +138,15 @@ struct LyricsAppearanceView: View {
                 Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
             }
             Section("高级视觉") {
+                DisclosureGroup("歌词高光") {
+                    Toggle("当前句 HDR 高光", isOn: Binding(
+                        get: { preferences.configuration.hdr?.enabled ?? false },
+                        set: { preferences.configuration.hdr = .init(enabled: $0) }
+                    ))
+                    LyricsHDRStatusView().frame(minHeight: 44)
+                    Text("仅当前句已唱部分使用扩展亮度，上限为 SDR 白的 1.5 倍。关闭 HDR 后仍保留文字混色；不会提高系统亮度。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 DisclosureGroup("动态专辑封面") {
                     Toggle("启用动态封面", isOn: Binding(
                         get: { preferences.configuration.animatedArtwork?.enabled ?? false },

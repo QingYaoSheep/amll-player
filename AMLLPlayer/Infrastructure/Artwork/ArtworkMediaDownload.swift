@@ -68,8 +68,8 @@ final class ArtworkMediaDownload: NSObject, @preconcurrency AVAssetDownloadDeleg
         finish(.failure(CancellationError()))
         let id = UUID()
         requestID = id
-        let local = try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+        let local: URL = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
                 guard !Task.isCancelled else { continuation.resume(throwing: CancellationError()); return }
                 self.continuation = continuation
                 guard let session = self.session else { self.finish(.failure(URLError(.unknown))); return }

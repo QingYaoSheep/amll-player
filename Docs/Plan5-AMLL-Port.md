@@ -59,6 +59,6 @@ QQ fix validates/removes the zlib envelope before Apple's raw-DEFLATE decoder, v
 - Identical breaks/visibility; foreground geometry/baseline ≤1 physical pixel; events ≤1 reference frame; trajectory P95 ≤1pt, opacity error ≤0.02, scale error ≤0.002; seeded backgrounds compared frame by frame and manually overlaid.
 - All natively supportable layouts/effects on iPhone 16 Pro and 13-inch iPad Pro, compact/landscape/split view and separate accessibility variants.
 - Complex/multivoice/long lyrics for 15 minutes: bounded layout/layer/texture resources, <1% dropped frames in normal thermal conditions, no automatic effect removal.
-- All provider regressions, Xcode 26 unit/UI and Xcode 27 archive/IPA pass. Hardware sign-off precedes production-default migration.
+- All provider regressions, Xcode 27 unit/UI, build and archive/IPA must pass. Xcode 26 testing is no longer required (user update, 2026-09-18). Hardware sign-off precedes production-default migration.
 
 Matching formulas, green CI or one similar screenshot do not complete Plan 5. Historical `Plan5-Validation.md` describes the previous renderer, not acceptance of this replacement.

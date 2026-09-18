@@ -5,9 +5,9 @@ const { appendFileSync } = require('node:fs');
 function selectRuntime(runtimes) {
   const candidates = runtimes.filter(runtime => runtime.isAvailable &&
     runtime.identifier.startsWith('com.apple.CoreSimulator.SimRuntime.iOS-') &&
-    runtime.version.split('.')[0] === '26');
+    runtime.version.split('.')[0] === '27');
   candidates.sort((a, b) => b.version.localeCompare(a.version, 'en', { numeric: true }));
-  if (!candidates.length) throw new Error('No available iOS 26 simulator runtime; install it before testing.');
+  if (!candidates.length) throw new Error('No available iOS 27 simulator runtime; install it before testing.');
   return candidates[0].identifier;
 }
 

@@ -15,6 +15,7 @@ final class ArtworkMediaCache {
 
     private let root: URL
     private let sandbox: URL
+    private let registry: URL
     private let limit: Int64
     private var entries: [Entry] = []
 
@@ -23,11 +24,14 @@ final class ArtworkMediaCache {
         self.root = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("AnimatedArtwork", isDirectory: true)
         self.limit = max(0, limit)
+        registry = self.sandbox.appendingPathComponent("Library/Application Support/AMLLArtwork/index.json")
         try? FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
-        if let data = try? Data(contentsOf: self.root.appendingPathComponent("index.json")),
-           let saved = try? JSONDecoder().decode([Entry].self, from: data)
-        {
-            entries = saved
+        try? FileManager.default.createDirectory(at: registry.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // HLS ownership must survive eviction of Library/Caches.
+        for file in [registry, registry.appendingPathExtension("backup"), self.root.appendingPathComponent("index.json")] {
+            if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([Entry].self, from: data) {
+                entries = saved; break
+            }
         }
         prune()
     }
@@ -72,6 +76,14 @@ final class ArtworkMediaCache {
             try? FileManager.default.removeItem(at: destination)
             throw CocoaError(.fileWriteOutOfSpace)
         }
+        for entry in entries where entry.key == key(remote) {
+            if let previous = safeURL(entry.relativePath), previous != destination,
+               FileManager.default.fileExists(atPath: previous.path)
+            {
+                do { try FileManager.default.removeItem(at: previous) }
+                catch { try? FileManager.default.removeItem(at: destination); throw error }
+            }
+        }
         entries.removeAll { $0.key == key(remote) }
         entries.append(.init(key: key(remote), relativePath: String(destination.path.dropFirst(sandbox.path.count + 1)), accessed: Date()))
         prune()
@@ -83,12 +95,11 @@ final class ArtworkMediaCache {
     }
 
     func clear() {
-        for entry in entries {
-            if let url = safeURL(entry.relativePath) {
-                try? FileManager.default.removeItem(at: url)
-            }
+        entries.removeAll { entry in
+            guard let url = safeURL(entry.relativePath), FileManager.default.fileExists(atPath: url.path) else { return true }
+            do { try FileManager.default.removeItem(at: url); return true }
+            catch { return false }
         }
-        entries.removeAll()
         save()
     }
 
@@ -101,8 +112,10 @@ final class ArtworkMediaCache {
         var total = byteCount
         while total > limit, let entry = entries.first {
             if let url = safeURL(entry.relativePath) {
-                total -= size(url)
-                try? FileManager.default.removeItem(at: url)
+                let bytes = size(url)
+                do { try FileManager.default.removeItem(at: url) }
+                catch { break }
+                total -= bytes
             }
             entries.removeFirst()
         }
@@ -126,7 +139,8 @@ final class ArtworkMediaCache {
 
     private func save() {
         if let data = try? JSONEncoder().encode(entries) {
-            try? data.write(to: root.appendingPathComponent("index.json"), options: .atomic)
+            try? data.write(to: registry, options: .atomic)
+            try? data.write(to: registry.appendingPathExtension("backup"), options: .atomic)
         }
     }
 }

@@ -48,7 +48,7 @@ struct AnimatedArtwork: UIViewRepresentable {
             playerLayer.player = player
             playerLayer.videoGravity = .resizeAspectFill
             playerLayer.opacity = 0
-            ready = playerLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { layer, _ in
+            ready = playerLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] layer, _ in
                 let visible = layer.isReadyForDisplay
                 Task { @MainActor [weak self] in self?.playerLayer.opacity = visible ? 1 : 0 }
             }

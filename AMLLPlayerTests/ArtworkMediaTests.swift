@@ -3,6 +3,45 @@ import XCTest
 
 @MainActor
 final class ArtworkMediaTests: XCTestCase {
+    func testPackageOwnershipSurvivesCachePurgeAndCorruptPrimaryIndex() throws {
+        let sandbox = try temporarySandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let root = sandbox.appendingPathComponent("cache")
+        let cache = ArtworkMediaCache(root: root, sandbox: sandbox, limit: 8)
+        let remote = try XCTUnwrap(URL(string: "https://example.com/video.m3u8"))
+        func package(_ name: String) throws -> URL {
+            let url = sandbox.appendingPathComponent(name + ".movpkg")
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try Data(repeating: 1, count: 4).write(to: url.appendingPathComponent("segment"))
+            return url
+        }
+        let first = try package("first")
+        _ = try cache.insert(first, for: remote, managedPackage: true)
+        let second = try package("second")
+        _ = try cache.insert(second, for: remote, managedPackage: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+        try FileManager.default.removeItem(at: root)
+        try Data("invalid".utf8).write(to: sandbox.appendingPathComponent("Library/Application Support/AMLLArtwork/index.json"))
+        let restored = ArtworkMediaCache(root: root, sandbox: sandbox, limit: 8)
+        XCTAssertEqual(restored.byteCount, 4)
+        XCTAssertNotNil(restored.cached(remote))
+        restored.clear()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: second.path))
+    }
+
+    func testVideoSurfaceReleasesAfterDismantling() async {
+        weak var released: AnimatedArtwork.Surface?
+        autoreleasepool {
+            let surface = AnimatedArtwork.Surface()
+            released = surface
+            surface.stop()
+        }
+        for _ in 0 ..< 10 {
+            await Task.yield()
+        }
+        XCTAssertNil(released)
+    }
+
     private func temporarySandbox() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

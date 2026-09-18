@@ -5,8 +5,8 @@ import XCTest
 
 final class AMLLNativeEngineTests: XCTestCase {
     func testReleaseCoastsAndKeepsBlurOffUntilNextLyric() {
-        let lines = (0 ..< 10).map { index in
-            LyricLine(id: String(index), text: "Line", start: Double(index * 10), end: Double(index * 10 + 9))
+        let lines: [LyricLine] = (0 ..< 10).map { (index: Int) -> LyricLine in
+            LyricLine(id: String(index), text: "Line", start: Double(index) * 10, end: Double(index) * 10 + 9)
         }
         var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines),
                                      environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32),
@@ -30,8 +30,8 @@ final class AMLLNativeEngineTests: XCTestCase {
     }
 
     func testClockDiscontinuityDoesNotPretendToBeASeek() {
-        let lines = (0 ..< 4).map { index in
-            LyricLine(id: String(index), text: "Line \(index)", start: Double(index * 5), end: Double(index * 5 + 3))
+        let lines: [LyricLine] = (0 ..< 4).map { (index: Int) -> LyricLine in
+            LyricLine(id: String(index), text: "Line \(index)", start: Double(index) * 5, end: Double(index) * 5 + 3)
         }
         var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines),
                                      environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32), heights: [60, 60, 60, 60])
@@ -47,8 +47,8 @@ final class AMLLNativeEngineTests: XCTestCase {
     }
 
     func testBrowsingWaitsForActualNextLineAndThenSpringsBack() {
-        let lines = (0 ..< 4).map { index in
-            LyricLine(id: String(index), text: "Line", start: Double(index * 10), end: Double(index * 10 + 9))
+        let lines: [LyricLine] = (0 ..< 4).map { (index: Int) -> LyricLine in
+            LyricLine(id: String(index), text: "Line", start: Double(index) * 10, end: Double(index) * 10 + 9)
         }
         var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines),
                                      environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32), heights: [60, 60, 60, 60])
@@ -67,8 +67,8 @@ final class AMLLNativeEngineTests: XCTestCase {
     }
 
     func testDifferentRowsRetainIndependentSpringDelays() {
-        let lines = (0 ..< 5).map { index in
-            LyricLine(id: String(index), text: "Line \(index)", start: Double(index * 2), end: Double(index * 2 + 2))
+        let lines: [LyricLine] = (0 ..< 5).map { (index: Int) -> LyricLine in
+            LyricLine(id: String(index), text: "Line \(index)", start: Double(index) * 2, end: Double(index) * 2 + 2)
         }
         var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines),
                                      environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32), heights: [60, 60, 60, 60, 60])

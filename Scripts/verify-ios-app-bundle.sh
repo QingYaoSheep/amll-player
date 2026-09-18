@@ -10,6 +10,12 @@ if [[ ! -f "$INFO_PLIST" ]]; then
 fi
 
 APP_EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
+for REQUIRED_RESOURCE in default.metallib amll-mesh-presets.json; do
+    if [[ ! -s "$APP_BUNDLE/$REQUIRED_RESOURCE" ]]; then
+        echo "Missing visual rendering resource: $REQUIRED_RESOURCE" >&2
+        exit 1
+    fi
+done
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CADisableMinimumFrameDurationOnPhone' "$INFO_PLIST")" != "true" ]]; then
     echo "Application is missing the ProMotion timing opt-in" >&2
     exit 1

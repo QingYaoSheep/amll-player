@@ -11,7 +11,7 @@ Plan 3 now adds Home, Search, Library, and track/album/artist/playlist details, 
 Plan 4 provides Apple/QQ/NetEase lyrics, caching, and manual correction. Plan 5 uses the supplied Apple Music captures for the fullscreen spatial layout while porting AMLL's word-timed motion, TextKit/CALayer lyric rendering, and Metal artwork background. See [Plan 4 validation](Docs/Plan4-Validation.md) and [Plan 5 validation](Docs/Plan5-Validation.md) for implementation, CI results, and remaining device acceptance checks. Debug builds include an offline rendering preview in Settings.
 
 - iOS or iPadOS 18 or later
-- Xcode 27 stable (build, unit/UI tests, archive and IPA validation)
+- Xcode 27 stable (direct Release archive and IPA validation; CI device/simulator tests disabled by request)
 - A Spotify Developer application
 - XcodeGen 2.46.0, installed automatically by `Scripts/generate-project.sh`
 

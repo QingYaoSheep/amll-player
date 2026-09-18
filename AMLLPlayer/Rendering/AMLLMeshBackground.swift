@@ -99,8 +99,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 view?.setNeedsDisplay()
                 return
             }
-            texture = Self.fallbackTexture(device: device)
-            view?.setNeedsDisplay()
+            // Keep the previous cover until the replacement has decoded. A
+            // network request is not a visual state, and must not flash gray.
             loadTask = Task { [weak self] in
                 do {
                     let (data, _) = try await URLSession.shared.data(from: url)
@@ -119,7 +119,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
                     return
                 } catch {
                     guard self?.artworkURL == url else { return }
-                    self?.texture = Self.fallbackTexture(device: device)
+                    // An unavailable replacement leaves the last valid frame.
+                    // The initial canvas already owns the fallback texture.
                     self?.view?.setNeedsDisplay()
                 }
             }
@@ -322,7 +323,18 @@ struct AMLLMeshBackground: UIViewRepresentable {
         }
 
         private static func makeMesh() -> (vertices: [Vertex], indices: [UInt32]) {
-            let points = amllControlPoints
+            // Preserve the current layout until multi-mesh transitions are
+            // connected, but use the exact pinned preset instead of rounded
+            // literals. Other presets and the generator share this resource.
+            let source = (try? AMLLMeshPreset.loadPresets())?.first
+            let points: [ControlPoint]
+            if let source, source.width == 5, source.height == 5, source.conf.count == 25 {
+                points = source.conf.sorted { $0.cy * 5 + $0.cx < $1.cy * 5 + $1.cx }.map {
+                    ControlPoint(Float($0.x), Float($0.y), Float($0.ur), Float($0.vr), Float($0.up), Float($0.vp))
+                }
+            } else {
+                points = amllControlPoints
+            }
             let controlSide = 5
             let subdivisions = 50
             let meshSide = (controlSide - 1) * subdivisions

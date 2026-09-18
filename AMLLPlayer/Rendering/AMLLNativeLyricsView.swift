@@ -84,6 +84,9 @@ final class AMLLNativeCanvas: UIView {
     private var hdrSeekRevision = 0
     private var hdrWasPlaying = false
     private var hdrOffset = 0.0
+    #if DEBUG
+        var hdrCapabilitiesOverride: LyricsHDRCapabilities?
+    #endif
     private(set) var frameState: AMLLFrameState?
     private(set) var measuredFPS = 0.0
     private(set) var frameMilliseconds = 0.0
@@ -225,10 +228,14 @@ final class AMLLNativeCanvas: UIView {
         hdrWasPlaying = input.playing
         hdrSeekRevision = input.seekRevision
         hdrOffset = input.offset
+        var capabilities = LyricsHDRCapabilities(supportsEDR: (window?.screen.potentialEDRHeadroom ?? 1) > 1,
+                                                 headroom: Double(window?.screen.currentEDRHeadroom ?? 1))
+        #if DEBUG
+            capabilities = hdrCapabilitiesOverride ?? capabilities
+        #endif
         let hdr = LyricsHDRFrameState.sample(lines: source?.lines ?? [], lyricTime: hdrTime ?? state.lyricTime,
                                              configuration: configuration.hdr ?? .init(),
-                                             capabilities: .init(supportsEDR: (window?.screen.potentialEDRHeadroom ?? 1) > 1,
-                                                                 headroom: Double(window?.screen.currentEDRHeadroom ?? 1)),
+                                             capabilities: capabilities,
                                              reduceTransparency: reduceTransparency)
         let visible = state.rows.filter { !$0.hidden && $0.y + heights[$0.lineIndex] >= -bounds.height * 0.5 && $0.y <= bounds.height * 1.5 }
         let indexes = Set(visible.map(\.lineIndex))
@@ -271,8 +278,9 @@ final class AMLLNativeCanvas: UIView {
             view.transform = CGAffineTransform(scaleX: row.scale, y: row.scale)
             view.setCanSeek(canSeek)
             view.apply(row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
-            view.applyHDR(renderer: configuration.hdr?.enabled == true ? hdrRenderer : nil,
-                          gain: hdr.activeLineIndexes.contains(row.lineIndex) ? hdr.outputBrightness : 1,
+            let gain = hdr.activeLineIndexes.contains(row.lineIndex) ? hdr.outputBrightness : 1
+            view.applyHDR(renderer: gain > 1 ? hdrRenderer : nil,
+                          gain: gain,
                           row: row, configuration: configuration)
         }
         if let interlude = state.interlude,

@@ -8,6 +8,7 @@ final class LyricsHDRRendererTests: XCTestCase {
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         let window = UIWindow(frame: canvas.bounds)
         window.addSubview(canvas)
+        canvas.hdrCapabilitiesOverride = .init(supportsEDR: true, headroom: 2)
         defer { canvas.stop(); canvas.removeFromSuperview() }
         let line = LyricLine(id: "hdr", text: "Held", start: 1, end: 10,
                              words: [.init(text: "Held", start: 1, end: 10)], precision: .word)
@@ -21,7 +22,14 @@ final class LyricsHDRRendererTests: XCTestCase {
                          active: false, reduceMotion: false)
         canvas.advanceFrame(delta: 0)
         func metalLayers(_ layer: CALayer) -> [CAMetalLayer] {
-            (layer as? CAMetalLayer).map { [$0] } ?? (layer.sublayers ?? []).flatMap(metalLayers)
+            if let metal = layer as? CAMetalLayer {
+                return [metal]
+            }
+            var result: [CAMetalLayer] = []
+            for child in layer.sublayers ?? [] {
+                result.append(contentsOf: metalLayers(child))
+            }
+            return result
         }
         XCTAssertFalse(metalLayers(canvas.layer).isEmpty, "Production canvas must consume the HDR renderer")
         XCTAssertTrue(metalLayers(canvas.layer).allSatisfy { $0.pixelFormat == .rgba16Float })

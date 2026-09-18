@@ -2,6 +2,7 @@
 
 ## Remaining visual source references
 
+- Core 0.5.2 `mesh-renderer/cp-presets.ts` and `cp-generate.ts`: all six presets are preserved in `amll-mesh-presets.json`; `AMLLMeshPreset` adapts the control-point generator to Swift. `generate-amll-background-reference.cjs` executes the pinned source only during development to export seeded parity fixtures. The core attribution and AGPL license below apply.
 - `react-full` TextMarquee TSX/CSS: adapted by `AMLLMarqueeMotion` and `AMLLMetadataText`; the pinned AMLL package attribution and license below apply. Touch activation is a native addition.
 - Local `spotify-multisource-lyrics.js` 0.29.21 declares `@license MIT`. Its `animatedCoverMediaUrl` and `fetchAppleAnimatedArtwork` catalog sequence inform the independent Swift `ArtworkAsset` decoding and `AppleLyricsProvider.animatedArtwork` method. No JavaScript is embedded or executed in the app.
 - Exact source hashes for these references: `ReferenceCaptures/remaining-visual-source-hashes.json`.

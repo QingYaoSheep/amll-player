@@ -108,7 +108,7 @@ struct AMLLMetadataText: UIViewRepresentable {
             let motion = AMLLMarqueeMotion(textWidth: label.bounds.width, viewportWidth: bounds.width)
             guard motion.distance > 0 else { return }
             let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
-            animation.values = [0, -motion.distance, 0]
+            animation.values = [NSNumber(value: 0.0), NSNumber(value: -motion.distance), NSNumber(value: 0.0)]
             animation.keyTimes = [0, 0.5, 1]
             animation.duration = motion.legDuration * 2
             animation.calculationMode = .linear

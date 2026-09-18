@@ -21,8 +21,8 @@ final class ArtworkMediaCache {
 
     init(root: URL? = nil, sandbox: URL = URL(fileURLWithPath: NSHomeDirectory()), limit: Int64 = maximumBytes) {
         self.sandbox = sandbox.standardizedFileURL.resolvingSymlinksInPath()
-        self.root = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("AnimatedArtwork", isDirectory: true)
+        self.root = (root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AnimatedArtwork", isDirectory: true)).standardizedFileURL.resolvingSymlinksInPath()
         self.limit = max(0, limit)
         registry = self.sandbox.appendingPathComponent("Library/Application Support/AMLLArtwork/index.json")
         try? FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
@@ -87,6 +87,17 @@ final class ArtworkMediaCache {
         entries.removeAll { $0.key == key(remote) }
         entries.append(.init(key: key(remote), relativePath: String(destination.path.dropFirst(sandbox.path.count + 1)), accessed: Date()))
         prune()
+        guard byteCount <= limit else {
+            // If an older package cannot be removed, reject the new admission
+            // rather than silently exceeding the configured cache budget.
+            try? FileManager.default.removeItem(at: destination)
+            // Keep ownership if rollback itself fails so clear/prune can retry.
+            if !FileManager.default.fileExists(atPath: destination.path) {
+                entries.removeAll { $0.key == key(remote) }
+            }
+            save()
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
         return destination
     }
 

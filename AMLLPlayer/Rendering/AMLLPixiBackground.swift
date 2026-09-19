@@ -107,7 +107,9 @@ struct AMLLPixiBackground: UIViewRepresentable {
                     try Task.checkCancellation()
                     guard let self, self.url == value, let device = self.view?.device,
                           let image = UIImage(data: data)?.cgImage else { return }
-                    let texture = try MTKTextureLoader(device: device).newTexture(cgImage: image, options: [.SRGB: false])
+                    let texture = try await MTKTextureLoader(device: device).newTexture(cgImage: image, options: [.SRGB: false])
+                    try Task.checkCancellation()
+                    guard self.url == value else { return }
                     let rotations = (0 ..< 4).map { _ in self.random.next() * .pi * 2 }
                     let state = AMLLPixiState(rotations: rotations)
                     let size = self.textures.first.map { CGSize(width: $0.width, height: $0.height) } ?? .zero

@@ -1,5 +1,11 @@
 # AMLL Player SwiftUI Changelog
 
+## 2026-09-19 恢复 iOS 27 CI 测试
+
+- 恢复 Xcode 27 的 iPhone 16 Pro 模拟器单元/UI 测试、iPad Pro 13-inch (M4) 构建、xcresult 与视觉附件上传，以及结束时模拟器清理。
+- 测试及构建通过后继续执行未签名真机目标 archive、IPA 检查与上传；不恢复 Xcode 26。
+- 此流程是恢复原模拟器测试，不是实体设备测试。实体设备运行、HDR 显示与人工签收仍需设备和签名环境。
+
 ## 2026-09-19 全屏文字合成修正（待设备确认）
 
 - 针对用户提供的全屏/下拉缩小显示差异，在背景和文字共同祖先建立固定 compositingGroup，并在 iOS 26+ 显式允许 high dynamic range。

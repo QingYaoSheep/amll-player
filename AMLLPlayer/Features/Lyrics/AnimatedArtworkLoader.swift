@@ -10,19 +10,33 @@ final class AnimatedArtworkLoader {
     private(set) var kind: ArtworkAsset.Kind?
     private(set) var failureCode: String?
     private(set) var streamingURL: URL?
+    private(set) var playbackState: ArtworkPlaybackState = .preparing
+    var requestToken: UUID {
+        revision
+    }
+
+    func playbackChanged(token: UUID, url: URL, state: ArtworkPlaybackState) {
+        guard token == revision, url == playbackURL else { return }
+        playbackState = state
+    }
+
     var playbackURL: URL? {
         localURL ?? streamingURL
     }
 
     @ObservationIgnored private var revision = UUID()
 
-    func playbackFailed(trackID: String, url: URL, error: Error?) {
+    func playbackFailed(trackID: String, url: URL, error: Error?, token: UUID? = nil) {
+        if let token, token != revision {
+            return
+        }
         guard self.trackID == trackID, playbackURL == url else { return }
         // A completed cache request must not resurrect a resource which the
         // actual decoder rejected. Retrying starts a fresh request revision.
         revision = UUID()
         localURL = nil; streamingURL = nil; kind = nil
         status = .failed
+        playbackState = .failed
         let failure = (error ?? URLError(.cannotDecodeContentData)) as NSError
         failureCode = "\(failure.domain) (\(failure.code))"
     }
@@ -31,6 +45,7 @@ final class AnimatedArtworkLoader {
         revision = UUID(); localURL = nil; trackID = nil; kind = nil; status = .idle
         failureCode = nil
         streamingURL = nil
+        playbackState = .preparing
     }
 
     func load(trackID: String, kind: ArtworkAsset.Kind = .squareVideo,

@@ -279,8 +279,11 @@ struct AMLLLyricsPlayer: View {
                    artworkLoader.kind == .squareVideo,
                    artworkLoader.trackID == item.uri, let url = artworkLoader.playbackURL
                 {
-                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices, allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
-                                    onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error) })
+                    let token = artworkLoader.requestToken
+                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices && model.playbackSnapshot?.isPlaying == true, allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
+                                    onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
+                                    onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) })
+                        .id(token)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? radius, style: .continuous))
@@ -302,10 +305,13 @@ struct AMLLLyricsPlayer: View {
                 if !reduceMotion, artworkLoader.kind == .portraitVideo,
                    artworkLoader.trackID == item.uri, let url = artworkLoader.playbackURL
                 {
-                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices,
+                    let token = artworkLoader.requestToken
+                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices && model.playbackSnapshot?.isPlaying == true,
                                     allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
                                     reflectionFrames: configuration.animatedArtwork?.reflection == true ? artworkReflectionFrames : nil,
-                                    onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error) })
+                                    onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
+                                    onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) })
+                        .id(token)
                 }
             }
             .clipped()
@@ -450,11 +456,21 @@ struct AMLLLyricsPlayer: View {
         case .loading: return "动态封面：加载中"
         case .streaming:
             return artworkLoader.failureCode == nil
-                ? "动态封面：使用在线资源，静默缓存中"
+                ? "动态封面：" + artworkPlaybackDescription + "，静默缓存中"
                 : "动态封面：使用在线资源，缓存未完成（\(artworkLoader.failureCode ?? "")）"
-        case .ready: return "动态封面：已缓存，无声播放"
+        case .ready: return "动态封面：已缓存，" + artworkPlaybackDescription
         case .unavailable: return "动态封面：无匹配布局的视频，使用静态图"
         case .failed: return "动态封面：加载失败，使用静态图（\(artworkLoader.failureCode ?? "未知错误")）"
+        }
+    }
+
+    private var artworkPlaybackDescription: String {
+        switch artworkLoader.playbackState {
+        case .preparing: "准备首帧"
+        case .displayed: "无声播放中"
+        case .buffering: "缓冲中"
+        case .paused: "已暂停"
+        case .failed: "播放失败，使用静态图"
         }
     }
 

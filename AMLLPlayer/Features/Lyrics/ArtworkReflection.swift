@@ -9,7 +9,7 @@ import SwiftUI
     func begin() -> UUID {
         let token = UUID()
         source = token
-        surface?.layer.contents = nil
+        surface?.clear()
         return token
     }
 
@@ -21,7 +21,7 @@ import SwiftUI
     func clear(source token: UUID?) {
         guard token == source else { return }
         source = nil
-        surface?.layer.contents = nil
+        surface?.clear()
     }
 }
 
@@ -46,12 +46,43 @@ struct ArtworkReflection: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ view: Surface, coordinator _: ()) {
-        view.layer.contents = nil
+        view.clear()
     }
 
     final class Surface: UIView {
-        private let context = CIContext(options: [.cacheIntermediates: false])
+        private let renderer = Renderer()
+        private var generation = UUID()
+        private var rendering = false
+        private var pending: Frame?
+        private var previousSize = CGSize.zero
         private let fade = CAGradientLayer()
+
+        /// Pixel buffers are retained immutable inputs. Only the serial worker
+        /// accesses Core Image; the main actor owns scheduling and the layer.
+        private struct Frame: @unchecked Sendable {
+            let buffer: CVPixelBuffer
+            let size: CGSize
+            let scale: CGFloat
+            let generation: UUID
+        }
+
+        private final class Renderer: @unchecked Sendable {
+            let queue = DispatchQueue(label: "AMLL.artwork.reflection", qos: .userInitiated)
+            let context = CIContext(options: [.cacheIntermediates: false])
+
+            func render(_ frame: Frame) -> CGImage? {
+                let source = CIImage(cvPixelBuffer: frame.buffer)
+                let height = max(2, (source.extent.height * 0.24).rounded())
+                let crop = CGRect(x: source.extent.minX, y: source.extent.minY, width: source.extent.width, height: height)
+                let image = source.cropped(to: crop)
+                    .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
+                    .transformed(by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: height))
+                    .transformed(by: CGAffineTransform(scaleX: frame.size.width / crop.width, y: frame.size.height / height))
+                    .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 9 * frame.scale])
+                    .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.06])
+                return context.createCGImage(image, from: CGRect(origin: .zero, size: frame.size))
+            }
+        }
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -70,6 +101,10 @@ struct ArtworkReflection: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            if previousSize != bounds.size {
+                previousSize = bounds.size
+                clear()
+            }
             CATransaction.begin(); CATransaction.setDisableActions(true)
             fade.frame = bounds
             CATransaction.commit()
@@ -79,18 +114,37 @@ struct ArtworkReflection: UIViewRepresentable {
             guard bounds.width > 0, bounds.height > 0, window != nil else { return }
             let scale = min(1.5, window?.screen.scale ?? 1)
             let size = CGSize(width: max(2, (bounds.width * scale).rounded()), height: max(2, (bounds.height * scale).rounded()))
-            let source = CIImage(cvPixelBuffer: buffer)
-            let height = max(2, (source.extent.height * 0.24).rounded())
-            let crop = CGRect(x: source.extent.minX, y: source.extent.minY, width: source.extent.width, height: height)
-            let image = source.cropped(to: crop)
-                .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
-                .transformed(by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: height))
-                .transformed(by: CGAffineTransform(scaleX: size.width / crop.width, y: size.height / height))
-                .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 9 * scale])
-                .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.06])
-            guard let rendered = context.createCGImage(image, from: CGRect(origin: .zero, size: size)) else { return }
+            pending = Frame(buffer: buffer, size: size, scale: scale, generation: generation)
+            renderNext()
+        }
+
+        func clear() {
+            generation = UUID()
+            pending = nil
+            layer.contents = nil
+        }
+
+        private func renderNext() {
+            guard !rendering, let frame = pending else { return }
+            pending = nil
+            rendering = true
+            let renderer = renderer
+            renderer.queue.async { [weak self] in
+                let image = autoreleasepool { renderer.render(frame) }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    rendering = false
+                    if frame.generation == generation, window != nil {
+                        present(image)
+                    }
+                    renderNext()
+                }
+            }
+        }
+
+        private func present(_ image: CGImage?) {
             CATransaction.begin(); CATransaction.setDisableActions(true)
-            layer.contents = rendered
+            layer.contents = image
             CATransaction.commit()
         }
     }

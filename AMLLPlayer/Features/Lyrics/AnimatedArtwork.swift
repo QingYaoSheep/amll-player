@@ -22,6 +22,7 @@ struct AnimatedArtwork: UIViewRepresentable {
     var allowCellular = false
     var reflectionFrames: ArtworkReflectionFrames?
     var onFailure: (URL, Error?) -> Void = { _, _ in }
+    var onState: (URL, ArtworkPlaybackState) -> Void = { _, _ in }
 
     func makeUIView(context _: Context) -> Surface {
         Surface()
@@ -29,6 +30,7 @@ struct AnimatedArtwork: UIViewRepresentable {
 
     func updateUIView(_ view: Surface, context _: Context) {
         view.onFailure = onFailure
+        view.onState = onState
         view.configure(url: url, active: active, allowCellular: allowCellular, reflectionFrames: reflectionFrames)
     }
 
@@ -38,6 +40,8 @@ struct AnimatedArtwork: UIViewRepresentable {
 
     final class Surface: UIView {
         var onFailure: (URL, Error?) -> Void = { _, _ in }
+        var onState: (URL, ArtworkPlaybackState) -> Void = { _, _ in }
+        private var reportedState: ArtworkPlaybackState?
         override class var layerClass: AnyClass {
             AVPlayerLayer.self
         }
@@ -60,6 +64,10 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var output: AVPlayerItemVideoOutput?
         private weak var outputItem: AVPlayerItem?
         private var displayLink: CADisplayLink?
+        private var watchdog = ArtworkPlaybackWatchdog()
+        private var lastTick: CFTimeInterval?
+        private var playbackActive = false
+        private var failed = false
         @MainActor private final class Target: NSObject {
             weak var surface: Surface?
             @objc func tick(_ link: CADisplayLink) {
@@ -77,6 +85,10 @@ struct AnimatedArtwork: UIViewRepresentable {
             playerLayer.player = player
             playerLayer.videoGravity = .resizeAspectFill
             playerLayer.opacity = 0
+            NotificationCenter.default.addObserver(self, selector: #selector(resetWatchdogTimestamp),
+                                                   name: UIApplication.willResignActiveNotification, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(resetWatchdogTimestamp),
+                                                   name: UIApplication.didBecomeActiveNotification, object: nil)
             ready = playerLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] _, _ in
                 Task { @MainActor [weak self] in self?.updateVisibility() }
             }
@@ -89,11 +101,12 @@ struct AnimatedArtwork: UIViewRepresentable {
             nil
         }
 
+        @objc private func resetWatchdogTimestamp() {
+            lastTick = nil
+        }
+
         func configure(url: URL, active: Bool, allowCellular: Bool = false, reflectionFrames: ArtworkReflectionFrames? = nil) {
             guard url.isFileURL || url.scheme?.lowercased() == "https" else { stop(); return }
-            if !active, !url.isFileURL {
-                stop(); return
-            }
             if self.url != url || self.allowCellular != allowCellular {
                 stop()
                 self.url = url
@@ -111,22 +124,34 @@ struct AnimatedArtwork: UIViewRepresentable {
                 self.reflectionFrames = reflectionFrames
                 reflectionToken = reflectionFrames?.begin()
             }
-            if reflectionFrames != nil, displayLink == nil {
+            if displayLink == nil {
                 let target = Target(); target.surface = self
                 let link = CADisplayLink(target: target, selector: #selector(Target.tick(_:)))
                 link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
                 link.add(to: .main, forMode: .common)
                 displayLink = link
             }
+            if playbackActive != active {
+                lastTick = nil
+            }
+            playbackActive = active
             displayLink?.isPaused = !active
-            if active, player.currentItem?.status != .failed {
+            if active, !failed, player.currentItem?.status != .failed {
                 player.play()
             } else {
                 player.pause()
+                // Report asynchronously: configure is called during a SwiftUI update.
+                Task { @MainActor [weak self] in
+                    guard let self, !playbackActive else { return }
+                    report(.paused)
+                }
             }
         }
 
         func stop() {
+            watchdog = ArtworkPlaybackWatchdog()
+            reportedState = nil
+            lastTick = nil; playbackActive = false; failed = false
             tracksObservation = nil; statusObservation = nil; observedItem = nil
             clearReflection()
             player.pause()
@@ -156,11 +181,7 @@ struct AnimatedArtwork: UIViewRepresentable {
                     disableAudio(in: item)
                     updateVisibility()
                     if item.status == .failed {
-                        player.pause()
-                        reflectionFrames?.clear(source: reflectionToken)
-                        if let url {
-                            onFailure(url, item.error)
-                        }
+                        fail(item.error)
                     }
                 }
             }
@@ -177,7 +198,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         private func updateVisibility() {
             // Read current state when the main-actor callback runs. A queued
             // readiness notification from the previous song must not expose it.
-            let visible = url != nil && player.currentItem?.status == .readyToPlay && playerLayer.isReadyForDisplay
+            let visible = !failed && url != nil && player.currentItem?.status == .readyToPlay && playerLayer.isReadyForDisplay
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             playerLayer.opacity = visible ? 1 : 0
@@ -195,6 +216,22 @@ struct AnimatedArtwork: UIViewRepresentable {
         }
 
         private func capture(_ link: CADisplayLink) {
+            let eligible = playbackActive && UIApplication.shared.applicationState == .active
+            let elapsed = lastTick.map { link.timestamp - $0 } ?? 0
+            lastTick = eligible ? link.timestamp : nil
+            guard !failed else { return }
+            let state: ArtworkPlaybackState = !eligible ? .paused
+                : !playerLayer.isReadyForDisplay ? .preparing
+                : player.timeControlStatus == .waitingToPlayAtSpecifiedRate ? .buffering : .displayed
+            report(state)
+            if let failure = watchdog.advance(elapsed: elapsed, eligible: eligible,
+                                              displayed: playerLayer.isReadyForDisplay,
+                                              position: player.currentTime().seconds)
+            {
+                fail(NSError(domain: "AMLL.ArtworkPlayback", code: failure == .firstFrameTimeout ? 1 : 2,
+                             userInfo: [NSLocalizedDescriptionKey: "动态封面播放等待超时"]))
+                return
+            }
             guard let reflectionFrames, let reflectionToken, let item = player.currentItem,
                   item.status == .readyToPlay else { return }
             if outputItem !== item {
@@ -209,6 +246,23 @@ struct AnimatedArtwork: UIViewRepresentable {
             guard output.hasNewPixelBuffer(forItemTime: time),
                   let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else { return }
             reflectionFrames.display(buffer, source: reflectionToken)
+        }
+
+        private func fail(_ error: Error?) {
+            guard !failed, let url else { return }
+            failed = true
+            player.pause()
+            displayLink?.isPaused = true
+            reflectionFrames?.clear(source: reflectionToken)
+            updateVisibility()
+            report(.failed)
+            onFailure(url, error)
+        }
+
+        private func report(_ state: ArtworkPlaybackState) {
+            guard let url, reportedState != state else { return }
+            reportedState = state
+            onState(url, state)
         }
     }
 }

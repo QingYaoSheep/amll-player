@@ -23,6 +23,9 @@ final class ArtworkMediaDownload: NSObject, @preconcurrency AVAssetDownloadDeleg
         configuration.allowsExpensiveNetworkAccess = allowCellular
         configuration.allowsConstrainedNetworkAccess = false
         configuration.sessionSendsLaunchEvents = false
+        // Cover caching is not a user-requested offline media download.
+        // Discretionary asset transfers do not create a system Live Activity.
+        configuration.isDiscretionary = true
         let session = AVAssetDownloadURLSession(configuration: configuration, assetDownloadDelegate: self, delegateQueue: .main)
         self.session = session
         recovery = Task {
@@ -96,6 +99,16 @@ final class ArtworkMediaDownload: NSObject, @preconcurrency AVAssetDownloadDeleg
 
     func urlSession(_: URLSession, assetDownloadTask: AVAssetDownloadTask, didFinishDownloadingTo location: URL) {
         guard continuation != nil, task?.taskIdentifier == assetDownloadTask.taskIdentifier else { try? FileManager.default.removeItem(at: location); return }
+        completedLocation = location
+    }
+
+    func urlSession(_: URLSession, assetDownloadTask: AVAssetDownloadTask, willDownloadTo location: URL) {
+        // makeAssetDownloadTask(downloadConfiguration:) reports the location
+        // before completion. Save it, but never expose the unfinished package.
+        guard continuation != nil, task?.taskIdentifier == assetDownloadTask.taskIdentifier else {
+            assetDownloadTask.cancel()
+            return
+        }
         completedLocation = location
     }
 

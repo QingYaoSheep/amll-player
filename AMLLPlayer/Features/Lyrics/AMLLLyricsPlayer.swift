@@ -447,7 +447,7 @@ struct AMLLLyricsPlayer: View {
         case .loading: return "动态封面：加载中"
         case .ready: return "动态封面：已缓存，无声播放"
         case .unavailable: return "动态封面：无匹配布局的视频，使用静态图"
-        case .failed: return "动态封面：加载失败，使用静态图"
+        case .failed: return "动态封面：加载失败，使用静态图（\(artworkLoader.failureCode ?? "未知错误")）"
         }
     }
 

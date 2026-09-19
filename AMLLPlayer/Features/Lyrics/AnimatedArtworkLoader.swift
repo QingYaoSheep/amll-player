@@ -8,10 +8,12 @@ final class AnimatedArtworkLoader {
     private(set) var localURL: URL?
     private(set) var trackID: String?
     private(set) var kind: ArtworkAsset.Kind?
+    private(set) var failureCode: String?
     @ObservationIgnored private var revision = UUID()
 
     func reset() {
         revision = UUID(); localURL = nil; trackID = nil; kind = nil; status = .idle
+        failureCode = nil
     }
 
     func load(trackID: String, kind: ArtworkAsset.Kind = .squareVideo,
@@ -40,6 +42,10 @@ final class AnimatedArtworkLoader {
             guard revision == self.revision else { return }
             localURL = nil
             status = Task.isCancelled || error is CancellationError ? .idle : .failed
+            if status == .failed {
+                let failure = error as NSError
+                failureCode = "\(failure.domain) (\(failure.code))"
+            }
         }
     }
 }

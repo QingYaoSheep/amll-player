@@ -3,6 +3,20 @@ import XCTest
 
 @MainActor
 final class ArtworkMediaTests: XCTestCase {
+    func testDownloadFailureExposesCodeWithoutLeakingURLAndResetClearsIt() async throws {
+        let loader = AnimatedArtworkLoader()
+        let asset = try ArtworkAsset(kind: .squareVideo, url: XCTUnwrap(URL(string: "https://example.com/cover.m3u8")), albumID: "1", storefront: "us")
+        await loader.load(trackID: "one", assets: { [asset] }, download: { _ in
+            throw NSError(domain: NSURLErrorDomain, code: URLError.cannotCreateFile.rawValue,
+                          userInfo: [NSURLErrorFailingURLStringErrorKey: "https://example.com/private?token=secret"])
+        })
+        XCTAssertEqual(loader.status, .failed)
+        XCTAssertEqual(loader.failureCode, "\(NSURLErrorDomain) (\(URLError.cannotCreateFile.rawValue))")
+        XCTAssertNil(loader.localURL)
+        loader.reset()
+        XCTAssertNil(loader.failureCode)
+    }
+
     func testLegacyConfigurationKeepsSquareLayout() throws {
         let data = Data(#"{"enabled":true,"allowCellular":false}"#.utf8)
         let value = try JSONDecoder().decode(AnimatedArtworkConfiguration.self, from: data)

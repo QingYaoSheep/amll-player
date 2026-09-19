@@ -1,5 +1,12 @@
 # AMLL Player SwiftUI Changelog
 
+## 2026-09-19 动态封面下载回调与灵动岛
+
+- 补齐新版 AVAssetDownloadConfiguration 对应的 willDownloadTo 回调，保存包路径，仍仅在 didCompleteWithError 无错误后交给缓存；保留旧回调兼容。
+- HLS 封面缓存使用 discretionary 静默调度，避免系统自动创建下载 Live Activity。系统可能延后下载，等待期间继续显示静态封面。
+- 失败提示显示错误域/代码，不显示资源 URL 或令牌；便于区分文件交接、网络及权限错误。
+- Windows 格式检查通过；HLS 实际下载、系统调度及灵动岛行为待设备验证，不能宣称所有下载失败都已排除。
+
 ## 2026-09-19 双任务 IPA 构建
 
 - Actions 矩阵展开为两个独立任务：`iOS 27 / Tests then IPA` 执行原有模拟器测试后归档；`iOS 27 / Direct IPA` 跳过测试及模拟器准备，直接归档。

@@ -87,8 +87,9 @@ final class AMLLCoreTextLayout {
     }
 
     /// `LineBalancer` receives Intl.Segmenter word nodes for non-dynamic
-    /// lines. NLTokenizer supplies the same word boundaries on Apple
-    /// platforms; the gaps are emitted as independent whitespace children so
+    /// lines. NLTokenizer supplies native word boundaries on Apple
+    /// platforms; locale-specific equivalence still needs reference fixtures.
+    /// Gaps are emitted as independent children so
     /// balanced breaks never delete or collapse the original text.
     private static func staticSegments(_ text: String) -> [String] {
         guard !text.isEmpty else { return [] }
@@ -138,10 +139,14 @@ final class AMLLCoreTextLayout {
         let text = texts.joined()
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking]
         let attributed = NSAttributedString(string: text, attributes: attributes)
-        let children = texts.map { text in
+        var children = texts.map { text in
             AMLLBalancedLayout.Child(text: text,
                                      width: CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes)), nil, nil, nil),
                                      isSpace: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        if line.precision != .word {
+            let fullLine = CTLineCreateWithAttributedString(attributed)
+            children = AMLLBalancedLayout.calibrated(children, visualWidth: CTLineGetTypographicBounds(fullLine, nil, nil, nil))
         }
         let tokenizer = NLTokenizer(unit: .word)
         tokenizer.string = text

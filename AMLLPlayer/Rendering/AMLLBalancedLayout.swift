@@ -8,6 +8,19 @@ enum AMLLBalancedLayout {
         var isSpace: Bool
     }
 
+    /// LineBalancer's non-dynamic adapter calibrates isolated measurements
+    /// against the complete shaped line before running the break cost function.
+    static func calibrated(_ children: [Child], visualWidth: Double) -> [Child] {
+        let measured = children.reduce(0) { $0 + $1.width }
+        guard visualWidth.isFinite, visualWidth > 0, measured.isFinite, measured > 0 else { return children }
+        let scale = visualWidth / measured
+        return children.map { child in
+            var value = child
+            value.width *= scale
+            return value
+        }
+    }
+
     static func breaks(children: [Child], width: Double, cjkBoundaries: Set<Int>) -> [Int] {
         let count = children.count
         guard count > 0, width.isFinite, width > 0,

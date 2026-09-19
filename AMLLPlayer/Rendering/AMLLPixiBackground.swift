@@ -18,7 +18,7 @@ struct AMLLPixiBackground: UIViewRepresentable {
         view.colorPixelFormat = .bgra8Unorm
         view.isOpaque = true
         view.backgroundColor = .black
-        view.preferredFramesPerSecond = 30 // Source default; independent of lyric display link.
+        view.preferredFramesPerSecond = 60 // react-full overrides the core constructor's 30 Hz default.
         context.coordinator.attach(view)
         return view
     }
@@ -153,9 +153,9 @@ struct AMLLPixiBackground: UIViewRepresentable {
                 }
             }
             guard let drawable = view.currentDrawable, let command = queue.makeCommandBuffer() else { return }
-            // BaseRenderer's actual default is .75, despite older interface comments saying .5.
-            let width = max(1, Int(view.drawableSize.width * 0.75))
-            let height = max(1, Int(view.drawableSize.height * 0.75))
+            // PrebuiltLyricPlayer explicitly passes renderScale=1 (core alone defaults to .75).
+            let width = max(1, Int(view.drawableSize.width))
+            let height = max(1, Int(view.drawableSize.height))
             guard prepareTextures(width: width, height: height, device: device) else { return }
             let now = CACurrentMediaTime()
             // Pinned Pixi Ticker caps elapsedMS at 100 before producing deltaTime.

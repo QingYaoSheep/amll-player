@@ -43,7 +43,7 @@ struct LyricsHDRStatusView: UIViewRepresentable {
             } else if screen.potentialEDRHeadroom <= 1 || screen.currentEDRHeadroom <= 1 {
                 text = "SDR 回退：当前屏幕没有可用扩展亮度"
             } else {
-                text = String(format: "HDR 可用：当前高光上限 %.2f× SDR 白", min(1.5, screen.currentEDRHeadroom))
+                text = String(format: "HDR 可用：当前高光上限 %.2f× SDR 白", min(LyricsHDRConfiguration.targetBrightness, screen.currentEDRHeadroom))
             }
         }
     }

@@ -53,6 +53,6 @@ final class LyricsHDRStateTests: XCTestCase {
         XCTAssertEqual(supported.outputBrightness(configuration: enabled, reduceTransparency: false), 1.2)
         XCTAssertEqual(supported.outputBrightness(configuration: enabled, reduceTransparency: true), 1)
         XCTAssertEqual(supported.outputBrightness(configuration: .init(), reduceTransparency: false), 1)
-        XCTAssertEqual(frame(4).outputBrightness, 1.5)
+        XCTAssertEqual(frame(4).outputBrightness, 2.0)
     }
 }

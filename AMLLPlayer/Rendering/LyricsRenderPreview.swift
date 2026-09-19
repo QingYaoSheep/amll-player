@@ -33,7 +33,7 @@
                             .frame(height: 100)
                             .blendMode(reduceTransparency ? .normal : .plusLighter)
                         Slider(value: $hdrProbeTime, in: 0 ... 5).accessibilityLabel("HDR 字形验证时间")
-                        Toggle("请求扩展亮度（目标 1.5 倍）", isOn: $hdrProbeEnabled)
+                        Toggle("请求扩展亮度（目标 2 倍）", isOn: $hdrProbeEnabled)
                         Text("使用当前屏幕 EDR 余量；静态验证不会替代完整歌词动画与真机签收。")
                             .font(.caption)
                     }

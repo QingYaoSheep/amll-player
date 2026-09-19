@@ -172,7 +172,7 @@ struct LyricsAppearanceView: View {
                         set: { preferences.configuration.hdr = .init(enabled: $0) }
                     ))
                     LyricsHDRStatusView().frame(minHeight: 44)
-                    Text("仅当前句已唱部分使用扩展亮度，上限为 SDR 白的 1.5 倍。关闭 HDR 后仍保留文字混色；不会提高系统亮度。")
+                    Text("仅当前句已唱部分使用扩展亮度，上限为 SDR 白的 2 倍。关闭 HDR 后仍保留文字混色；不会提高系统亮度。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 DisclosureGroup("动态专辑封面") {

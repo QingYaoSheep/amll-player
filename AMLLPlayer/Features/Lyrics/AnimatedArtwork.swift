@@ -19,6 +19,7 @@ struct AnimatedArtworkConfiguration: Codable, Equatable, Sendable {
 struct AnimatedArtwork: UIViewRepresentable {
     var url: URL
     var active: Bool
+    var allowCellular = false
     var reflectionFrames: ArtworkReflectionFrames? = nil
 
     func makeUIView(context _: Context) -> Surface {
@@ -26,7 +27,7 @@ struct AnimatedArtwork: UIViewRepresentable {
     }
 
     func updateUIView(_ view: Surface, context _: Context) {
-        view.configure(url: url, active: active, reflectionFrames: reflectionFrames)
+        view.configure(url: url, active: active, allowCellular: allowCellular, reflectionFrames: reflectionFrames)
     }
 
     static func dismantleUIView(_ view: Surface, coordinator _: ()) {
@@ -45,6 +46,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         private let player = AVQueuePlayer()
         private var looper: AVPlayerLooper?
         private var url: URL?
+        private var allowCellular = false
         private var ready: NSKeyValueObservation?
         private var currentItemObservation: NSKeyValueObservation?
         private var tracksObservation: NSKeyValueObservation?
@@ -84,12 +86,21 @@ struct AnimatedArtwork: UIViewRepresentable {
             nil
         }
 
-        func configure(url: URL, active: Bool, reflectionFrames: ArtworkReflectionFrames? = nil) {
-            guard url.isFileURL else { stop(); return }
-            if self.url != url {
+        func configure(url: URL, active: Bool, allowCellular: Bool = false, reflectionFrames: ArtworkReflectionFrames? = nil) {
+            guard url.isFileURL || url.scheme?.lowercased() == "https" else { stop(); return }
+            if !active, !url.isFileURL {
+                stop(); return
+            }
+            if self.url != url || self.allowCellular != allowCellular {
                 stop()
                 self.url = url
-                looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
+                self.allowCellular = allowCellular
+                let asset = AVURLAsset(url: url, options: [
+                    AVURLAssetAllowsCellularAccessKey: allowCellular,
+                    AVURLAssetAllowsExpensiveNetworkAccessKey: allowCellular,
+                    AVURLAssetAllowsConstrainedNetworkAccessKey: false,
+                ])
+                looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(asset: asset))
                 observeCurrentItem()
             }
             if self.reflectionFrames !== reflectionFrames {

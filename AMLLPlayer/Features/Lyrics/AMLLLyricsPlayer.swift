@@ -46,7 +46,7 @@ struct AMLLLyricsPlayer: View {
                     immersiveArtwork(item, slot: artworkSlot, size: geometry.size)
                     if configuration.animatedArtwork?.reflection == true, !reduceMotion,
                        artworkLoader.kind == .portraitVideo, artworkLoader.trackID == item.uri,
-                       artworkLoader.localURL != nil
+                       artworkLoader.playbackURL != nil
                     {
                         let reflection = ArtworkReflectionGeometry.frame(cover: artworkSlot, viewportHeight: geometry.size.height)
                         ArtworkReflection(frames: artworkReflectionFrames)
@@ -277,9 +277,9 @@ struct AMLLLyricsPlayer: View {
                 if configuration.animatedArtwork?.enabled == true, !reduceMotion,
                    configuration.animatedArtwork?.presentation != .immersive,
                    artworkLoader.kind == .squareVideo,
-                   artworkLoader.trackID == item.uri, let url = artworkLoader.localURL
+                   artworkLoader.trackID == item.uri, let url = artworkLoader.playbackURL
                 {
-                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices)
+                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices, allowCellular: configuration.animatedArtwork?.allowCellular ?? false)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? radius, style: .continuous))
@@ -299,9 +299,10 @@ struct AMLLLyricsPlayer: View {
             .frame(width: frame.width, height: frame.height)
             .overlay {
                 if !reduceMotion, artworkLoader.kind == .portraitVideo,
-                   artworkLoader.trackID == item.uri, let url = artworkLoader.localURL
+                   artworkLoader.trackID == item.uri, let url = artworkLoader.playbackURL
                 {
                     AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices,
+                                    allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
                                     reflectionFrames: configuration.animatedArtwork?.reflection == true ? artworkReflectionFrames : nil)
                 }
             }
@@ -337,7 +338,7 @@ struct AMLLLyricsPlayer: View {
         let candidate = model.lyrics.selection.candidate
         let lyricsSettings = model.lyrics.settings
         let kind: ArtworkAsset.Kind = settings.presentation == .immersive ? .portraitVideo : .squareVideo
-        await artworkLoader.load(trackID: item.uri, kind: kind, assets: {
+        await artworkLoader.load(trackID: item.uri, kind: kind, streamWhileDownloading: true, assets: {
             let songID: String
             if let candidate, candidate.source == .apple {
                 songID = candidate.sourceID
@@ -445,6 +446,10 @@ struct AMLLLyricsPlayer: View {
         switch artworkLoader.status {
         case .idle: return "动态封面：静态图"
         case .loading: return "动态封面：加载中"
+        case .streaming:
+            return artworkLoader.failureCode == nil
+                ? "动态封面：使用在线资源，静默缓存中"
+                : "动态封面：使用在线资源，缓存未完成（\(artworkLoader.failureCode ?? "")）"
         case .ready: return "动态封面：已缓存，无声播放"
         case .unavailable: return "动态封面：无匹配布局的视频，使用静态图"
         case .failed: return "动态封面：加载失败，使用静态图（\(artworkLoader.failureCode ?? "未知错误")）"

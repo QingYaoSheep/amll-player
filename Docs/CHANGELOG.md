@@ -1,5 +1,12 @@
 # AMLL Player SwiftUI Changelog
 
+## 2026-09-19 动态封面不再等待后台缓存
+
+- 修正静默 discretionary 下载可能长期排队、页面又必须等待本地文件导致一直“加载中”的设计问题：允许网络下先使用 HTTPS AVURLAsset 无声播放，静默缓存独立等待，成功后切换本地资源。
+- AVURLAsset 显式限制蜂窝、昂贵网络及低数据模式；远程视频在页面暂停时释放，切歌/网络策略变化清除旧资源。继续禁用音轨，不创建新的音乐播放后端。
+- HLS 缓存等待上限 120 秒，超时取消且不阻塞在线封面。播放仍依赖实际资源可访问和设备解码；未做设备签收。
+- 新增缓存完成前即可取得播放 URL、缓存超时不撤销在线播放及成功切换本地的回归源码。Windows 只完成格式/diff 检查，Swift 测试由 Actions 执行。
+
 ## 2026-09-19 动态封面下载回调与灵动岛
 
 - 补齐新版 AVAssetDownloadConfiguration 对应的 willDownloadTo 回调，保存包路径，仍仅在 didCompleteWithError 无错误后交给缓存；保留旧回调兼容。

@@ -3,6 +3,33 @@ import XCTest
 
 @MainActor
 final class ArtworkMediaTests: XCTestCase {
+    func testOnlineCoverIsAvailableBeforeCacheCompletesAndSurvivesCacheTimeout() async throws {
+        let loader = AnimatedArtworkLoader()
+        let remote = try XCTUnwrap(URL(string: "https://example.com/cover.m3u8"))
+        let asset = ArtworkAsset(kind: .squareVideo, url: remote, albumID: "1", storefront: "us")
+        await loader.load(trackID: "one", streamWhileDownloading: true, assets: { [asset] }, download: { _ in
+            XCTAssertEqual(loader.status, .streaming)
+            XCTAssertEqual(loader.playbackURL, remote)
+            XCTAssertNil(loader.localURL)
+            throw URLError(.timedOut)
+        })
+        XCTAssertEqual(loader.status, .streaming)
+        XCTAssertEqual(loader.playbackURL, remote)
+        XCTAssertNotNil(loader.failureCode)
+        loader.reset()
+        XCTAssertNil(loader.playbackURL)
+    }
+
+    func testSuccessfulCacheReplacesOnlineCoverWithLocalAsset() async throws {
+        let loader = AnimatedArtworkLoader()
+        let remote = try XCTUnwrap(URL(string: "https://example.com/cover.m3u8"))
+        let local = URL(fileURLWithPath: "/cover.movpkg")
+        let asset = ArtworkAsset(kind: .squareVideo, url: remote, albumID: "1", storefront: "us")
+        await loader.load(trackID: "one", streamWhileDownloading: true, assets: { [asset] }, download: { _ in local })
+        XCTAssertEqual(loader.status, .ready)
+        XCTAssertEqual(loader.playbackURL, local)
+    }
+
     func testDownloadFailureExposesCodeWithoutLeakingURLAndResetClearsIt() async throws {
         let loader = AnimatedArtworkLoader()
         let asset = try ArtworkAsset(kind: .squareVideo, url: XCTUnwrap(URL(string: "https://example.com/cover.m3u8")), albumID: "1", storefront: "us")

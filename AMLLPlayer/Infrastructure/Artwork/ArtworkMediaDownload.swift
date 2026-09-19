@@ -1,8 +1,8 @@
 import AVFoundation
 import Foundation
 
-/// One cancellable transfer, owned by the current cover request. No streaming
-/// URL reaches AVPlayer: only completed local assets are eligible for display.
+/// One cancellable cache transfer, owned by the current cover request.
+/// The page can stream separately while the system schedules this download.
 @MainActor
 final class ArtworkMediaDownload: NSObject, @preconcurrency AVAssetDownloadDelegate {
     private static let wifi = ArtworkMediaDownload(allowCellular: false)
@@ -13,6 +13,7 @@ final class ArtworkMediaDownload: NSObject, @preconcurrency AVAssetDownloadDeleg
     private var completedLocation: URL?
     private var requestID = UUID()
     private var recovery: Task<Void, Never>?
+    private var deadline: Task<Void, Never>?
 
     private init(allowCellular: Bool) {
         super.init()
@@ -80,6 +81,11 @@ final class ArtworkMediaDownload: NSObject, @preconcurrency AVAssetDownloadDeleg
                 let download = AVAssetDownloadConfiguration(asset: asset, title: "AMLL 动态封面")
                 let task = session.makeAssetDownloadTask(downloadConfiguration: download)
                 self.task = task
+                deadline = Task { [weak self] in
+                    do { try await Task.sleep(for: .seconds(120)) } catch { return }
+                    guard let self, self.requestID == id else { return }
+                    self.finish(.failure(URLError(.timedOut)))
+                }
                 task.resume()
             }
         } onCancel: {
@@ -126,6 +132,7 @@ final class ArtworkMediaDownload: NSObject, @preconcurrency AVAssetDownloadDeleg
     private func finish(_ result: Result<URL, Error>) {
         guard let continuation else { return }
         self.continuation = nil
+        deadline?.cancel(); deadline = nil
         if case .failure = result, let completedLocation {
             try? FileManager.default.removeItem(at: completedLocation)
         }

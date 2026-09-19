@@ -74,6 +74,7 @@ final class AnimatedArtworkLoader {
             try Task.checkCancellation()
             guard revision == self.revision else { return }
             guard local.isFileURL else { throw URLError(.unsupportedURL) }
+            if playbackURL != local { playbackState = .preparing }
             localURL = local; self.kind = asset.kind; status = .ready
         } catch {
             guard revision == self.revision else { return }

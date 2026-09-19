@@ -330,7 +330,7 @@ struct AMLLLyricsPlayer: View {
     private var artworkRequestKey: String {
         let settings = configuration.animatedArtwork ?? .init()
         return [model.playbackSnapshot?.item?.uri ?? "", String(settings.enabled), String(settings.allowCellular),
-                (settings.presentation ?? .square).rawValue, String(artworkPortraitViewport), String(reduceMotion), String(scenePhase == .active),
+                (settings.presentation ?? .square).rawValue, String(artworkPortraitViewport), String(reduceMotion),
                 String(artworkNetwork.permits(allowCellular: settings.allowCellular)),
                 model.lyrics.settings.storefront, model.lyrics.settings.language,
                 model.lyrics.selection.candidate?.id ?? ""].joined(separator: "|")
@@ -338,7 +338,7 @@ struct AMLLLyricsPlayer: View {
 
     private func loadAnimatedArtwork() async {
         let settings = configuration.animatedArtwork ?? .init()
-        guard settings.enabled, !reduceMotion, scenePhase == .active,
+        guard settings.enabled, !reduceMotion,
               settings.presentation != .immersive || artworkPortraitViewport,
               artworkNetwork.permits(allowCellular: settings.allowCellular),
               let item = model.playbackSnapshot?.item, let track = TrackIdentity(item),

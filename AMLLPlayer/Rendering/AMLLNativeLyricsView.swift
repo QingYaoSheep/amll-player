@@ -254,7 +254,9 @@ final class AMLLNativeCanvas: UIView {
         let state = engine.render(input, delta: delta)
         if frameState?.browsing != state.browsing {
             #if DEBUG
-                if !controlledReplay { DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) } }
+                if !controlledReplay {
+                    DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) }
+                }
             #else
                 DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) }
             #endif

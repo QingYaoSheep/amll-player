@@ -6,11 +6,19 @@ struct AMLLBackground: View {
     var active: Bool
     var blur: Double
     var mode: LyricsRenderConfiguration.BackgroundMode
+    var color: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
+    var gradientEnd: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
     @State private var usedMesh = false
     @State private var usedPixi = false
 
     var body: some View {
         ZStack {
+            if mode == .solid {
+                color.swiftUIColor
+            }
+            if mode == .gradient {
+                LinearGradient(colors: [color.swiftUIColor, gradientEnd.swiftUIColor], startPoint: .top, endPoint: .bottom)
+            }
             if usedMesh || mode == .mesh {
                 AMLLMeshBackground(artworkURL: artworkURL, active: active && mode == .mesh, blur: blur)
                     .opacity(mode == .mesh ? 1 : 0)
@@ -23,11 +31,21 @@ struct AMLLBackground: View {
         .onChange(of: mode, initial: true) { _, value in
             if value == .mesh {
                 usedMesh = true
-            } else {
+            }
+            if value == .pixi {
                 usedPixi = true
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+extension LyricsRenderConfiguration.BackgroundColor {
+    var swiftUIColor: Color {
+        func component(_ value: Double) -> Double {
+            value.isFinite ? min(1, max(0, value)) : 17.0 / 255
+        }
+        return Color(.sRGB, red: component(red), green: component(green), blue: component(blue), opacity: 1)
     }
 }

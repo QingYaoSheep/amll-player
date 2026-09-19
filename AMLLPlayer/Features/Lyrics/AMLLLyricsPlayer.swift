@@ -20,6 +20,7 @@ struct AMLLLyricsPlayer: View {
     @State private var artworkNetwork = ArtworkNetworkPolicy.shared
     @State private var artworkSlot: CGRect?
     @State private var artworkPortraitViewport = false
+    @State private var artworkReflectionFrames = ArtworkReflectionFrames()
     @GestureState private var dismissalDrag: CGFloat = 0
 
     private var configuration: LyricsRenderConfiguration {
@@ -34,13 +35,27 @@ struct AMLLLyricsPlayer: View {
                 Color(white: 0.08)
                 AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
                                active: scenePhase == .active && !search && !devices,
-                               blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh)
+                               blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
+                               color: configuration.backgroundColor ?? .sourceDefault,
+                               gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault)
                 if let item = model.playbackSnapshot?.item,
                    configuration.animatedArtwork?.enabled == true,
                    configuration.animatedArtwork?.presentation == .immersive,
                    geometry.size.height > geometry.size.width, let artworkSlot
                 {
                     immersiveArtwork(item, slot: artworkSlot, size: geometry.size)
+                    if configuration.animatedArtwork?.reflection == true, !reduceMotion,
+                       artworkLoader.kind == .portraitVideo, artworkLoader.trackID == item.uri,
+                       artworkLoader.localURL != nil
+                    {
+                        let reflection = ArtworkReflectionGeometry.frame(cover: artworkSlot, viewportHeight: geometry.size.height)
+                        ArtworkReflection(frames: artworkReflectionFrames)
+                            .frame(width: reflection.width, height: reflection.height)
+                            .scaleEffect(1.035, anchor: .top)
+                            .clipped()
+                            .position(x: reflection.midX, y: reflection.midY)
+                            .accessibilityHidden(true)
+                    }
                 }
                 Color.black.opacity(configuration.backgroundDimming ?? 0.16)
                 if let snapshot = model.playbackSnapshot, let item = snapshot.item {
@@ -291,7 +306,8 @@ struct AMLLLyricsPlayer: View {
                 if !reduceMotion, artworkLoader.kind == .portraitVideo,
                    artworkLoader.trackID == item.uri, let url = artworkLoader.localURL
                 {
-                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices)
+                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices,
+                                    reflectionFrames: configuration.animatedArtwork?.reflection == true ? artworkReflectionFrames : nil)
                 }
             }
             .clipped()

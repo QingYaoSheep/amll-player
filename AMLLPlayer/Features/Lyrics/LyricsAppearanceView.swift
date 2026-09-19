@@ -1,6 +1,14 @@
 import SwiftUI
 
 struct LyricsAppearanceView: View {
+    private func backgroundColorBinding(_ key: WritableKeyPath<LyricsRenderConfiguration, LyricsRenderConfiguration.BackgroundColor?>) -> Binding<Color> {
+        Binding(get: { (preferences.configuration[keyPath: key] ?? .sourceDefault).swiftUIColor }, set: { color in
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            guard UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return }
+            preferences.configuration[keyPath: key] = .init(red: Double(red), green: Double(green), blue: Double(blue))
+        })
+    }
+
     @Bindable var preferences: LyricsRenderPreferences
     @State private var confirmReset = false
 
@@ -135,16 +143,25 @@ struct LyricsAppearanceView: View {
                 {
                     Text("Mesh 网格").tag(LyricsRenderConfiguration.BackgroundMode.mesh)
                     Text("Pixi 流动封面").tag(LyricsRenderConfiguration.BackgroundMode.pixi)
+                    Text("纯色").tag(LyricsRenderConfiguration.BackgroundMode.solid)
+                    Text("双色渐变").tag(LyricsRenderConfiguration.BackgroundMode.gradient)
                 }
                 if preferences.profile == .amll {
                     adjustment("appearance.dimming", key: \.backgroundDimming, fallback: 0.16, range: 0 ... 0.8, step: 0.04)
                 }
-                if preferences.configuration.backgroundMode != .pixi {
+                if preferences.configuration.backgroundMode == nil || preferences.configuration.backgroundMode == .mesh {
                     LabeledContent("render.backgroundBlur", value: String(format: "%.0f pt", preferences.configuration.backgroundBlur))
                     Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
                     Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
-                } else {
+                } else if preferences.configuration.backgroundMode == .pixi {
                     Text("Pixi 使用原版多层封面、固定模糊和形变滤镜；歌词动效不受背景帧率影响。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    ColorPicker("背景颜色", selection: backgroundColorBinding(\.backgroundColor), supportsOpacity: false)
+                    if preferences.configuration.backgroundMode == .gradient {
+                        ColorPicker("底部颜色", selection: backgroundColorBinding(\.backgroundGradientEnd), supportsOpacity: false)
+                    }
+                    Text("纯色默认使用原版 #111111；渐变从顶部颜色过渡至底部颜色。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -185,6 +202,18 @@ struct LyricsAppearanceView: View {
                     )) {
                         Text("方形封面").tag(AnimatedArtworkConfiguration.Presentation.square)
                         Text("竖屏沉浸封面").tag(AnimatedArtworkConfiguration.Presentation.immersive)
+                    }
+                    if preferences.configuration.animatedArtwork?.presentation == .immersive {
+                        Toggle("封面倒影", isOn: Binding(
+                            get: { preferences.configuration.animatedArtwork?.reflection ?? false },
+                            set: { value in
+                                var settings = preferences.configuration.animatedArtwork ?? .init()
+                                settings.reflection = value
+                                preferences.configuration.animatedArtwork = settings
+                            }
+                        ))
+                        Text("从同一视频的底部画面生成柔和倒影；不会额外播放一份视频。")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     Text("默认仅在 Wi-Fi 下加载，缓存上限 200 MB。方形布局仅使用方形视频；沉浸布局选择竖形视频，在竖屏背景显示。无对应资源、离线或减少动态效果时回退静态图，横屏恢复普通布局。封面视频始终静音。")
                         .font(.footnote).foregroundStyle(.secondary)

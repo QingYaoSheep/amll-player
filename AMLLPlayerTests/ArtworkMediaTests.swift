@@ -9,6 +9,17 @@ final class ArtworkMediaTests: XCTestCase {
         XCTAssertTrue(value.enabled)
         XCTAssertFalse(value.allowCellular)
         XCTAssertEqual(value.presentation ?? .square, .square)
+        XCTAssertFalse(value.reflection ?? false)
+    }
+
+    func testReflectionGeometryUsesSourceGapAndHeightLimits() {
+        let cover = CGRect(x: 24, y: 95.4, width: 354, height: 354)
+        let phone = ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: 874)
+        XCTAssertEqual(phone.minY, 499)
+        XCTAssertEqual(phone.height, 262.2, accuracy: 0.001)
+        XCTAssertEqual(phone.width, cover.width)
+        XCTAssertEqual(ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: 400).height, 220)
+        XCTAssertEqual(ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: 1400).height, 340)
     }
 
     func testImmersiveModeSelectsTallResourceAndClearsKindOnReset() async {

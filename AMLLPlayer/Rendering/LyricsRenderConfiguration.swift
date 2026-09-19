@@ -55,7 +55,14 @@ enum AMLLLyricSizePreset: String, Codable, CaseIterable, Sendable {
 }
 
 struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
-    enum BackgroundMode: String, Codable, CaseIterable { case mesh, pixi }
+    enum BackgroundMode: String, Codable, CaseIterable { case mesh, pixi, solid, gradient }
+    struct BackgroundColor: Codable, Equatable, Sendable {
+        var red: Double
+        var green: Double
+        var blue: Double
+        static let sourceDefault = Self(red: 17.0 / 255, green: 17.0 / 255, blue: 17.0 / 255)
+    }
+
     enum CoverLayout: String, Codable, CaseIterable { case automatic, normal, immersive }
     enum Credits: String, Codable, CaseIterable {
         case hidden, lyricAuthor, songwriters, preferLyricAuthor, preferSongwriters
@@ -108,6 +115,8 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var remainingTime = false
     var backgroundBlur: Double = 40
     var backgroundMode: BackgroundMode?
+    var backgroundColor: BackgroundColor?
+    var backgroundGradientEnd: BackgroundColor?
     // Optional additions retain decoding compatibility with installed v2 preferences.
     var horizontalPadding: Double?
     var paragraphSpacing: Double?

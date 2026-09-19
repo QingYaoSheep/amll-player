@@ -126,6 +126,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var showMetadata: Bool?
     /// Absent in older storage; upgrading must not enable extended brightness.
     var hdr: LyricsHDRConfiguration?
+    var obsceneWordMask: AMLLObsceneWordMask?
     /// Missing in older preferences; upgrades must not enable video downloads.
     var animatedArtwork: AnimatedArtworkConfiguration?
 

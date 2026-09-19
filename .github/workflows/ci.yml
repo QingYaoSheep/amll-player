@@ -31,6 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify replay comparison regressions
+        run: node --test Scripts/compare-amll-traces.test.cjs
+
       - name: Verify Xcode and SDK
         run: |
           XCODE_VERSION="$(xcodebuild -version)"

@@ -14,7 +14,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
     var active = true
     var targetFPS = 120
     var resumeToken = 0
-    var fadeTop: CGFloat? = nil
+    var fadeTop: CGFloat?
     var created: (AMLLNativeCanvas) -> Void = { _ in }
     var browsing: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -129,9 +129,11 @@ final class AMLLNativeCanvas: UIView {
     func configure(document: LyricsDocument, configuration: LyricsRenderConfiguration, input: AMLLPlayerInput,
                    active: Bool, reduceMotion: Bool, reduceTransparency: Bool = false, canSeek: Bool = true)
     {
-        if source != document {
+        if source != document || self.configuration.obsceneWordMask != configuration.obsceneWordMask {
             hdrTime = nil
-            source = document; display = AMLLDisplayDocument(lines: document.lines); engine = nil; dirty = true
+            source = document
+            display = AMLLDisplayDocument(lines: (configuration.obsceneWordMask ?? .init()).apply(to: document.lines))
+            engine = nil; dirty = true
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
         if self.configuration != configuration || self.reduceMotion != reduceMotion || self.reduceTransparency != reduceTransparency {

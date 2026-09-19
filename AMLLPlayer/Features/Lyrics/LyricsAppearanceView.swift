@@ -166,6 +166,22 @@ struct LyricsAppearanceView: View {
                 }
             }
             Section("高级视觉") {
+                DisclosureGroup("歌词内容遮罩") {
+                    Picker("标记词显示", selection: Binding(
+                        get: { preferences.configuration.obsceneWordMask?.mode ?? .disabled },
+                        set: { mode in
+                            var value = preferences.configuration.obsceneWordMask ?? .init()
+                            value.mode = mode
+                            preferences.configuration.obsceneWordMask = value
+                        }
+                    )) {
+                        Text("原文").tag(AMLLObsceneWordMask.Mode.disabled)
+                        Text("保留首尾").tag(AMLLObsceneWordMask.Mode.partial)
+                        Text("全部遮罩").tag(AMLLObsceneWordMask.Mode.full)
+                    }
+                    Text("仅处理歌词来源明确标记的不雅词，使用 * 遮罩；不会自动识别词语或修改原始歌词。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 DisclosureGroup("歌词高光") {
                     Toggle("当前句 HDR 高光", isOn: Binding(
                         get: { preferences.configuration.hdr?.enabled ?? false },

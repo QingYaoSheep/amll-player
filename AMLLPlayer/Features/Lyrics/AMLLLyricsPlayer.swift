@@ -64,6 +64,11 @@ struct AMLLLyricsPlayer: View {
                     ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                 }
             }
+            // Keep text blending inside the same backdrop group at rest and
+            // during the system zoom. The transition must not be the operation
+            // that first establishes a compositing boundary for this page.
+            .compositingGroup()
+            .modifier(LyricsPageDynamicRange())
             .coordinateSpace(name: "lyricsArtwork")
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
@@ -522,6 +527,19 @@ struct AMLLLyricsPlayer: View {
         let offset = clamped * resistance
         let progress = min(1, max(0, offset / height))
         return (offset, 1 - min(0.038, progress * 0.065), min(30, progress * 70), 1 - min(0.055, progress * 0.09))
+    }
+}
+
+/// Allow the floating Metal lyric layers to retain extended values through
+/// SwiftUI composition. Individual renderers still enforce the user's HDR
+/// setting, live screen headroom and the 1.5x ceiling; SDR content stays SDR.
+private struct LyricsPageDynamicRange: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.allowedDynamicRange(.high)
+        } else {
+            content
+        }
     }
 }
 

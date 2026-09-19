@@ -1,5 +1,11 @@
 # AMLL Player SwiftUI Changelog
 
+## 2026-09-19 竖屏歌词淡出合成
+
+- 将竖屏独有的 SwiftUI 外层 mask 移至原生画布 CAGradientLayer，避免在歌词 Plus Lighter 外再次建立遮罩合成边界；保留封面下方及底部淡出位置。
+- 原生画布显式透明；旋转及尺寸变化更新/移除遮罩。返回当前行按钮不再被歌词遮罩裁淡。
+- 新增遮罩尺寸、位置及移除回归；HDR 真机显示仍待确认，未宣称设备故障已解决。
+
 ## 2026-09-19 恢复 iOS 27 CI 测试
 
 - 恢复 Xcode 27 的 iPhone 16 Pro 模拟器单元/UI 测试、iPad Pro 13-inch (M4) 构建、xcresult 与视觉附件上传，以及结束时模拟器清理。

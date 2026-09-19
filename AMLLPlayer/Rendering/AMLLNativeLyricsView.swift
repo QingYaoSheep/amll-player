@@ -14,6 +14,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
     var active = true
     var targetFPS = 120
     var resumeToken = 0
+    var fadeTop: CGFloat? = nil
     var created: (AMLLNativeCanvas) -> Void = { _ in }
     var browsing: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -29,6 +30,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
         view.position = position
         view.onInteraction = interaction
         view.onBrowsing = browsing
+        view.fadeTop = fadeTop
         view.setFrameRate(targetFPS)
         view.configure(document: document, configuration: configuration, input: input, active: active,
                        reduceMotion: reduceMotion, reduceTransparency: reduceTransparency, canSeek: canSeek)
@@ -42,6 +44,15 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
 
 @MainActor
 final class AMLLNativeCanvas: UIView {
+    var fadeTop: CGFloat? {
+        didSet {
+            if oldValue != fadeTop {
+                setNeedsLayout()
+            }
+        }
+    }
+
+    private let viewportFade = CAGradientLayer()
     @MainActor private final class LinkTarget: NSObject {
         weak var owner: AMLLNativeCanvas?
         @objc func tick(_ link: CADisplayLink) {
@@ -100,6 +111,8 @@ final class AMLLNativeCanvas: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        isOpaque = false
+        backgroundColor = .clear
         clipsToBounds = true
         addSubview(dots)
         dots.isHidden = true
@@ -135,6 +148,7 @@ final class AMLLNativeCanvas: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        updateViewportFade()
         guard bounds.width > 0, bounds.height > 0, let display else { return }
         if dirty || measuredSize != bounds.size {
             dirty = false; measuredSize = bounds.size
@@ -151,6 +165,23 @@ final class AMLLNativeCanvas: UIView {
             }
         }
         draw(delta: 0)
+    }
+
+    private func updateViewportFade() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard let fadeTop, bounds.height > 0 else { layer.mask = nil; return }
+        let stops: [(CGFloat, CGFloat)] = [
+            (0, 0), (min(0.8, max(0, fadeTop) / bounds.height), 0),
+            (min(0.9, max(0, fadeTop + 64) / bounds.height), 1), (0.82, 1), (1, 0),
+        ].sorted { $0.0 < $1.0 }
+        viewportFade.frame = bounds
+        viewportFade.startPoint = CGPoint(x: 0.5, y: 0)
+        viewportFade.endPoint = CGPoint(x: 0.5, y: 1)
+        viewportFade.locations = stops.map { NSNumber(value: Double($0.0)) }
+        viewportFade.colors = stops.map { UIColor.white.withAlphaComponent($0.1).cgColor }
+        layer.mask = viewportFade
     }
 
     private func renderEnvironment() -> AMLLRenderEnvironment {

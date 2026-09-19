@@ -4,6 +4,23 @@ import XCTest
 
 @MainActor
 final class LyricsHDRRendererTests: XCTestCase {
+    func testPortraitFadeBelongsToNativeCanvasAndClearsForLandscape() throws {
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        canvas.fadeTop = 167
+        canvas.layoutSubviews()
+        let mask = try XCTUnwrap(canvas.layer.mask as? CAGradientLayer)
+        XCTAssertEqual(mask.frame, canvas.bounds)
+        XCTAssertEqual(try XCTUnwrap(mask.locations?[1]).doubleValue, 167.0 / 874, accuracy: 0.0001)
+        XCTAssertFalse(canvas.isOpaque)
+        canvas.bounds.size.height = 600
+        canvas.layoutSubviews()
+        XCTAssertEqual(mask.frame, canvas.bounds)
+        XCTAssertEqual(try XCTUnwrap(mask.locations?[1]).doubleValue, 167.0 / 600, accuracy: 0.0001)
+        canvas.fadeTop = nil
+        canvas.layoutSubviews()
+        XCTAssertNil(canvas.layer.mask)
+    }
+
     func testBusyRendererDoesNotAcquireDrawableAndFailedAcquisitionReleasesCapacity() throws {
         let renderer = try XCTUnwrap(LyricsHDRRenderer())
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)

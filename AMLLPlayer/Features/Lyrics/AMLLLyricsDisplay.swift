@@ -11,6 +11,7 @@ struct AMLLLyricsDisplay: View {
     let configuration: LyricsRenderConfiguration
     let active: Bool
     let resumeToken: Int
+    var fadeTop: CGFloat? = nil
     var browsing: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -30,6 +31,7 @@ struct AMLLLyricsDisplay: View {
                 active: active,
                 targetFPS: 120,
                 resumeToken: resumeToken,
+                fadeTop: fadeTop,
                 browsing: browsing
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)

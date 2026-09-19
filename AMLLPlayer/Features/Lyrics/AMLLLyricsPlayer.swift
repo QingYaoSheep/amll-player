@@ -110,20 +110,9 @@ struct AMLLLyricsPlayer: View {
 
     private func lyricsPlayer(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics) -> some View {
         ZStack(alignment: .top) {
-            lyricCanvas(snapshot)
+            lyricCanvas(snapshot, fadeTop: (configuration.showMetadata ?? true)
+                ? metrics.compactArtworkTop + metrics.compactArtworkSize : 44)
                 .padding(.horizontal, max(0, metrics.horizontalInset - 20))
-                .mask {
-                    GeometryReader { proxy in
-                        let top = (configuration.showMetadata ?? true) ? metrics.compactArtworkTop + metrics.compactArtworkSize : 44
-                        LinearGradient(stops: [
-                            .init(color: .clear, location: 0),
-                            .init(color: .clear, location: min(0.8, top / max(1, proxy.size.height))),
-                            .init(color: .black, location: min(0.9, (top + 64) / max(1, proxy.size.height))),
-                            .init(color: .black, location: 0.82),
-                            .init(color: .clear, location: 1),
-                        ].sorted { $0.location < $1.location }, startPoint: .top, endPoint: .bottom)
-                    }
-                }
             if configuration.showMetadata ?? true {
                 compactMetadata(item: item, metrics: metrics)
                     .padding(.horizontal, metrics.horizontalInset)
@@ -186,7 +175,7 @@ struct AMLLLyricsPlayer: View {
     }
 
     @ViewBuilder
-    private func lyricCanvas(_ snapshot: PlaybackSnapshot) -> some View {
+    private func lyricCanvas(_ snapshot: PlaybackSnapshot, fadeTop: CGFloat? = nil) -> some View {
         if let document = model.lyrics.document, !document.lines.isEmpty {
             ZStack(alignment: .bottom) {
                 AMLLLyricsDisplay(
@@ -195,6 +184,7 @@ struct AMLLLyricsPlayer: View {
                     configuration: configuration,
                     active: scenePhase == .active && !search && !devices,
                     resumeToken: resumeToken,
+                    fadeTop: fadeTop,
                     browsing: { browsing = $0 }
                 )
                 // UIViewRepresentable has no intrinsic height. Give the

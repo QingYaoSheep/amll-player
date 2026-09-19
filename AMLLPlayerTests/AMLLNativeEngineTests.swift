@@ -295,6 +295,17 @@ final class AMLLNativeEngineTests: XCTestCase {
     }
 
     @MainActor
+    func testRomanizationContainerPaddingFollowsRTLWord() throws {
+        let word = LyricWord(text: "مرحبا", start: 0, end: 1, romanWord: "a long pronunciation")
+        let line = LyricLine(id: "rtl-annotation", text: word.text, start: 0, end: 1, words: [word], isRTL: true, precision: .word)
+        let layout = AMLLCoreTextLayout(line: line, width: 240, font: .systemFont(ofSize: 32), configuration: .init())
+        let main = try XCTUnwrap(layout.fragments.first)
+        let roman = try XCTUnwrap(layout.rubyFragments.first)
+        XCTAssertTrue(main.rtl)
+        XCTAssertEqual(roman.rect.midX, main.rect.midX + 32 * 0.5 * 0.3 / 2, accuracy: 0.01)
+    }
+
+    @MainActor
     func testWrappedRubyRowsDoNotOccupyPreviousMainRow() {
         let words = (0 ..< 6).map { index in
             LyricWord(text: "漢字 ", start: Double(index), end: Double(index + 1), ruby: "かんじ")

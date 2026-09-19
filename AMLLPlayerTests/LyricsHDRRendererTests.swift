@@ -46,6 +46,38 @@ final class LyricsHDRRendererTests: XCTestCase {
         layer.acquire = nil
     }
 
+    func testPausedCanvasReusesGlyphStateButSeekInvalidatesIt() throws {
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        defer { canvas.stop(); canvas.removeFromSuperview(); window.isHidden = true }
+        let line = LyricLine(id: "reuse", text: "Held", start: 1, end: 10,
+                             words: [.init(text: "Held", start: 1, end: 10)], precision: .word)
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "reuse", title: "Reuse", artists: []),
+                                      lines: [line], language: "en", selectionReason: "Glyph reuse test")
+        var time = 3.0
+        canvas.position = { time }
+        var configuration = LyricsRenderConfiguration()
+        configuration.blurInactive = false
+        canvas.configure(document: document, configuration: configuration, input: .init(position: time, playing: false),
+                         active: false, reduceMotion: false)
+        canvas.layoutSubviews()
+        // Let the source brightness envelope settle before measuring reuse.
+        for _ in 0 ..< 120 { canvas.advanceFrame(delta: 1.0 / 120) }
+        let updates = canvas.glyphUpdateCount
+        XCTAssertGreaterThan(updates, 0)
+        for _ in 0 ..< 120 {
+            canvas.advanceFrame(delta: 1.0 / 120)
+        }
+        XCTAssertEqual(canvas.glyphUpdateCount, updates, "Paused frames must not rewrite unchanged word layers")
+        time = 6
+        canvas.configure(document: document, configuration: configuration,
+                         input: .init(position: time, playing: false, seekRevision: 1), active: false, reduceMotion: false)
+        canvas.advanceFrame(delta: 0)
+        XCTAssertGreaterThan(canvas.glyphUpdateCount, updates, "Seek must redraw the actual fill mask")
+        XCTAssertEqual(try XCTUnwrap(canvas.frameState).lyricTime, time, accuracy: 0.0001)
+    }
+
     func testRealCanvasCreatesAndRemovesReplacementLayersWithHDRSetting() throws {
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         let window = UIWindow(frame: canvas.bounds)

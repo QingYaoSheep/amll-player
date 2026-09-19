@@ -89,7 +89,7 @@ enum AMLLInteraction: Sendable {
 }
 
 struct AMLLFrameState: Codable, Sendable {
-    struct Row: Codable, Sendable {
+    struct Row: Codable, Equatable, Sendable {
         var lineIndex: Int
         var groupIndex: Int
         var y: Double

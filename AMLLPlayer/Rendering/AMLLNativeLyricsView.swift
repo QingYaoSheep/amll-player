@@ -308,11 +308,10 @@ final class AMLLNativeCanvas: UIView {
             view.layer.position = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
             view.transform = CGAffineTransform(scaleX: row.scale, y: row.scale)
             view.setCanSeek(canSeek)
-            view.apply(row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
             let gain = hdr.activeLineIndexes.contains(row.lineIndex) ? hdr.outputBrightness : 1
-            view.applyHDR(renderer: gain > 1 ? hdrRenderer : nil,
-                          gain: gain,
-                          row: row, configuration: configuration)
+            view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
+                               gain: gain,
+                               row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
         }
         if let interlude = state.interlude,
            let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
@@ -328,6 +327,10 @@ final class AMLLNativeCanvas: UIView {
     }
 
     #if DEBUG
+        var glyphUpdateCount: Int {
+            rowViews.values.reduce(0) { $0 + $1.visualUpdateCount }
+        }
+
         /// Manual display-link equivalent for deterministic offscreen validation.
         func advanceFrame(delta: Double) {
             layoutIfNeeded()
@@ -648,6 +651,38 @@ private final class AMLLNativeRow: UIView {
         guard onSeek != nil else { return false }
         onSeek?()
         return true
+    }
+
+    private var lastVisualRow: AMLLFrameState.Row?
+    private var lastVisualConfiguration: LyricsRenderConfiguration?
+    private var lastVisualMotion = false
+    private var lastVisualGain = 1.0
+    private(set) var visualUpdateCount = 0
+
+    func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row,
+                       configuration: LyricsRenderConfiguration, motionEnabled: Bool)
+    {
+        // Dragging changes the parent position, not every word's mask. Keep
+        // settled SDR rows untouched; animated words and EDR frames still draw.
+        var visual = row
+        visual.y = 0
+        visual.scale = 1
+        if !visual.wordClock.enabled {
+            var settled = AMLLWordAnimationClock()
+            settled.enable(at: visual.wordClock.time)
+            settled.disable()
+            settled.advance(min(visual.wordClock.time, visual.wordClock.reverseElapsed), playing: false)
+            visual.wordClock = settled
+        }
+        guard gain > 1 || visual != lastVisualRow || configuration != lastVisualConfiguration
+            || motionEnabled != lastVisualMotion || gain != lastVisualGain else { return }
+        lastVisualRow = visual
+        lastVisualConfiguration = configuration
+        lastVisualMotion = motionEnabled
+        lastVisualGain = gain
+        visualUpdateCount += 1
+        apply(row: row, configuration: configuration, motionEnabled: motionEnabled)
+        applyHDR(renderer: renderer, gain: gain, row: row, configuration: configuration)
     }
 
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {

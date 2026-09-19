@@ -2,7 +2,7 @@ import Foundation
 
 /// Models the word animation clocks shared by a line's WAAPI animations.
 /// Enable/seek anchors to lyrics; ordinary frames advance with elapsed wall time.
-struct AMLLWordAnimationClock: Codable, Sendable {
+struct AMLLWordAnimationClock: Codable, Equatable, Sendable {
     private(set) var time = 0.0
     private(set) var reverseElapsed = 0.0
     private(set) var enabled = false

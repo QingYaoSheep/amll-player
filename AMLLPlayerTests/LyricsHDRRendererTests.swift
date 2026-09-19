@@ -46,12 +46,12 @@ final class LyricsHDRRendererTests: XCTestCase {
         layer.acquire = nil
     }
 
-    func testRealCanvasCreatesAndRemovesReplacementLayersWithHDRSetting() {
+    func testRealCanvasCreatesAndRemovesReplacementLayersWithHDRSetting() throws {
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         let window = UIWindow(frame: canvas.bounds)
         window.addSubview(canvas)
         canvas.hdrCapabilitiesOverride = .init(supportsEDR: true, headroom: 2)
-        defer { canvas.stop(); canvas.removeFromSuperview() }
+        defer { canvas.stop(); canvas.removeFromSuperview(); window.isHidden = true }
         let line = LyricLine(id: "hdr", text: "Held", start: 1, end: 10,
                              words: [.init(text: "Held", start: 1, end: 10)], precision: .word)
         let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "hdr", title: "HDR", artists: []),
@@ -63,6 +63,14 @@ final class LyricsHDRRendererTests: XCTestCase {
         canvas.configure(document: document, configuration: configuration, input: .init(position: 3, playing: false),
                          active: false, reduceMotion: false)
         canvas.advanceFrame(delta: 0)
+        XCTAssertTrue(canvas.window === window, "HDR rows need the hosting window")
+        let frame = try XCTUnwrap(canvas.frameState, "Canvas must lay out before HDR sampling")
+        XCTAssertEqual(frame.lyricTime, 3, accuracy: 0.0001)
+        XCTAssertFalse(frame.rows.isEmpty, "Initial frame must contain the source line")
+        let renderer = try XCTUnwrap(LyricsHDRRenderer())
+        let layout = AMLLCoreTextLayout(line: line, width: 362, font: .systemFont(ofSize: 32), configuration: configuration)
+        let glyphs = try XCTUnwrap(layout.raster(scale: window.screen.scale, auxiliary: false, ruby: false).cgImage)
+        XCTAssertNotNil(renderer.glyphTexture(glyphs), "Production Core Text atlas must upload to Metal")
         func metalLayers(_ layer: CALayer) -> [CAMetalLayer] {
             if let metal = layer as? CAMetalLayer {
                 return [metal]

@@ -20,13 +20,15 @@ struct AnimatedArtwork: UIViewRepresentable {
     var url: URL
     var active: Bool
     var allowCellular = false
-    var reflectionFrames: ArtworkReflectionFrames? = nil
+    var reflectionFrames: ArtworkReflectionFrames?
+    var onFailure: (URL, Error?) -> Void = { _, _ in }
 
     func makeUIView(context _: Context) -> Surface {
         Surface()
     }
 
     func updateUIView(_ view: Surface, context _: Context) {
+        view.onFailure = onFailure
         view.configure(url: url, active: active, allowCellular: allowCellular, reflectionFrames: reflectionFrames)
     }
 
@@ -35,6 +37,7 @@ struct AnimatedArtwork: UIViewRepresentable {
     }
 
     final class Surface: UIView {
+        var onFailure: (URL, Error?) -> Void = { _, _ in }
         override class var layerClass: AnyClass {
             AVPlayerLayer.self
         }
@@ -143,18 +146,21 @@ struct AnimatedArtwork: UIViewRepresentable {
             guard let item else { updateVisibility(); return }
             tracksObservation = item.observe(\.tracks, options: [.initial, .new]) { [weak self, weak item] _, _ in
                 Task { @MainActor [weak self, weak item] in
-                    guard let self, let item, self.player.currentItem === item else { return }
-                    self.disableAudio(in: item)
+                    guard let self, let item, player.currentItem === item else { return }
+                    disableAudio(in: item)
                 }
             }
             statusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
                 Task { @MainActor [weak self, weak item] in
-                    guard let self, let item, self.player.currentItem === item else { return }
-                    self.disableAudio(in: item)
-                    self.updateVisibility()
+                    guard let self, let item, player.currentItem === item else { return }
+                    disableAudio(in: item)
+                    updateVisibility()
                     if item.status == .failed {
-                        self.player.pause()
-                        self.reflectionFrames?.clear(source: self.reflectionToken)
+                        player.pause()
+                        reflectionFrames?.clear(source: reflectionToken)
+                        if let url {
+                            onFailure(url, item.error)
+                        }
                     }
                 }
             }

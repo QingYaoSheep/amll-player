@@ -3,6 +3,30 @@ import XCTest
 
 @MainActor
 final class ArtworkMediaTests: XCTestCase {
+    func testDecoderFailurePreventsLateCacheFromRestoringFailedVideo() async throws {
+        let loader = AnimatedArtworkLoader()
+        let remote = try XCTUnwrap(URL(string: "https://example.com/cover.m3u8"))
+        let local = URL(fileURLWithPath: "/tmp/cover.movpkg")
+        let asset = ArtworkAsset(kind: .squareVideo, url: remote, albumID: "1", storefront: "us")
+        await loader.load(trackID: "one", streamWhileDownloading: true, assets: { [asset] }, download: { _ in
+            loader.playbackFailed(trackID: "old", url: remote, error: nil)
+            XCTAssertEqual(loader.status, .streaming)
+            loader.playbackFailed(trackID: "one", url: local, error: nil)
+            XCTAssertEqual(loader.status, .streaming)
+            loader.playbackFailed(trackID: "one", url: remote, error: URLError(.cannotDecodeContentData))
+            return local
+        })
+        XCTAssertEqual(loader.status, .failed)
+        XCTAssertNil(loader.playbackURL)
+        XCTAssertNil(loader.kind)
+        XCTAssertNotNil(loader.failureCode)
+        await loader.load(trackID: "new", assets: { [asset] }, download: { _ in local })
+        loader.playbackFailed(trackID: "one", url: local, error: nil)
+        XCTAssertEqual(loader.status, .ready)
+        XCTAssertEqual(loader.playbackURL, local)
+        XCTAssertNil(loader.failureCode)
+    }
+
     func testOnlineCoverIsAvailableBeforeCacheCompletesAndSurvivesCacheTimeout() async throws {
         let loader = AnimatedArtworkLoader()
         let remote = try XCTUnwrap(URL(string: "https://example.com/cover.m3u8"))

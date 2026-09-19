@@ -16,6 +16,17 @@ final class AnimatedArtworkLoader {
 
     @ObservationIgnored private var revision = UUID()
 
+    func playbackFailed(trackID: String, url: URL, error: Error?) {
+        guard self.trackID == trackID, playbackURL == url else { return }
+        // A completed cache request must not resurrect a resource which the
+        // actual decoder rejected. Retrying starts a fresh request revision.
+        revision = UUID()
+        localURL = nil; streamingURL = nil; kind = nil
+        status = .failed
+        let failure = (error ?? URLError(.cannotDecodeContentData)) as NSError
+        failureCode = "\(failure.domain) (\(failure.code))"
+    }
+
     func reset() {
         revision = UUID(); localURL = nil; trackID = nil; kind = nil; status = .idle
         failureCode = nil
@@ -30,7 +41,7 @@ final class AnimatedArtworkLoader {
         reset()
         self.trackID = trackID
         status = .loading
-        let revision = self.revision
+        let revision = revision
         do {
             let assets = try await assets()
             try Task.checkCancellation()

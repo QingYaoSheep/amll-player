@@ -279,7 +279,8 @@ struct AMLLLyricsPlayer: View {
                    artworkLoader.kind == .squareVideo,
                    artworkLoader.trackID == item.uri, let url = artworkLoader.playbackURL
                 {
-                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices, allowCellular: configuration.animatedArtwork?.allowCellular ?? false)
+                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices, allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
+                                    onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error) })
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? radius, style: .continuous))
@@ -303,7 +304,8 @@ struct AMLLLyricsPlayer: View {
                 {
                     AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices,
                                     allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
-                                    reflectionFrames: configuration.animatedArtwork?.reflection == true ? artworkReflectionFrames : nil)
+                                    reflectionFrames: configuration.animatedArtwork?.reflection == true ? artworkReflectionFrames : nil,
+                                    onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error) })
                 }
             }
             .clipped()

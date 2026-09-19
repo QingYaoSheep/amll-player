@@ -53,7 +53,7 @@ final class AnimatedArtworkLoader {
             localURL = nil
             status = Task.isCancelled || error is CancellationError ? .idle : .failed
             if status == .idle {
-                streamingURL = nil; kind = nil
+                streamingURL = nil; self.kind = nil
             }
             if status == .failed {
                 let failure = error as NSError

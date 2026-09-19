@@ -266,13 +266,32 @@ final class AMLLNativeEngineTests: XCTestCase {
     }
 
     @MainActor
-    func testUnfittableWordRomanizationKeepsLineFallbackAndDiagnostic() throws {
+    func testWideWordRomanizationExpandsContainerWithoutLineFallback() throws {
         let word = LyricWord(text: "字", start: 0, end: 1, romanWord: "a very long pronunciation")
         let line = LyricLine(id: "fallback", text: word.text, start: 0, end: 1, words: [word], precision: .word)
         let layout = AMLLCoreTextLayout(line: line, width: 90, font: .systemFont(ofSize: 32), configuration: .init())
-        XCTAssertFalse(layout.rubyFragments.contains { $0.kind == .romanization })
-        XCTAssertFalse(layout.diagnostics.isEmpty)
+        XCTAssertTrue(layout.rubyFragments.contains { $0.kind == .romanization })
+        XCTAssertTrue(layout.diagnostics.isEmpty)
+        let main = try XCTUnwrap(layout.fragments.first)
+        let roman = try XCTUnwrap(layout.rubyFragments.first)
+        XCTAssertGreaterThan(roman.rect.width, main.rect.width)
+        XCTAssertEqual(roman.rect.midX, main.rect.midX, accuracy: 0.01)
         XCTAssertEqual(LyricsRenderConfiguration().auxiliaryText(for: line), try [XCTUnwrap(word.romanWord)])
+    }
+
+    @MainActor
+    func testWideRubyParticipatesInBreaksAndPreservesWordRanges() throws {
+        let words = [LyricWord(text: "字", start: 0, end: 1, ruby: "long annotation"),
+                     LyricWord(text: "文", start: 1, end: 2, ruby: "long annotation")]
+        let line = LyricLine(id: "ruby-width", text: "字文", start: 0, end: 2, words: words, precision: .word)
+        let layout = AMLLCoreTextLayout(line: line, width: 145, font: .systemFont(ofSize: 32), configuration: .init())
+        XCTAssertEqual(layout.breakOffsets, [1])
+        XCTAssertEqual(layout.fragments.map(\.range.location), [0, 1])
+        for ruby in layout.rubyFragments {
+            let main = try XCTUnwrap(layout.fragments.first { $0.wordIndex == ruby.wordIndex })
+            XCTAssertEqual(ruby.rect.midX, main.rect.midX, accuracy: 0.01)
+            XCTAssertGreaterThanOrEqual(ruby.rect.minX, -0.01)
+        }
     }
 
     @MainActor
@@ -284,7 +303,7 @@ final class AMLLNativeEngineTests: XCTestCase {
             line: LyricLine(id: "wrapped", text: words.map(\.text).joined(), start: 0, end: 6, words: words, precision: .word),
             width: 90, font: .systemFont(ofSize: 32), configuration: .init()
         )
-        let mainRows = Set(layout.fragments.map { $0.rect.minY }).sorted()
+        let mainRows = Set(layout.fragments.map(\.rect.minY)).sorted()
         XCTAssertGreaterThan(mainRows.count, 1)
         for annotation in layout.rubyFragments {
             let main = layout.fragments.first { $0.wordIndex == annotation.wordIndex }

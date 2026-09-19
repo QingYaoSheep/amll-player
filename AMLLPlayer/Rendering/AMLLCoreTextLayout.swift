@@ -138,11 +138,43 @@ final class AMLLCoreTextLayout {
         let timedWords = chunks.flatMap(\.self)
         let text = texts.joined()
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking]
+        let rubyFont = font.withSize(max(10, font.pointSize * 0.5))
+        let romanFont = font.withSize(max(10, font.pointSize * (configuration.auxiliaryScale ?? 0.5)))
+        let unambiguousRomanization = line.words.allSatisfy { word in
+            guard !(word.romanWord ?? "").isEmpty else { return true }
+            return AMLLWordSegmentation.chunks([word]).flatMap(\.self).filter {
+                !($0.romanWord ?? "").isEmpty
+            }.count == 1
+        }
+        let wantsWordRomanization = configuration.romanization && line.precision == .word && timedWords.contains {
+            !($0.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }
+        let hasWordRomanization = wantsWordRomanization && unambiguousRomanization
+        func rubyText(_ word: LyricWord) -> String {
+            word.rubySegments.isEmpty ? (word.ruby ?? "") : word.rubySegments.map(\.text).joined()
+        }
+        func measure(_ text: String, _ font: UIFont) -> Double {
+            CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(
+                string: text, attributes: [.font: font, .kern: configuration.tracking]
+            )), nil, nil, nil)
+        }
+        let usesAnnotationContainers = line.precision == .word && (hasWordRomanization || timedWords.contains { !rubyText($0).isEmpty })
+        func containerWidth(_ word: LyricWord) -> Double {
+            let main = measure(word.text, font)
+            let ruby = measure(rubyText(word), rubyFont)
+            let roman = hasWordRomanization ? measure(word.romanWord ?? "", romanFont) + romanFont.pointSize * 0.3 : 0
+            return max(main, max(ruby, roman))
+        }
         let attributed = NSAttributedString(string: text, attributes: attributes)
         var children = texts.map { text in
             AMLLBalancedLayout.Child(text: text,
                                      width: CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes)), nil, nil, nil),
                                      isSpace: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        if usesAnnotationContainers {
+            for index in children.indices {
+                children[index].width = chunks[index].reduce(0) { $0 + containerWidth($1) }
+            }
         }
         if line.precision != .word {
             let fullLine = CTLineCreateWithAttributedString(attributed)
@@ -175,33 +207,11 @@ final class AMLLCoreTextLayout {
         let backgroundPadding = line.isBackground ? font.pointSize * 1.2 : 0
         var y: CGFloat = backgroundPadding
         let mainHeight = max(font.lineHeight, font.pointSize * 1.2)
-        let rubyFont = font.withSize(max(10, font.pointSize * 0.5))
-        let romanFont = font.withSize(max(10, font.pointSize * (configuration.auxiliaryScale ?? 0.5)))
-        let wantsWordRomanization = configuration.romanization && line.precision == .word && timedWords.contains {
-            !($0.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        }
         // Segmentation can copy one provider annotation onto several atoms.
         // Without an explicit correspondence, keep the provider's line fallback
         // instead of repeating the same pronunciation under every atom.
-        let unambiguousRomanization = line.words.allSatisfy { word in
-            guard !(word.romanWord ?? "").isEmpty else { return true }
-            return AMLLWordSegmentation.chunks([word]).flatMap(\.self).filter {
-                !($0.romanWord ?? "").isEmpty
-            }.count == 1
-        }
-        let romanFits = unambiguousRomanization && timedWords.allSatisfy { word in
-            guard let roman = word.romanWord, !roman.isEmpty else { return true }
-            let mainWidth = CTLineGetTypographicBounds(CTLineCreateWithAttributedString(
-                NSAttributedString(string: word.text, attributes: attributes)
-            ), nil, nil, nil)
-            let romanWidth = CTLineGetTypographicBounds(CTLineCreateWithAttributedString(
-                NSAttributedString(string: roman, attributes: [.font: romanFont])
-            ), nil, nil, nil)
-            return romanWidth <= mainWidth && mainWidth <= availableWidth
-        }
-        let hasWordRomanization = wantsWordRomanization && romanFits
-        diagnostics = wantsWordRomanization && !romanFits
-            ? ["逐词罗马音对应关系不唯一或宽度超出对应词，回退行级显示。"] : []
+        diagnostics = wantsWordRomanization && !unambiguousRomanization
+            ? ["逐词罗马音对应关系不唯一，回退行级显示。"] : []
         let romanHeight = hasWordRomanization ? romanFont.pointSize * 1.5 : 0
         let rubyHeight = timedWords.contains { !$0.rubySegments.isEmpty || !($0.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
             ? rubyFont.pointSize * 1.5
@@ -210,6 +220,62 @@ final class AMLLCoreTextLayout {
             let range = NSRange(location: rowLimits[index], length: rowLimits[index + 1] - rowLimits[index])
             guard range.length > 0 else { continue }
             let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: range.location, length: range.length))
+            if usesAnnotationContainers {
+                // Source inline-flex words shape independently. Use the whole
+                // row's bidi order to place containers, preserving logical UTF-16
+                // ranges for masks rather than rebuilding indexes from glyph order.
+                let referenceRuns = Self.visualRuns(in: ctLine)
+                var cursor = 0
+                var atoms: [(index: Int, range: NSRange, visualX: Double)] = []
+                for (wordIndex, word) in timedWords.enumerated() {
+                    let wordRange = NSRange(location: cursor, length: word.text.utf16.count)
+                    cursor += wordRange.length
+                    guard NSIntersectionRange(range, wordRange).length > 0 else { continue }
+                    let positions = referenceRuns.compactMap { run -> Double? in
+                        let overlap = NSIntersectionRange(wordRange, run.range)
+                        guard overlap.length > 0 else { return nil }
+                        return min(run.offset(at: overlap.location, in: ctLine), run.offset(at: NSMaxRange(overlap), in: ctLine))
+                    }
+                    atoms.append((wordIndex, wordRange, positions.min() ?? 0))
+                }
+                atoms.sort { $0.visualX == $1.visualX ? $0.index < $1.index : $0.visualX < $1.visualX }
+                let total = atoms.reduce(0.0) { $0 + containerWidth(timedWords[$1.index]) }
+                var atomX = line.isDuet || line.isRTL ? availableWidth - total : 0
+                for atom in atoms {
+                    let word = timedWords[atom.index]
+                    let width = containerWidth(word)
+                    let shaped = CTLineCreateWithAttributedString(NSAttributedString(string: word.text, attributes: attributes))
+                    let mainWidth = CTLineGetTypographicBounds(shaped, nil, nil, nil)
+                    let originX = atomX + (width - mainWidth) / 2
+                    rows.append(.init(line: shaped, origin: CGPoint(x: originX, y: y + rubyHeight + font.ascender)))
+                    atomX += width
+                    let runs = Self.visualRuns(in: shaped)
+                    guard !word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                    for run in runs {
+                        fragments.append(.init(rect: CGRect(x: originX + run.left, y: y + rubyHeight, width: run.right - run.left, height: mainHeight),
+                                               word: word, range: NSRange(location: atom.range.location + run.range.location, length: run.range.length),
+                                               rtl: run.rtl, wordIndex: atom.index))
+                    }
+                    var localOffset = 0
+                    for (characterIndex, character) in word.text.enumerated() {
+                        let value = String(character)
+                        let localRange = NSRange(location: localOffset, length: value.utf16.count)
+                        localOffset += localRange.length
+                        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                        for run in runs {
+                            let overlap = NSIntersectionRange(localRange, run.range)
+                            guard overlap.length > 0 else { continue }
+                            let first = run.offset(at: overlap.location, in: shaped)
+                            let last = run.offset(at: NSMaxRange(overlap), in: shaped)
+                            characterFragments.append(.init(rect: CGRect(x: originX + min(first, last), y: y + rubyHeight, width: abs(last - first), height: mainHeight),
+                                                            range: NSRange(location: atom.range.location + overlap.location, length: overlap.length),
+                                                            rtl: run.rtl, wordIndex: atom.index, characterIndex: characterIndex, word: word))
+                        }
+                    }
+                }
+                y += rubyHeight + mainHeight + romanHeight
+                continue
+            }
             let rowWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
             let x = line.isDuet || line.isRTL ? availableWidth - rowWidth : 0
             rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: y + rubyHeight + font.ascender)))
@@ -271,10 +337,11 @@ final class AMLLCoreTextLayout {
                 let maxX = firstRow.map(\.rect.maxX).max() ?? first.rect.maxX
                 let value = NSAttributedString(string: text, attributes: [
                     .font: romanFont, .foregroundColor: UIColor.white.withAlphaComponent(0.3),
+                    .kern: configuration.tracking,
                 ])
                 let ctLine = CTLineCreateWithAttributedString(value)
                 let width = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
-                let x = minX + max(0, (maxX - minX - width) / 2)
+                let x = minX + (maxX - minX - width) / 2
                 let top = first.rect.maxY
                 // Both inline annotation kinds use the disjoint annotation
                 // raster; the separate line-level auxiliary raster stays intact.
@@ -310,7 +377,7 @@ final class AMLLCoreTextLayout {
                 ])
                 let rubyLine = CTLineCreateWithAttributedString(value)
                 let rubyWidth = CTLineGetTypographicBounds(rubyLine, nil, nil, nil)
-                let x = minX + max(0, (maxX - minX - rubyWidth) / 2)
+                let x = minX + (maxX - minX - rubyWidth) / 2
                 let rubyTop = first.rect.minY - rubyHeight
                 rows.append(.init(line: rubyLine, origin: CGPoint(x: x, y: rubyTop + rubyFont.ascender), ruby: true))
                 let segments = word.rubySegments.isEmpty ? [LyricRuby(text: rubyText)] : word.rubySegments

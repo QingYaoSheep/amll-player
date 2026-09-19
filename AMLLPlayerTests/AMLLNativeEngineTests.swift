@@ -275,7 +275,7 @@ final class AMLLNativeEngineTests: XCTestCase {
         let main = try XCTUnwrap(layout.fragments.first)
         let roman = try XCTUnwrap(layout.rubyFragments.first)
         XCTAssertGreaterThan(roman.rect.width, main.rect.width)
-        XCTAssertEqual(roman.rect.midX, main.rect.midX, accuracy: 0.01)
+        XCTAssertEqual(roman.rect.midX, main.rect.midX - 32 * 0.5 * 0.3 / 2, accuracy: 0.01)
         XCTAssertEqual(LyricsRenderConfiguration().auxiliaryText(for: line), try [XCTUnwrap(word.romanWord)])
     }
 

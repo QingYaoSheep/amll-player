@@ -341,7 +341,8 @@ final class AMLLCoreTextLayout {
                 ])
                 let ctLine = CTLineCreateWithAttributedString(value)
                 let width = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
-                let x = minX + (maxX - minX - width) / 2
+                let padding = romanFont.pointSize * 0.3
+                let x = minX + (maxX - minX - width) / 2 + (first.rtl ? padding / 2 : -padding / 2)
                 let top = first.rect.maxY
                 // Both inline annotation kinds use the disjoint annotation
                 // raster; the separate line-level auxiliary raster stays intact.

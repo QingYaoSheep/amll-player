@@ -27,6 +27,7 @@
         @Environment(\.scenePhase) private var scenePhase
         var body: some View {
             VStack {
+                NavigationLink("确定性场景回放（独立时钟）") { AMLLReplayPreview() }
                 DisclosureGroup("HDR 浮点字形验证（非生产渲染器）", isExpanded: $showHDRProbe) {
                     if showHDRProbe {
                         LyricsHDRProbe(time: hdrProbeTime, enabled: hdrProbeEnabled && !reduceTransparency)

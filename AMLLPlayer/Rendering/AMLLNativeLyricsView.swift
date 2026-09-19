@@ -97,6 +97,7 @@ final class AMLLNativeCanvas: UIView {
     private var hdrOffset = 0.0
     #if DEBUG
         var hdrCapabilitiesOverride: LyricsHDRCapabilities?
+        private var controlledReplay = false
     #endif
     private(set) var frameState: AMLLFrameState?
     private(set) var measuredFPS = 0.0
@@ -252,7 +253,11 @@ final class AMLLNativeCanvas: UIView {
         input.position = position()
         let state = engine.render(input, delta: delta)
         if frameState?.browsing != state.browsing {
-            DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) }
+            #if DEBUG
+                if !controlledReplay { DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) } }
+            #else
+                DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) }
+            #endif
         }
         self.engine = engine; frameState = state
         if hdrTime == nil || input.playing || hdrWasPlaying || input.seeking || hdrSeekRevision != input.seekRevision || hdrOffset != input.offset {
@@ -338,6 +343,36 @@ final class AMLLNativeCanvas: UIView {
             layoutIfNeeded()
             draw(delta: delta)
         }
+
+        /// Rebuild from the fixed initial state for backward as well as forward
+        /// navigation. Uses production layout/layers without emitting callbacks.
+        func replay(_ scenario: AMLLReplayScenario, through requestedFrame: Int) throws -> [AMLLFrameState] {
+            var cursor = try AMLLReplayCursor(scenario)
+            controlledReplay = true
+            stop()
+            defer { controlledReplay = false }
+            engine = nil; dirty = true; hdrTime = nil
+            input = cursor.input
+            position = { scenario.initialPosition }
+            setNeedsLayout(); layoutIfNeeded()
+            var frames: [AMLLFrameState] = []
+            for _ in 0 ..< min(max(0, requestedFrame + 1), scenario.frameDeltas.count) {
+                guard let next = cursor.next() else { break }
+                input = next.input
+                let time = next.input.position
+                let beginning = time - (next.input.playing ? next.delta : 0)
+                position = { beginning }
+                next.interactions.forEach { engine?.handle($0) }
+                draw(delta: 0)
+                input.seeking = false
+                position = { time }
+                draw(delta: next.delta)
+                if let frameState {
+                    frames.append(frameState)
+                }
+            }
+            return frames
+        }
     #endif
 
     override func didMoveToWindow() {
@@ -403,6 +438,11 @@ final class AMLLNativeCanvas: UIView {
     #endif
 
     private func syncLink() {
+        #if DEBUG
+            if controlledReplay {
+                stop(); return
+            }
+        #endif
         guard window != nil, active else { stop(); return }
         guard link == nil else { return }
         let target = LinkTarget(); target.owner = self; linkTarget = target

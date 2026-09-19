@@ -31,6 +31,7 @@ final class AnimatedArtworkLoader {
             return
         }
         guard self.trackID == trackID, playbackURL == url else { return }
+        ArtworkMediaCache.shared.invalidate(localURL: url)
         // A completed cache request must not resurrect a resource which the
         // actual decoder rejected. Retrying starts a fresh request revision.
         revision = UUID()

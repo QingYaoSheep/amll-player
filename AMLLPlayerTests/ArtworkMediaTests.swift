@@ -3,6 +3,42 @@ import XCTest
 
 @MainActor
 final class ArtworkMediaTests: XCTestCase {
+    func testRejectedCacheCannotBeReusedAndOldFileCannotInvalidateReplacement() throws {
+        let sandbox = try temporarySandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let root = sandbox.appendingPathComponent("cache")
+        let cache = ArtworkMediaCache(root: root, sandbox: sandbox)
+        let remote = try XCTUnwrap(URL(string: "https://example.com/cover.mp4"))
+        let download = sandbox.appendingPathComponent("download")
+        try Data([1, 2, 3]).write(to: download)
+        let bad = try cache.insert(download, for: remote, managedPackage: false)
+        cache.invalidate(localURL: bad)
+        XCTAssertNil(cache.cached(remote))
+        XCTAssertEqual(cache.byteCount, 0)
+        try Data([4, 5, 6]).write(to: download)
+        let replacement = try cache.insert(download, for: remote, managedPackage: false)
+        cache.invalidate(localURL: bad)
+        XCTAssertEqual(cache.cached(remote), replacement)
+        XCTAssertEqual(ArtworkMediaCache(root: root, sandbox: sandbox).cached(remote), replacement)
+    }
+
+    func testPlaybackStatusRequiresCurrentRequestEvenForSameTrackAndURL() async throws {
+        let loader = AnimatedArtworkLoader()
+        let remote = try XCTUnwrap(URL(string: "https://example.com/cover.mp4"))
+        let local = URL(fileURLWithPath: "/test-cover.mp4")
+        let asset = ArtworkAsset(kind: .squareVideo, url: remote, albumID: "1", storefront: "us")
+        await loader.load(trackID: "one", assets: { [asset] }, download: { _ in local })
+        let old = loader.requestToken
+        XCTAssertEqual(loader.playbackState, .preparing)
+        await loader.load(trackID: "one", assets: { [asset] }, download: { _ in local })
+        loader.playbackChanged(token: old, url: local, state: .displayed)
+        loader.playbackFailed(trackID: "one", url: local, error: nil, token: old)
+        XCTAssertEqual(loader.playbackState, .preparing)
+        XCTAssertEqual(loader.status, .ready)
+        loader.playbackChanged(token: loader.requestToken, url: local, state: .displayed)
+        XCTAssertEqual(loader.playbackState, .displayed)
+    }
+
     func testDecoderFailurePreventsLateCacheFromRestoringFailedVideo() async throws {
         let loader = AnimatedArtworkLoader()
         let remote = try XCTUnwrap(URL(string: "https://example.com/cover.m3u8"))

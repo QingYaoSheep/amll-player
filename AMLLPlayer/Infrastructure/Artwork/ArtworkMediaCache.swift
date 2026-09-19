@@ -11,6 +11,7 @@ final class ArtworkMediaCache {
         var key: String
         var relativePath: String
         var accessed: Date
+        var unusable: Bool?
     }
 
     private let root: URL
@@ -49,10 +50,27 @@ final class ArtworkMediaCache {
 
     func cached(_ remote: URL) -> URL? {
         guard let index = entries.firstIndex(where: { $0.key == key(remote) }),
+              entries[index].unusable != true,
               let url = safeURL(entries[index].relativePath), FileManager.default.fileExists(atPath: url.path) else { return nil }
         entries[index].accessed = Date()
         save()
         return url
+    }
+
+    /// Reject only the exact failed file, not a newer replacement for its URL.
+    /// Retain ownership if deletion fails so clear/prune can still reclaim it.
+    func invalidate(localURL: URL) {
+        guard localURL.isFileURL else { return }
+        let target = localURL.standardizedFileURL.resolvingSymlinksInPath()
+        for index in entries.indices where safeURL(entries[index].relativePath) == target {
+            entries[index].unusable = true
+        }
+        entries.removeAll { entry in
+            guard entry.unusable == true, let owned = safeURL(entry.relativePath), owned == target else { return false }
+            do { try FileManager.default.removeItem(at: owned); return true }
+            catch { return !FileManager.default.fileExists(atPath: owned.path) }
+        }
+        save()
     }
 
     /// A local file is admitted atomically after a successful download. An

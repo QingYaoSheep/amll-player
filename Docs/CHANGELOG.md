@@ -1,5 +1,11 @@
 # AMLL Player SwiftUI Changelog
 
+## 2026-09-19 双任务 IPA 构建
+
+- Actions 矩阵展开为两个独立任务：`iOS 27 / Tests then IPA` 执行原有模拟器测试后归档；`iOS 27 / Direct IPA` 跳过测试及模拟器准备，直接归档。
+- 禁用矩阵 fail-fast，测试失败不会取消直接构建；两者分别上传 `AMLLPlayer-Xcode27-tested-unsigned-ipa` 和 `AMLLPlayer-Xcode27-direct-unsigned-ipa`。
+- 两任务均验证 SDK、执行 lint 和应用包检查。并行取决于 `xcode-27` runner 可用数量；现有测试仍是模拟器测试，不是实体设备签收。
+
 ## 2026-09-19 竖屏歌词淡出合成
 
 - 将竖屏独有的 SwiftUI 外层 mask 移至原生画布 CAGradientLayer，避免在歌词 Plus Lighter 外再次建立遮罩合成边界；保留封面下方及底部淡出位置。

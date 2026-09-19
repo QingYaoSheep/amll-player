@@ -14,9 +14,19 @@ concurrency:
 
 jobs:
   xcode-27:
-    name: Xcode 27 / iOS 27 tests and archive
+    name: ${{ matrix.name }}
     runs-on: xcode-27
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS 27 / Tests then IPA
+            variant: tested
+            run-tests: true
+          - name: iOS 27 / Direct IPA
+            variant: direct
+            run-tests: false
 
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +58,7 @@ jobs:
           AMLLPlayer AMLLPlayerTests AMLLPlayerUITests
 
       - name: Prepare iOS 27 reference simulators
+        if: matrix.run-tests
         run: |
           node --test Scripts/prepare-ci-simulators.test.cjs
           if ! xcrun simctl list runtimes --json | node -e 'const fs = require("node:fs"); const { selectRuntime } = require("./Scripts/prepare-ci-simulators.cjs"); selectRuntime(JSON.parse(fs.readFileSync(0, "utf8")).runtimes)'; then
@@ -56,6 +67,7 @@ jobs:
           node Scripts/prepare-ci-simulators.cjs
 
       - name: Test on iPhone with Xcode 27
+        if: matrix.run-tests
         run: >-
           xcodebuild test
           -project AMLLPlayer.xcodeproj
@@ -65,7 +77,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
 
       - name: Upload Xcode 27 test results
-        if: always()
+        if: always() && matrix.run-tests
         uses: actions/upload-artifact@v4
         with:
           name: AMLLPlayer-Xcode27-test-results
@@ -73,7 +85,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Export visual review attachments
-        if: always()
+        if: always() && matrix.run-tests
         run: |
           if [[ -d build/Xcode27-tests.xcresult ]]; then
             xcrun xcresulttool export attachments \
@@ -82,7 +94,7 @@ jobs:
           fi
 
       - name: Upload visual review attachments
-        if: always()
+        if: always() && matrix.run-tests
         uses: actions/upload-artifact@v4
         with:
           name: AMLLPlayer-visual-review
@@ -90,6 +102,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Build for iPad with Xcode 27
+        if: matrix.run-tests
         run: >-
           xcodebuild build
           -project AMLLPlayer.xcodeproj
@@ -98,6 +111,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
 
       - name: Build with iOS 27 SDK
+        if: matrix.run-tests
         run: |
           xcodebuild build \
             -project AMLLPlayer.xcodeproj \
@@ -117,14 +131,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
-          PACKAGE_ROOT="$RUNNER_TEMP/amll-unsigned-ipa"
+          PACKAGE_ROOT="$(mktemp -d "$RUNNER_TEMP/amll-unsigned-ipa.XXXXXX")"
+          trap 'rm -rf "$PACKAGE_ROOT"' EXIT
           mkdir -p "$PACKAGE_ROOT/Payload"
           cp -R \
             build/AMLLPlayer-Xcode27.xcarchive/Products/Applications/AMLLPlayer.app \
             "$PACKAGE_ROOT/Payload/"
           ditto -c -k --sequesterRsrc --keepParent \
             "$PACKAGE_ROOT/Payload" \
-            build/AMLLPlayer-Xcode27-unsigned.ipa
+            build/AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned.ipa
 
       - name: Verify Xcode 27 application bundle
         run: >-
@@ -134,12 +149,12 @@ jobs:
       - name: Upload Xcode 27 IPA
         uses: actions/upload-artifact@v4
         with:
-          name: AMLLPlayer-Xcode27-unsigned-ipa
-          path: build/AMLLPlayer-Xcode27-unsigned.ipa
+          name: AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned-ipa
+          path: build/AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned.ipa
           if-no-files-found: error
 
       - name: Remove reference simulators
-        if: always()
+        if: always() && matrix.run-tests
         run: |
           for DEVICE_ID in "${CI_IPHONE_UDID:-}" "${CI_IPAD_UDID:-}"; do
             if [[ -n "$DEVICE_ID" ]]; then

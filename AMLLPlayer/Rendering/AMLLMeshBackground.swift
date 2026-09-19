@@ -28,10 +28,12 @@ struct AMLLMeshBackground: UIViewRepresentable {
 
     func updateUIView(_ view: MTKView, context: Context) {
         context.coordinator.setBlur(blur)
-        context.coordinator.setArtwork(artworkURL)
+        if active {
+            context.coordinator.setArtwork(artworkURL)
+        }
         view.preferredFramesPerSecond = view.window?.screen.maximumFramesPerSecond ?? UIScreen.main.maximumFramesPerSecond
         let shouldAnimate = active && !reduceMotion && !reduceTransparency
-        context.coordinator.setRunning(shouldAnimate)
+        context.coordinator.setRunning(shouldAnimate, staticMode: reduceMotion || reduceTransparency)
         view.isPaused = !shouldAnimate
         view.enableSetNeedsDisplay = !shouldAnimate
         view.alpha = reduceTransparency ? 0 : 1
@@ -77,6 +79,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
         private var lastFrame: CFTimeInterval?
         private var hasCover = false
         private var running = false
+        private var staticMode = false
         private var animationTime: TimeInterval = 0
         private let inFlight = DispatchSemaphore(value: 3)
         private var artworkURL: URL?
@@ -169,7 +172,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
             loadTask?.cancel(); loadTask = nil
         }
 
-        func setRunning(_ value: Bool) {
+        func setRunning(_ value: Bool, staticMode: Bool) {
+            self.staticMode = staticMode
             guard running != value else { return }
             running = value
             lastFrame = nil
@@ -191,6 +195,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
             guard let vertices = device.makeBuffer(bytes: mesh.vertices, length: MemoryLayout<Vertex>.stride * mesh.vertices.count),
                   let indices = device.makeBuffer(bytes: mesh.indices, length: MemoryLayout<UInt32>.stride * mesh.indices.count) else { return }
             hasCover = true
+            states.removeAll { $0.alpha <= 0 }
             states.append(MeshState(texture: texture, vertices: vertices, indices: indices, count: mesh.indices.count, alpha: 0))
         }
 
@@ -206,12 +211,12 @@ struct AMLLMeshBackground: UIViewRepresentable {
                   let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
                   let command = queue.makeCommandBuffer() else { return }
             let now = CACurrentMediaTime()
-            let delta = lastFrame.map { max(0, now - $0) } ?? 0
+            let delta = running ? (lastFrame.map { max(0, now - $0) } ?? 0) : 0
             lastFrame = now
             if running {
                 animationTime += delta
             }
-            if view.isPaused {
+            if staticMode {
                 if hasCover, let latest = states.last {
                     states = [latest]; states[0].alpha = 1.1
                 } else {

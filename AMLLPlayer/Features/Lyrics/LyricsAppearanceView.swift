@@ -130,12 +130,23 @@ struct LyricsAppearanceView: View {
                 }
             }
             Section("render.background") {
+                Picker("背景模式", selection: Binding(get: { preferences.configuration.backgroundMode ?? .mesh },
+                                                  set: { preferences.configuration.backgroundMode = $0 }))
+                {
+                    Text("Mesh 网格").tag(LyricsRenderConfiguration.BackgroundMode.mesh)
+                    Text("Pixi 流动封面").tag(LyricsRenderConfiguration.BackgroundMode.pixi)
+                }
                 if preferences.profile == .amll {
                     adjustment("appearance.dimming", key: \.backgroundDimming, fallback: 0.16, range: 0 ... 0.8, step: 0.04)
                 }
-                LabeledContent("render.backgroundBlur", value: String(format: "%.0f pt", preferences.configuration.backgroundBlur))
-                Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
-                Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
+                if preferences.configuration.backgroundMode != .pixi {
+                    LabeledContent("render.backgroundBlur", value: String(format: "%.0f pt", preferences.configuration.backgroundBlur))
+                    Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
+                    Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Text("Pixi 使用原版多层封面、固定模糊和形变滤镜；歌词动效不受背景帧率影响。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             Section("高级视觉") {
                 DisclosureGroup("歌词高光") {

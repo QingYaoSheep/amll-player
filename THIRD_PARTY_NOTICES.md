@@ -46,3 +46,15 @@ The native Apple Music, QQ Music, and NetEase lyric transport and format adapter
 use the public provider contracts and format descriptions from Lyricify Lyrics
 Helper as an interoperability reference. AMLL Player's Swift implementation is
 maintained in this repository.
+
+## Pixi native background filters
+
+`AMLLPixiState`, `AMLLPixiBackground` and its Metal shaders adapt the pinned
+core 0.5.2 `pixi-renderer.ts` (AGPL attribution above). The blur weights and
+pass order, color matrices, and bulge coordinate mapping adapt Pixi 7.4.3
+`@pixi/filter-blur`, `@pixi/filter-color-matrix` and `@pixi/filter-bulge-pinch`
+5.1.1 under MIT. Copyright 2013–2023 Mathew Groves, Chad Engler;
+bulge-pinch notice copyright 2013–2017 Mathew Groves, Chad Engler.
+Full notices: `Licenses/Pixi-MIT.txt`, `Licenses/Pixi-Filters-MIT.txt`.
+Exact input hashes: `ReferenceCaptures/amll-pixi-inputs.json`.
+Development fixture scripts execute upstream JavaScript only outside the app.

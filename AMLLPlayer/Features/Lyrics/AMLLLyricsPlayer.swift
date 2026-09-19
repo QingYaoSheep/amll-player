@@ -32,9 +32,9 @@ struct AMLLLyricsPlayer: View {
             let drag = dismissalTransform(height: geometry.size.height)
             ZStack {
                 Color(white: 0.08)
-                AMLLMeshBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
-                                   active: scenePhase == .active && !search && !devices,
-                                   blur: configuration.backgroundBlur)
+                AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
+                               active: scenePhase == .active && !search && !devices,
+                               blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh)
                 if let item = model.playbackSnapshot?.item,
                    configuration.animatedArtwork?.enabled == true,
                    configuration.animatedArtwork?.presentation == .immersive,

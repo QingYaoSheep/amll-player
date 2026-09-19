@@ -1,0 +1,46 @@
+[
+  {
+    "path": ".build-tools/amll-reference/core/src/bg-render/pixi-renderer.ts",
+    "sha256": "cc6438b5f34250d2bce7523ced4e5a51b156f4cbeb49582ef0d6cda8bab924d6"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+ticker@7.4.3/node_modules/@pixi/ticker/lib/Ticker.mjs",
+    "sha256": "6b89854cf62b187b22b118dd884a1ce160c0c2417e3ecae35b75cd43386a1270"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-blur@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-blur/lib/BlurFilterPass.mjs",
+    "sha256": "b48935e879ff550a8948d751a4da30d7add32cc98768d22aaf31c3031504c50b"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-blur@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-blur/lib/generateBlurFragSource.mjs",
+    "sha256": "6669f04cbdc4b183af95b84fc88461f46e301e58ea3f63bf14d130b4c8b33aae"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-blur@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-blur/lib/BlurFilter.mjs",
+    "sha256": "8d4f8ccf21e9d5f24487bb4555a2db3f0b863716fafac5f4dc0bd50b7b9b3d1e"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-blur@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-blur/LICENSE",
+    "sha256": "5ce7447bc57f7349ffc48338782fbcabe613696e00712b20d66bc58e780f9473"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-color-matrix@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-color-matrix/lib/ColorMatrixFilter.mjs",
+    "sha256": "bd5283fcaee5790eeb5815e3340841ac046447c5a5e04e9edd2f98fe0558d05f"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-color-matrix@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-color-matrix/lib/colorMatrix.frag.mjs",
+    "sha256": "52bba20c4fd497b9c5b986a11c8bf9f4fccd2c4ba9461d17da6728bcfb391435"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-color-matrix@7.4.3_@pixi+core@7.4.3/node_modules/@pixi/filter-color-matrix/LICENSE",
+    "sha256": "5ce7447bc57f7349ffc48338782fbcabe613696e00712b20d66bc58e780f9473"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-bulge-pinch@5.1.1_@pixi+core@7.4.3/node_modules/@pixi/filter-bulge-pinch/dist/filter-bulge-pinch.mjs",
+    "sha256": "11cee3e7ad9ed42d6c1f4f37899fd41515c95d6fa501619a1648561af89e3aa2"
+  },
+  {
+    "path": "../AMLL-OLD/node_modules/.pnpm/@pixi+filter-bulge-pinch@5.1.1_@pixi+core@7.4.3/node_modules/@pixi/filter-bulge-pinch/LICENSE",
+    "sha256": "536a16e090f0b6c1454a7c0b47ee8414a39a2f1724a154f10ca1edc750a2dcfd"
+  }
+]

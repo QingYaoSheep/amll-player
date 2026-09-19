@@ -4,6 +4,27 @@ import XCTest
 
 @MainActor
 final class LyricsHDRRendererTests: XCTestCase {
+    func testGlyphUploadPreservesCoverageAndOrientation() throws {
+        let renderer = try XCTUnwrap(LyricsHDRRenderer())
+        // Unequal alpha in every corner detects vertical flips and lost alpha.
+        let bytes: [UInt8] = [255, 255, 255, 255, 128, 128, 128, 128,
+                              64, 64, 64, 64, 0, 0, 0, 0]
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try XCTUnwrap(CGImage(width: 2, height: 2, bitsPerComponent: 8,
+                                          bitsPerPixel: 32, bytesPerRow: 8,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue
+                                              | CGBitmapInfo.byteOrder32Big.rawValue),
+                                          provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let texture = try XCTUnwrap(renderer.glyphTexture(image))
+        XCTAssertEqual(texture.pixelFormat, .rgba8Unorm)
+        var output = [UInt8](repeating: 0, count: 16)
+        output.withUnsafeMutableBytes {
+            texture.getBytes($0.baseAddress!, bytesPerRow: 8, from: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0)
+        }
+        XCTAssertEqual([output[3], output[7], output[11], output[15]], [255, 128, 64, 0])
+    }
+
     func testPortraitFadeBelongsToNativeCanvasAndClearsForLandscape() throws {
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         canvas.fadeTop = 167
@@ -63,7 +84,9 @@ final class LyricsHDRRendererTests: XCTestCase {
                          active: false, reduceMotion: false)
         canvas.layoutSubviews()
         // Let the source brightness envelope settle before measuring reuse.
-        for _ in 0 ..< 120 { canvas.advanceFrame(delta: 1.0 / 120) }
+        for _ in 0 ..< 120 {
+            canvas.advanceFrame(delta: 1.0 / 120)
+        }
         let updates = canvas.glyphUpdateCount
         XCTAssertGreaterThan(updates, 0)
         for _ in 0 ..< 120 {

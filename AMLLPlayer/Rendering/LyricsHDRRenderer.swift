@@ -43,9 +43,28 @@ final class LyricsHDRRenderer {
     }
 
     func glyphTexture(_ image: CGImage) -> MTLTexture? {
-        try? MTKTextureLoader(device: device).newTexture(cgImage: image, options: [
-            .SRGB: false, .textureUsage: MTLTextureUsage.shaderRead.rawValue,
-        ])
+        // UIKit may choose a grayscale or extended-range backing for white
+        // glyphs. Normalize explicitly rather than relying on MTKTextureLoader's
+        // supported CGImage formats. The shader consumes coverage from alpha.
+        let width = image.width, height = image.height
+        guard width > 0, height > 0,
+              let context = CGContext(data: nil, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                                          | CGBitmapInfo.byteOrder32Big.rawValue),
+              let bytes = context.data else { return nil }
+        context.setBlendMode(.copy)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+        descriptor.storageMode = .shared
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        texture.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0,
+                        withBytes: bytes, bytesPerRow: context.bytesPerRow)
+        return texture
     }
 
     func makeLayer(size: CGSize, scale: CGFloat) -> CAMetalLayer {

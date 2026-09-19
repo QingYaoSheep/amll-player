@@ -46,6 +46,10 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var looper: AVPlayerLooper?
         private var url: URL?
         private var ready: NSKeyValueObservation?
+        private var currentItemObservation: NSKeyValueObservation?
+        private var tracksObservation: NSKeyValueObservation?
+        private var statusObservation: NSKeyValueObservation?
+        private weak var observedItem: AVPlayerItem?
         private weak var reflectionFrames: ArtworkReflectionFrames?
         private var reflectionToken: UUID?
         private var output: AVPlayerItemVideoOutput?
@@ -68,9 +72,11 @@ struct AnimatedArtwork: UIViewRepresentable {
             playerLayer.player = player
             playerLayer.videoGravity = .resizeAspectFill
             playerLayer.opacity = 0
-            ready = playerLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] layer, _ in
-                let visible = layer.isReadyForDisplay
-                Task { @MainActor [weak self] in self?.playerLayer.opacity = visible ? 1 : 0 }
+            ready = playerLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in self?.updateVisibility() }
+            }
+            currentItemObservation = player.observe(\.currentItem, options: [.initial, .new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in self?.observeCurrentItem() }
             }
         }
 
@@ -84,6 +90,7 @@ struct AnimatedArtwork: UIViewRepresentable {
                 stop()
                 self.url = url
                 looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
+                observeCurrentItem()
             }
             if self.reflectionFrames !== reflectionFrames {
                 clearReflection()
@@ -98,7 +105,7 @@ struct AnimatedArtwork: UIViewRepresentable {
                 displayLink = link
             }
             displayLink?.isPaused = !active
-            if active {
+            if active, player.currentItem?.status != .failed {
                 player.play()
             } else {
                 player.pause()
@@ -106,12 +113,58 @@ struct AnimatedArtwork: UIViewRepresentable {
         }
 
         func stop() {
+            tracksObservation = nil; statusObservation = nil; observedItem = nil
             clearReflection()
             player.pause()
             looper?.disableLooping(); looper = nil
             player.removeAllItems()
             playerLayer.opacity = 0
             url = nil
+        }
+
+        /// AVPlayerLooper creates new items. Observe each current item's tracks
+        /// as they load rather than only muting the original template item.
+        private func observeCurrentItem() {
+            let item = player.currentItem
+            guard observedItem !== item else { updateVisibility(); return }
+            tracksObservation = nil; statusObservation = nil
+            observedItem = item
+            guard let item else { updateVisibility(); return }
+            tracksObservation = item.observe(\.tracks, options: [.initial, .new]) { [weak self, weak item] _, _ in
+                Task { @MainActor [weak self, weak item] in
+                    guard let self, let item, self.player.currentItem === item else { return }
+                    self.disableAudio(in: item)
+                }
+            }
+            statusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
+                Task { @MainActor [weak self, weak item] in
+                    guard let self, let item, self.player.currentItem === item else { return }
+                    self.disableAudio(in: item)
+                    self.updateVisibility()
+                    if item.status == .failed {
+                        self.player.pause()
+                        self.reflectionFrames?.clear(source: self.reflectionToken)
+                    }
+                }
+            }
+            disableAudio(in: item)
+            updateVisibility()
+        }
+
+        private func disableAudio(in item: AVPlayerItem) {
+            for track in item.tracks where track.assetTrack?.mediaType == .audio {
+                track.isEnabled = false
+            }
+        }
+
+        private func updateVisibility() {
+            // Read current state when the main-actor callback runs. A queued
+            // readiness notification from the previous song must not expose it.
+            let visible = url != nil && player.currentItem?.status == .readyToPlay && playerLayer.isReadyForDisplay
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            playerLayer.opacity = visible ? 1 : 0
+            CATransaction.commit()
         }
 
         private func clearReflection() {
@@ -125,7 +178,8 @@ struct AnimatedArtwork: UIViewRepresentable {
         }
 
         private func capture(_ link: CADisplayLink) {
-            guard let reflectionFrames, let reflectionToken, let item = player.currentItem else { return }
+            guard let reflectionFrames, let reflectionToken, let item = player.currentItem,
+                  item.status == .readyToPlay else { return }
             if outputItem !== item {
                 if let output {
                     outputItem?.remove(output)

@@ -137,6 +137,31 @@ final class ArtworkMediaTests: XCTestCase {
         XCTAssertNotNil(cache.cached(url))
     }
 
+    func testFailedReplacementKeepsPreviousVideoAndSuccessfulReplacementRemovesIt() throws {
+        let sandbox = try temporarySandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let root = sandbox.appendingPathComponent("cache")
+        let cache = ArtworkMediaCache(root: root, sandbox: sandbox, limit: 8)
+        let remote = try XCTUnwrap(URL(string: "https://example.com/cover.mp4"))
+        let download = sandbox.appendingPathComponent("download")
+        try Data(repeating: 1, count: 4).write(to: download)
+        let previous = try cache.insert(download, for: remote, managedPackage: false)
+        XCTAssertThrowsError(try cache.insert(download, for: remote, managedPackage: false))
+        XCTAssertEqual(cache.cached(remote), previous)
+        try Data(repeating: 2, count: 9).write(to: download)
+        XCTAssertThrowsError(try cache.insert(download, for: remote, managedPackage: false))
+        XCTAssertEqual(cache.cached(remote), previous)
+        XCTAssertEqual(try Data(contentsOf: previous), Data(repeating: 1, count: 4))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).count, 1)
+        try Data(repeating: 3, count: 6).write(to: download)
+        let replacement = try cache.insert(download, for: remote, managedPackage: false)
+        XCTAssertNotEqual(replacement, previous)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: previous.path))
+        XCTAssertEqual(cache.byteCount, 6)
+        let restored = ArtworkMediaCache(root: root, sandbox: sandbox, limit: 8)
+        XCTAssertEqual(restored.cached(remote), replacement)
+    }
+
     func testUpgradeDoesNotOptIntoVideoOrCellularAndPortraitDoesNotReplaceSquare() async {
         let configuration = AnimatedArtworkConfiguration()
         XCTAssertFalse(configuration.enabled)

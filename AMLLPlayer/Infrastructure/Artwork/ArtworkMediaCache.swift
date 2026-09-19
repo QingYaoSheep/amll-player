@@ -65,10 +65,11 @@ final class ArtworkMediaCache {
                 throw CocoaError(.fileReadInvalidFileName)
             }
         } else {
-            destination = root.appendingPathComponent(key(remote) + ".mp4")
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
-            }
+            // Download into a new owned file before replacing the registry
+            // entry. A missing, corrupt or oversized replacement must not
+            // destroy the last usable cover for the same remote URL.
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            destination = root.appendingPathComponent(key(remote) + "-" + UUID().uuidString + ".mp4")
             try FileManager.default.moveItem(at: local, to: destination)
         }
         let bytes = size(destination)

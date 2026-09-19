@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "id": "core-motion-0.5.2",
+  "fontSize": 32,
+  "anchor": 0.28,
+  "lines": [
+    {
+      "startTime": 1000,
+      "endTime": 2050,
+      "words": [
+        {
+          "word": "a  b",
+          "startTime": 1000,
+          "endTime": 2050,
+          "romanWord": ""
+        }
+      ],
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "Translation 0",
+      "romanLyric": ""
+    },
+    {
+      "startTime": 900,
+      "endTime": 2100,
+      "words": [
+        {
+          "word": "echo",
+          "startTime": 900,
+          "endTime": 2100,
+          "romanWord": ""
+        }
+      ],
+      "isBG": true,
+      "isDuet": false,
+      "translatedLyric": "Translation 1",
+      "romanLyric": ""
+    },
+    {
+      "startTime": 2000,
+      "endTime": 3000,
+      "words": [
+        {
+          "word": "duet",
+          "startTime": 2000,
+          "endTime": 3000,
+          "romanWord": ""
+        }
+      ],
+      "isBG": true,
+      "isDuet": true,
+      "translatedLyric": "Translation 2",
+      "romanLyric": ""
+    },
+    {
+      "startTime": 2900,
+      "endTime": 4500,
+      "words": [
+        {
+          "word": "next",
+          "startTime": 2900,
+          "endTime": 4500,
+          "romanWord": ""
+        }
+      ],
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "Translation 3",
+      "romanLyric": ""
+    },
+    {
+      "startTime": 9000,
+      "endTime": 10000,
+      "words": [
+        {
+          "word": "end",
+          "startTime": 9000,
+          "endTime": 10000,
+          "romanWord": ""
+        }
+      ],
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "Translation 4",
+      "romanLyric": ""
+    }
+  ]
+}

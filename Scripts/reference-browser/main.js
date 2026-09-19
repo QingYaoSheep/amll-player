@@ -12,16 +12,15 @@ const dimension = (name,fallback) => {
 };
 const width = dimension('width',402);
 const height = dimension('height',700);
-const fontSize = dimension('font',Math.max(height*.05,width*.025,14));
+const fontSize = dimension('font',fixture.fontSize);
 viewport.style.width = width+'px'; viewport.style.height = height+'px';
 const player = new DomLyricPlayer();
 const element = player.getElement();
 element.style.fontSize = fontSize+'px'; viewport.appendChild(element);
-player.setAlignAnchor('top'); player.setAlignPosition(.1);
+player.setAlignAnchor('top'); player.setAlignPosition(fixture.anchor);
 let position = 1, playing = false, lastFrame, frameCount = 0;
 const trace = [];
-const lines = fixture.original.map((line,index)=>({...line,isDuet:index===2,translatedLyric:`Translation ${index}`,romanLyric:'',
-  words:line.words.map(word=>({...word,romanWord:''}))}));
+const lines = fixture.lines;
 await document.fonts.ready;
 await new Promise(requestAnimationFrame);
 player.setLyricLines(structuredClone(lines),position*1000);

@@ -2,12 +2,12 @@
   "core": "0.5.2",
   "inputs": [
     {
-      "file": "../AMLL-Swift/AMLLPlayerTests/Fixtures/amll-motion-reference.json",
-      "sha256": "8e45d974cb71199fb186fa39425e071f7038e4546b43541d6cbfd4f76293a722"
+      "file": "../AMLL-Swift/AMLLPlayer/Resources/amll-shared-lyrics.json",
+      "sha256": "67d113cee793827b91f491390001200f1a23ae8765cb4e78685dcbb5fb742c33"
     },
     {
       "file": "../AMLL-Swift/Scripts/reference-browser/main.js",
-      "sha256": "b3c45753bfdeeb9e60d0541d58e9260db75649daf9fae5338c9868ab883886b7"
+      "sha256": "35f88970c35dae543d93785c66d7f1915dac270b5bceb11d29422f9fd1f28771"
     },
     {
       "file": "node_modules/.pnpm/@applemusic-like-lyrics+cor_1df7a569b9e1a1f9916652879e532347/node_modules/@applemusic-like-lyrics/core/dist/amll-core.mjs",

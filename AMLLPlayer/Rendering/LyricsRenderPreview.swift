@@ -17,6 +17,8 @@
         @State private var exportURL: URL?
         @State private var visible = false
         @State private var sourcePort = false
+        @State private var sharedReference: AMLLSharedReference?
+        @State private var referenceError: String?
         @State private var seekRevision = 0
         @State private var showHDRProbe = false
         @State private var hdrProbeTime = 0.0
@@ -37,20 +39,38 @@
                     }
                 }
                 Toggle("AMLL source port · validation", isOn: $sourcePort)
+                Button(sharedReference == nil ? "载入浏览器共享歌词" : "恢复复杂文字夹具") {
+                    if sharedReference != nil {
+                        sharedReference = nil; referenceError = nil
+                    } else {
+                        do {
+                            let reference = try AMLLSharedReference.load()
+                            sharedReference = reference
+                            configuration.fontSize = reference.fontSize
+                            configuration.sizePreset = nil
+                            configuration.anchor = reference.anchor
+                            position = 1; playing = false; seekRevision += 1
+                            referenceError = nil
+                        } catch { referenceError = "共享夹具读取失败：\(error.localizedDescription)" }
+                    }
+                }
+                if let referenceError {
+                    Text(referenceError).foregroundStyle(.red)
+                }
                 if sourcePort {
-                    AMLLNativeLyricsView(document: lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document,
+                    AMLLNativeLyricsView(document: previewDocument,
                                          configuration: configuration,
                                          input: .init(position: currentPosition(), playing: playing, seekRevision: seekRevision),
                                          position: currentPosition, interaction: { event in
                                              if case let .seek(lineID) = event,
-                                                let line = (lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document).lines.first(where: { $0.id == lineID })
+                                                let line = previewDocument.lines.first(where: { $0.id == lineID })
                                              {
                                                  position = line.start; anchor = ProcessInfo.processInfo.systemUptime; seekRevision += 1
                                              }
                                          }, active: visible && scenePhase == .active, targetFPS: targetFPS,
                                          resumeToken: resume, created: { nativeRenderer = $0 }, browsing: { browsing = $0 })
                 } else {
-                    PreviewRenderer(configuration: configuration, document: lineTiming ? LyricsRenderFixture.lineDocument : LyricsRenderFixture.document,
+                    PreviewRenderer(configuration: configuration, document: previewDocument,
                                     position: currentPosition, playing: playing, active: visible && scenePhase == .active,
                                     targetFPS: targetFPS,
                                     resume: resume, browsing: { browsing = $0 }, seek: { position = $0; anchor = ProcessInfo.processInfo.systemUptime },
@@ -108,6 +128,16 @@
 
         private func currentPosition() -> Double {
             min(1800, position + (playing ? ProcessInfo.processInfo.systemUptime - anchor : 0))
+        }
+
+        private var previewDocument: LyricsDocument {
+            var document = sharedReference?.document ?? LyricsRenderFixture.document
+            if lineTiming {
+                document.lines = document.lines.map { line in
+                    var line = line; line.words = []; line.precision = .line; return line
+                }
+            }
+            return document
         }
 
         private func step(by frames: Int) {

@@ -4,6 +4,31 @@ import XCTest
 
 @MainActor
 final class LyricsHDRRendererTests: XCTestCase {
+    func testBusyRendererDoesNotAcquireDrawableAndFailedAcquisitionReleasesCapacity() throws {
+        let renderer = try XCTUnwrap(LyricsHDRRenderer())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        let glyphs = try XCTUnwrap(renderer.device.makeTexture(descriptor: descriptor))
+        let vertices = [LyricsHDRRenderer.Vertex(position: .zero, uv: .zero, mask: .zero, appearance: .zero)]
+        let layer = DrawableProbeLayer()
+        var acquisitions = 0
+        layer.acquire = {
+            acquisitions += 1
+            // Hold each reservation inside drawable acquisition. The fourth
+            // request must be rejected before calling nextDrawable again.
+            if acquisitions < 4 {
+                XCTAssertNil(renderer.render(vertices: vertices, glyphs: glyphs, layer: layer))
+            }
+        }
+        XCTAssertNil(renderer.render(vertices: vertices, glyphs: glyphs, layer: layer))
+        XCTAssertEqual(acquisitions, 3)
+        layer.acquire = { acquisitions += 1 }
+        XCTAssertNil(renderer.render(vertices: vertices, glyphs: glyphs, layer: layer))
+        XCTAssertEqual(acquisitions, 4, "Failed acquisition must release the reservation")
+        XCTAssertNil(renderer.render(vertices: [], glyphs: glyphs, layer: layer))
+        XCTAssertEqual(acquisitions, 4, "Empty frames must not acquire a drawable")
+        layer.acquire = nil
+    }
+
     func testRealCanvasCreatesAndRemovesReplacementLayersWithHDRSetting() {
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         let window = UIWindow(frame: canvas.bounds)
@@ -84,5 +109,14 @@ final class LyricsHDRRendererTests: XCTestCase {
         XCTAssertFalse(layer.isOpaque)
         XCTAssertEqual(layer.drawableSize, CGSize(width: 360, height: 120))
         XCTAssertEqual(layer.colorspace?.name, CGColorSpace.extendedLinearSRGB)
+    }
+}
+
+private final class DrawableProbeLayer: CAMetalLayer {
+    var acquire: (() -> Void)?
+
+    override func nextDrawable() -> CAMetalDrawable? {
+        acquire?()
+        return nil
     }
 }

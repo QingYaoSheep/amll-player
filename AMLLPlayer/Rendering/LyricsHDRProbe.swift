@@ -77,8 +77,7 @@
                                               appearance: .init(8, 0.3, 1, Float(gain))))
                     }
                 }
-                guard let drawable = output.nextDrawable() else { return }
-                _ = renderer.render(vertices: vertices, glyphs: texture, target: drawable.texture, drawable: drawable)
+                _ = renderer.render(vertices: vertices, glyphs: texture, layer: output)
             }
         }
     }

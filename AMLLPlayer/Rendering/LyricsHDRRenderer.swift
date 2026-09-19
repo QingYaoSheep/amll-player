@@ -69,7 +69,23 @@ final class LyricsHDRRenderer {
     func render(vertices: [Vertex], glyphs: MTLTexture, target: MTLTexture,
                 drawable: CAMetalDrawable? = nil) -> MTLCommandBuffer?
     {
-        guard inFlight.wait(timeout: .now()) == .success else { return nil }
+        render(vertices: vertices, glyphs: glyphs) { (target, drawable) }
+    }
+
+    /// Reserve GPU capacity before asking Core Animation for a drawable.
+    /// A busy frame falls back to the existing SDR glyphs without waiting for
+    /// one of the renderer's outstanding commands to finish.
+    func render(vertices: [Vertex], glyphs: MTLTexture, layer: CAMetalLayer) -> MTLCommandBuffer? {
+        render(vertices: vertices, glyphs: glyphs) {
+            guard let drawable = layer.nextDrawable() else { return nil }
+            return (drawable.texture, drawable)
+        }
+    }
+
+    private func render(vertices: [Vertex], glyphs: MTLTexture,
+                        acquireTarget: () -> (MTLTexture, CAMetalDrawable?)?) -> MTLCommandBuffer?
+    {
+        guard !vertices.isEmpty, inFlight.wait(timeout: .now()) == .success else { return nil }
         let gate = inFlight
         var submitted = false
         defer {
@@ -77,7 +93,7 @@ final class LyricsHDRRenderer {
                 gate.signal()
             }
         }
-        guard target.pixelFormat == .rgba16Float, !vertices.isEmpty,
+        guard let (target, drawable) = acquireTarget(), target.pixelFormat == .rgba16Float,
               let buffer = device.makeBuffer(bytes: vertices, length: MemoryLayout<Vertex>.stride * vertices.count),
               let command = queue.makeCommandBuffer() else { return nil }
         let pass = MTLRenderPassDescriptor()

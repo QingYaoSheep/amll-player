@@ -32,7 +32,7 @@ final class LyricsHDRRow {
     }
 
     func draw(pieces: [Piece], gain: Double, sharpWeight: Float) -> Bool {
-        guard !pieces.isEmpty, let drawable = layer.nextDrawable() else { layer.isHidden = true; return false }
+        guard !pieces.isEmpty else { layer.isHidden = true; return false }
         var vertices: [LyricsHDRRenderer.Vertex] = []
         vertices.reserveCapacity(pieces.count * 12)
         func append(_ piece: Piece, shadow: Bool) {
@@ -64,7 +64,7 @@ final class LyricsHDRRow {
         for piece in pieces {
             append(piece, shadow: false)
         }
-        guard renderer.render(vertices: vertices, glyphs: atlas, target: drawable.texture, drawable: drawable) != nil else {
+        guard renderer.render(vertices: vertices, glyphs: atlas, layer: layer) != nil else {
             layer.isHidden = true; return false
         }
         layer.opacity = sharpWeight

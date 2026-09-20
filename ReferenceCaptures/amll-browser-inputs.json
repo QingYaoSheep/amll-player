@@ -6,8 +6,12 @@
       "sha256": "67d113cee793827b91f491390001200f1a23ae8765cb4e78685dcbb5fb742c33"
     },
     {
+      "file": "../AMLL-Swift/Scripts/reference-browser/controlled-clock.mjs",
+      "sha256": "93726489f2aa16dd1f4c0894a8676982b28f693d81164b1ac3aed2132ae4bbec"
+    },
+    {
       "file": "../AMLL-Swift/Scripts/reference-browser/main.js",
-      "sha256": "35f88970c35dae543d93785c66d7f1915dac270b5bceb11d29422f9fd1f28771"
+      "sha256": "b7a3975df133ae37a8dbc66929fadaceda7d6a9f41c6289e4e5ec501f3e3128a"
     },
     {
       "file": "node_modules/.pnpm/@applemusic-like-lyrics+cor_1df7a569b9e1a1f9916652879e532347/node_modules/@applemusic-like-lyrics/core/dist/amll-core.mjs",

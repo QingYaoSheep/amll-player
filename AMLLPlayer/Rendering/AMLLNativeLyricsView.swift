@@ -602,7 +602,8 @@ private final class AMLLNativeRow: UIView {
 
         // `wordIndex` addresses the display document's segmented timing atoms,
         // which may be more numerous than the provider's original words.
-        let lastWordIndex = layout.fragments.map(\.wordIndex).max()
+        let emphasis = AMLLSourceWordAnimation.chunkEmphasis(words: line.words, lineStart: line.start,
+                                                             isBackground: line.isBackground)
         var characterConsumed: [Int: Double] = [:]
         var characterWordIndexes = Set<Int>()
         for fragment in layout.characterFragments where fragment.rect.width > 0 {
@@ -614,21 +615,8 @@ private final class AMLLNativeRow: UIView {
             let mask = CAGradientLayer(); mask.frame = piece.bounds
             mask.startPoint = CGPoint(x: fragment.rtl ? 1 : 0, y: 0.5); mask.endPoint = CGPoint(x: fragment.rtl ? 0 : 1, y: 0.5)
             piece.mask = mask; layer.addSublayer(piece)
-            let word = fragment.word
-            let characterCount = max(1, word.text.count)
-            let shouldEmphasize = AMLLSourceWordAnimation.shouldEmphasize(word)
-            let rubyCount = word.rubySegments.reduce(0) { $0 + $1.text.count }
-                + (word.rubySegments.isEmpty ? (word.ruby?.count ?? 0) : 0)
-            let animation = shouldEmphasize
-                ? AMLLSourceWordAnimation.emphasis(
-                    duration: word.end - word.start,
-                    delay: word.start - line.start,
-                    characterCount: characterCount,
-                    rubyCount: rubyCount,
-                    isLastWord: lastWordIndex == fragment.wordIndex,
-                    isBackground: line.isBackground
-                ).dropFirst(fragment.characterIndex).first
-                : nil
+            let animation = emphasis.indices.contains(fragment.wordIndex)
+                ? emphasis[fragment.wordIndex][fragment.characterIndex] : nil
             let advance = characterConsumed[fragment.wordIndex, default: 0]
             characters.append(.init(layer: piece, mask: mask, fragment: fragment, maskIndex: maskIndex,
                                     advance: advance, animation: animation))

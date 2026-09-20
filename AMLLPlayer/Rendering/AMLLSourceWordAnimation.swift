@@ -51,11 +51,60 @@ enum AMLLSourceWordAnimation {
         guard duration.isFinite, duration >= 1 else { return false }
         let trimmed = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        if AMLLWordSegmentation.isCJK(trimmed) {
+        if AMLLWordSegmentation.isCJK(word.text) {
             return true
         }
-        let count = trimmed.count
+        // JavaScript's predicate counts UTF-16 units; character animation below
+        // still uses grapheme clusters, as Intl.Segmenter does in the source.
+        let count = trimmed.utf16.count
         return count > 1 && count <= 7
+    }
+
+    /// `buildWord` computes one emphasis sequence over the whole layout chunk,
+    /// then distributes it to each timed atom's character elements. Ordinary
+    /// float and fill masks remain timed per atom, including ruby containers.
+    static func chunkEmphasis(words: [LyricWord], lineStart: Double,
+                              isBackground: Bool) -> [[Int: CharacterAnimation]]
+    {
+        var result: [[Int: CharacterAnimation]] = []
+        for chunk in AMLLWordSegmentation.chunks(words) {
+            let text = chunk.map(\.text).joined()
+            let start = chunk.map(\.start).min() ?? lineStart
+            let end = chunk.map(\.end).max() ?? start
+            let merged = LyricWord(text: text, start: start, end: end)
+            let enabled = chunk.contains(where: shouldEmphasize)
+                || (!AMLLWordSegmentation.isCJK(text) && shouldEmphasize(merged))
+            let indices = chunk.map { word -> [Int] in
+                let characters = Array(word.text)
+                let visible = characters.indices.filter {
+                    !String(characters[$0]).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+                guard let first = visible.first, let last = visible.last else { return [] }
+                return Array(first ... last)
+            }
+            let rubyCount = chunk.reduce(0) { count, word in
+                count + (word.rubySegments.isEmpty ? (word.ruby?.utf16.count ?? 0)
+                    : word.rubySegments.reduce(0) { $0 + $1.text.utf16.count })
+            }
+            // Preserve the pinned source's substring test, including repeated
+            // final-word text earlier in the line. Do not substitute array index.
+            let last = words.last.map { text.contains($0.text) } ?? false
+            let animations = enabled ? emphasis(duration: end - start, delay: start - lineStart,
+                                                characterCount: indices.reduce(0) { $0 + $1.count }, rubyCount: rubyCount,
+                                                isLastWord: last, isBackground: isBackground) : []
+            var cursor = 0
+            for wordIndices in indices {
+                var mapped: [Int: CharacterAnimation] = [:]
+                for index in wordIndices {
+                    if animations.indices.contains(cursor) {
+                        mapped[index] = animations[cursor]
+                    }
+                    cursor += 1
+                }
+                result.append(mapped)
+            }
+        }
+        return result
     }
 
     static func emphasis(duration: Double, delay: Double, characterCount: Int, rubyCount: Int = 0,

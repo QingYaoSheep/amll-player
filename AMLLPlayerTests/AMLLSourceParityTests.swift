@@ -3,6 +3,28 @@ import Foundation
 import XCTest
 
 final class AMLLSourceParityTests: XCTestCase {
+    func testEmphasisUsesMergedSyllableDurationAndContinuousCharacterDelays() throws {
+        let words: [LyricWord] = [.init(text: "hel", start: 1, end: 1.6),
+                                  .init(text: "lo", start: 1.6, end: 2.2)]
+        XCTAssertFalse(AMLLSourceWordAnimation.shouldEmphasize(words[0]))
+        let actual = AMLLSourceWordAnimation.chunkEmphasis(words: words, lineStart: 0.4, isBackground: false)
+        let expected = AMLLSourceWordAnimation.emphasis(duration: 1.2, delay: 0.6, characterCount: 5,
+                                                        isLastWord: true, isBackground: false)
+        XCTAssertEqual(actual.count, 2)
+        for index in 0 ..< 5 {
+            let animation = try XCTUnwrap(index < 3 ? actual[0][index] : actual[1][index - 3])
+            XCTAssertEqual(animation.delay, expected[index].delay, accuracy: 0.000001)
+            XCTAssertEqual(animation.duration, expected[index].duration, accuracy: 0.000001)
+        }
+    }
+
+    func testEmphasisPredicateUsesUTF16ButCharacterAnimationUsesGraphemes() {
+        let word = LyricWord(text: "👩‍💻", start: 0, end: 2)
+        XCTAssertTrue(AMLLSourceWordAnimation.shouldEmphasize(word))
+        let animations = AMLLSourceWordAnimation.chunkEmphasis(words: [word], lineStart: 0, isBackground: false)
+        XCTAssertEqual(animations.first?.count, 1)
+    }
+
     private struct Reference: Decodable {
         struct Trace: Decodable {
             struct Frame: Decodable { var delta: Double; var value: Double }

@@ -336,6 +336,24 @@ final class AMLLNativeCanvas: UIView {
     }
 
     #if DEBUG
+        struct ResourceCounts: Codable {
+            var visibleRows: Int
+            var retainedRows: Int
+            var layouts: Int
+            var layers: Int
+        }
+
+        var resourceCounts: ResourceCounts {
+            func count(_ layer: CALayer) -> Int {
+                1 + (layer.sublayers ?? []).reduce(0) { $0 + count($1) }
+                    + (layer.mask.map(count) ?? 0)
+            }
+            return .init(visibleRows: rowViews.count, retainedRows: retainedRows.count,
+                         layouts: layouts.count,
+                         layers: Array(rowViews.values).reduce(0) { $0 + count($1.layer) }
+                             + Array(retainedRows.values).reduce(0) { $0 + count($1.layer) })
+        }
+
         var glyphUpdateCount: Int {
             rowViews.values.reduce(0) { $0 + $1.visualUpdateCount }
         }
@@ -348,7 +366,9 @@ final class AMLLNativeCanvas: UIView {
 
         /// Rebuild from the fixed initial state for backward as well as forward
         /// navigation. Uses production layout/layers without emitting callbacks.
-        func replay(_ scenario: AMLLReplayScenario, through requestedFrame: Int) throws -> [AMLLFrameState] {
+        func replay(_ scenario: AMLLReplayScenario, through requestedFrame: Int,
+                    captureResources: ((ResourceCounts) -> Void)? = nil) throws -> [AMLLFrameState]
+        {
             var cursor = try AMLLReplayCursor(scenario)
             controlledReplay = true
             stop()
@@ -371,6 +391,7 @@ final class AMLLNativeCanvas: UIView {
                 draw(delta: next.delta)
                 if let frameState {
                     frames.append(frameState)
+                    captureResources?(resourceCounts)
                 }
             }
             return frames

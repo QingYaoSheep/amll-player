@@ -55,15 +55,17 @@
                 view.configure(document: reference.document, configuration: configuration,
                                input: .init(position: 1, playing: true), active: false, reduceMotion: false)
                 let scenario = try AMLLReplayScenario.shared(framesPerSecond: fps)
-                let frames = try view.replay(scenario, through: frameIndex)
+                var resources: [AMLLNativeCanvas.ResourceCounts] = []
+                let frames = try view.replay(scenario, through: frameIndex) { resources.append($0) }
                 struct Export: Encodable {
                     let schema = 3
                     let scenario: AMLLReplayScenario
                     let width: Double
                     let height: Double
                     let frames: [AMLLFrameState]
+                    let resources: [AMLLNativeCanvas.ResourceCounts]
                 }
-                let data = try JSONEncoder().encode(Export(scenario: scenario, width: view.bounds.width, height: view.bounds.height, frames: frames))
+                let data = try JSONEncoder().encode(Export(scenario: scenario, width: view.bounds.width, height: view.bounds.height, frames: frames, resources: resources))
                 DispatchQueue.main.async { completed(data, nil) }
             } catch { DispatchQueue.main.async { completed(nil, error.localizedDescription) } }
         }

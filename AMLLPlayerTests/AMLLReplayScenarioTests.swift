@@ -3,6 +3,30 @@ import UIKit
 import XCTest
 
 final class AMLLReplayScenarioTests: XCTestCase {
+    @MainActor
+    func testFifteenMinuteVirtualTraversalKeepsRowAndLayoutCachesBounded() throws {
+        var document = try AMLLSharedReference.load().document
+        document.lines = (0 ..< 150).map { index in
+            .init(id: "stress-\(index)", text: "Line \(index)", start: Double(index * 6), end: Double(index * 6 + 6))
+        }
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        canvas.configure(document: document, configuration: .init(), input: .init(position: 0, playing: true),
+                         active: false, reduceMotion: false)
+        let scenario = AMLLReplayScenario(id: "cache-traversal", lyricResource: "generated-stress",
+                                          initialPosition: 0, initiallyPlaying: true,
+                                          frameDeltas: Array(repeating: 5, count: 180), events: [])
+        var samples = 0
+        let frames = try canvas.replay(scenario, through: 179) { counts in
+            samples += 1
+            XCTAssertLessThanOrEqual(counts.retainedRows, 12)
+            XCTAssertLessThanOrEqual(counts.layouts, counts.visibleRows + counts.retainedRows)
+            XCTAssertLessThanOrEqual(counts.layers, (counts.visibleRows + counts.retainedRows) * 100)
+        }
+        XCTAssertEqual(samples, 180)
+        XCTAssertEqual(frames.last?.lyricTime ?? 0, 900, accuracy: 0.000001)
+        // Virtual traversal checks retention, not real-time thermal/GPU performance.
+    }
+
     func testSharedResourcePreservesEventTimesAtBothRefreshRates() throws {
         let slow = try AMLLReplayScenario.shared()
         let fast = try AMLLReplayScenario.shared(framesPerSecond: 120)

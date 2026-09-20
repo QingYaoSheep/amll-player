@@ -1,5 +1,7 @@
 # Plan 5 — complete native AMLL port
 
+2026-09-20：`LyricLineEl.buildWord/initEmphasizeAnimation` → `AMLLSourceWordAnimation.chunkEmphasis` → `AMLLNativeRow` 字符绘制；合并音节与 UTF-16 回归位于 `AMLLSourceParityTests`。新增 PNG 叠片工具见 `Visual-Diff-Workflow.md`。完整跨端报告及设备验收仍未闭合。
+
 ## 2026-09-19 最新实施状态（覆盖下方历史结论）
 
 | 范围 | 状态与证据 | 未闭合 |

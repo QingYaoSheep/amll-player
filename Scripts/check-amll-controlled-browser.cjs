@@ -10,7 +10,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const server = http.createServer((req, res) => {
   const file = path.resolve(root, '.' + new URL(req.url, 'http://localhost').pathname);
   if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) { res.writeHead(404);res.end();return; }
-  res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html');
+  res.setHeader('Content-Type', /\.m?js$/.test(file) ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html');
   res.end(fs.readFileSync(file));
 });
 let browser, socket;
@@ -106,6 +106,25 @@ async function main() {
   assert.ok(await evaluate('window.frames[0].amllReference.capture().groups.some(g=>g.lines.some(l=>l.words.length>0))'), 'timed words must actually render');
   const wordsFrozen=await evaluate(expression);await delay(200);
   assert.equal(await evaluate(expression),wordsFrozen,'word masks and emphasis must freeze with wall time');
+  await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/visual-diff.html`});
+  for(let i=0;i<100;i++) {
+    if(await evaluate('!!document.querySelector("#compare")?.onclick'))break;
+    await delay(50);
+  }
+  const diffResult=await evaluate(`(async()=>{
+    const metadata={lyricSHA256:'a'.repeat(64),artworkSHA256:'b'.repeat(64),scenarioSHA256:'c'.repeat(64),
+      configurationSHA256:'d'.repeat(64),width:2,height:1,displayScale:1,frame:0,font:'fixture',coordinateSpace:'content-physical-pixels'};
+    function assign(id,file){const files=new DataTransfer();files.items.add(file);document.getElementById(id).files=files.files;}
+    for(const [id,x] of [['reference',0],['actual',1]]) {
+      const canvas=document.createElement('canvas');canvas.width=2;canvas.height=1;
+      canvas.getContext('2d').fillRect(x,0,1,1);
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve));assign(id,new File([blob],id+'.png',{type:'image/png'}));
+      assign(id+'Meta',new File([JSON.stringify(metadata)],id+'.json',{type:'application/json'}));
+    }
+    await document.getElementById('compare').onclick();
+    return {report:JSON.parse(document.getElementById('status').textContent),width:document.getElementById('overlay').width};
+  })()`);
+  assert.equal(diffResult.report.changedPixels,2);assert.equal(diffResult.width,2);
   console.log('Pinned browser: frozen wall clock, 60/120 Hz steps, paused song clock passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{socket?.close();browser?.kill();server.close();});

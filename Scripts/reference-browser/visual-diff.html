@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AMLL 原生／原版叠片</title>
+<style>body{font:16px system-ui;background:#181818;color:#eee;margin:24px}label{display:block;margin:12px 0}canvas{max-width:100%;height:auto;background:#000}pre{white-space:pre-wrap}button{padding:8px;margin:8px}section{display:grid;grid-template-columns:1fr 1fr;gap:16px}</style>
+<h1>同输入截图叠片</h1>
+<p>选择原版和原生的 PNG 与对应 JSON 元数据。工具校验输入一致，保留原尺寸，不自动对齐或裁切。仅用于 SDR 像素检查，不能验证 HDR 亮度。</p>
+<label>原版 PNG <input id="reference" type="file" accept="image/png"></label>
+<label>原版 JSON <input id="referenceMeta" type="file" accept="application/json"></label>
+<label>原生 PNG <input id="actual" type="file" accept="image/png"></label>
+<label>原生 JSON <input id="actualMeta" type="file" accept="application/json"></label>
+<button id="compare">比较</button><button id="download" disabled>下载报告</button>
+<pre id="status"></pre>
+<section><div>50% 叠片<canvas id="overlay"></canvas></div><div>绝对差异<canvas id="difference"></canvas></div></section>
+<script type="module">
+import {validatePair,comparePixels} from './visual-diff.mjs';
+const $=id=>document.getElementById(id);let report;
+async function file(id){const value=$(id).files[0];if(!value)throw Error('缺少文件：'+id);return value;}
+async function pixels(id,metadata){
+  const bitmap=await createImageBitmap(await file(id),{premultiplyAlpha:'none'});
+  try {
+    if(bitmap.width!==metadata.width||bitmap.height!==metadata.height)throw Error(id+' PNG 尺寸与元数据不符');
+    const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
+    const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(bitmap,0,0);
+    return context.getImageData(0,0,canvas.width,canvas.height).data;
+  } finally{bitmap.close();}
+}
+$('compare').onclick=async()=>{
+  $('download').disabled=true;report=undefined;
+  for(const id of ['overlay','difference']){$(id).width=0;$(id).height=0;}
+  try {
+    const reference=JSON.parse(await (await file('referenceMeta')).text());
+    const actual=JSON.parse(await (await file('actualMeta')).text());validatePair(reference,actual);
+    const result=comparePixels(await pixels('reference',reference),await pixels('actual',actual));
+    for(const id of ['overlay','difference']){
+      const canvas=$(id);canvas.width=reference.width;canvas.height=reference.height;
+      canvas.getContext('2d').putImageData(new ImageData(result[id],reference.width,reference.height),0,0);
+    }
+    report={metadata:reference,...result.report};$('status').textContent=JSON.stringify(report,null,2);$('download').disabled=false;
+  }catch(error){$('status').textContent=error.message;}
+};
+$('download').onclick=()=>{
+  if(!report)return;const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
+  const link=document.createElement('a');link.href=url;link.download='amll-visual-report.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+</script>

@@ -8,15 +8,16 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: swiftui-ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   xcode-27:
     name: ${{ matrix.name }}
     runs-on: xcode-27
     timeout-minutes: 90
+    concurrency:
+      group: swiftui-ci-${{ github.ref }}-${{ matrix.variant }}
+      # Keep an active test run long enough to produce evidence. Direct IPA
+      # still follows the newest commit without waiting for simulator tests.
+      cancel-in-progress: ${{ matrix.variant == 'direct' }}
     strategy:
       fail-fast: false
       matrix:
@@ -32,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Verify replay comparison regressions
-        run: node --test Scripts/compare-amll-traces.test.cjs Scripts/controlled-clock.test.mjs Scripts/replay-scenario.test.mjs
+        run: node --test Scripts/compare-amll-traces.test.cjs Scripts/controlled-clock.test.mjs Scripts/replay-scenario.test.mjs Scripts/visual-diff.test.mjs
 
       - name: Verify Xcode and SDK
         run: |

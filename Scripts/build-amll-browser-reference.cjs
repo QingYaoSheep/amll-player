@@ -75,7 +75,7 @@ async function main() {
   await build.close();
   compilerResolution.deregister();
   fs.copyFileSync(path.join(core.directory,'dist/style.css'),path.join(output,'style.css'));
-  for(const file of ['index.html','frame.html','host.js']) {
+  for(const file of ['index.html','frame.html','host.js','visual-diff.html','visual-diff.mjs']) {
     fs.copyFileSync(path.join(__dirname,'reference-browser',file),path.join(output,file));
   }
   fs.writeFileSync(path.join(output,'build-manifest.json'),JSON.stringify({core:core.version,inputs:[...inputHashes].sort().map(([file,sha256])=>({file,sha256}))},null,2)+'\n');

@@ -4,6 +4,57 @@ import UIKit
 import XCTest
 
 final class AMLLNativeEngineTests: XCTestCase {
+    func testSplitAtomsRetainSourceUTF16OwnershipWithoutSplittingGraphemes() {
+        let words: [LyricWord] = [
+            .init(text: "中日", start: 1, end: 3),
+            .init(text: "a  👩‍💻 é", start: 3, end: 6, romanWord: "one annotation"),
+            .init(text: "עברית", start: 6, end: 8),
+        ]
+        let atoms = AMLLWordSegmentation.mappedChunks(words).flatMap(\.self)
+        for (index, word) in words.enumerated() {
+            let owned = atoms.filter { $0.sourceWordIndex == index }
+            XCTAssertEqual(owned.map(\.word.text).joined(), word.text)
+            var offset = 0
+            for atom in owned {
+                XCTAssertEqual(atom.sourceRange.location, offset)
+                XCTAssertNotNil(Range(atom.sourceRange, in: word.text))
+                XCTAssertEqual((word.text as NSString).substring(with: atom.sourceRange), atom.word.text)
+                offset = NSMaxRange(atom.sourceRange)
+            }
+            XCTAssertEqual(offset, word.text.utf16.count)
+        }
+        XCTAssertEqual(atoms.filter { $0.sourceWordIndex == 0 }.count, 2)
+        XCTAssertTrue(atoms.filter { $0.sourceWordIndex == 1 }.allSatisfy { $0.word.romanWord == nil })
+        XCTAssertEqual(words[1].romanWord, "one annotation")
+    }
+
+    @MainActor
+    func testAmbiguousRomanizationRemainsSingleSourceFallback() {
+        let line = LyricLine(id: "phrase", text: "one two", start: 0, end: 5,
+                             words: [.init(text: "one two", start: 0, end: 5, romanWord: "single annotation")], precision: .word)
+        var configuration = LyricsRenderConfiguration()
+        configuration.romanization = true
+        let layout = AMLLCoreTextLayout(line: line, width: 300, font: .systemFont(ofSize: 32), configuration: configuration)
+        XCTAssertFalse(layout.diagnostics.isEmpty)
+        XCTAssertTrue(layout.rubyFragments.allSatisfy { $0.kind != .romanization })
+        XCTAssertEqual(configuration.auxiliaryText(for: line).filter { $0 == "single annotation" }.count, 1)
+        XCTAssertTrue(layout.sourceAtoms.allSatisfy { $0.sourceWordIndex == 0 })
+    }
+
+    @MainActor
+    func testShapedFragmentsResolveToOriginalWordOwnership() {
+        let line = LyricLine(id: "ownership", text: "中文 hello", start: 0, end: 5,
+                             words: [.init(text: "中文", start: 0, end: 2),
+                                     .init(text: " hello", start: 2, end: 5, romanWord: "greeting")], precision: .word)
+        let layout = AMLLCoreTextLayout(line: line, width: 180, font: .systemFont(ofSize: 32), configuration: .init())
+        XCTAssertFalse(layout.fragments.isEmpty)
+        for fragment in layout.fragments {
+            let atom = layout.sourceAtoms[fragment.wordIndex]
+            let original = line.words[atom.sourceWordIndex]
+            XCTAssertEqual((original.text as NSString).substring(with: atom.sourceRange), fragment.word.text)
+        }
+    }
+
     func testReleaseCoastsAndKeepsBlurOffUntilNextLyric() {
         let lines: [LyricLine] = (0 ..< 10).map { (index: Int) -> LyricLine in
             LyricLine(id: String(index), text: "Line", start: Double(index) * 10, end: Double(index) * 10 + 9)

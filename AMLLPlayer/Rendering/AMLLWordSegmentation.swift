@@ -3,27 +3,46 @@ import Foundation
 /// Port of chunkAndSplitLyricWords. Groups are indivisible layout children, while
 /// their constituent timed syllables remain available to the mask generator.
 enum AMLLWordSegmentation {
+    /// Stable provider-word ownership survives whitespace/CJK splitting. Ranges
+    /// address the source word's UTF-16 text, never ruby syllables or timestamps.
+    struct Atom {
+        var word: LyricWord
+        var sourceWordIndex: Int
+        var sourceRange: NSRange
+    }
+
     static func isCJK(_ text: String) -> Bool {
         text.range(of: #"^[\p{Unified_Ideograph}\u0800-\u9FFC]+$"#, options: .regularExpression) != nil
     }
 
     static func chunks(_ words: [LyricWord]) -> [[LyricWord]] {
-        var result: [[LyricWord]] = []
-        var group: [LyricWord] = []
+        mappedChunks(words).map { $0.map(\.word) }
+    }
+
+    static func mappedChunks(_ words: [LyricWord]) -> [[Atom]] {
+        var result: [[Atom]] = []
+        var group: [Atom] = []
+        var sourceWordIndex = 0
+        var sourceOffset = 0
         func flush() {
             if !group.isEmpty {
                 result.append(group); group = []
             }
         }
         func process(_ atom: LyricWord) {
+            let mapped = Atom(word: atom, sourceWordIndex: sourceWordIndex,
+                              sourceRange: NSRange(location: sourceOffset, length: atom.text.utf16.count))
+            sourceOffset += mapped.sourceRange.length
             let hasRuby = !atom.rubySegments.isEmpty || !(atom.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             if !atom.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isCJK(atom.text), !hasRuby {
-                group.append(atom)
+                group.append(mapped)
             } else {
-                flush(); result.append([atom])
+                flush(); result.append([mapped])
             }
         }
-        for word in words {
+        for (index, word) in words.enumerated() {
+            sourceWordIndex = index
+            sourceOffset = 0
             let hasRuby = !word.rubySegments.isEmpty || !(word.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             if word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasRuby {
                 process(word); continue
@@ -31,6 +50,12 @@ enum AMLLWordSegmentation {
             let ns = word.text as NSString
             let pattern = try? NSRegularExpression(pattern: #"\s+|\S+"#)
             let parts = pattern?.matches(in: word.text, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range) } ?? [word.text]
+            // A provider annotation belongs to its original word. Splitting a
+            // phrase must not duplicate that annotation onto every child. The
+            // layout retains the original word through sourceWordIndex and can
+            // fall back to its single line-level annotation when ambiguous.
+            let annotation = parts.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count == 1
+                ? word.romanWord : nil
             let length = parts.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.reduce(0) { $0 + $1.utf16.count }
             let unit = (word.end - word.start) / Double(max(1, length))
             var offset = 0
@@ -52,7 +77,7 @@ enum AMLLWordSegmentation {
                     let start = word.start + Double(offset) * unit
                     offset += part.utf16.count
                     process(.init(text: part, start: start, end: word.start + Double(offset) * unit,
-                                  romanWord: word.romanWord, voice: word.voice, isObscene: word.isObscene))
+                                  romanWord: annotation, voice: word.voice, isObscene: word.isObscene))
                 }
             }
         }

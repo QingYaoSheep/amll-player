@@ -744,7 +744,8 @@ private final class AMLLNativeRow: UIView {
         for entry in rubyPieces {
             entry.layer.opacity = sharpWeight
             let fragment = entry.fragment
-            if let word = textLayout.fragments.first(where: { $0.wordIndex == fragment.wordIndex })?.word {
+            if textLayout.sourceAtoms.indices.contains(fragment.wordIndex) {
+                let word = textLayout.sourceAtoms[fragment.wordIndex].word
                 let elapsed = row.wordClock.floatElapsed(wordStart: word.start - line.start, duration: word.end - word.start)
                 let offset = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: word.end - word.start,
                                                                isBackground: line.isBackground)

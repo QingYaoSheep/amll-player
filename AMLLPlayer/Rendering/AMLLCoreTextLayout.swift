@@ -121,13 +121,20 @@ final class AMLLCoreTextLayout {
     let breakOffsets: [Int]
     let font: UIFont
     let maskWords: [AMLLWordMask.Word]
+    /// Indexed by WordFragment/CharacterFragment/RubyFragment.wordIndex.
+    /// Original annotation data stays on the source word; no inferred ruby
+    /// character correspondence is introduced by segmentation.
+    let sourceAtoms: [AMLLWordSegmentation.Atom]
     private let rows: [Row]
 
     init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration) {
         self.font = font
         let availableWidth = max(1, width)
+        let mappedChunks = line.precision == .word ? AMLLWordSegmentation.mappedChunks(line.words) : []
+        let atoms = mappedChunks.flatMap(\.self)
+        sourceAtoms = atoms
         let chunks: [[LyricWord]] = if line.precision == .word {
-            AMLLWordSegmentation.chunks(line.words)
+            mappedChunks.map { $0.map(\.word) }
         } else {
             // Static lines have no timed word fragments, but their line-break
             // children still follow source word segmentation rather than one
@@ -140,13 +147,13 @@ final class AMLLCoreTextLayout {
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking]
         let rubyFont = font.withSize(max(10, font.pointSize * 0.5))
         let romanFont = font.withSize(max(10, font.pointSize * (configuration.auxiliaryScale ?? 0.5)))
-        let unambiguousRomanization = line.words.allSatisfy { word in
+        let unambiguousRomanization = line.words.enumerated().allSatisfy { index, word in
             guard !(word.romanWord ?? "").isEmpty else { return true }
-            return AMLLWordSegmentation.chunks([word]).flatMap(\.self).filter {
-                !($0.romanWord ?? "").isEmpty
+            return atoms.filter {
+                $0.sourceWordIndex == index && !$0.word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }.count == 1
         }
-        let wantsWordRomanization = configuration.romanization && line.precision == .word && timedWords.contains {
+        let wantsWordRomanization = configuration.romanization && line.precision == .word && line.words.contains {
             !($0.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         }
         let hasWordRomanization = wantsWordRomanization && unambiguousRomanization
@@ -207,7 +214,7 @@ final class AMLLCoreTextLayout {
         let backgroundPadding = line.isBackground ? font.pointSize * 1.2 : 0
         var y: CGFloat = backgroundPadding
         let mainHeight = max(font.lineHeight, font.pointSize * 1.2)
-        // Segmentation can copy one provider annotation onto several atoms.
+        // Segmentation can split one provider word into several atoms.
         // Without an explicit correspondence, keep the provider's line fallback
         // instead of repeating the same pronunciation under every atom.
         diagnostics = wantsWordRomanization && !unambiguousRomanization

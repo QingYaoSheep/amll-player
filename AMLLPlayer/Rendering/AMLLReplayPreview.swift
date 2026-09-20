@@ -54,15 +54,7 @@
                 configuration.anchor = reference.anchor
                 view.configure(document: reference.document, configuration: configuration,
                                input: .init(position: 1, playing: true), active: false, reduceMotion: false)
-                let scenario = AMLLReplayScenario(id: "pause-seek-browse-v1", lyricResource: "amll-shared-lyrics.json",
-                                                  initialPosition: 1, initiallyPlaying: true,
-                                                  frameDeltas: [0] + Array(repeating: 1 / Double(fps), count: fps * 8 - 1), events: [
-                                                      .init(frame: fps, kind: .pause), .init(frame: fps * 2, kind: .seek, value: 5),
-                                                      .init(frame: fps * 3, kind: .play), .init(frame: fps * 4, kind: .beginBrowsing),
-                                                      .init(frame: fps * 4 + 1, kind: .browseBy, value: 120),
-                                                      .init(frame: fps * 4 + 2, kind: .endBrowsing, value: -250),
-                                                      .init(frame: fps * 6, kind: .resumeFollowing),
-                                                  ])
+                let scenario = try AMLLReplayScenario.shared(framesPerSecond: fps)
                 let frames = try view.replay(scenario, through: frameIndex)
                 struct Export: Encodable {
                     let schema = 3

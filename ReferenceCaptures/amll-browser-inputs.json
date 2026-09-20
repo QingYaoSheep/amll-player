@@ -6,12 +6,20 @@
       "sha256": "67d113cee793827b91f491390001200f1a23ae8765cb4e78685dcbb5fb742c33"
     },
     {
+      "file": "../AMLL-Swift/AMLLPlayer/Resources/amll-shared-replay.json",
+      "sha256": "c930d9428b6fe4781dd65f46c59777f31e108b50328648558dc462ba7e53bfda"
+    },
+    {
       "file": "../AMLL-Swift/Scripts/reference-browser/controlled-clock.mjs",
       "sha256": "93726489f2aa16dd1f4c0894a8676982b28f693d81164b1ac3aed2132ae4bbec"
     },
     {
       "file": "../AMLL-Swift/Scripts/reference-browser/main.js",
-      "sha256": "b7a3975df133ae37a8dbc66929fadaceda7d6a9f41c6289e4e5ec501f3e3128a"
+      "sha256": "e07ead4499edad24be55bc6f51138c2639ca8cd51bea74bf7217082c2afa9e2a"
+    },
+    {
+      "file": "../AMLL-Swift/Scripts/reference-browser/replay-scenario.mjs",
+      "sha256": "e851d43de4a3f70922586b49d187f98ca1e14c2e448f3f18a19588f33435c999"
     },
     {
       "file": "node_modules/.pnpm/@applemusic-like-lyrics+cor_1df7a569b9e1a1f9916652879e532347/node_modules/@applemusic-like-lyrics/core/dist/amll-core.mjs",

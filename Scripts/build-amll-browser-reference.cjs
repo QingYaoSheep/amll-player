@@ -52,6 +52,7 @@ async function main() {
       resolveId(specifier, importer) {
         if(specifier === 'pinned-amll-core') return entry(core);
         if(specifier === 'pinned-fixture') return path.join(root, 'AMLLPlayer/Resources/amll-shared-lyrics.json');
+        if(specifier === 'pinned-replay') return path.join(root, 'AMLLPlayer/Resources/amll-shared-replay.json');
         if(!importer || specifier.startsWith('.') || path.isAbsolute(specifier) || specifier.startsWith('\0')) return null;
         const parts = specifier.split('/');
         const name = specifier.startsWith('@') ? parts.slice(0,2).join('/') : parts[0];

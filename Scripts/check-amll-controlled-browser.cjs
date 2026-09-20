@@ -87,6 +87,15 @@ async function main() {
     fs.writeFileSync(path.join(profile,'first.json'),first);fs.writeFileSync(path.join(profile,'second.json'),second);
     throw Error(`Repeated replay mismatch; inspect ${profile}`);
   }
+  await restart();
+  const shared=await evaluate('window.frames[0].amllReference.replayScenario().then(JSON.stringify)');
+  const sharedFrames=JSON.parse(shared).frames;
+  assert.equal(sharedFrames.length,480);
+  assert.equal(sharedFrames[120].position,5);
+  assert.equal(sharedFrames[179].position,5);
+  await restart();
+  assert.equal(await evaluate('window.frames[0].amllReference.replayScenario().then(JSON.stringify)'),shared,
+    'shared native/browser scenario must replay identically after reload');
   await evaluate(`(async()=>{
     const r=window.frames[0].amllReference;
     r.player.setLyricLines([{startTime:1000,endTime:7000,isBG:false,isDuet:false,translatedLyric:'Translation',romanLyric:'',

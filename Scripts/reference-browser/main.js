@@ -1,6 +1,8 @@
 import {DomLyricPlayer} from 'pinned-amll-core';
 import fixture from 'pinned-fixture';
 import {ControlledClock} from './controlled-clock.mjs';
+import sharedReplay from 'pinned-replay';
+import {replaySteps} from './replay-scenario.mjs';
 
 const viewport = document.querySelector('#viewport');
 // The renderer lives in its own browsing context so vh/vw and media queries
@@ -102,6 +104,41 @@ async function controlledStep(delta,time,seek=false) {
     clock.advance(0);await Promise.resolve();clock.capture(element);
   }
 }
+async function replayScenario(scenario = sharedReplay) {
+  if(!clock || frameCount > 1) throw Error('Replay requires a freshly loaded controlled host');
+  const steps = replaySteps(scenario);
+  if(scenario.lyricResource !== 'amll-shared-lyrics.json') throw Error('Unsupported lyric resource');
+  if(scenario.events.some(e=>e.kind==='endBrowsing'&&e.value!==0)) {
+    throw Error('Nonzero release velocity needs a recorded touch trajectory');
+  }
+  let touchY=250;
+  const touch=type=>{
+    const value=new Touch({identifier:1,target:element,screenX:100,screenY:touchY,clientX:100,clientY:touchY});
+    element.dispatchEvent(new TouchEvent(type,{touches:type==='touchend'?[]:[value],changedTouches:[value],bubbles:true,cancelable:true}));
+  };
+  position=scenario.initialPosition;
+  playing=scenario.initiallyPlaying;
+  playing?player.resume():player.pause();
+  player.setCurrentTime(position*1000,true);
+  const samples=[];
+  for(const frame of steps) {
+    if(playing!==frame.playing) {
+      playing=frame.playing;
+      playing?player.resume():player.pause();
+    }
+    // Anchor seek before advancing, matching the native canvas event boundary.
+    player.setCurrentTime(frame.startPosition*1000,frame.seeking);
+    for(const event of frame.events) {
+      if(event.kind==='beginBrowsing'){touchY=250;touch('touchstart');}
+      if(event.kind==='browseBy'){touchY-=event.value;touch('touchmove');}
+      if(event.kind==='endBrowsing'){touch('touchmove');touch('touchend');}
+      if(event.kind==='resumeFollowing')player.resetScroll();
+    }
+    await controlledStep(frame.delta,frame.position);
+    samples.push(capture(true));
+  }
+  return {schema:3,scenario,frames:samples};
+}
 function frame(timestamp) {
   // pause() stops word playback; group springs must still settle every frame.
   step(lastFrame===undefined?0:(timestamp-lastFrame)/1000);
@@ -121,5 +158,5 @@ controls.querySelector('#export').onclick=()=>{
   const url=URL.createObjectURL(new Blob([JSON.stringify({schema:1,scope:controlled?'core-only; controlled timers/RAF/WAAPI/CSS sampling; pending browser parity validation':'core-only; real browser clock',animationTime:clock?.now,current:capture(true),trace},null,2)],{type:'application/json'}));
   const link=document.createElement('a');link.href=url;link.download='amll-original-core-trace.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-window.amllReference={capture,step:controlledStep,player,trace,clock};
+window.amllReference={capture,step:controlledStep,player,trace,clock,replayScenario};
 step(0); document.documentElement.dataset.amllReady='true';if(!controlled) requestAnimationFrame(frame);

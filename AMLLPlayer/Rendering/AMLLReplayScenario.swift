@@ -21,6 +21,21 @@ struct AMLLReplayScenario: Codable, Equatable, Sendable {
     var frameDeltas: [Double]
     var events: [Event]
 
+    static func shared(framesPerSecond: Int = 60) throws -> Self {
+        guard [60, 120].contains(framesPerSecond),
+              let url = Bundle.main.url(forResource: "amll-shared-replay", withExtension: "json")
+        else { throw CocoaError(.fileReadCorruptFile) }
+        var result = try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
+        try result.validate()
+        if framesPerSecond == 120 {
+            result.frameDeltas = result.frameDeltas.flatMap { [$0 / 2, $0 / 2] }
+            result.events = result.events.map { event in
+                var event = event; event.frame *= 2; return event
+            }
+        }
+        return result
+    }
+
     func validate() throws {
         guard schema == 1, initialPosition.isFinite, initialPosition >= 0,
               !frameDeltas.isEmpty, frameDeltas.allSatisfy({ $0.isFinite && $0 >= 0 }),

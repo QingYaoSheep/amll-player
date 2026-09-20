@@ -3,6 +3,27 @@ import UIKit
 import XCTest
 
 final class AMLLReplayScenarioTests: XCTestCase {
+    func testSharedResourcePreservesEventTimesAtBothRefreshRates() throws {
+        let slow = try AMLLReplayScenario.shared()
+        let fast = try AMLLReplayScenario.shared(framesPerSecond: 120)
+        XCTAssertEqual(slow.frameDeltas.count, 480)
+        XCTAssertEqual(fast.frameDeltas.count, 960)
+        for (a, b) in zip(slow.events, fast.events) {
+            XCTAssertEqual(a.kind, b.kind)
+            XCTAssertEqual(a.value, b.value)
+            XCTAssertEqual(slow.frameDeltas.prefix(a.frame).reduce(0, +),
+                           fast.frameDeltas.prefix(b.frame).reduce(0, +), accuracy: 0.000001)
+        }
+        var cursor = try AMLLReplayCursor(slow)
+        var positions: [Double] = []
+        while let frame = cursor.next() {
+            positions.append(frame.input.position)
+        }
+        XCTAssertEqual(positions[120], 5)
+        XCTAssertEqual(positions[179], 5)
+        XCTAssertGreaterThan(positions[180], 5)
+    }
+
     @MainActor
     func testActualCanvasReplayIsRepeatableAtBothRatesAndIrregularFrames() throws {
         let reference = try AMLLSharedReference.load()

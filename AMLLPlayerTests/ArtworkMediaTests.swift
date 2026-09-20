@@ -3,6 +3,27 @@ import XCTest
 
 @MainActor
 final class ArtworkMediaTests: XCTestCase {
+    func testTruncatedAndSystemRemovedMediaCannotRemainCacheHits() throws {
+        let sandbox = try temporarySandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let root = sandbox.appendingPathComponent("cache")
+        let cache = ArtworkMediaCache(root: root, sandbox: sandbox)
+        let remote = try XCTUnwrap(URL(string: "https://example.com/cover.mp4?token=private"))
+        let temporary = sandbox.appendingPathComponent("download")
+        try Data([1, 2, 3, 4]).write(to: temporary)
+        let original = try cache.insert(temporary, for: remote, managedPackage: false)
+        let restored = ArtworkMediaCache(root: root, sandbox: sandbox)
+        try Data([1]).write(to: original)
+        XCTAssertNil(restored.cached(remote))
+        XCTAssertEqual(restored.byteCount, 0)
+        try Data([5, 6]).write(to: temporary)
+        let replacement = try restored.insert(temporary, for: remote, managedPackage: false)
+        try FileManager.default.removeItem(at: replacement)
+        XCTAssertNil(restored.cached(remote))
+        let registry = sandbox.appendingPathComponent("Library/Application Support/AMLLArtwork/index.json")
+        XCTAssertFalse(try String(contentsOf: registry, encoding: .utf8).contains("private"))
+    }
+
     func testRejectedCacheCannotBeReusedAndOldFileCannotInvalidateReplacement() throws {
         let sandbox = try temporarySandbox()
         defer { try? FileManager.default.removeItem(at: sandbox) }

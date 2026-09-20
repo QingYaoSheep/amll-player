@@ -12,6 +12,7 @@ final class ArtworkMediaCache {
         var relativePath: String
         var accessed: Date
         var unusable: Bool?
+        var bytes: Int64?
     }
 
     private let root: URL
@@ -51,7 +52,13 @@ final class ArtworkMediaCache {
     func cached(_ remote: URL) -> URL? {
         guard let index = entries.firstIndex(where: { $0.key == key(remote) }),
               entries[index].unusable != true,
-              let url = safeURL(entries[index].relativePath), FileManager.default.fileExists(atPath: url.path) else { return nil }
+              let url = safeURL(entries[index].relativePath) else { return nil }
+        let actualBytes = size(url)
+        guard actualBytes > 0, entries[index].bytes.map({ $0 == actualBytes }) ?? true else {
+            invalidate(localURL: url)
+            return nil
+        }
+        entries[index].bytes = actualBytes
         entries[index].accessed = Date()
         save()
         return url
@@ -104,7 +111,7 @@ final class ArtworkMediaCache {
             }
         }
         entries.removeAll { $0.key == key(remote) }
-        entries.append(.init(key: key(remote), relativePath: String(destination.path.dropFirst(sandbox.path.count + 1)), accessed: Date()))
+        entries.append(.init(key: key(remote), relativePath: String(destination.path.dropFirst(sandbox.path.count + 1)), accessed: Date(), bytes: bytes))
         prune()
         guard byteCount <= limit else {
             // If an older package cannot be removed, reject the new admission

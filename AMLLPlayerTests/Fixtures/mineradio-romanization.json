@@ -1,0 +1,247 @@
+{
+  "sourceSha256": "a089015363750c127350c33a79ae5bbd1775edbe9a8d3935d61ddee33331f571",
+  "cases": [
+    {
+      "name": "Japanese mixed",
+      "text": "君の名は Baby",
+      "languageHint": "",
+      "lines": [
+        {
+          "text": "kimi no na wa Baby",
+          "language": "ja",
+          "coverage": 1,
+          "tokens": [
+            {
+              "sourceText": "君",
+              "romanized": "kimi",
+              "utf16Start": 0,
+              "utf16End": 1
+            },
+            {
+              "sourceText": "の",
+              "romanized": "no",
+              "utf16Start": 1,
+              "utf16End": 2
+            },
+            {
+              "sourceText": "名",
+              "romanized": "na",
+              "utf16Start": 2,
+              "utf16End": 3
+            },
+            {
+              "sourceText": "は",
+              "romanized": "wa",
+              "utf16Start": 3,
+              "utf16End": 4
+            },
+            {
+              "sourceText": "Baby",
+              "romanized": "Baby",
+              "utf16Start": 5,
+              "utf16End": 9
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Japanese kana",
+      "text": "きょうはちょっといい日",
+      "languageHint": "ja",
+      "lines": [
+        {
+          "text": "kyoo wa chotto ii hi",
+          "language": "ja",
+          "coverage": 1,
+          "tokens": [
+            {
+              "sourceText": "きょう",
+              "romanized": "kyoo",
+              "utf16Start": 0,
+              "utf16End": 3
+            },
+            {
+              "sourceText": "は",
+              "romanized": "wa",
+              "utf16Start": 3,
+              "utf16End": 4
+            },
+            {
+              "sourceText": "ちょっと",
+              "romanized": "chotto",
+              "utf16Start": 4,
+              "utf16End": 8
+            },
+            {
+              "sourceText": "いい",
+              "romanized": "ii",
+              "utf16Start": 8,
+              "utf16End": 10
+            },
+            {
+              "sourceText": "日",
+              "romanized": "hi",
+              "utf16Start": 10,
+              "utf16End": 11
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Japanese sokuon",
+      "text": "学校でハッピー",
+      "languageHint": "ja",
+      "lines": [
+        {
+          "text": "gakkoo de happii",
+          "language": "ja",
+          "coverage": 1,
+          "tokens": [
+            {
+              "sourceText": "学校",
+              "romanized": "gakkoo",
+              "utf16Start": 0,
+              "utf16End": 2
+            },
+            {
+              "sourceText": "で",
+              "romanized": "de",
+              "utf16Start": 2,
+              "utf16End": 3
+            },
+            {
+              "sourceText": "ハッピー",
+              "romanized": "happii",
+              "utf16Start": 3,
+              "utf16End": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Japanese punctuation",
+      "text": "ありがとう、君。",
+      "languageHint": "ja",
+      "lines": [
+        {
+          "text": "arigatoo、 kimi。",
+          "language": "ja",
+          "coverage": 1,
+          "tokens": [
+            {
+              "sourceText": "ありがとう、",
+              "romanized": "arigatoo、",
+              "utf16Start": 0,
+              "utf16End": 6
+            },
+            {
+              "sourceText": "君。",
+              "romanized": "kimi。",
+              "utf16Start": 6,
+              "utf16End": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Korean liaison",
+      "text": "널 부를래 Baby",
+      "languageHint": "",
+      "lines": [
+        {
+          "text": "neol bu reul rae Baby",
+          "language": "ko",
+          "coverage": 1,
+          "tokens": [
+            {
+              "sourceText": "널",
+              "romanized": "neol",
+              "utf16Start": 0,
+              "utf16End": 1
+            },
+            {
+              "sourceText": "부를래",
+              "romanized": "bu reul rae",
+              "utf16Start": 2,
+              "utf16End": 5
+            },
+            {
+              "sourceText": "Baby",
+              "romanized": "Baby",
+              "utf16Start": 6,
+              "utf16End": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Korean mixed",
+      "text": "사랑해, Hello!",
+      "languageHint": "ko",
+      "lines": [
+        {
+          "text": "sa rang hae, Hello!",
+          "language": "ko",
+          "coverage": 1,
+          "tokens": [
+            {
+              "sourceText": "사랑해,",
+              "romanized": "sa rang hae,",
+              "utf16Start": 0,
+              "utf16End": 4
+            },
+            {
+              "sourceText": "Hello!",
+              "romanized": "Hello!",
+              "utf16Start": 5,
+              "utf16End": 11
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Korean palatalization",
+      "text": "같이 있어",
+      "languageHint": "ko",
+      "lines": [
+        {
+          "text": "ga chi i sseo",
+          "language": "ko",
+          "coverage": 1,
+          "tokens": [
+            {
+              "sourceText": "같이",
+              "romanized": "ga chi",
+              "utf16Start": 0,
+              "utf16End": 2
+            },
+            {
+              "sourceText": "있어",
+              "romanized": "i sseo",
+              "utf16Start": 3,
+              "utf16End": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Chinese exclusion",
+      "text": "我爱你",
+      "languageHint": "",
+      "lines": []
+    },
+    {
+      "name": "Latin exclusion",
+      "text": "Hello world",
+      "languageHint": "",
+      "lines": []
+    }
+  ]
+}

@@ -58,3 +58,17 @@ bulge-pinch notice copyright 2013–2017 Mathew Groves, Chad Engler.
 Full notices: `Licenses/Pixi-MIT.txt`, `Licenses/Pixi-Filters-MIT.txt`.
 Exact input hashes: `ReferenceCaptures/amll-pixi-inputs.json`.
 Development fixture scripts execute upstream JavaScript only outside the app.
+
+## Mineradio automatic romanization
+
+The native Japanese and Korean pronunciation generator adapts the current
+`romanization-engine.js` from `Mineradio-Spotify` (GPL-3.0-only). The original
+license is preserved in `Licenses/Mineradio-Romanization-GPL-3.0.txt`.
+
+Japanese word selection uses pinned Kuromoji 0.1.2 IPADIC resources and a native
+adaptation of its Viterbi search. Kuromoji is Apache-2.0; its license and notice
+are in `Licenses/Kuromoji-Apache-2.0.txt` and `Licenses/Kuromoji-NOTICE.md`.
+Kana mappings are generated from WanaKana 5.3.1 (MIT); its license is in
+`Licenses/WanaKana-MIT.txt`. The iOS app contains native Swift code and resource
+data, without the development-time JavaScript dependencies. Source and resource
+hashes are recorded in `AMLLPlayer/Resources/Romanization/romanization-resources.json`.

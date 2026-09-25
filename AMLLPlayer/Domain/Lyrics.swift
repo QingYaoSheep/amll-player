@@ -152,6 +152,19 @@ struct LyricLine: Codable, Equatable, Sendable, Identifiable {
     var agent: String? = nil
     var isRTL = false
     var precision: LyricsPrecision = .line
+    /// Generated pronunciation is display data. Provider words and their real
+    /// timestamps remain unchanged so one lexical token can span several nodes.
+    var generatedRomanization: [RomanizationToken]? = nil
+    var generatedRomanizationLanguage: String? = nil
+}
+
+struct RomanizationToken: Codable, Equatable, Sendable {
+    var sourceText: String
+    var romanized: String
+    var utf16Start: Int
+    var utf16End: Int
+    var sourceNodeIndexes: [Int]
+    var language: String
 }
 
 struct LyricsDocument: Codable, Equatable, Sendable {

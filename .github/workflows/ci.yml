@@ -35,6 +35,9 @@ jobs:
       - name: Verify replay comparison regressions
         run: node --test Scripts/compare-amll-traces.test.cjs Scripts/controlled-clock.test.mjs Scripts/replay-scenario.test.mjs Scripts/visual-diff.test.mjs
 
+      - name: Verify pinned offline romanization resources
+        run: node Scripts/verify-mineradio-romanization.cjs
+
       - name: Verify Xcode and SDK
         run: |
           XCODE_VERSION="$(xcodebuild -version)"

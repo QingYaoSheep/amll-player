@@ -106,7 +106,7 @@ struct FullscreenLyricsPlayer: View {
                         Button("player.devices", systemImage: "airplayaudio") {
                             devices = true; Task { await model.loadDevices() }
                         }
-                        NavigationLink("render.settings") { LyricsAppearanceView(preferences: model.renderPreferences) }
+                        NavigationLink("render.settings") { LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics) }
                         NavigationLink("lyrics.settings") { LyricsSettingsView(coordinator: model.lyrics) }
                     } label: { Label("render.options", systemImage: "ellipsis.circle") }
                         .accessibilityIdentifier("lyricsDisplayOptions")

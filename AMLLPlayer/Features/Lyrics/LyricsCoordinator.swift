@@ -14,6 +14,7 @@ final class LyricsCoordinator {
     private(set) var cacheWarning: String?
     private(set) var savedAt: Date?
     private(set) var isLoading = false
+    private(set) var romanizationStatus = ""
     private(set) var candidates: [LyricsSource: [LyricCandidate]] = [:]
     private(set) var searchErrors: [LyricsSource: String] = [:]
     private(set) var searching: Set<LyricsSource> = []
@@ -28,6 +29,8 @@ final class LyricsCoordinator {
     @ObservationIgnored private let cache: any LyricsCacheProviding
     @ObservationIgnored private let settingsStore: LyricsSettingsStore
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var romanizationTask: Task<Void, Never>?
+    @ObservationIgnored private var romanizationEpoch = UUID()
     @ObservationIgnored private var searchTasks: [Task<Void, Never>] = []
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var epoch = UUID()
@@ -56,7 +59,7 @@ final class LyricsCoordinator {
         return coordinator
     }
 
-    deinit { loadTask?.cancel(); searchTasks.forEach { $0.cancel() }; previewTask?.cancel() }
+    deinit { loadTask?.cancel(); romanizationTask?.cancel(); searchTasks.forEach { $0.cancel() }; previewTask?.cancel() }
 
     func update(track next: TrackIdentity?) {
         if track?.spotifyID == next?.spotifyID {
@@ -98,6 +101,8 @@ final class LyricsCoordinator {
 
     private func cancelLoad() {
         epoch = UUID(); loadTask?.cancel(); loadTask = nil; isLoading = false
+        romanizationEpoch = UUID(); romanizationTask?.cancel(); romanizationTask = nil
+        romanizationStatus = ""
     }
 
     func reload(force: Bool = false) {
@@ -113,6 +118,7 @@ final class LyricsCoordinator {
                        manual == nil || entry.document.candidate.id == manual?.id
                     {
                         document = entry.document; savedAt = entry.savedAt
+                        startRomanization(for: entry.document, trackID: track.spotifyID)
                         let fresh = entry.isFresh(days: config.refreshDays)
                         status = fresh || manual != nil ? .cached : .stale
                         if !force, fresh || manual != nil {
@@ -192,6 +198,32 @@ final class LyricsCoordinator {
             do { try cache.save(LyricsCacheEntry(track: track, payload: payload, document: document, savedAt: savedAt ?? Date()), settings: settings) }
             catch { cacheWarning = LyricsError.cache.localizedDescription }
         }
+        startRomanization(for: document, trackID: track.spotifyID)
+    }
+
+    private func startRomanization(for base: LyricsDocument, trackID: String, force: Bool = false) {
+        romanizationTask?.cancel()
+        romanizationEpoch = UUID()
+        let ticket = romanizationEpoch
+        guard !base.isInstrumental, !base.lines.isEmpty else { romanizationStatus = ""; return }
+        romanizationStatus = "正在生成日语／韩语音译"
+        romanizationTask = Task { [weak self] in
+            let result = await LyricsRomanizationEngine.shared.generateCached(document: base, force: force)
+            guard let self, !Task.isCancelled, romanizationEpoch == ticket,
+                  track?.spotifyID == trackID else { return }
+            document = result.applying(to: base)
+            romanizationStatus = result.lines.isEmpty ? "无可生成的日语／韩语音译" : "已生成日语／韩语音译"
+        }
+    }
+
+    func regenerateRomanization() {
+        guard var base = document, let track else { return }
+        for index in base.lines.indices {
+            base.lines[index].generatedRomanization = nil
+            base.lines[index].generatedRomanizationLanguage = nil
+        }
+        document = base
+        startRomanization(for: base, trackID: track.spotifyID, force: true)
     }
 
     func search(_ query: String) {

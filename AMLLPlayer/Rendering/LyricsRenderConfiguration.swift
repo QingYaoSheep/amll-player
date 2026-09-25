@@ -143,6 +143,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
 
     func auxiliaryText(for line: LyricLine, displayingInlineRomanization: Bool = false) -> [String] {
         let translationText = translation ? line.translation : ""
+        let generated = line.generatedRomanization?.map(\.romanized).joined(separator: " ") ?? ""
         let wordRomanization = line.words.compactMap(\.romanWord).joined(separator: " ")
         // Ruby is rendered by Core Text above the matching word. Legacy
         // string ruby is also promoted to that layer, so it must never leak
@@ -152,26 +153,38 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         // a distinct provider-supplied line belongs in the auxiliary row.
         let normalizedWordRomanization = wordRomanization.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let normalizedLineRomanization = line.romanization.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        let romanizationText: String = if !romanization {
-            ""
-        } else if displayingInlineRomanization {
-            normalizedLineRomanization == normalizedWordRomanization ? "" : line.romanization
-        } else {
-            line.romanization.isEmpty ? wordRomanization : line.romanization
+        let normalizedGenerated = generated.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        var romanizationRows: [String] = []
+        if romanization {
+            if !generated.isEmpty {
+                if !displayingInlineRomanization { romanizationRows.append(generated) }
+                if !normalizedLineRomanization.isEmpty && normalizedLineRomanization != normalizedGenerated {
+                    romanizationRows.append(line.romanization)
+                }
+            } else if displayingInlineRomanization {
+                if normalizedLineRomanization != normalizedWordRomanization {
+                    romanizationRows.append(line.romanization)
+                }
+            } else {
+                romanizationRows.append(line.romanization.isEmpty ? wordRomanization : line.romanization)
+            }
         }
-        return (romanizationFirst ? [romanizationText, translationText] : [translationText, romanizationText])
+        return (romanizationFirst ? romanizationRows + [translationText] : [translationText] + romanizationRows)
             .filter { !$0.isEmpty }
     }
 
     func accessibilityText(for line: LyricLine, displayingInlineRomanization: Bool) -> String {
         let mainText: String = if displayingInlineRomanization, romanization {
-            // The native layout shapes the source words, so VoiceOver must use
-            // those same words even if a provider's line summary differs.
-            line.words.flatMap { word -> [String] in
-                let body = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let pronunciation = word.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                return [body, pronunciation].filter { !$0.isEmpty }
-            }.joined(separator: ", ")
+            if let generated = line.generatedRomanization, !generated.isEmpty {
+                generated.flatMap { [$0.sourceText, $0.romanized] }.joined(separator: ", ")
+            } else {
+                // Read the same source words that Core Text shapes.
+                line.words.flatMap { word -> [String] in
+                    let body = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let pronunciation = word.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    return [body, pronunciation].filter { !$0.isEmpty }
+                }.joined(separator: ", ")
+            }
         } else {
             line.text
         }

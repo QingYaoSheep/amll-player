@@ -27,7 +27,7 @@ struct SettingsView: View {
             }
 
             Section("lyrics.title") {
-                NavigationLink { LyricsAppearanceView(preferences: model.renderPreferences) } label: {
+                NavigationLink { LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics) } label: {
                     Label("render.settings", systemImage: "textformat.size")
                 }
                 NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {

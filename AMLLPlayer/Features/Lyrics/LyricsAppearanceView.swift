@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LyricsAppearanceView: View {
     private func backgroundColorBinding(_ key: WritableKeyPath<LyricsRenderConfiguration, LyricsRenderConfiguration.BackgroundColor?>) -> Binding<Color> {
@@ -10,6 +11,7 @@ struct LyricsAppearanceView: View {
     }
 
     @Bindable var preferences: LyricsRenderPreferences
+    var coordinator: LyricsCoordinator? = nil
     @State private var confirmReset = false
 
     private func adjustment(_ title: LocalizedStringKey, key: WritableKeyPath<LyricsRenderConfiguration, Double?>, fallback: Double, range: ClosedRange<Double>, step: Double = 1) -> some View {
@@ -80,6 +82,9 @@ struct LyricsAppearanceView: View {
                 Toggle("render.bold", isOn: $preferences.configuration.bold)
                 Toggle("render.translation", isOn: $preferences.configuration.translation)
                 Toggle("render.romanization", isOn: $preferences.configuration.romanization)
+                NavigationLink("日语／韩语自动音译") {
+                    RomanizationSettingsView(coordinator: coordinator)
+                }
                 DisclosureGroup("appearance.textDetails") {
                     LabeledContent("render.tracking", value: String(format: "%.1f", preferences.configuration.tracking))
                     Slider(value: $preferences.configuration.tracking, in: -1 ... 3, step: 0.25).accessibilityLabel(Text("render.tracking"))
@@ -242,6 +247,77 @@ struct LyricsAppearanceView: View {
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("appearance.resetHelp", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("render.reset", role: .destructive) { preferences.restoreAMLLDefaults() }
+        }
+    }
+}
+
+private struct RomanizationSettingsView: View {
+    var coordinator: LyricsCoordinator?
+    @State private var importing = false
+    @State private var exportedFile: URL?
+    @State private var message = ""
+
+    var body: some View {
+        Form {
+            Section("自动音译") {
+                Text("日语和韩语歌词优先离线生成逐词音译。无法可靠生成时使用歌词来源提供的音译。显示仍由上一级的音译开关控制。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let coordinator {
+                    Text(coordinator.romanizationStatus.isEmpty ? "等待歌词" : coordinator.romanizationStatus)
+                        .font(.footnote)
+                }
+                Button("重新生成当前歌词") { coordinator?.regenerateRomanization() }
+                Button("清理生成缓存") {
+                    Task {
+                        do {
+                            try await LyricsRomanizationEngine.shared.clearGeneratedCache()
+                            coordinator?.regenerateRomanization()
+                            message = "生成缓存已清理"
+                        } catch { message = "缓存清理失败" }
+                    }
+                }
+            }
+            Section("读音纠错") {
+                Text("支持 Mineradio 的 ja／ko JSON 字典。导入失败时保留当前字典；修改不会改写原歌词。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button("导入纠错字典") { importing = true }
+                Button("准备导出纠错字典") {
+                    Task {
+                        do {
+                            let data = try await LyricsRomanizationEngine.shared.exportOverrides()
+                            let url = FileManager.default.temporaryDirectory.appendingPathComponent("romanization-overrides.json")
+                            try data.write(to: url, options: .atomic)
+                            exportedFile = url
+                            message = "纠错字典已准备好导出"
+                        } catch { message = "导出失败" }
+                    }
+                }
+                if let exportedFile { ShareLink("分享纠错字典", item: exportedFile) }
+                Button("重置纠错字典", role: .destructive) {
+                    Task {
+                        do {
+                            try await LyricsRomanizationEngine.shared.resetOverrides()
+                            coordinator?.regenerateRomanization()
+                            message = "纠错字典已重置"
+                        } catch { message = "重置失败" }
+                    }
+                }
+            }
+            if !message.isEmpty { Text(message).font(.footnote) }
+        }
+        .navigationTitle("自动音译")
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { selection in
+            guard case let .success(url) = selection else { message = "导入已取消"; return }
+            Task {
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    let data = try Data(contentsOf: url)
+                    try await LyricsRomanizationEngine.shared.importOverrides(data)
+                    coordinator?.regenerateRomanization()
+                    message = "纠错字典已导入"
+                } catch { message = "字典格式错误，现有纠错保留" }
+            }
         }
     }
 }

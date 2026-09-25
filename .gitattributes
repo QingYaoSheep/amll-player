@@ -10,3 +10,4 @@
 *.xcprivacy text eol=lf
 *.xcstrings text eol=lf
 *.png binary
+*.deflate binary

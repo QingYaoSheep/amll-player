@@ -38,6 +38,13 @@ final class AMLLNativeEngineTests: XCTestCase {
                        "漢, kan, independent line")
     }
 
+    func testVoiceOverUsesTheWordsActuallyShapedByInlineLayout() {
+        let line = LyricLine(id: "summary-differs", text: "provider summary", start: 0, end: 1,
+                             words: [.init(text: "歌", start: 0, end: 1, romanWord: "ge")], precision: .word)
+        XCTAssertEqual(LyricsRenderConfiguration().accessibilityText(for: line, displayingInlineRomanization: true),
+                       "歌, ge")
+    }
+
     @MainActor
     func testInlinePronunciationPreservesMultilingualOwnershipAndProviderTime() throws {
         struct Fixture: Decodable {

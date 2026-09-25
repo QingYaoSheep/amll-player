@@ -164,9 +164,9 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     }
 
     func accessibilityText(for line: LyricLine, displayingInlineRomanization: Bool) -> String {
-        let mainText: String = if displayingInlineRomanization, romanization,
-                                  line.words.map(\.text).joined() == line.text
-        {
+        let mainText: String = if displayingInlineRomanization, romanization {
+            // The native layout shapes the source words, so VoiceOver must use
+            // those same words even if a provider's line summary differs.
             line.words.flatMap { word -> [String] in
                 let body = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 let pronunciation = word.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

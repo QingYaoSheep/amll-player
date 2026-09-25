@@ -505,7 +505,7 @@ struct AMLLFrameEngine {
 
     private mutating func layoutGroups(playing: Bool, seeking: Bool, force: Bool) {
         let latest = singingTimeline.buffered.max() ?? -1
-        let active = motions.indices.map { singingTimeline.buffered.contains($0) || ($0 >= timeline.focus && $0 < latest) }
+        let active = motions.indices.map { singingTimeline.buffered.contains($0) || ($0 >= singingTimeline.focus && $0 < latest) }
         let groupHeights = document.groups.enumerated().map { index, group in
             height(group.main) + environment.fontSize * 0.8
                 + (active[index] || !playing ? group.background.map { height($0) + environment.fontSize * 0.3 } ?? 0 : 0)
@@ -540,11 +540,13 @@ struct AMLLFrameEngine {
             let group = document.groups[index]
             let hasBuffered = singingTimeline.buffered.contains(index)
             motions[index].active = active[index]
-            motions[index].opacity = environment.hidePassedLines && playing && index < (interlude.map { $0.anchor + 1 } ?? timeline.focus)
+            motions[index].opacity = environment.hidePassedLines && playing && !active[index]
+                && index < (interlude.map { $0.anchor + 1 } ?? singingTimeline.focus)
                 ? 0.0001 : (hasBuffered ? 0.85 : (nonDynamic ? 0.2 : 1))
             var blur = 0.0
             if environment.enableBlur, !environment.reduceMotion, !browsing, !active[index] {
-                blur = index < timeline.focus ? Double(2 + timeline.focus - index) : Double(index - timeline.focus)
+                blur = index < singingTimeline.focus
+                    ? Double(2 + singingTimeline.focus - index) : Double(index - singingTimeline.focus)
                 if environment.screenWidth <= 1024 {
                     blur *= 0.8
                 }

@@ -605,14 +605,15 @@ final class AMLLNativeEngineTests: XCTestCase {
 
     func testScrollAheadMovesFocusWithoutAdvancingSungLineOrWordClock() throws {
         let lines = [
-            LyricLine(id: "first", text: "First", start: 0, end: 2,
-                      words: [.init(text: "First", start: 0, end: 2)], precision: .word),
+            LyricLine(id: "first", text: "First", start: 0, end: 3.75,
+                      words: [.init(text: "First", start: 0, end: 3.75)], precision: .word),
             LyricLine(id: "second", text: "Second", start: 4, end: 6,
                       words: [.init(text: "Second", start: 4, end: 6)], precision: .word),
         ]
         let document = AMLLDisplayDocument(lines: lines)
         var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
         environment.advance = 1
+        environment.hidePassedLines = true
         var engine = AMLLFrameEngine(document: document, environment: environment, heights: [60, 60])
         var unadvancedEnvironment = environment
         unadvancedEnvironment.advance = 0
@@ -620,13 +621,17 @@ final class AMLLNativeEngineTests: XCTestCase {
 
         _ = engine.render(.init(position: 1, playing: true), delta: 0)
         _ = unadvanced.render(.init(position: 1, playing: true), delta: 0)
-        let early = engine.render(.init(position: 3.25, playing: true), delta: 0)
-        let normal = unadvanced.render(.init(position: 3.25, playing: true), delta: 0)
+        let early = engine.render(.init(position: 3.25, playing: true), delta: 0.5)
+        let normal = unadvanced.render(.init(position: 3.25, playing: true), delta: 0.5)
         let future = try XCTUnwrap(early.rows.first { $0.lineIndex == 1 })
+        let current = try XCTUnwrap(early.rows.first { $0.lineIndex == 0 })
         XCTAssertEqual(normal.focusGroup, 0)
         XCTAssertEqual(early.focusGroup, 1, "The viewport may scroll before the next line starts")
         XCTAssertEqual(early.lyricTime, 3.25, accuracy: 0.000_001)
+        XCTAssertTrue(current.active)
+        XCTAssertGreaterThan(current.opacity, 0.1, "Scroll-ahead must not hide a still-sung line")
         XCTAssertFalse(future.active, "The next line must not become sung before its source timestamp")
+        XCTAssertGreaterThan(future.blur, 0, "The unsung line must retain its inactive appearance")
         XCTAssertFalse(future.wordClock.enabled)
         XCTAssertEqual(future.wordClock.time, 0, accuracy: 0.000_001)
         XCTAssertEqual(try XCTUnwrap(normal.rows.first { $0.lineIndex == 1 }).wordClock.time,

@@ -19,6 +19,77 @@ final class LyricsHDRRenderer {
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let inFlight = DispatchSemaphore(value: 3)
+    private let vertexBuffers = VertexBufferPool()
+    private let timings = SubmissionTimings()
+
+    private final class VertexBufferLease: @unchecked Sendable {
+        let buffer: MTLBuffer
+        init(_ buffer: MTLBuffer) { self.buffer = buffer }
+    }
+
+    private final class VertexBufferPool: @unchecked Sendable {
+        private let lock = NSLock()
+        private var available: [VertexBufferLease] = []
+        private var created = 0
+
+        func take(device: MTLDevice, bytes: Int) -> VertexBufferLease? {
+            lock.lock()
+            if let index = available.firstIndex(where: { $0.buffer.length >= bytes }) {
+                let lease = available.remove(at: index)
+                lock.unlock()
+                return lease
+            }
+            lock.unlock()
+            let capacity = max(4_096, 1 << (Int.bitWidth - (max(1, bytes - 1)).leadingZeroBitCount))
+            guard let buffer = device.makeBuffer(length: capacity, options: .storageModeShared) else { return nil }
+            lock.lock(); created += 1; lock.unlock()
+            return VertexBufferLease(buffer)
+        }
+
+        func put(_ lease: VertexBufferLease) {
+            lock.lock()
+            if available.count < 3 {
+                available.append(lease)
+            } else if let smallest = available.indices.min(by: { available[$0].buffer.length < available[$1].buffer.length }),
+                      lease.buffer.length > available[smallest].buffer.length {
+                available[smallest] = lease
+            }
+            lock.unlock()
+        }
+
+        var createdCount: Int {
+            lock.lock(); defer { lock.unlock() }
+            return created
+        }
+    }
+
+    private final class SubmissionTimings: @unchecked Sendable {
+        private let lock = NSLock()
+        private var waiting = 0.0
+        private var submitting = 0.0
+        private var gpu = 0.0
+
+        func add(wait: Double, submit: Double) {
+            lock.lock(); waiting += wait; submitting += submit; lock.unlock()
+        }
+
+        func add(gpu duration: Double) {
+            lock.lock(); gpu += duration; lock.unlock()
+        }
+
+        func drain() -> (wait: Double, submit: Double, gpu: Double) {
+            lock.lock(); defer { lock.unlock() }
+            let value = (waiting, submitting, gpu)
+            waiting = 0; submitting = 0; gpu = 0
+            return value
+        }
+    }
+
+    var createdVertexBufferCount: Int { vertexBuffers.createdCount }
+
+    func drainTimings() -> (wait: Double, submit: Double, gpu: Double) {
+        timings.drain()
+    }
 
     init?() {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -96,7 +167,10 @@ final class LyricsHDRRenderer {
     /// one of the renderer's outstanding commands to finish.
     func render(vertices: [Vertex], glyphs: MTLTexture, layer: CAMetalLayer) -> MTLCommandBuffer? {
         render(vertices: vertices, glyphs: glyphs) {
-            guard let drawable = layer.nextDrawable() else { return nil }
+            let started = CACurrentMediaTime()
+            let drawable = layer.nextDrawable()
+            timings.add(wait: (CACurrentMediaTime() - started) * 1_000, submit: 0)
+            guard let drawable else { return nil }
             return (drawable.texture, drawable)
         }
     }
@@ -107,14 +181,25 @@ final class LyricsHDRRenderer {
         guard !vertices.isEmpty, inFlight.wait(timeout: .now()) == .success else { return nil }
         let gate = inFlight
         var submitted = false
+        var lease: VertexBufferLease?
         defer {
             if !submitted {
+                if let lease { vertexBuffers.put(lease) }
                 gate.signal()
             }
         }
-        guard let (target, drawable) = acquireTarget(), target.pixelFormat == .rgba16Float,
-              let buffer = device.makeBuffer(bytes: vertices, length: MemoryLayout<Vertex>.stride * vertices.count),
-              let command = queue.makeCommandBuffer() else { return nil }
+        guard let (target, drawable) = acquireTarget(), target.pixelFormat == .rgba16Float else { return nil }
+        let started = CACurrentMediaTime()
+        guard let bufferLease = vertexBuffers.take(device: device,
+                                                   bytes: MemoryLayout<Vertex>.stride * vertices.count) else { return nil }
+        lease = bufferLease
+        guard let command = queue.makeCommandBuffer() else { return nil }
+        let buffer = bufferLease.buffer
+        vertices.withUnsafeBytes { bytes in
+            if let base = bytes.baseAddress {
+                buffer.contents().copyMemory(from: base, byteCount: bytes.count)
+            }
+        }
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = target
         pass.colorAttachments[0].loadAction = .clear
@@ -129,9 +214,17 @@ final class LyricsHDRRenderer {
         if let drawable {
             command.present(drawable)
         }
-        command.addCompletedHandler { _ in gate.signal() }
+        let pool = vertexBuffers
+        let metrics = timings
+        command.addCompletedHandler { completed in
+            let gpuTime = max(0, (completed.gpuEndTime - completed.gpuStartTime) * 1_000)
+            if gpuTime.isFinite { metrics.add(gpu: gpuTime) }
+            pool.put(bufferLease)
+            gate.signal()
+        }
         submitted = true
         command.commit()
+        timings.add(wait: 0, submit: (CACurrentMediaTime() - started) * 1_000)
         return command
     }
 }

@@ -19,11 +19,19 @@ final class AMLLRomanizationOverlay: UIView {
     private let nearBlur = CALayer()
     private let farBlur = CALayer()
     private var pieces: [Piece] = []
+    private let rasterBytes: Int
     var onSeek: (() -> Void)?
 
-    init(layout: AMLLCoreTextLayout, cue: LyricLine, scale: CGFloat) {
+    var estimatedBytes: Int {
+        rasterBytes
+    }
+
+    init(layout: AMLLCoreTextLayout, cue: LyricLine, scale: CGFloat,
+         prepared: AMLLPreparedOverlayImages? = nil) {
         self.layout = layout
         self.cue = cue
+        let images = prepared ?? AMLLPreparedOverlayImages(snapshot: layout.rasterSnapshot(), scale: scale)
+        rasterBytes = images.estimatedBytes
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         isOpaque = false
         isAccessibilityElement = true
@@ -31,13 +39,16 @@ final class AMLLRomanizationOverlay: UIView {
         accessibilityIdentifier = "lyricRow." + cue.id
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
 
-        let image = layout.raster(scale: scale, auxiliary: false, ruby: true, romanization: true)
+        let image = images.sharp
         let fragments = layout.rubyFragments.filter { $0.kind == .romanization && $0.rect.width > 0 }
+        var widths: [Int?: Double] = [:]
+        for fragment in fragments {
+            widths[fragment.ttmlWordIndex, default: 0] += fragment.rect.width
+        }
         var advances: [Int: Double] = [:]
         for fragment in fragments {
             let ordinal = fragment.ttmlWordIndex ?? -1
-            let width = fragments.filter { $0.ttmlWordIndex == fragment.ttmlWordIndex }
-                .reduce(0.0) { $0 + $1.rect.width }
+            let width = widths[fragment.ttmlWordIndex, default: 0]
             let glyph = CALayer()
             glyph.frame = fragment.rect
             glyph.contents = image.cgImage
@@ -54,9 +65,7 @@ final class AMLLRomanizationOverlay: UIView {
                                 width: width, advance: advances[ordinal, default: 0]))
             advances[ordinal, default: 0] += fragment.rect.width
         }
-        for (blurLayer, radius) in [(nearBlur, CGFloat(2)), (farBlur, CGFloat(5))] {
-            let blurred = layout.raster(scale: min(scale, 1), ruby: true, romanization: true,
-                                        blurRadius: radius)
+        for (blurLayer, blurred) in [(nearBlur, images.nearBlur), (farBlur, images.farBlur)] {
             let paddingX = (blurred.size.width - bounds.width) / 2
             let paddingY = (blurred.size.height - bounds.height) / 2
             blurLayer.frame = CGRect(x: -paddingX, y: -paddingY,

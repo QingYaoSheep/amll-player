@@ -1,4 +1,5 @@
 import CoreImage
+import CryptoKit
 import SwiftUI
 import UIKit
 
@@ -6,6 +7,7 @@ import UIKit
 /// Debug preview. The legacy renderer remains available as a comparison path.
 struct AMLLNativeLyricsView: UIViewRepresentable {
     var document: LyricsDocument
+    var documentVersion: Int? = nil
     var configuration: LyricsRenderConfiguration
     var input: AMLLPlayerInput
     var position: () -> Double
@@ -32,7 +34,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
         view.onBrowsing = browsing
         view.fadeTop = fadeTop
         view.setFrameRate(targetFPS)
-        view.configure(document: document, configuration: configuration, input: input, active: active,
+        view.configure(document: document, documentVersion: documentVersion, configuration: configuration, input: input, active: active,
                        reduceMotion: reduceMotion, reduceTransparency: reduceTransparency, canSeek: canSeek)
         view.resumeFollowing(token: resumeToken)
     }
@@ -64,6 +66,7 @@ final class AMLLNativeCanvas: UIView {
     var onInteraction: (AMLLInteraction) -> Void = { _ in }
     var onBrowsing: (Bool) -> Void = { _ in }
     private var source: LyricsDocument?
+    private var sourceVersion: Int?
     private var display: AMLLDisplayDocument?
     private var configuration = LyricsRenderConfiguration()
     private var input = AMLLPlayerInput(position: 0, playing: false)
@@ -80,11 +83,21 @@ final class AMLLNativeCanvas: UIView {
     private var rowViews: [Int: AMLLCompositeRow] = [:]
     private var retainedRows: [Int: AMLLCompositeRow] = [:]
     private var retainedOrder: [Int] = []
+    private var preparedRows: [Int: AMLLPreparedCompositeImages] = [:]
+    private var preparedOrder: [Int] = []
+    private var preparingRows = Set<Int>()
+    private var prewarmGeneration = 0
+    private var lastVisibleCenter: Int?
     private var link: CADisplayLink?
     private var linkTarget: LinkTarget?
     private var lastTick = 0.0
-    private var measuredSize = CGSize.zero
     private var dirty = true
+    private var lastLayoutKey: LayoutKey?
+    private var needsFrame = true
+    private var lastHeadroom = 1.0
+    private var lastHeadroomCheck = 0.0
+    private var fadeSize = CGSize.zero
+    private var appliedFadeTop: CGFloat?
     private var active = true
     private var canSeek = true
     private var reduceMotion = false
@@ -95,6 +108,13 @@ final class AMLLNativeCanvas: UIView {
     private var framesInSample = 0
     private var sampleDuration = 0.0
     private var sampleWork = 0.0
+    var performanceRecordingEnabled = false {
+        didSet { if performanceRecordingEnabled != oldValue { performanceRecorder.reset() } }
+    }
+    private let performanceRecorder = AMLLFramePerformanceRecorder()
+    private var pendingLayoutMilliseconds = 0.0
+    private var pendingRasterMilliseconds = 0.0
+    private(set) var layoutBuildCount = 0
     private var hasDuet = false
     private let dots = AMLLInterludeDotsView()
     private lazy var hdrRenderer = LyricsHDRRenderer()
@@ -117,6 +137,35 @@ final class AMLLNativeCanvas: UIView {
         layouts.count
     }
 
+    var performanceSummary: AMLLFramePerformance {
+        performanceRecorder.summary(targetFPS: min(targetFPS, window?.screen.maximumFramesPerSecond ?? 60))
+    }
+
+    #if DEBUG
+        func exportPerformanceSamples() -> Data? {
+            struct Export: Codable {
+                var sourceID: String?
+                var documentHash: String?
+                var viewport: CGSize
+                var displayScale: CGFloat
+                var configuration: LyricsRenderConfiguration
+                var summary: AMLLFramePerformance
+                var samples: [AMLLFramePerformance.Sample]
+            }
+            let documentEncoder = JSONEncoder()
+            documentEncoder.outputFormatting = [.sortedKeys]
+            let documentHash = source.flatMap { try? documentEncoder.encode($0) }
+                .map { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+            return try? JSONEncoder().encode(Export(sourceID: source?.candidate.id,
+                                                    documentHash: documentHash,
+                                                    viewport: bounds.size,
+                                                    displayScale: window?.screen.scale ?? 1,
+                                                    configuration: configuration,
+                                                    summary: performanceSummary,
+                                                    samples: performanceRecorder.samples))
+        }
+    #endif
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false
@@ -125,6 +174,10 @@ final class AMLLNativeCanvas: UIView {
         addSubview(dots)
         dots.isHidden = true
         addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(pan(_:))))
+        NotificationCenter.default.addObserver(self, selector: #selector(releaseOffscreenResources),
+                                               name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshAfterActivation),
+                                               name: UIApplication.didBecomeActiveNotification, object: nil)
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitLegibilityWeight.self]) { (view: AMLLNativeCanvas, _: UITraitCollection) in
             view.dirty = true; view.setNeedsLayout()
         }
@@ -134,12 +187,35 @@ final class AMLLNativeCanvas: UIView {
         nil
     }
 
-    func configure(document: LyricsDocument, configuration: LyricsRenderConfiguration, input: AMLLPlayerInput,
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func releaseOffscreenResources() {
+        retainedRows.removeAll()
+        retainedOrder.removeAll()
+        prewarmGeneration &+= 1
+        preparedRows.removeAll()
+        preparedOrder.removeAll()
+        preparingRows.removeAll()
+        let visible = Set(rowViews.keys)
+        layouts = layouts.filter { visible.contains($0.key) }
+        needsFrame = true
+    }
+
+    @objc private func refreshAfterActivation() {
+        rowViews.values.forEach { $0.invalidateVisualCache() }
+        needsFrame = true
+        syncLink()
+    }
+
+    func configure(document: LyricsDocument, documentVersion: Int? = nil,
+                   configuration: LyricsRenderConfiguration, input: AMLLPlayerInput,
                    active: Bool, reduceMotion: Bool, reduceTransparency: Bool = false, canSeek: Bool = true)
     {
-        if source != document || self.configuration.obsceneWordMask != configuration.obsceneWordMask {
+        let documentChanged = documentVersion.map { sourceVersion != $0 } ?? (source != document)
+        if documentChanged || self.configuration.obsceneWordMask != configuration.obsceneWordMask {
             hdrTime = nil
             source = document
+            sourceVersion = documentVersion
             romanizationCues = Dictionary(document.romanizationTTMLTrack?.cues.map {
                 ($0.sourceLineIndex, $0)
             } ?? [], uniquingKeysWith: { _, newest in newest })
@@ -156,29 +232,56 @@ final class AMLLNativeCanvas: UIView {
             engine = nil; dirty = true
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
-        if self.configuration != configuration || self.reduceMotion != reduceMotion || self.reduceTransparency != reduceTransparency {
-            dirty = true
+        let configurationChanged = self.configuration != configuration
+        if configurationChanged {
+            if Self.layoutSettings(self.configuration) != Self.layoutSettings(configuration) {
+                dirty = true
+            }
+            needsFrame = true
+        }
+        let accessibilityChanged = self.reduceMotion != reduceMotion || self.reduceTransparency != reduceTransparency
+        if self.active != active {
+            needsFrame = true
+            if active { rowViews.values.forEach { $0.invalidateVisualCache() } }
+        }
+        if self.canSeek != canSeek { needsFrame = true }
+        if accessibilityChanged
+            || self.input.seekRevision != input.seekRevision || self.input.playing != input.playing
+            || self.input.offset != input.offset || self.input.event != input.event
+            || self.input.position != input.position {
+            needsFrame = true
         }
         self.configuration = configuration; self.input = input; self.active = active
         self.canSeek = canSeek; self.reduceMotion = reduceMotion; self.reduceTransparency = reduceTransparency
-        setNeedsLayout()
-        syncLink()
-        if !dirty {
-            draw(delta: 0)
+        if dirty { setNeedsLayout() }
+        else if configurationChanged || accessibilityChanged {
+            engine?.resize(environment: renderEnvironment(), heights: heights)
         }
+        syncLink()
+        #if DEBUG
+            if link == nil, !controlledReplay, needsFrame, !dirty { draw(delta: 0) }
+        #endif
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        updateViewportFade()
+        if fadeSize != bounds.size || appliedFadeTop != fadeTop {
+            updateViewportFade()
+            fadeSize = bounds.size
+            appliedFadeTop = fadeTop
+        }
         guard bounds.width > 0, bounds.height > 0, let display else { return }
-        if dirty || measuredSize != bounds.size {
-            dirty = false; measuredSize = bounds.size
+        let layoutKey = currentLayoutKey()
+        if dirty || lastLayoutKey != layoutKey {
+            dirty = false
+            lastLayoutKey = layoutKey
             layouts.removeAll()
             rowViews.values.forEach { $0.removeFromSuperview() }; rowViews.removeAll()
             retainedRows.removeAll(); retainedOrder.removeAll()
+            prewarmGeneration &+= 1
+            preparedRows.removeAll(); preparedOrder.removeAll(); preparingRows.removeAll()
+            lastVisibleCenter = nil
             heights = display.lines.indices.map { makeLayout($0).original.size.height }
-            layouts.removeAll()
             let environment = renderEnvironment()
             if engine == nil {
                 engine = AMLLFrameEngine(document: display, environment: environment, heights: heights)
@@ -186,7 +289,53 @@ final class AMLLNativeCanvas: UIView {
                 engine?.resize(environment: environment, heights: heights)
             }
         }
-        draw(delta: 0)
+        needsFrame = true
+        // Debug's explicit replay has no display link. Production commits the
+        // new size and the first frame together on the next CADisplayLink tick.
+        if link == nil { draw(delta: 0) }
+    }
+
+    private struct LayoutSettings: Equatable {
+        var translation: Bool
+        var romanization: Bool
+        var romanizationFirst: Bool
+        var fontSize: Double
+        var sizePreset: AMLLLyricSizePreset?
+        var bold: Bool
+        var tracking: Double
+        var horizontalPadding: Double?
+        var paragraphSpacing: Double?
+        var auxiliaryScale: Double?
+    }
+
+    private struct LayoutKey: Equatable {
+        var documentVersion: Int?
+        var viewport: CGSize
+        var displayScale: CGFloat
+        var pointSize: CGFloat
+        var inset: CGFloat
+        var boldText: Bool
+        var direction: UIUserInterfaceLayoutDirection
+        var locale: String
+        var settings: LayoutSettings
+    }
+
+    private func currentLayoutKey() -> LayoutKey {
+        .init(documentVersion: sourceVersion, viewport: bounds.size,
+              displayScale: window?.screen.scale ?? 1,
+              pointSize: resolvedPointSize, inset: inset,
+              boldText: traitCollection.legibilityWeight == .bold,
+              direction: effectiveUserInterfaceLayoutDirection,
+              locale: Locale.current.identifier,
+              settings: Self.layoutSettings(configuration))
+    }
+
+    private static func layoutSettings(_ value: LyricsRenderConfiguration) -> LayoutSettings {
+        .init(translation: value.translation, romanization: value.romanization,
+              romanizationFirst: value.romanizationFirst, fontSize: value.fontSize,
+              sizePreset: value.sizePreset, bold: value.bold, tracking: value.tracking,
+              horizontalPadding: value.horizontalPadding,
+              paragraphSpacing: value.paragraphSpacing, auxiliaryScale: value.auxiliaryScale)
     }
 
     private func updateViewportFade() {
@@ -256,6 +405,13 @@ final class AMLLNativeCanvas: UIView {
         if let cached = layouts[index] {
             return cached
         }
+        layoutBuildCount += 1
+        let started = performanceRecordingEnabled ? CACurrentMediaTime() : 0
+        defer {
+            if performanceRecordingEnabled {
+                pendingLayoutMilliseconds += (CACurrentMediaTime() - started) * 1_000
+            }
+        }
         let line = display!.lines[index]
         let baseSize = resolvedPointSize
         let size = max(10, baseSize * (line.isBackground ? 0.7 : 1))
@@ -272,8 +428,10 @@ final class AMLLNativeCanvas: UIView {
             let aligned = AMLLCoreTextLayout(line: placement, width: width, font: font,
                                              configuration: configuration)
             if aligned.hasGeneratedRomanizationLayout {
-                return RowLayouts(original: aligned, romanization: nil,
-                                  romanizationCue: cue, alignedRomanization: true)
+                let result = RowLayouts(original: aligned, romanization: nil,
+                                        romanizationCue: cue, alignedRomanization: true)
+                layouts[index] = result
+                return result
             }
         }
         var romanConfiguration = configuration
@@ -286,14 +444,20 @@ final class AMLLNativeCanvas: UIView {
         }
         let original = AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration,
                                           romanizationReserve: romanLayout?.size.height ?? 0)
-        return RowLayouts(original: original, romanization: romanLayout,
-                          romanizationCue: cue, alignedRomanization: false)
+        let result = RowLayouts(original: original, romanization: romanLayout,
+                                romanizationCue: cue, alignedRomanization: false)
+        layouts[index] = result
+        return result
     }
 
     private func draw(delta: Double) {
-        guard !dirty, var engine, let display else { return }
+        guard !dirty, engine != nil, let display else { return }
+        let frameStarted = performanceRecordingEnabled ? CACurrentMediaTime() : 0
         input.position = position()
-        let state = engine.render(input, delta: delta)
+        // Mutate the unique stored engine. Copying the struct here makes its
+        // group-motion array copy on write once per display refresh.
+        let state = engine!.render(input, delta: delta)
+        let engineFinished = performanceRecordingEnabled ? CACurrentMediaTime() : 0
         if frameState?.browsing != state.browsing {
             #if DEBUG
                 if !controlledReplay {
@@ -303,7 +467,8 @@ final class AMLLNativeCanvas: UIView {
                 DispatchQueue.main.async { [weak self] in self?.onBrowsing(state.browsing) }
             #endif
         }
-        self.engine = engine; frameState = state
+        frameState = state
+        needsFrame = false
         if hdrTime == nil || input.playing || hdrWasPlaying || input.seeking || hdrSeekRevision != input.seekRevision || hdrOffset != input.offset {
             hdrTime = state.lyricTime
         }
@@ -315,11 +480,19 @@ final class AMLLNativeCanvas: UIView {
         #if DEBUG
             capabilities = hdrCapabilitiesOverride ?? capabilities
         #endif
-        let hdr = LyricsHDRFrameState.sample(lines: source?.lines ?? [], lyricTime: hdrTime ?? state.lyricTime,
-                                             configuration: configuration.hdr ?? .init(),
-                                             capabilities: capabilities,
-                                             reduceTransparency: reduceTransparency)
+        lastHeadroom = capabilities.headroom
         let visible = state.rows.filter { !$0.hidden && $0.y + heights[$0.lineIndex] >= -bounds.height * 0.5 && $0.y <= bounds.height * 1.5 }
+        let brightness = capabilities.outputBrightness(configuration: configuration.hdr ?? .init(),
+                                                        reduceTransparency: reduceTransparency)
+        let actualTime = hdrTime ?? state.lyricTime
+        let sourceLines = source?.lines ?? []
+        let activeHDR: Set<Int> = brightness > 1 ? Set(visible.compactMap { row -> Int? in
+            guard sourceLines.indices.contains(row.lineIndex) else { return nil }
+            let line = sourceLines[row.lineIndex]
+            return line.start.isFinite && line.end.isFinite && line.end > line.start
+                && actualTime >= line.start && actualTime < line.end ? row.lineIndex : nil
+        }) : []
+        let hdr = LyricsHDRFrameState(activeLineIndexes: activeHDR, outputBrightness: brightness)
         let indexes = Set(visible.map(\.lineIndex))
         for index in Array(rowViews.keys) where !indexes.contains(index) {
             if let view = rowViews.removeValue(forKey: index) {
@@ -327,11 +500,6 @@ final class AMLLNativeCanvas: UIView {
                 retainedRows[index] = view
                 retainedOrder.append(index)
             }
-        }
-        while retainedOrder.count > 12 {
-            let index = retainedOrder.removeFirst()
-            retainedRows.removeValue(forKey: index)
-            layouts.removeValue(forKey: index)
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for row in visible {
@@ -345,8 +513,14 @@ final class AMLLNativeCanvas: UIView {
             } else {
                 let layout = makeLayout(row.lineIndex)
                 layouts[row.lineIndex] = layout
+                let rasterStarted = performanceRecordingEnabled ? CACurrentMediaTime() : 0
+                let prepared = preparedRows.removeValue(forKey: row.lineIndex)
+                if prepared != nil { preparedOrder.removeAll { $0 == row.lineIndex } }
                 view = AMLLCompositeRow(line: display.lines[row.lineIndex], layouts: layout,
-                                        scale: window?.screen.scale ?? 2)
+                                        scale: window?.screen.scale ?? 2, prepared: prepared)
+                if performanceRecordingEnabled {
+                    pendingRasterMilliseconds += (CACurrentMediaTime() - rasterStarted) * 1_000
+                }
                 view.onSeek = { [weak self] in
                     guard let self, canSeek else { return }
                     onInteraction(.seek(lineID: display.lines[row.lineIndex].id))
@@ -355,15 +529,20 @@ final class AMLLNativeCanvas: UIView {
             }
             let line = display.lines[row.lineIndex]
             let width = layouts[row.lineIndex]?.original.size.width ?? bounds.width - inset * 2
-            view.layer.anchorPoint = CGPoint(x: line.isDuet ? 1 : 0, y: 0.5)
-            view.bounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
-            view.layer.position = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
-            view.transform = CGAffineTransform(scaleX: row.scale, y: row.scale)
+            let anchor = CGPoint(x: line.isDuet ? 1 : 0, y: 0.5)
+            let rowBounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
+            let rowPosition = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
+            let rowTransform = CGAffineTransform(scaleX: row.scale, y: row.scale)
+            if view.layer.anchorPoint != anchor { view.layer.anchorPoint = anchor }
+            if view.bounds != rowBounds { view.bounds = rowBounds }
+            if view.layer.position != rowPosition { view.layer.position = rowPosition }
+            if view.transform != rowTransform { view.transform = rowTransform }
             view.setCanSeek(canSeek)
             let gain = hdr.activeLineIndexes.contains(row.lineIndex) ? hdr.outputBrightness : 1
             view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
                                gain: gain, lyricTime: state.lyricTime,
                                row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
+            if view.needsHDRRetry { needsFrame = true }
         }
         if let interlude = state.interlude,
            let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
@@ -375,7 +554,81 @@ final class AMLLNativeCanvas: UIView {
         } else {
             dots.isHidden = true
         }
+        trimRetainedRows()
         CATransaction.commit()
+        schedulePrewarm(visible: visible)
+        if performanceRecordingEnabled {
+            let finished = CACurrentMediaTime()
+            let hdrTimings = hdrRenderer?.drainTimings()
+            performanceRecorder.append(.init(interval: delta * 1_000,
+                                             cpu: (finished - frameStarted) * 1_000,
+                                             layout: pendingLayoutMilliseconds,
+                                             raster: pendingRasterMilliseconds,
+                                             engine: (engineFinished - frameStarted) * 1_000,
+                                             layers: (finished - engineFinished) * 1_000,
+                                             drawableWait: hdrTimings?.wait ?? 0,
+                                             gpuSubmission: hdrTimings?.submit ?? 0,
+                                             gpu: hdrTimings?.gpu ?? 0,
+                                             cacheBytes: resourceBytes))
+            pendingLayoutMilliseconds = 0
+            pendingRasterMilliseconds = 0
+        }
+    }
+
+    private var resourceBytes: Int {
+        rowViews.values.reduce(0) { $0 + $1.estimatedBytes }
+            + retainedRows.values.reduce(0) { $0 + $1.estimatedBytes }
+            + preparedRows.values.reduce(0) { $0 + $1.estimatedBytes }
+    }
+
+    private func trimRetainedRows() {
+        let budget = UIDevice.current.userInterfaceIdiom == .pad ? 128 * 1_048_576 : 64 * 1_048_576
+        while !retainedOrder.isEmpty && (retainedOrder.count > 12 || resourceBytes > budget) {
+            let index = retainedOrder.removeFirst()
+            retainedRows.removeValue(forKey: index)
+        }
+        while !preparedOrder.isEmpty && resourceBytes > budget {
+            let index = preparedOrder.removeFirst()
+            preparedRows.removeValue(forKey: index)
+        }
+    }
+
+    private func schedulePrewarm(visible: [AMLLFrameState.Row]) {
+        guard active, window != nil,
+              let first = visible.map(\.lineIndex).min(),
+              let last = visible.map(\.lineIndex).max(), let display else { return }
+        let center = (first + last) / 2
+        let direction = center < (lastVisibleCenter ?? center) ? -1 : 1
+        lastVisibleCenter = center
+        let edge = direction > 0 ? last : first
+        for distance in 1 ... 2 where preparingRows.isEmpty {
+            let index = edge + direction * distance
+            guard display.lines.indices.contains(index), rowViews[index] == nil,
+                  retainedRows[index] == nil, preparedRows[index] == nil,
+                  !preparingRows.contains(index), let layout = layouts[index] else { continue }
+            preparingRows.insert(index)
+            let generation = prewarmGeneration
+            let scale = window?.screen.scale ?? 2
+            let original = layout.original.rasterSnapshot()
+            let romanization = layout.romanization?.rasterSnapshot()
+            let aligned = layout.alignedRomanization
+            Task.detached(priority: .utility) { [weak self] in
+                let images = AMLLPreparedCompositeImages(
+                    original: AMLLPreparedRowImages(snapshot: original, scale: scale,
+                                                    hideRomanization: aligned),
+                    romanization: romanization.map { AMLLPreparedRowImages(snapshot: $0, scale: scale) },
+                    overlay: aligned ? AMLLPreparedOverlayImages(snapshot: original, scale: scale) : nil
+                )
+                await MainActor.run {
+                    guard let self, self.prewarmGeneration == generation else { return }
+                    self.preparingRows.remove(index)
+                    guard self.rowViews[index] == nil, self.retainedRows[index] == nil else { return }
+                    self.preparedRows[index] = images
+                    self.preparedOrder.append(index)
+                    self.trimRetainedRows()
+                }
+            }
+        }
     }
 
     #if DEBUG
@@ -442,11 +695,21 @@ final class AMLLNativeCanvas: UIView {
     #endif
 
     override func didMoveToWindow() {
-        super.didMoveToWindow(); syncLink()
+        super.didMoveToWindow()
+        setNeedsLayout()
+        syncLink()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        if !dirty { engine?.resize(environment: renderEnvironment(), heights: heights) }
+        needsFrame = true
     }
 
     func stop() {
         link?.invalidate(); link = nil; linkTarget = nil; lastTick = 0
+        prewarmGeneration &+= 1
+        preparedRows.removeAll(); preparedOrder.removeAll(); preparingRows.removeAll()
     }
 
     func resumeFollowing(token: Int) {
@@ -454,7 +717,8 @@ final class AMLLNativeCanvas: UIView {
         resumeToken = token
         engine?.handle(.resumeFollowing)
         onInteraction(.resumeFollowing)
-        draw(delta: 0)
+        needsFrame = true
+        syncLink()
     }
 
     func setFrameRate(_ fps: Int) {
@@ -519,7 +783,22 @@ final class AMLLNativeCanvas: UIView {
 
     private func tick(_ link: CADisplayLink) {
         let start = CACurrentMediaTime()
+        if dirty || lastLayoutKey?.viewport != bounds.size || appliedFadeTop != fadeTop {
+            layoutIfNeeded()
+        }
         let delta = lastTick == 0 ? 0 : link.timestamp - lastTick
+        if !input.playing, !needsFrame, frameState?.settled == true, frameState?.browsing == false {
+            let wantsEDR = configuration.hdr?.enabled == true && !reduceTransparency
+            if !wantsEDR || start - lastHeadroomCheck < 0.25 {
+                lastTick = link.timestamp
+                return
+            }
+            lastHeadroomCheck = start
+            if abs(Double(window?.screen.currentEDRHeadroom ?? 1) - lastHeadroom) < 0.001 {
+                lastTick = link.timestamp
+                return
+            }
+        }
         lastTick = link.timestamp; draw(delta: delta)
         framesInSample += 1; sampleDuration += delta; sampleWork += CACurrentMediaTime() - start
         if sampleDuration >= 1 {
@@ -530,6 +809,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     @objc private func pan(_ gesture: UIPanGestureRecognizer) {
+        needsFrame = true
         switch gesture.state {
         case .began:
             lastTranslation = 0
@@ -575,15 +855,30 @@ private final class AMLLCompositeRow: UIView {
         original.visualUpdateCount + (romanization?.visualUpdateCount ?? 0)
     }
 
-    init(line: LyricLine, layouts: AMLLNativeCanvas.RowLayouts, scale: CGFloat) {
+    var estimatedBytes: Int {
+        original.estimatedBytes + (romanization?.estimatedBytes ?? 0)
+            + (alignedRomanization?.estimatedBytes ?? 0)
+    }
+
+    var needsHDRRetry: Bool { original.needsHDRRetry }
+
+    func invalidateVisualCache() {
+        original.invalidateVisualCache()
+        romanization?.invalidateVisualCache()
+    }
+
+    init(line: LyricLine, layouts: AMLLNativeCanvas.RowLayouts, scale: CGFloat,
+         prepared: AMLLPreparedCompositeImages? = nil) {
         original = AMLLNativeRow(line: line, layout: layouts.original, scale: scale,
-                                 hideRomanization: layouts.alignedRomanization)
+                                 hideRomanization: layouts.alignedRomanization, prepared: prepared?.original)
         romanizationCue = layouts.romanizationCue?.line
         alignedRomanization = layouts.alignedRomanization && layouts.romanizationCue != nil
-            ? AMLLRomanizationOverlay(layout: layouts.original, cue: layouts.romanizationCue!.line, scale: scale)
+            ? AMLLRomanizationOverlay(layout: layouts.original, cue: layouts.romanizationCue!.line,
+                                      scale: scale, prepared: prepared?.overlay)
             : nil
         if let cue = layouts.romanizationCue, let layout = layouts.romanization {
-            romanization = AMLLNativeRow(line: cue.line, layout: layout, scale: scale)
+            romanization = AMLLNativeRow(line: cue.line, layout: layout, scale: scale,
+                                          prepared: prepared?.romanization)
         } else {
             romanization = nil
         }
@@ -676,23 +971,36 @@ private final class AMLLNativeRow: UIView {
     private let sharpImage: UIImage
     private let sharpRubyImage: UIImage
     private let sharpAuxiliaryImage: UIImage
+    private let rasterBytes: Int
     private let nearBlur = CALayer()
     private let farBlur = CALayer()
     private var lastCanSeek: Bool?
     private var hdrRow: LyricsHDRRow?
+    var estimatedBytes: Int {
+        rasterBytes + (hdrRow?.estimatedBytes ?? 0)
+    }
     var onSeek: (() -> Void)?
 
-    init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat, hideRomanization: Bool = false) {
+    init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat,
+         hideRomanization: Bool = false, prepared: AMLLPreparedRowImages? = nil) {
         self.line = line; textLayout = layout
         let indexes = layout.maskWords.indices.filter { layout.maskWords[$0].width > 0 }
         maskWords = indexes.map { layout.maskWords[$0] }
+        let maskIndexByWord = Dictionary(uniqueKeysWithValues: indexes.enumerated().map { ($0.element, $0.offset) })
+        var rubyWidths: [String: Double] = [:]
+        for fragment in layout.rubyFragments {
+            let key = "\(fragment.kind.rawValue):\(fragment.wordIndex):\(fragment.segmentIndex)"
+            rubyWidths[key, default: 0] += fragment.rect.width
+        }
         // Keep the three compositing layers disjoint. In particular, a word
         // piece must not sample a ruby or translation row from the full-line
         // bitmap when its contentsRect is animated independently.
-        sharpImage = layout.raster(scale: scale, auxiliary: false, ruby: false)
-        sharpRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true,
-                                      romanization: hideRomanization ? false : nil)
-        sharpAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, ruby: false)
+        let images = prepared ?? AMLLPreparedRowImages(snapshot: layout.rasterSnapshot(),
+                                                        scale: scale, hideRomanization: hideRomanization)
+        sharpImage = images.sharp
+        sharpRubyImage = images.ruby
+        sharpAuxiliaryImage = images.auxiliary
+        rasterBytes = images.estimatedBytes
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         base.contents = sharpImage.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
         ruby.contents = sharpRubyImage.cgImage; ruby.contentsScale = scale; ruby.frame = bounds; layer.addSublayer(ruby)
@@ -710,9 +1018,7 @@ private final class AMLLNativeRow: UIView {
             piece.mask = mask
             layer.addSublayer(piece)
             let key = "\(fragment.kind.rawValue):\(fragment.wordIndex):\(fragment.segmentIndex)"
-            let maskWidth = layout.rubyFragments.filter {
-                $0.kind == fragment.kind && $0.wordIndex == fragment.wordIndex && $0.segmentIndex == fragment.segmentIndex
-            }.reduce(0.0) { $0 + $1.rect.width }
+            let maskWidth = rubyWidths[key, default: 0]
             rubyPieces.append(.init(layer: piece, mask: mask, fragment: fragment,
                                     maskWidth: maskWidth, advance: rubyAdvances[key, default: 0]))
             rubyAdvances[key, default: 0] += fragment.rect.width
@@ -722,9 +1028,7 @@ private final class AMLLNativeRow: UIView {
         auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
         // Blur the entire composed text, including annotations, before any
         // glyph cropping. Never feed blurred pixels through word masks.
-        for (blurLayer, radius) in [(nearBlur, CGFloat(2)), (farBlur, CGFloat(5))] {
-            let image = layout.raster(scale: min(scale, 1), romanization: hideRomanization ? false : nil,
-                                      blurRadius: radius)
+        for (blurLayer, image) in [(nearBlur, images.nearBlur), (farBlur, images.farBlur)] {
             blurLayer.contents = image.cgImage
             blurLayer.contentsScale = min(scale, 1)
             // Offset the padded texture back to the original text origin.
@@ -737,7 +1041,7 @@ private final class AMLLNativeRow: UIView {
         }
         var consumed: [Int: Double] = [:]
         for fragment in layout.fragments where fragment.rect.width > 0 {
-            guard let maskIndex = indexes.firstIndex(of: fragment.wordIndex) else { continue }
+            guard let maskIndex = maskIndexByWord[fragment.wordIndex] else { continue }
             let piece = CALayer()
             piece.frame = fragment.rect; piece.contents = sharpImage.cgImage; piece.contentsScale = scale
             piece.contentsRect = CGRect(x: fragment.rect.minX / layout.size.width, y: fragment.rect.minY / layout.size.height,
@@ -757,7 +1061,7 @@ private final class AMLLNativeRow: UIView {
         var characterConsumed: [Int: Double] = [:]
         var characterWordIndexes = Set<Int>()
         for fragment in layout.characterFragments where fragment.rect.width > 0 {
-            guard let maskIndex = indexes.firstIndex(of: fragment.wordIndex) else { continue }
+            guard let maskIndex = maskIndexByWord[fragment.wordIndex] else { continue }
             let piece = CALayer()
             piece.frame = fragment.rect; piece.contents = sharpImage.cgImage; piece.contentsScale = scale
             piece.contentsRect = CGRect(x: fragment.rect.minX / layout.size.width, y: fragment.rect.minY / layout.size.height,
@@ -842,12 +1146,23 @@ private final class AMLLNativeRow: UIView {
     private var lastVisualMotion = false
     private var lastVisualGain = 1.0
     private(set) var visualUpdateCount = 0
+    private(set) var needsHDRRetry = false
+
+    func invalidateVisualCache() { lastVisualRow = nil }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        // A recycled CAMetalLayer may no longer own the last presented
+        // drawable. Re-submit its current mask when it becomes visible again.
+        if window != nil { lastVisualRow = nil }
+    }
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row,
                        configuration: LyricsRenderConfiguration, motionEnabled: Bool)
     {
-        // Dragging changes the parent position, not every word's mask. Keep
-        // settled SDR rows untouched; animated words and EDR frames still draw.
+        // Dragging changes the parent position, not every word's mask.
+        // A completed Metal drawable remains the row's current output until
+        // its coverage, brightness or geometry changes.
         var visual = row
         visual.y = 0
         visual.scale = 1
@@ -858,7 +1173,7 @@ private final class AMLLNativeRow: UIView {
             settled.advance(min(visual.wordClock.time, visual.wordClock.reverseElapsed), playing: false)
             visual.wordClock = settled
         }
-        guard gain > 1 || visual != lastVisualRow || configuration != lastVisualConfiguration
+        guard visual != lastVisualRow || configuration != lastVisualConfiguration
             || motionEnabled != lastVisualMotion || gain != lastVisualGain else { return }
         lastVisualRow = visual
         lastVisualConfiguration = configuration
@@ -866,7 +1181,9 @@ private final class AMLLNativeRow: UIView {
         lastVisualGain = gain
         visualUpdateCount += 1
         apply(row: row, configuration: configuration, motionEnabled: motionEnabled)
-        applyHDR(renderer: renderer, gain: gain, row: row, configuration: configuration)
+        let hdrSubmitted = applyHDR(renderer: renderer, gain: gain, row: row, configuration: configuration)
+        needsHDRRetry = gain > 1 && renderer != nil && !hdrSubmitted
+        if needsHDRRetry { lastVisualRow = nil }
     }
 
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
@@ -983,13 +1300,15 @@ private final class AMLLNativeRow: UIView {
         }
     }
 
-    func applyHDR(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration) {
+    @discardableResult
+    func applyHDR(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row,
+                  configuration: LyricsRenderConfiguration) -> Bool {
         guard let renderer, window != nil else {
             hdrRow?.layer.removeFromSuperlayer(); hdrRow = nil
-            return
+            return true
         }
         let sharpWeight = Float(max(0, 1 - min(5, max(0, row.blur)) / 2))
-        guard sharpWeight > 0 else { hdrRow?.layer.isHidden = true; return }
+        guard sharpWeight > 0 else { hdrRow?.layer.isHidden = true; return true }
         if hdrRow == nil, let image = sharpImage.cgImage {
             hdrRow = LyricsHDRRow(renderer: renderer, image: image, size: textLayout.size,
                                   scale: window?.screen.scale ?? 1, padding: textLayout.font.pointSize * 3)
@@ -997,7 +1316,7 @@ private final class AMLLNativeRow: UIView {
                 layer.addSublayer(hdrRow.layer)
             }
         }
-        guard let hdrRow else { return }
+        guard let hdrRow else { return false }
         let feather = textLayout.font.lineHeight * configuration.gradientWidth
         var pieces: [LyricsHDRRow.Piece] = []
         if !base.isHidden {
@@ -1021,12 +1340,15 @@ private final class AMLLNativeRow: UIView {
                                     glowRadius: entry.layer.shadowRadius, glowOpacity: Double(entry.layer.shadowOpacity)))
             }
         }
+        guard !pieces.isEmpty else { hdrRow.layer.isHidden = true; return true }
         // Disable the original pixels only after a replacement frame is submitted.
         // Failure always returns to the original SDR layers; it never leaves stale HDR.
         if hdrRow.draw(pieces: pieces, gain: gain, sharpWeight: sharpWeight) {
             base.opacity = 0
             words.forEach { $0.layer.opacity = 0 }
             characters.forEach { $0.layer.opacity = 0 }
+            return true
         }
+        return false
     }
 }

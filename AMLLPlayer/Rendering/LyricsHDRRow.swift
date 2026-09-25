@@ -23,6 +23,11 @@ final class LyricsHDRRow {
     private let atlasSize: CGSize
     private let padding: CGFloat
 
+    var estimatedBytes: Int {
+        atlas.width * atlas.height * 4
+            + Int(layer.drawableSize.width * layer.drawableSize.height) * 8 * 3
+    }
+
     init?(renderer: LyricsHDRRenderer, image: CGImage, size: CGSize, scale: CGFloat, padding: CGFloat) {
         guard let texture = renderer.glyphTexture(image) else { return nil }
         self.renderer = renderer; atlas = texture; atlasSize = size; self.padding = padding

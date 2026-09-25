@@ -402,6 +402,8 @@ struct AMLLFrameEngine {
             dirty = false
         }
         var rows: [AMLLFrameState.Row] = []
+        rows.reserveCapacity(document.groups.count * 2)
+        var allSettled = true
         for index in motions.indices {
             if environment.enableSpring, !environment.reduceMotion {
                 motions[index].y.update(elapsed)
@@ -455,6 +457,15 @@ struct AMLLFrameEngine {
                                   blur: min(5, motion.blurTransition.value),
                                   active: motion.active, hidden: !motion.active && progress == 0))
             }
+            if environment.enableSpring || environment.reduceMotion {
+                allSettled = allSettled && motion.y.arrived && motion.slide.arrived
+                    && motion.mainScale.arrived && motion.backgroundScale.arrived
+                    && motion.opacityTransition.arrived && motion.blurTransition.arrived
+            } else {
+                allSettled = allSettled && motion.yTransition.arrived && motion.slideTransition.arrived
+                    && motion.mainScaleTransition.arrived && motion.backgroundScaleTransition.arrived
+                    && motion.opacityTransition.arrived && motion.blurTransition.arrived
+            }
         }
         firstFrame = false; previousInput = input
         let duration = input.playbackSnapshot?.duration ?? 0
@@ -466,15 +477,7 @@ struct AMLLFrameEngine {
             rows: rows,
             interlude: interlude,
             browsing: browsing,
-            settled: motions.allSatisfy {
-                if environment.enableSpring || environment.reduceMotion {
-                    return $0.y.arrived && $0.slide.arrived && $0.mainScale.arrived && $0.backgroundScale.arrived
-                        && $0.opacityTransition.arrived && $0.blurTransition.arrived
-                }
-                return $0.yTransition.arrived && $0.slideTransition.arrived
-                    && $0.mainScaleTransition.arrived && $0.backgroundScaleTransition.arrived
-                    && $0.opacityTransition.arrived && $0.blurTransition.arrived
-            },
+            settled: allSettled,
             background: .init(artworkURL: input.artworkURL,
                               blur: input.configuration?.backgroundBlur ?? 0,
                               progress: progress,

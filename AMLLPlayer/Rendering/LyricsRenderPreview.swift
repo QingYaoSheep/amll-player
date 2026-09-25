@@ -15,6 +15,8 @@
         @State private var lineTiming = false
         @State private var targetFPS = 60
         @State private var exportURL: URL?
+        @State private var performanceURL: URL?
+        @State private var recordPerformance = false
         @State private var visible = false
         @State private var sourcePort = false
         @State private var sharedReference: AMLLSharedReference?
@@ -69,7 +71,10 @@
                                                  position = line.start; anchor = ProcessInfo.processInfo.systemUptime; seekRevision += 1
                                              }
                                          }, active: visible && scenePhase == .active, targetFPS: targetFPS,
-                                         resumeToken: resume, created: { nativeRenderer = $0 }, browsing: { browsing = $0 })
+                                         resumeToken: resume, created: {
+                                             nativeRenderer = $0
+                                             $0.performanceRecordingEnabled = recordPerformance
+                                         }, browsing: { browsing = $0 })
                 } else {
                     PreviewRenderer(configuration: configuration, document: previewDocument,
                                     position: currentPosition, playing: playing, active: visible && scenePhase == .active,
@@ -108,6 +113,26 @@
                     if let exportURL {
                         ShareLink(item: exportURL) { Label("render.shareMotion", systemImage: "square.and.arrow.up") }
                     }
+                }
+                if sourcePort {
+                    Toggle("记录原生帧耗时", isOn: $recordPerformance)
+                        .onChange(of: recordPerformance) { _, enabled in
+                            nativeRenderer?.performanceRecordingEnabled = enabled
+                            performanceURL = nil
+                        }
+                    let performance = nativeRenderer?.performanceSummary
+                    Text(String(format: "CPU P50 %.2f · P95 %.2f · P99 %.2f ms · 长帧 %d · 缓存 %.1f MiB",
+                                performance?.cpu.p50 ?? 0, performance?.cpu.p95 ?? 0,
+                                performance?.cpu.p99 ?? 0, performance?.longFrames ?? 0,
+                                Double(performance?.peakCacheBytes ?? 0) / 1_048_576))
+                        .font(.caption.monospaced())
+                    Button("导出分段性能轨迹") {
+                        guard let data = nativeRenderer?.exportPerformanceSamples() else { return }
+                        let url = FileManager.default.temporaryDirectory.appendingPathComponent("amll-frame-performance.json")
+                        try? data.write(to: url, options: .atomic)
+                        performanceURL = url
+                    }
+                    if let performanceURL { ShareLink("分享性能轨迹", item: performanceURL) }
                 }
                 Slider(value: $configuration.fontSize, in: 24 ... 52).accessibilityLabel(Text("render.fontSize"))
                 Toggle("render.preview.line", isOn: $lineTiming)

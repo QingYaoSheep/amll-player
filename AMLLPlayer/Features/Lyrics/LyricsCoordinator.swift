@@ -6,7 +6,12 @@ import Observation
 final class LyricsCoordinator {
     enum Status: String { case idle, disabled, loading, ready, cached, stale, instrumental, notFound, failed }
     private(set) var track: TrackIdentity?
-    private(set) var document: LyricsDocument?
+    private(set) var document: LyricsDocument? {
+        didSet { documentRevision &+= 1 }
+    }
+    /// Covers track changes, provider replacements, edits and generated TTML.
+    /// The canvas uses this instead of comparing every lyric on each SwiftUI update.
+    private(set) var documentRevision = 0
     private(set) var status: Status = .idle
     private(set) var settings: LyricsSettings
     private(set) var selection = LyricsSelection()

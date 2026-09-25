@@ -3,6 +3,50 @@ import CoreText
 import NaturalLanguage
 import UIKit
 
+fileprivate struct AMLLCoreTextRasterRow {
+    var line: CTLine
+    var origin: CGPoint
+    var auxiliary = false
+    var ruby = false
+    var romanization = false
+}
+
+/// Immutable Core Text data crosses the main-actor boundary only for image
+/// preparation. UIKit views and Core Text layout construction remain on main.
+struct AMLLCoreTextRasterSnapshot: @unchecked Sendable {
+    fileprivate let size: CGSize
+    fileprivate let rows: [AMLLCoreTextRasterRow]
+    nonisolated(unsafe) private static let rasterContext = CIContext(options: nil)
+
+    func raster(scale: CGFloat, auxiliary: Bool? = nil, ruby: Bool? = nil,
+                romanization: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
+        let padding = blurRadius > 0 ? ceil(blurRadius * 3 + 1) : 0
+        let rasterSize = CGSize(width: size.width + padding * 2, height: size.height + padding * 2)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = false
+        let sharp = UIGraphicsImageRenderer(size: rasterSize, format: format).image { renderer in
+            let context = renderer.cgContext
+            context.translateBy(x: padding, y: padding)
+            context.textMatrix = .identity
+            context.translateBy(x: 0, y: size.height)
+            context.scaleBy(x: 1, y: -1)
+            for row in rows {
+                if let auxiliary, row.auxiliary != auxiliary { continue }
+                if let ruby, row.ruby != ruby { continue }
+                if let romanization, row.romanization != romanization { continue }
+                context.textPosition = CGPoint(x: row.origin.x, y: size.height - row.origin.y)
+                CTLineDraw(row.line, context)
+            }
+        }
+        guard blurRadius > 0, let input = CIImage(image: sharp) else { return sharp }
+        let extent = input.extent
+        let filtered = input.applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale])
+        guard let output = Self.rasterContext.createCGImage(filtered, from: extent) else { return sharp }
+        return UIImage(cgImage: output, scale: scale, orientation: .up)
+    }
+}
+
 /// Core Text shapes glyphs; the pinned AMLL cost function chooses the line breaks.
 @MainActor
 final class AMLLCoreTextLayout {
@@ -44,13 +88,7 @@ final class AMLLCoreTextLayout {
         var word: LyricWord
     }
 
-    private struct Row {
-        var line: CTLine
-        var origin: CGPoint
-        var auxiliary = false
-        var ruby = false
-        var romanization = false
-    }
+    private typealias Row = AMLLCoreTextRasterRow
 
     private struct VisualRun {
         var range: NSRange
@@ -642,48 +680,22 @@ final class AMLLCoreTextLayout {
         self.rubyFragments = rubyFragments
         // A wrapped word has several drawable fragments, but only one timing interval.
         // Pure spaces are DOM text nodes and do not contribute mask travel in AMLL.
+        var fragmentWidths = [Double](repeating: 0, count: timedWords.count)
+        for fragment in fragments where fragmentWidths.indices.contains(fragment.wordIndex) {
+            fragmentWidths[fragment.wordIndex] += fragment.rect.width
+        }
         maskWords = timedWords.enumerated().map { index, word in
-            .init(start: word.start, end: word.end, width: fragments.filter { $0.wordIndex == index }.reduce(0) { $0 + $1.rect.width })
+            .init(start: word.start, end: word.end, width: fragmentWidths[index])
         }
         size = CGSize(width: availableWidth, height: max(1, y + (configuration.paragraphSpacing ?? 0)))
     }
 
-    /// nil draws both layers for inspection; the renderer composites auxiliary text separately.
-    private static let rasterContext = CIContext(options: nil)
+    func rasterSnapshot() -> AMLLCoreTextRasterSnapshot { .init(size: size, rows: rows) }
 
+    /// nil draws both layers for inspection; the renderer composites auxiliary text separately.
     func raster(scale: CGFloat, auxiliary: Bool? = nil, ruby: Bool? = nil,
                 romanization: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
-        // Three Gaussian standard deviations plus a pixel of rounding room.
-        // Transparent padding must exist before filtering, not just on CALayer.
-        let padding = blurRadius > 0 ? ceil(blurRadius * 3 + 1) : 0
-        let rasterSize = CGSize(width: size.width + padding * 2, height: size.height + padding * 2)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = scale
-        format.opaque = false
-        let sharp = UIGraphicsImageRenderer(size: rasterSize, format: format).image { renderer in
-            let context = renderer.cgContext
-            context.translateBy(x: padding, y: padding)
-            context.textMatrix = .identity
-            context.translateBy(x: 0, y: size.height)
-            context.scaleBy(x: 1, y: -1)
-            for row in rows {
-                if let auxiliary, row.auxiliary != auxiliary {
-                    continue
-                }
-                if let ruby, row.ruby != ruby {
-                    continue
-                }
-                if let romanization, row.romanization != romanization {
-                    continue
-                }
-                context.textPosition = CGPoint(x: row.origin.x, y: size.height - row.origin.y)
-                CTLineDraw(row.line, context)
-            }
-        }
-        guard blurRadius > 0, let input = CIImage(image: sharp) else { return sharp }
-        let extent = input.extent
-        let filtered = input.applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale])
-        guard let output = Self.rasterContext.createCGImage(filtered, from: extent) else { return sharp }
-        return UIImage(cgImage: output, scale: scale, orientation: .up)
+        rasterSnapshot().raster(scale: scale, auxiliary: auxiliary, ruby: ruby,
+                                romanization: romanization, blurRadius: blurRadius)
     }
 }

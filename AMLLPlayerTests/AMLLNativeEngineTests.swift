@@ -544,7 +544,8 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertEqual(canvas.frameState?.animationTime, before.animationTime)
         XCTAssertEqual(canvas.frameState?.rows.map(\.y), before.rows.map(\.y))
         XCTAssertGreaterThan(canvas.visibleRowCount, 0)
-        XCTAssertLessThan(canvas.cachedLayoutCount, trace.lineIDs.count)
+        XCTAssertEqual(canvas.cachedLayoutCount, trace.lineIDs.count,
+                       "Height measurement and visible rows must reuse the same Core Text layouts")
         XCTAssertTrue(trace.frames.flatMap(\.rows).allSatisfy { $0.y.isFinite && $0.scale.isFinite })
         let image = UIGraphicsImageRenderer(bounds: canvas.bounds).image { canvas.layer.render(in: $0.cgContext) }
         let attachment = XCTAttachment(image: image)
@@ -552,6 +553,23 @@ final class AMLLNativeEngineTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         canvas.removeFromSuperview()
+    }
+
+    @MainActor
+    func testMemoryWarningKeepsVisibleRowsAndReleasesOffscreenLayouts() {
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        defer { canvas.stop(); canvas.removeFromSuperview(); window.isHidden = true }
+        canvas.position = { 6 }
+        canvas.configure(document: LyricsRenderFixture.document, configuration: .init(),
+                         input: .init(position: 6, playing: false), active: false, reduceMotion: false)
+        canvas.advanceFrame(delta: 0)
+        XCTAssertGreaterThan(canvas.cachedLayoutCount, canvas.visibleRowCount)
+        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        XCTAssertEqual(canvas.cachedLayoutCount, canvas.visibleRowCount)
+        canvas.advanceFrame(delta: 0)
+        XCTAssertGreaterThan(canvas.visibleRowCount, 0)
     }
 
     @MainActor

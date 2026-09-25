@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Verify replay comparison regressions
-        run: node --test Scripts/compare-amll-traces.test.cjs Scripts/controlled-clock.test.mjs Scripts/replay-scenario.test.mjs Scripts/visual-diff.test.mjs
+        run: node --test Scripts/compare-amll-traces.test.cjs Scripts/compare-amll-performance.test.cjs Scripts/controlled-clock.test.mjs Scripts/replay-scenario.test.mjs Scripts/visual-diff.test.mjs
 
       - name: Verify pinned offline romanization resources
         run: node Scripts/verify-mineradio-romanization.cjs

@@ -23,6 +23,7 @@ struct AMLLLyricsDisplay: View {
         if let document, !document.lines.isEmpty {
             AMLLNativeLyricsView(
                 document: document,
+                documentVersion: model.lyrics.documentRevision,
                 configuration: configuration,
                 input: input(for: document),
                 position: { model.progress() },

@@ -138,11 +138,14 @@ final class LyricsHDRRendererTests: XCTestCase {
         }
         XCTAssertFalse(metalLayers(canvas.layer).isEmpty, "Production canvas must consume the HDR renderer")
         XCTAssertTrue(metalLayers(canvas.layer).allSatisfy { $0.pixelFormat == .rgba16Float })
+        let layoutBuilds = canvas.layoutBuildCount
         configuration.hdr = .init(enabled: false)
         canvas.configure(document: document, configuration: configuration, input: .init(position: 3, playing: false),
                          active: false, reduceMotion: false)
         canvas.advanceFrame(delta: 0)
         XCTAssertTrue(metalLayers(canvas.layer).isEmpty)
+        XCTAssertEqual(canvas.layoutBuildCount, layoutBuilds,
+                       "Toggling HDR must not reshape the lyric document")
     }
 
     func testFloatOutputBoostsOnlyFilledGlyphAndKeepsTransparentBackground() throws {
@@ -179,6 +182,11 @@ final class LyricsHDRRendererTests: XCTestCase {
         XCTAssertEqual(values[11], 0.3, accuracy: 0.002)
         XCTAssertEqual(values[12], 0, accuracy: 0.002)
         XCTAssertEqual(values[15], 0, accuracy: 0.002)
+        let allocations = renderer.createdVertexBufferCount
+        let again = try XCTUnwrap(renderer.render(vertices: vertices, glyphs: glyphs, target: target))
+        again.waitUntilCompleted()
+        XCTAssertEqual(renderer.createdVertexBufferCount, allocations,
+                       "Completed HDR submissions must reuse their vertex buffer")
     }
 
     func testLayerExplicitlyUsesExtendedLinearFloatOutput() throws {

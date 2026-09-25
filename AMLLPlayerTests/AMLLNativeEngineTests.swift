@@ -5,6 +5,40 @@ import XCTest
 
 final class AMLLNativeEngineTests: XCTestCase {
     @MainActor
+    func testInlineRomanizationDoesNotRepeatMatchingProviderLine() {
+        let words = [
+            LyricWord(text: "Hello ", start: 0, end: 1, romanWord: "heh"),
+            LyricWord(text: "world", start: 1, end: 2, romanWord: "wo"),
+        ]
+        let line = LyricLine(id: "duplicate-roman", text: "Hello world", start: 0, end: 2,
+                             words: words, translation: "你好，世界", romanization: "heh   wo", precision: .word)
+        let configuration = LyricsRenderConfiguration()
+        let layout = AMLLCoreTextLayout(line: line, width: 300, font: .systemFont(ofSize: 32), configuration: configuration)
+        XCTAssertEqual(layout.rubyFragments.filter { $0.kind == .romanization }.count, 2)
+        XCTAssertEqual(configuration.auxiliaryText(for: line, displayingInlineRomanization: true), ["你好，世界"])
+        XCTAssertEqual(configuration.accessibilityText(for: line, displayingInlineRomanization: true),
+                       "Hello, heh, world, wo, 你好，世界")
+
+        var hidden = configuration
+        hidden.romanization = false
+        XCTAssertEqual(hidden.accessibilityText(for: line, displayingInlineRomanization: false),
+                       "Hello world, 你好，世界")
+        XCTAssertFalse(AMLLCoreTextLayout(line: line, width: 300, font: .systemFont(ofSize: 32),
+                                          configuration: hidden).rubyFragments.contains { $0.kind == .romanization })
+    }
+
+    @MainActor
+    func testDistinctLineRomanizationSurvivesInlineWords() {
+        let words = [LyricWord(text: "漢", start: 0, end: 1, romanWord: "kan")]
+        let line = LyricLine(id: "independent-roman", text: "漢", start: 0, end: 1,
+                             words: words, romanization: "independent line", precision: .word)
+        let configuration = LyricsRenderConfiguration()
+        XCTAssertEqual(configuration.auxiliaryText(for: line, displayingInlineRomanization: true), ["independent line"])
+        XCTAssertEqual(configuration.accessibilityText(for: line, displayingInlineRomanization: true),
+                       "漢, kan, independent line")
+    }
+
+    @MainActor
     func testInlinePronunciationPreservesMultilingualOwnershipAndProviderTime() throws {
         struct Fixture: Decodable {
             struct Line: Decodable {

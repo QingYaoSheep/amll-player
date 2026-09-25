@@ -418,11 +418,7 @@ final class AMLLCoreTextLayout {
         // lyricLineWrapper uses a .3em flex gap between the main and
         // auxiliary rows. Keeping it in the cached layout also keeps the
         // engine's measured group height aligned with the pixels.
-        var auxiliaryConfiguration = configuration
-        if hasWordRomanization, line.romanization.isEmpty {
-            auxiliaryConfiguration.romanization = false
-        }
-        let auxiliaryTexts = auxiliaryConfiguration.auxiliaryText(for: line)
+        let auxiliaryTexts = configuration.auxiliaryText(for: line, displayingInlineRomanization: hasWordRomanization)
         if !auxiliaryTexts.isEmpty {
             y += font.pointSize * 0.3
         }

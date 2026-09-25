@@ -141,17 +141,42 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         return value
     }
 
-    func auxiliaryText(for line: LyricLine) -> [String] {
+    func auxiliaryText(for line: LyricLine, displayingInlineRomanization: Bool = false) -> [String] {
         let translationText = translation ? line.translation : ""
         let wordRomanization = line.words.compactMap(\.romanWord).joined(separator: " ")
         // Ruby is rendered by Core Text above the matching word. Legacy
         // string ruby is also promoted to that layer, so it must never leak
         // into the translation/romanization rows a second time.
-        let romanizationText = romanization
-            ? (line.romanization.isEmpty ? wordRomanization : line.romanization)
-            : ""
+        // A provider may include both word annotations and a line assembled
+        // from those same annotations. Once the words are drawn inline, only
+        // a distinct provider-supplied line belongs in the auxiliary row.
+        let normalizedWordRomanization = wordRomanization.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let normalizedLineRomanization = line.romanization.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let romanizationText: String = if !romanization {
+            ""
+        } else if displayingInlineRomanization {
+            normalizedLineRomanization == normalizedWordRomanization ? "" : line.romanization
+        } else {
+            line.romanization.isEmpty ? wordRomanization : line.romanization
+        }
         return (romanizationFirst ? [romanizationText, translationText] : [translationText, romanizationText])
             .filter { !$0.isEmpty }
+    }
+
+    func accessibilityText(for line: LyricLine, displayingInlineRomanization: Bool) -> String {
+        let mainText: String = if displayingInlineRomanization, romanization,
+                                  line.words.map(\.text).joined() == line.text
+        {
+            line.words.flatMap { word -> [String] in
+                let body = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let pronunciation = word.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return [body, pronunciation].filter { !$0.isEmpty }
+            }.joined(separator: ", ")
+        } else {
+            line.text
+        }
+        return ([mainText] + auxiliaryText(for: line, displayingInlineRomanization: displayingInlineRomanization))
+            .filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     func resolvedFontSize(width: Double, height: Double) -> Double {

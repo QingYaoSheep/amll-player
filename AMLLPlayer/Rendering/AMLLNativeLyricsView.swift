@@ -653,7 +653,7 @@ private final class AMLLNativeRow: UIView {
             word.layer.isHidden = true
         }
         isAccessibilityElement = true
-        accessibilityLabel = ([line.text] + layoutLineAuxiliaryText()).filter { !$0.isEmpty }.joined(separator: ", ")
+        accessibilityLabel = layoutLineAccessibilityText()
         accessibilityTraits = .button
         accessibilityIdentifier = "lyricRow." + line.id
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
@@ -685,11 +685,15 @@ private final class AMLLNativeRow: UIView {
         ] : nil
     }
 
-    private func layoutLineAuxiliaryText() -> [String] {
+    private func layoutLineAccessibilityText() -> String {
         // The layout already applies the visibility/profile rules. Repeating
         // them here keeps VoiceOver in the same order as the pixels without
         // exposing parser-only metadata.
-        accessibilityConfiguration.auxiliaryText(for: line)
+        accessibilityConfiguration.accessibilityText(for: line, displayingInlineRomanization: displaysInlineRomanization)
+    }
+
+    private var displaysInlineRomanization: Bool {
+        textLayout.rubyFragments.contains { $0.kind == .romanization }
     }
 
     private var accessibilityConfiguration = LyricsRenderConfiguration()
@@ -737,7 +741,10 @@ private final class AMLLNativeRow: UIView {
     }
 
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
-        accessibilityConfiguration = configuration
+        if accessibilityConfiguration != configuration {
+            accessibilityConfiguration = configuration
+            accessibilityLabel = layoutLineAccessibilityText()
+        }
         let bright = row.brightAlpha, dark = row.darkAlpha
         let radius = min(5, max(0, row.blur))
         let sharpWeight = Float(max(0, 1 - radius / 2))
@@ -789,8 +796,6 @@ private final class AMLLNativeRow: UIView {
         if sharpWeight == 0 {
             return
         }
-        let auxiliaryText = configuration.auxiliaryText(for: line)
-        accessibilityLabel = ([line.text] + auxiliaryText).filter { !$0.isEmpty }.joined(separator: ", ")
         for entry in words {
             guard !entry.layer.isHidden else { continue }
             let elapsed = row.wordClock.floatElapsed(wordStart: entry.fragment.word.start - line.start,

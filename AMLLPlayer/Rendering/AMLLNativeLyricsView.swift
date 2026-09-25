@@ -482,8 +482,8 @@ final class AMLLNativeCanvas: UIView {
             }
             let trace = Trace(environment: renderEnvironment(), fps: rate,
                               lineIDs: display?.lines.map(\.id) ?? [],
-                              breaks: heights.indices.map { makeLayout($0).breakOffsets },
-                              layoutDiagnostics: heights.indices.map { makeLayout($0).diagnostics }, frames: frames)
+                              breaks: heights.indices.map { makeLayout($0).original.breakOffsets },
+                              layoutDiagnostics: heights.indices.map { makeLayout($0).original.diagnostics }, frames: frames)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             return try? encoder.encode(trace)

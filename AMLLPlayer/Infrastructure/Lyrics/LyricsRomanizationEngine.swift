@@ -325,7 +325,10 @@ actor LyricsRomanizationEngine {
                         if text.range(of: #"^[\p{P}\p{S}]+$"#, options: .regularExpression) != nil,
                            !tokens.isEmpty {
                             tokens[tokens.count - 1].sourceText += text
-                            tokens[tokens.count - 1].romanized += roman
+                            // Mineradio appends the original punctuation to
+                            // the preceding token before applying WanaKana.
+                            // Its punctuation mapping must not turn 、。 into ,.
+                            tokens[tokens.count - 1].romanized += text
                             tokens[tokens.count - 1].utf16End = entry.end
                             tokens[tokens.count - 1].sourceNodeIndexes = Array(Set(tokens[tokens.count - 1].sourceNodeIndexes + token.sourceNodeIndexes)).sorted()
                         } else { tokens.append(token) }

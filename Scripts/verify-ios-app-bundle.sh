@@ -16,6 +16,25 @@ for REQUIRED_RESOURCE in default.metallib amll-mesh-presets.json; do
         exit 1
     fi
 done
+ROMANIZATION_ROOT="$APP_BUNDLE/Romanization"
+if [[ ! -d "$ROMANIZATION_ROOT" ]]; then
+    ROMANIZATION_ROOT="$APP_BUNDLE"
+fi
+for DICTIONARY_PART in base check tid tid_pos tid_map cc unk unk_pos unk_map unk_char unk_compat unk_invoke; do
+    if [[ ! -s "$ROMANIZATION_ROOT/roman-$DICTIONARY_PART.deflate" ]]; then
+        echo "Missing offline romanization dictionary part: $DICTIONARY_PART" >&2
+        exit 1
+    fi
+done
+for ROMANIZATION_RESOURCE in roman-kana-map.json romanization-resources.json; do
+    if [[ ! -s "$ROMANIZATION_ROOT/$ROMANIZATION_RESOURCE" ]]; then
+        echo "Missing offline romanization resource: $ROMANIZATION_RESOURCE" >&2
+        exit 1
+    fi
+done
+ROMANIZATION_KIB="$(du -ck "$ROMANIZATION_ROOT"/roman-*.deflate \
+    "$ROMANIZATION_ROOT/roman-kana-map.json" "$ROMANIZATION_ROOT/romanization-resources.json" | tail -1 | cut -f1)"
+echo "Offline romanization resources: $ROMANIZATION_KIB KiB in bundle"
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CADisableMinimumFrameDurationOnPhone' "$INFO_PLIST")" != "true" ]]; then
     echo "Application is missing the ProMotion timing opt-in" >&2
     exit 1
@@ -64,4 +83,4 @@ if ! otool -l "$APP_EXECUTABLE" | grep -Fq '@executable_path/Frameworks'; then
     exit 1
 fi
 
-echo "Verified ProMotion/orientations, Spotify callback, embedded framework, and runtime search path"
+echo "Verified ProMotion/orientations, Spotify callback, embedded framework, offline dictionary, and runtime search path"

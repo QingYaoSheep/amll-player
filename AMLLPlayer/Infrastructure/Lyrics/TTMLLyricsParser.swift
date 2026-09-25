@@ -300,7 +300,8 @@ enum TTMLLyricsParser {
         return result.filter { !$0.text.isEmpty }
     }
 
-    static func parse(_ xml: String, preferredLanguage: String = "zh-Hans-CN", duration: Double = 0, timingMode: TTMLTimingMode = .appleAbsolute) throws -> [LyricLine] {
+    static func parse(_ xml: String, preferredLanguage: String = "zh-Hans-CN", duration: Double = 0,
+                      timingMode: TTMLTimingMode = .appleAbsolute, preserveGeneratedIDs: Bool = false) throws -> [LyricLine] {
         guard xml.utf8.count <= 2_000_000 else { throw LyricsError.tooLarge }
         guard !xml.localizedCaseInsensitiveContains("<!DOCTYPE"), !xml.localizedCaseInsensitiveContains("<!ENTITY") else { throw LyricsError.malformed }
         let reader = Reader(), parser = XMLParser(data: Data(xml.utf8))
@@ -410,7 +411,14 @@ enum TTMLLyricsParser {
                     bounds.1 = end
                 }
                 let lang = node.inherited("lang") ?? NLLanguageRecognizer.dominantLanguage(for: lineText)?.rawValue ?? ""
-                output.append(LyricLine(id: "ttml-\(index)-\(voice)", text: lineText, start: bounds.0, end: bounds.1,
+                // Generated pronunciation cues carry a stable source-line key.
+                // Preserve that key so the second TTML track can be placed
+                // beside the corresponding original row without matching by
+                // rounded timestamps or changing IDs of provider TTML.
+                let generatedID = preserveGeneratedIDs
+                    ? p.attr("id").flatMap { $0.hasPrefix("generated-roman-") ? $0 : nil }
+                    : nil
+                output.append(LyricLine(id: generatedID ?? "ttml-\(index)-\(voice)", text: lineText, start: bounds.0, end: bounds.1,
                                         words: timedWords, translation: bg ? stripBrackets(trText) : trText,
                                         romanization: bg ? stripBrackets(roText) : roText, isBackground: bg, isDuet: duet, agent: agent,
                                         isRTL: Locale.Language(identifier: lang).characterDirection == .rightToLeft,

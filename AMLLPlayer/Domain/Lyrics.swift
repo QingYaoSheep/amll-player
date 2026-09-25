@@ -167,6 +167,22 @@ struct RomanizationToken: Codable, Equatable, Sendable {
     var language: String
 }
 
+/// Generated pronunciation is a separate TTML track. Its parsed cues own
+/// their timing; source lyric words are never rewritten to display it.
+struct RomanizationTTMLTrack: Codable, Equatable, Sendable {
+    struct Cue: Codable, Equatable, Sendable {
+        var sourceLineIndex: Int
+        var line: LyricLine
+    }
+
+    var ttml: String
+    var cues: [Cue]
+
+    func line(for sourceLineIndex: Int) -> LyricLine? {
+        cues.first { $0.sourceLineIndex == sourceLineIndex }?.line
+    }
+}
+
 struct LyricsDocument: Codable, Equatable, Sendable {
     // Bump when the TTML/LRC semantic mapping changes. Existing cached
     // documents are reparsed from their payload so provider fixes become
@@ -180,6 +196,8 @@ struct LyricsDocument: Codable, Equatable, Sendable {
     var lyricAuthor: String? = nil
     var songwriters: [String] = []
     var degradationReason: String? = nil
+    /// Display-only generated track, stored separately from the provider lyric cache.
+    var romanizationTTMLTrack: RomanizationTTMLTrack? = nil
     var precision: LyricsPrecision {
         lines.contains { $0.precision == .word } ? .word : .line
     }

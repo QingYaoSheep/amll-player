@@ -255,18 +255,32 @@ private struct RomanizationSettingsView: View {
     var coordinator: LyricsCoordinator?
     @State private var importing = false
     @State private var exportedFile: URL?
+    @State private var exportedTTMLFile: URL?
     @State private var message = ""
 
     var body: some View {
         Form {
             Section("自动音译") {
-                Text("日语和韩语歌词优先离线生成逐词音译。无法可靠生成时使用歌词来源提供的音译。显示仍由上一级的音译开关控制。")
+                Text("日语和韩语歌词优先离线生成独立的罗马音 TTML 时间轴。无法可靠生成时使用歌词来源提供的音译。显示仍由上一级的音译开关控制。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if let coordinator {
                     Text(coordinator.romanizationStatus.isEmpty ? "等待歌词" : coordinator.romanizationStatus)
                         .font(.footnote)
                 }
                 Button("重新生成当前歌词") { coordinator?.regenerateRomanization() }
+                Button("准备导出当前罗马音 TTML") {
+                    guard let ttml = coordinator?.document?.romanizationTTMLTrack?.ttml else {
+                        message = "当前歌词没有生成的罗马音 TTML"
+                        return
+                    }
+                    do {
+                        let url = FileManager.default.temporaryDirectory.appendingPathComponent("romanization.ttml")
+                        try Data(ttml.utf8).write(to: url, options: .atomic)
+                        exportedTTMLFile = url
+                        message = "罗马音 TTML 已准备好导出"
+                    } catch { message = "TTML 导出失败" }
+                }
+                if let exportedTTMLFile { ShareLink("分享罗马音 TTML", item: exportedTTMLFile) }
                 Button("清理生成缓存") {
                     Task {
                         do {

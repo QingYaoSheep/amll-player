@@ -211,13 +211,16 @@ final class LyricsCoordinator {
             let result = await LyricsRomanizationEngine.shared.generateCached(document: base, force: force)
             guard let self, !Task.isCancelled, romanizationEpoch == ticket,
                   track?.spotifyID == trackID else { return }
-            document = result.applying(to: base)
-            romanizationStatus = result.lines.isEmpty ? "无可生成的日语／韩语音译" : "已生成日语／韩语音译"
+            let withRomanization = result.applying(to: base)
+            document = withRomanization
+            romanizationStatus = withRomanization.romanizationTTMLTrack == nil
+                ? "无可生成的日语／韩语音译" : "已生成独立罗马音 TTML 时间轴"
         }
     }
 
     func regenerateRomanization() {
         guard var base = document, let track else { return }
+        base.romanizationTTMLTrack = nil
         for index in base.lines.indices {
             base.lines[index].generatedRomanization = nil
             base.lines[index].generatedRomanizationLanguage = nil

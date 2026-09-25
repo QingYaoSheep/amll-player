@@ -123,13 +123,16 @@ final class AMLLCoreTextLayout {
     let breakOffsets: [Int]
     let font: UIFont
     let maskWords: [AMLLWordMask.Word]
+    /// Empty slot for the separately parsed romanization TTML row.
+    let romanizationSlotY: CGFloat?
     /// Indexed by WordFragment/CharacterFragment/RubyFragment.wordIndex.
     /// Original annotation data stays on the source word; no inferred ruby
     /// character correspondence is introduced by segmentation.
     let sourceAtoms: [AMLLWordSegmentation.Atom]
     private let rows: [Row]
 
-    init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration) {
+    init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration,
+         romanizationReserve: CGFloat = 0) {
         self.font = font
         let availableWidth = max(1, width)
         let generated = configuration.romanization && line.precision == .word
@@ -590,6 +593,12 @@ final class AMLLCoreTextLayout {
         // auxiliary rows. Keeping it in the cached layout also keeps the
         // engine's measured group height aligned with the pixels.
         let auxiliaryTexts = configuration.auxiliaryText(for: line, displayingInlineRomanization: hasWordRomanization)
+        var separateRomanizationY: CGFloat?
+        if romanizationReserve > 0 && configuration.romanizationFirst {
+            y += font.pointSize * 0.3
+            separateRomanizationY = y
+            y += romanizationReserve
+        }
         if !auxiliaryTexts.isEmpty {
             y += font.pointSize * 0.3
         }
@@ -608,10 +617,16 @@ final class AMLLCoreTextLayout {
                 cursor += count
             }
         }
+        if romanizationReserve > 0 && !configuration.romanizationFirst {
+            y += font.pointSize * 0.3
+            separateRomanizationY = y
+            y += romanizationReserve
+        }
         if line.isBackground {
             y += backgroundPadding
         }
         self.rows = rows
+        romanizationSlotY = separateRomanizationY
         self.fragments = fragments
         self.characterFragments = characterFragments
         self.rubyFragments = rubyFragments

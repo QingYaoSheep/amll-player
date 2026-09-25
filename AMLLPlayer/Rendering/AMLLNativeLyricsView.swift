@@ -68,10 +68,16 @@ final class AMLLNativeCanvas: UIView {
     private var configuration = LyricsRenderConfiguration()
     private var input = AMLLPlayerInput(position: 0, playing: false)
     private var engine: AMLLFrameEngine?
-    private var layouts: [Int: AMLLCoreTextLayout] = [:]
+    fileprivate struct RowLayouts {
+        var original: AMLLCoreTextLayout
+        var romanization: AMLLCoreTextLayout?
+        var romanizationCue: LyricLine?
+    }
+    private var layouts: [Int: RowLayouts] = [:]
+    private var romanizationCues: [Int: LyricLine] = [:]
     private var heights: [Double] = []
-    private var rowViews: [Int: AMLLNativeRow] = [:]
-    private var retainedRows: [Int: AMLLNativeRow] = [:]
+    private var rowViews: [Int: AMLLCompositeRow] = [:]
+    private var retainedRows: [Int: AMLLCompositeRow] = [:]
     private var retainedOrder: [Int] = []
     private var link: CADisplayLink?
     private var linkTarget: LinkTarget?
@@ -133,7 +139,19 @@ final class AMLLNativeCanvas: UIView {
         if source != document || self.configuration.obsceneWordMask != configuration.obsceneWordMask {
             hdrTime = nil
             source = document
-            display = AMLLDisplayDocument(lines: (configuration.obsceneWordMask ?? .init()).apply(to: document.lines))
+            romanizationCues = Dictionary(document.romanizationTTMLTrack?.cues.map {
+                ($0.sourceLineIndex, $0.line)
+            } ?? [], uniquingKeysWith: { _, newest in newest })
+            var displayLines = document.lines
+            // A generated cue replaces provider pronunciation only in the
+            // display copy. The original lyric and fallback stay untouched.
+            for index in romanizationCues.keys where displayLines.indices.contains(index) {
+                displayLines[index].romanization = ""
+                for wordIndex in displayLines[index].words.indices {
+                    displayLines[index].words[wordIndex].romanWord = nil
+                }
+            }
+            display = AMLLDisplayDocument(lines: (configuration.obsceneWordMask ?? .init()).apply(to: displayLines))
             engine = nil; dirty = true
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
@@ -158,7 +176,7 @@ final class AMLLNativeCanvas: UIView {
             layouts.removeAll()
             rowViews.values.forEach { $0.removeFromSuperview() }; rowViews.removeAll()
             retainedRows.removeAll(); retainedOrder.removeAll()
-            heights = display.lines.indices.map { makeLayout($0).size.height }
+            heights = display.lines.indices.map { makeLayout($0).original.size.height }
             layouts.removeAll()
             let environment = renderEnvironment()
             if engine == nil {
@@ -233,7 +251,7 @@ final class AMLLNativeCanvas: UIView {
         return metrics.scaledValue(for: configuration.resolvedFontSize(width: bounds.width, height: bounds.height), compatibleWith: traitCollection)
     }
 
-    private func makeLayout(_ index: Int) -> AMLLCoreTextLayout {
+    private func makeLayout(_ index: Int) -> RowLayouts {
         if let cached = layouts[index] {
             return cached
         }
@@ -245,7 +263,18 @@ final class AMLLNativeCanvas: UIView {
         // second time at accessibility text sizes.
         let font = UIFont.systemFont(ofSize: size, weight: configuration.bold || traitCollection.legibilityWeight == .bold ? .bold : .regular)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
-        return AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration)
+        let cue = configuration.romanization ? romanizationCues[index] : nil
+        var romanConfiguration = configuration
+        romanConfiguration.romanization = false
+        romanConfiguration.translation = false
+        romanConfiguration.paragraphSpacing = 0
+        let romanFont = font.withSize(max(10, size * (configuration.auxiliaryScale ?? 0.5)))
+        let romanLayout = cue.map {
+            AMLLCoreTextLayout(line: $0, width: width, font: romanFont, configuration: romanConfiguration)
+        }
+        let original = AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration,
+                                          romanizationReserve: romanLayout?.size.height ?? 0)
+        return RowLayouts(original: original, romanization: romanLayout, romanizationCue: cue)
     }
 
     private func draw(delta: Double) {
@@ -293,7 +322,7 @@ final class AMLLNativeCanvas: UIView {
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for row in visible {
-            let view: AMLLNativeRow
+            let view: AMLLCompositeRow
             if let existing = rowViews[row.lineIndex] {
                 view = existing
             } else if let retained = retainedRows.removeValue(forKey: row.lineIndex) {
@@ -303,7 +332,8 @@ final class AMLLNativeCanvas: UIView {
             } else {
                 let layout = makeLayout(row.lineIndex)
                 layouts[row.lineIndex] = layout
-                view = AMLLNativeRow(line: display.lines[row.lineIndex], layout: layout, scale: window?.screen.scale ?? 2)
+                view = AMLLCompositeRow(line: display.lines[row.lineIndex], layouts: layout,
+                                        scale: window?.screen.scale ?? 2)
                 view.onSeek = { [weak self] in
                     guard let self, canSeek else { return }
                     onInteraction(.seek(lineID: display.lines[row.lineIndex].id))
@@ -311,7 +341,7 @@ final class AMLLNativeCanvas: UIView {
                 rowViews[row.lineIndex] = view; addSubview(view)
             }
             let line = display.lines[row.lineIndex]
-            let width = layouts[row.lineIndex]?.size.width ?? bounds.width - inset * 2
+            let width = layouts[row.lineIndex]?.original.size.width ?? bounds.width - inset * 2
             view.layer.anchorPoint = CGPoint(x: line.isDuet ? 1 : 0, y: 0.5)
             view.bounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
             view.layer.position = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
@@ -319,7 +349,7 @@ final class AMLLNativeCanvas: UIView {
             view.setCanSeek(canSeek)
             let gain = hdr.activeLineIndexes.contains(row.lineIndex) ? hdr.outputBrightness : 1
             view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
-                               gain: gain,
+                               gain: gain, lyricTime: state.lyricTime,
                                row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
         }
         if let interlude = state.interlude,
@@ -511,8 +541,79 @@ final class AMLLNativeCanvas: UIView {
     }
 }
 
+/// The original line and the generated TTML cue are separate native rows.
+/// Only their geometry is grouped for AMLL's focus/scroll layout.
+@MainActor
+private final class AMLLCompositeRow: UIView {
+    private let original: AMLLNativeRow
+    private let romanization: AMLLNativeRow?
+    private let romanizationCue: LyricLine?
+
+    var onSeek: (() -> Void)? {
+        didSet {
+            original.onSeek = onSeek
+            romanization?.onSeek = onSeek
+        }
+    }
+
+    var visualUpdateCount: Int {
+        original.visualUpdateCount + (romanization?.visualUpdateCount ?? 0)
+    }
+
+    init(line: LyricLine, layouts: AMLLNativeCanvas.RowLayouts, scale: CGFloat) {
+        original = AMLLNativeRow(line: line, layout: layouts.original, scale: scale)
+        romanizationCue = layouts.romanizationCue
+        if let cue = layouts.romanizationCue, let layout = layouts.romanization {
+            romanization = AMLLNativeRow(line: cue, layout: layout, scale: scale)
+        } else {
+            romanization = nil
+        }
+        super.init(frame: CGRect(origin: .zero, size: layouts.original.size))
+        isOpaque = false
+        original.frame = bounds
+        addSubview(original)
+        if let romanization, let layout = layouts.romanization {
+            romanization.frame = CGRect(x: 0, y: layouts.original.romanizationSlotY ?? 0,
+                                        width: layout.size.width, height: layout.size.height)
+            addSubview(romanization)
+        }
+    }
+
+    required init?(coder _: NSCoder) { nil }
+
+    func setCanSeek(_ value: Bool) {
+        original.setCanSeek(value)
+        romanization?.setCanSeek(value)
+    }
+
+    func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, lyricTime: Double,
+                       row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool)
+    {
+        original.updateVisuals(renderer: renderer, gain: gain, row: row,
+                               configuration: configuration, motionEnabled: motionEnabled)
+        guard let cue = romanizationCue, let romanization else { return }
+        var independent = row
+        var clock = AMLLWordAnimationClock()
+        clock.enable(at: max(0, lyricTime - cue.start))
+        independent.wordClock = clock
+        independent.active = lyricTime >= cue.start && lyricTime < cue.end
+        if cue.precision == .line, !independent.active {
+            independent.opacity *= row.darkAlpha
+        }
+        var auxiliaryConfiguration = configuration
+        auxiliaryConfiguration.romanization = false
+        auxiliaryConfiguration.translation = false
+        // The pronunciation has its own TTML masks. Original-word emphasis
+        // and HDR must not be applied to this independent SDR text row.
+        romanization.updateVisuals(renderer: nil, gain: 1, row: independent,
+                                   configuration: auxiliaryConfiguration, motionEnabled: false)
+    }
+
+}
+
 @MainActor
 private final class AMLLNativeRow: UIView {
+
     private struct RubyPiece {
         var layer: CALayer
         var mask: CAGradientLayer

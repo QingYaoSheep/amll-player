@@ -14,13 +14,27 @@ struct RomanizationResult: Codable, Sendable {
     var lines: [Line]
     var processedLineIndexes: [Int]
     var diagnostics: [String]
+    var ttml: String
 
     func applying(to original: LyricsDocument) -> LyricsDocument {
         var document = original
-        for line in lines where document.lines.indices.contains(line.index) {
-            document.lines[line.index].generatedRomanization = line.tokens
-            document.lines[line.index].generatedRomanizationLanguage = line.language
+        document.romanizationTTMLTrack = nil
+        guard !ttml.isEmpty,
+              let parsed = try? TTMLLyricsParser.parse(ttml, duration: original.lines.map(\.end).max() ?? 0,
+                                                       preserveGeneratedIDs: true)
+        else { return document }
+        let cues = parsed.compactMap { line -> RomanizationTTMLTrack.Cue? in
+            let prefix = "generated-roman-"
+            guard line.id.hasPrefix(prefix),
+                  let index = Int(line.id.dropFirst(prefix.count)),
+                  original.lines.indices.contains(index) else { return nil }
+            var cue = line
+            cue.isBackground = original.lines[index].isBackground
+            cue.isDuet = original.lines[index].isDuet
+            cue.generatedRomanizationLanguage = lines.first { $0.index == index }?.language
+            return .init(sourceLineIndex: index, line: cue)
         }
+        document.romanizationTTMLTrack = cues.isEmpty ? nil : .init(ttml: ttml, cues: cues)
         return document
     }
 }
@@ -32,9 +46,9 @@ actor LyricsRomanizationEngine {
     static let ruleVersion: String = {
         let url = Bundle.main.url(forResource: "romanization-resources", withExtension: "json", subdirectory: "Romanization")
             ?? Bundle.main.url(forResource: "romanization-resources", withExtension: "json")
-        guard let url, let data = try? Data(contentsOf: url) else { return "mineradio-2-missing" }
+        guard let url, let data = try? Data(contentsOf: url) else { return "mineradio-3-missing" }
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return "mineradio-2-\(hash.prefix(12))"
+        return "mineradio-3-\(hash.prefix(12))"
     }()
 
     private let initials = ["g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h"]
@@ -142,10 +156,19 @@ actor LyricsRomanizationEngine {
         let url = try? directory("RomanizationCache").appendingPathComponent(key + ".json")
         if !force, let url, let data = try? Data(contentsOf: url),
            let cached = try? JSONDecoder().decode(RomanizationResult.self, from: data),
-           cached.engineVersion == version { return cached }
+           cached.engineVersion == version {
+            let file = url.deletingPathExtension().appendingPathExtension("ttml")
+            if !cached.ttml.isEmpty, !FileManager.default.fileExists(atPath: file.path) {
+                try? Data(cached.ttml.utf8).write(to: file, options: .atomic)
+            }
+            return cached
+        }
         let result = generate(document: document, overrides: overrides)
         if let url, let data = try? JSONEncoder().encode(result) {
             try? data.write(to: url, options: .atomic)
+            if !result.ttml.isEmpty {
+                try? Data(result.ttml.utf8).write(to: url.deletingPathExtension().appendingPathExtension("ttml"), options: .atomic)
+            }
         }
         return result
     }
@@ -349,6 +372,7 @@ actor LyricsRomanizationEngine {
                                tokens: tokens, coverage: coverage))
         }
         return .init(engineVersion: Self.version(overrides: overrides), lines: lines,
-                     processedLineIndexes: processed, diagnostics: diagnostics)
+                     processedLineIndexes: processed, diagnostics: diagnostics,
+                     ttml: RomanizationTTMLWriter.make(source: document, lines: lines))
     }
 }

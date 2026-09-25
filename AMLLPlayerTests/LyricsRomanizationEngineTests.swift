@@ -65,7 +65,9 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         ]))
         XCTAssertEqual(result.lines.map(\.text), ["kimi no na wa Baby", "sa rang hae"])
         XCTAssertEqual(result.lines[0].tokens.map(\.sourceText), ["君", "の", "名", "は", "Baby"])
-        XCTAssertEqual(result.processedLineIndexes, [0, 1])
+        // In a Japanese corpus the Han-only line is inspected, then rejected
+        // by strict dictionary coverage; it is not emitted as pronunciation.
+        XCTAssertEqual(result.processedLineIndexes, [0, 1, 2])
     }
 
     func testJapaneseDictionaryBoundaryInsideOneTimedProviderWordKeepsItsTime() async {

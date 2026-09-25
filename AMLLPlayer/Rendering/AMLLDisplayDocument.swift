@@ -12,13 +12,20 @@ struct AMLLDisplayDocument: Sendable {
     let lines: [LyricLine]
     /// Source singing boundaries, before the display optimizer advances lines.
     let actualLineStarts: [Double]
+    let actualLineEnds: [Double]
     let groups: [Group]
     let timings: [AMLLGroupTiming]
+    let singingTimings: [AMLLGroupTiming]
 
     init(lines source: [LyricLine]) {
-        actualLineStarts = source.map { line in
+        let sourceStarts = source.map { line in
             line.precision == .word ? (line.words.first?.start ?? line.start) : line.start
         }
+        let sourceEnds = source.map { line in
+            line.precision == .word ? (line.words.last?.end ?? line.end) : line.end
+        }
+        actualLineStarts = sourceStarts
+        actualLineEnds = sourceEnds
         var lines = source
         for index in lines.indices {
             // Keep the display copy lossless. TTML's `xml:space="preserve"`
@@ -107,5 +114,10 @@ struct AMLLDisplayDocument: Sendable {
         self.lines = lines
         self.groups = groups
         timings = groups.map { .init(startTime: starts[$0.main], endTime: ends[$0.main]) }
+        singingTimings = groups.map { group in
+            let start = group.background.map { min(sourceStarts[group.main], sourceStarts[$0]) } ?? sourceStarts[group.main]
+            let end = group.background.map { max(sourceEnds[group.main], sourceEnds[$0]) } ?? sourceEnds[group.main]
+            return .init(startTime: start * 1000, endTime: end * 1000)
+        }
     }
 }

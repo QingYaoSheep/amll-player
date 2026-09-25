@@ -603,6 +603,49 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(resumed.rows.first).wordClock.time, 1.5 - document.lines[0].start + 1.0 / 120, accuracy: 0.000_001)
     }
 
+    func testScrollAheadMovesFocusWithoutAdvancingSungLineOrWordClock() throws {
+        let lines = [
+            LyricLine(id: "first", text: "First", start: 0, end: 2,
+                      words: [.init(text: "First", start: 0, end: 2)], precision: .word),
+            LyricLine(id: "second", text: "Second", start: 4, end: 6,
+                      words: [.init(text: "Second", start: 4, end: 6)], precision: .word),
+        ]
+        let document = AMLLDisplayDocument(lines: lines)
+        var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+        environment.advance = 1
+        var engine = AMLLFrameEngine(document: document, environment: environment, heights: [60, 60])
+        var unadvancedEnvironment = environment
+        unadvancedEnvironment.advance = 0
+        var unadvanced = AMLLFrameEngine(document: document, environment: unadvancedEnvironment, heights: [60, 60])
+
+        _ = engine.render(.init(position: 1, playing: true), delta: 0)
+        _ = unadvanced.render(.init(position: 1, playing: true), delta: 0)
+        let early = engine.render(.init(position: 3.25, playing: true), delta: 0)
+        let normal = unadvanced.render(.init(position: 3.25, playing: true), delta: 0)
+        let future = try XCTUnwrap(early.rows.first { $0.lineIndex == 1 })
+        XCTAssertEqual(normal.focusGroup, 0)
+        XCTAssertEqual(early.focusGroup, 1, "The viewport may scroll before the next line starts")
+        XCTAssertEqual(early.lyricTime, 3.25, accuracy: 0.000_001)
+        XCTAssertFalse(future.active, "The next line must not become sung before its source timestamp")
+        XCTAssertFalse(future.wordClock.enabled)
+        XCTAssertEqual(future.wordClock.time, 0, accuracy: 0.000_001)
+        XCTAssertEqual(try XCTUnwrap(normal.rows.first { $0.lineIndex == 1 }).wordClock.time,
+                       future.wordClock.time, accuracy: 0.000_001)
+
+        let start = engine.render(.init(position: 4, playing: true), delta: 0.75)
+        let singing = try XCTUnwrap(start.rows.first { $0.lineIndex == 1 })
+        XCTAssertTrue(singing.active)
+        XCTAssertTrue(singing.wordClock.enabled)
+        XCTAssertEqual(document.lines[1].start + singing.wordClock.time, 4, accuracy: 0.000_001)
+
+        let back = engine.render(.init(position: 3.25, playing: true, seekRevision: 1), delta: 0)
+        let rewound = try XCTUnwrap(back.rows.first { $0.lineIndex == 1 })
+        XCTAssertEqual(back.focusGroup, 1)
+        XCTAssertFalse(rewound.active)
+        XCTAssertFalse(rewound.wordClock.enabled)
+        XCTAssertEqual(rewound.wordClock.time, 0, accuracy: 0.000_001)
+    }
+
     func testWordFloatClockPausesSeeksAndReversesFromEachWordsOwnEnd() {
         var clock = AMLLWordAnimationClock()
         clock.enable(at: 2)

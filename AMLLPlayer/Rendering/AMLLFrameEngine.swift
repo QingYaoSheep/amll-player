@@ -250,6 +250,7 @@ struct AMLLFrameEngine {
     private var heights: [Double]
     private var motions: [GroupMotion]
     private var timeline = AMLLSourceTimeline()
+    private var singingTimeline = AMLLSourceTimeline()
     private var animationTime = 0.0
     private var scrollOffset = 0.0
     private var previousPreceding = 0.0
@@ -351,23 +352,32 @@ struct AMLLFrameEngine {
             handle(.resumeFollowing)
         }
         let oldFocus = timeline.focus
-        let oldHot = timeline.hot, oldBuffered = timeline.buffered
         let layout = timeline.update(time: time + environment.advance * 1000,
                                      groups: document.timings, seeking: seeking, hasBottomContent: false)
+        let singingLayout = singingTimeline.update(time: time, groups: document.singingTimings,
+                                                   seeking: seeking, hasBottomContent: false)
         for index in motions.indices {
             motions[index].mainWords.advance(elapsed, playing: previousInput?.playing ?? false)
             motions[index].backgroundWords.advance(elapsed, playing: previousInput?.playing ?? false)
-            let disabled = seeking
-                ? !timeline.hot.contains(index) && (oldHot.contains(index) || oldBuffered.contains(index))
-                : oldBuffered.contains(index) && !timeline.buffered.contains(index)
-            if disabled {
-                motions[index].mainWords.disable(); motions[index].backgroundWords.disable()
-            }
-            if timeline.hot.contains(index), seeking || !oldHot.contains(index) {
-                let group = document.groups[index]
+            let group = document.groups[index]
+            let mainStart = document.actualLineStarts[group.main]
+            let mainSinging = mainStart <= time / 1000 && time / 1000 < document.actualLineEnds[group.main]
+            if mainSinging, seeking || !motions[index].mainWords.enabled {
                 motions[index].mainWords.enable(at: time / 1000 - document.lines[group.main].start)
-                if let background = group.background {
+            } else if seeking {
+                motions[index].mainWords = AMLLWordAnimationClock()
+            } else if !mainSinging, motions[index].mainWords.enabled {
+                motions[index].mainWords.disable()
+            }
+            if let background = group.background {
+                let backgroundStart = document.actualLineStarts[background]
+                let backgroundSinging = backgroundStart <= time / 1000 && time / 1000 < document.actualLineEnds[background]
+                if backgroundSinging, seeking || !motions[index].backgroundWords.enabled {
                     motions[index].backgroundWords.enable(at: time / 1000 - document.lines[background].start)
+                } else if seeking {
+                    motions[index].backgroundWords = AMLLWordAnimationClock()
+                } else if !backgroundSinging, motions[index].backgroundWords.enabled {
+                    motions[index].backgroundWords.disable()
                 }
             }
         }
@@ -376,7 +386,7 @@ struct AMLLFrameEngine {
         if changedInterlude {
             interlude = candidate
         }
-        if dirty || layout || changedInterlude || previousInput?.playing != input.playing {
+        if dirty || layout || singingLayout || changedInterlude || previousInput?.playing != input.playing {
             if oldFocus != timeline.focus || changedInterlude {
                 let interval = timeline.focus > 0 && timeline.focus < document.timings.count
                     ? (document.timings[timeline.focus].startTime - document.timings[timeline.focus - 1].startTime) / 1000 : nil
@@ -494,8 +504,8 @@ struct AMLLFrameEngine {
     }
 
     private mutating func layoutGroups(playing: Bool, seeking: Bool, force: Bool) {
-        let latest = timeline.buffered.max() ?? -1
-        let active = motions.indices.map { timeline.buffered.contains($0) || ($0 >= timeline.focus && $0 < latest) }
+        let latest = singingTimeline.buffered.max() ?? -1
+        let active = motions.indices.map { singingTimeline.buffered.contains($0) || ($0 >= timeline.focus && $0 < latest) }
         let groupHeights = document.groups.enumerated().map { index, group in
             height(group.main) + environment.fontSize * 0.8
                 + (active[index] || !playing ? group.background.map { height($0) + environment.fontSize * 0.3 } ?? 0 : 0)
@@ -528,7 +538,7 @@ struct AMLLFrameEngine {
                 y += environment.dotHeight + environment.fontSize * 0.4
             }
             let group = document.groups[index]
-            let hasBuffered = timeline.buffered.contains(index)
+            let hasBuffered = singingTimeline.buffered.contains(index)
             motions[index].active = active[index]
             motions[index].opacity = environment.hidePassedLines && playing && index < (interlude.map { $0.anchor + 1 } ?? timeline.focus)
                 ? 0.0001 : (hasBuffered ? 0.85 : (nonDynamic ? 0.2 : 1))

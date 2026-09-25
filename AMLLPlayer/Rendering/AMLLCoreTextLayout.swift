@@ -134,7 +134,19 @@ final class AMLLCoreTextLayout {
         let availableWidth = max(1, width)
         let generated = configuration.romanization && line.precision == .word
             ? (line.generatedRomanization ?? []) : []
-        let originalChunks = line.precision == .word ? AMLLWordSegmentation.mappedChunks(line.words) : []
+        let originalChunks: [[AMLLWordSegmentation.Atom]] = if !generated.isEmpty,
+            line.words.map(\.text).joined() == line.text
+        {
+            // The legacy splitter apportions one provider word's time over
+            // CJK characters. Generated lexical words must instead retain the
+            // exact provider node, even if a node spans several visual words.
+            line.words.enumerated().map { index, word in
+                [.init(word: word, sourceWordIndex: index,
+                       sourceRange: NSRange(location: 0, length: word.text.utf16.count))]
+            }
+        } else if line.precision == .word {
+            AMLLWordSegmentation.mappedChunks(line.words)
+        } else { [] }
         // A provider may time a whole phrase while the dictionary identifies
         // several lexical words. Split only the visual atom at safe Unicode
         // boundaries; every piece retains the one real provider time range.

@@ -74,8 +74,8 @@
       "sourceSha256": "6b210889548457c3006913afd12c8b525562255f2709e404604be9614a25e94c"
     },
     "roman-kana-map.json": {
-      "sha256": "8e9407bf6ba95d60094b225010885830d1637dba85d2e8514a4cea08aec0189c",
-      "entries": 3602
+      "sha256": "81ff3ff41065251e13a61b4d8a0e66a268d6f9b1a26304686b3bde42dc0869d0",
+      "entries": 3619
     }
   },
   "mineradioEngineSha256": "a089015363750c127350c33a79ae5bbd1775edbe9a8d3935d61ddee33331f571"

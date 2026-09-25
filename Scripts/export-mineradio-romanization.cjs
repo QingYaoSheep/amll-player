@@ -49,6 +49,14 @@ for (let code = 0x3040; code <= 0x30ff; code++) {
   const roman = wanakana.toRomaji(character, { convertLongVowelMark: true });
   if (roman !== character) { map[character] = roman; kana.push(character); }
 }
+// IPADIC also stores full-width and Japanese punctuation as readings.
+for (const [start, end] of [[0x3000, 0x303f], [0xff00, 0xff65]]) {
+  for (let code = start; code <= end; code++) {
+    const character = String.fromCharCode(code);
+    const roman = wanakana.toRomaji(character, { convertLongVowelMark: true });
+    if (roman !== character) map[character] = roman;
+  }
+}
 for (const left of kana) for (const right of kana) {
   const pair = left + right;
   const roman = wanakana.toRomaji(pair, { convertLongVowelMark: true });

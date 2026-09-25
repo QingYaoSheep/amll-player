@@ -186,7 +186,8 @@ actor LyricsRomanizationEngine {
                 // A terminal sokuon is silent in isolation, but must remain
                 // available to double the following consonant when one exists.
                 if index + length < characters.count, key.hasSuffix("っ") || key.hasSuffix("ッ") {
-                    continue
+                    let next = characters[index + length].unicodeScalars.first?.value ?? 0
+                    if (0x3040 ... 0x30FF).contains(next) { continue }
                 }
                 guard let value = map[key] else { continue }
                 result += value

@@ -2,6 +2,8 @@
 
 ## 2026-09-25 Mineradio 离线日韩音译移植状态
 
+固定 IPADIC 的 247,666 条不同 reading/pronunciation 已用开发脚本与 WanaKana 5.3.1 全量比较，零差异；补齐全角标点、促音遇到非假名的边界。命令：`node Scripts/check-mineradio-kana-parity.cjs E:\Antigravity\Mineradio-Spotify`。此检查验证转写映射，不代替 Swift 分词、画布和设备验收。
+
 | 范围 | 当前状态 | 待验证或缺项 |
 |---|---|---|
 | 来源及资源 | 已固定 Mineradio 工作区引擎、kuromoji 0.1.2 IPADIC、WanaKana 5.3.1；12 个字典缓冲区及假名映射随应用资源打包，清单记录源文件和解压后 SHA-256。附带许可证。 | Xcode 27 产物中的资源路径、安装包大小待 CI 检查。 |

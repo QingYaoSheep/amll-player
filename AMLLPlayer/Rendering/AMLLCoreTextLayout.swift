@@ -18,6 +18,8 @@ final class AMLLCoreTextLayout {
         var kind: Kind = .ruby
         var motionStart: Double? = nil
         var motionEnd: Double? = nil
+        /// Timed span ordinal in the separate generated TTML cue.
+        var ttmlWordIndex: Int? = nil
     }
 
     struct WordFragment {
@@ -47,6 +49,7 @@ final class AMLLCoreTextLayout {
         var origin: CGPoint
         var auxiliary = false
         var ruby = false
+        var romanization = false
     }
 
     private struct VisualRun {
@@ -125,6 +128,7 @@ final class AMLLCoreTextLayout {
     let maskWords: [AMLLWordMask.Word]
     /// Empty slot for the separately parsed romanization TTML row.
     let romanizationSlotY: CGFloat?
+    let hasGeneratedRomanizationLayout: Bool
     /// Indexed by WordFragment/CharacterFragment/RubyFragment.wordIndex.
     /// Original annotation data stays on the source word; no inferred ruby
     /// character correspondence is introduced by segmentation.
@@ -199,6 +203,7 @@ final class AMLLCoreTextLayout {
                     (line.text as NSString).substring(with: NSRange(location: token.utf16Start,
                                                                      length: token.utf16End - token.utf16Start)) == token.sourceText
             }
+        hasGeneratedRomanizationLayout = validGenerated
         let layoutChunks: [[AMLLWordSegmentation.Atom]] = if validGenerated {
             // The pronunciation container owns every real timed atom beneath
             // it. Grouping only changes line breaks; no source time is changed.
@@ -449,6 +454,7 @@ final class AMLLCoreTextLayout {
         }
         if hasWordRomanization {
             if validGenerated {
+                var ttmlOrdinal = 0
                 for token in generated {
                     let indexes = sourceRanges.indices.filter {
                         sourceRanges[$0].location >= token.utf16Start &&
@@ -478,7 +484,8 @@ final class AMLLCoreTextLayout {
                     let x = first.rtl ? maxX - width : minX
                     let top = first.rect.maxY
                     let leading = (romanHeight - romanFont.lineHeight) / 2
-                    rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: top + leading + romanFont.ascender), ruby: true))
+                    rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: top + leading + romanFont.ascender),
+                                      ruby: true, romanization: true))
                     let nodeIndexes = token.sourceNodeIndexes.filter { line.words.indices.contains($0) }
                     let tokenStart = nodeIndexes.map { line.words[$0].start }.min()
                     let tokenEnd = nodeIndexes.map { line.words[$0].end }.max()
@@ -508,9 +515,11 @@ final class AMLLCoreTextLayout {
                                              width: abs(right - left), height: max(romanHeight, romanFont.lineHeight)),
                                 range: overlap, wordIndex: wordIndex, segmentIndex: segmentIndex,
                                 start: segment.1, end: segment.2, rtl: run.rtl, kind: .romanization,
-                                motionStart: tokenStart, motionEnd: tokenEnd
+                                motionStart: tokenStart, motionEnd: tokenEnd,
+                                ttmlWordIndex: ttmlOrdinal
                             ))
                         }
+                        ttmlOrdinal += 1
                     }
                 }
             } else { for (wordIndex, word) in timedWords.enumerated() {
@@ -533,7 +542,8 @@ final class AMLLCoreTextLayout {
                 // Both inline annotation kinds use the disjoint annotation
                 // raster; the separate line-level auxiliary raster stays intact.
                 let leading = (romanHeight - romanFont.lineHeight) / 2
-                rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: top + leading + romanFont.ascender), ruby: true))
+                rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: top + leading + romanFont.ascender),
+                                  ruby: true, romanization: true))
                 for run in Self.visualRuns(in: ctLine) {
                     rubyFragments.append(.init(
                         // Preserve ink extending beyond CSS's compact line box.
@@ -641,7 +651,8 @@ final class AMLLCoreTextLayout {
     /// nil draws both layers for inspection; the renderer composites auxiliary text separately.
     private static let rasterContext = CIContext(options: nil)
 
-    func raster(scale: CGFloat, auxiliary: Bool? = nil, ruby: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
+    func raster(scale: CGFloat, auxiliary: Bool? = nil, ruby: Bool? = nil,
+                romanization: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
         // Three Gaussian standard deviations plus a pixel of rounding room.
         // Transparent padding must exist before filtering, not just on CALayer.
         let padding = blurRadius > 0 ? ceil(blurRadius * 3 + 1) : 0
@@ -660,6 +671,9 @@ final class AMLLCoreTextLayout {
                     continue
                 }
                 if let ruby, row.ruby != ruby {
+                    continue
+                }
+                if let romanization, row.romanization != romanization {
                     continue
                 }
                 context.textPosition = CGPoint(x: row.origin.x, y: size.height - row.origin.y)

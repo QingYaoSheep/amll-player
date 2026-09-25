@@ -183,13 +183,21 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         let source = document([original])
         let result = await LyricsRomanizationEngine.shared.generate(document: source)
         let augmented = result.applying(to: source)
+        var placement = original
+        placement.generatedRomanization = result.lines[0].tokens
+        var configuration = LyricsRenderConfiguration()
+        configuration.romanization = true
+        let alignedLayout = AMLLCoreTextLayout(line: placement, width: 340,
+                                               font: UIFont.systemFont(ofSize: 32), configuration: configuration)
+        XCTAssertTrue(alignedLayout.hasGeneratedRomanizationLayout)
+        let firstOriginal = alignedLayout.fragments.first { $0.word.text == "널" }
+        let firstPronunciation = alignedLayout.rubyFragments.first { $0.kind == .romanization }
+        XCTAssertEqual(firstPronunciation?.rect.minX, firstOriginal?.rect.minX)
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         let window = UIWindow(frame: canvas.bounds)
         window.addSubview(canvas)
         defer { canvas.removeFromSuperview() }
         canvas.position = { 0.75 }
-        var configuration = LyricsRenderConfiguration()
-        configuration.romanization = true
         canvas.configure(document: augmented, configuration: configuration,
                          input: .init(position: 0.75, playing: true), active: false,
                          reduceMotion: false)
@@ -202,6 +210,24 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         XCTAssertTrue(rows.contains("lyricRow.original"))
         XCTAssertTrue(rows.contains("lyricRow.generated-roman-0"))
         XCTAssertEqual(augmented.lines[0], original)
+        func findRomanization(in view: UIView) -> UIView? {
+            if view.accessibilityIdentifier == "lyricRow.generated-roman-0" { return view }
+            return view.subviews.lazy.compactMap { findRomanization(in: $0) }.first
+        }
+        if let romanization = findRomanization(in: canvas) {
+            func pixels() -> Data? {
+                UIGraphicsImageRenderer(bounds: romanization.bounds).image {
+                    romanization.layer.render(in: $0.cgContext)
+                }.pngData()
+            }
+            let before = pixels()
+            canvas.position = { 1.75 }
+            canvas.configure(document: augmented, configuration: configuration,
+                             input: .init(position: 1.75, playing: true, seekRevision: 1),
+                             active: false, reduceMotion: false)
+            canvas.advanceFrame(delta: 0)
+            XCTAssertNotEqual(pixels(), before, "TTML pronunciation fill must advance on seek")
+        }
     }
 
     func testDistinctSourceLineRomanizationSurvivesGeneratedInlineWords() async {

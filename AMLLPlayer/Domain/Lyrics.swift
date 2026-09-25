@@ -173,6 +173,9 @@ struct RomanizationTTMLTrack: Codable, Equatable, Sendable {
     struct Cue: Codable, Equatable, Sendable {
         var sourceLineIndex: Int
         var line: LyricLine
+        /// Placement-only source ownership. Playback still reads `line.words`,
+        /// which were parsed back from the generated TTML file.
+        var tokens: [RomanizationToken]
     }
 
     var ttml: String

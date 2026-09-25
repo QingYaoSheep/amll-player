@@ -32,7 +32,8 @@ struct RomanizationResult: Codable, Sendable {
             cue.isBackground = original.lines[index].isBackground
             cue.isDuet = original.lines[index].isDuet
             cue.generatedRomanizationLanguage = lines.first { $0.index == index }?.language
-            return .init(sourceLineIndex: index, line: cue)
+            return .init(sourceLineIndex: index, line: cue,
+                         tokens: lines.first { $0.index == index }?.tokens ?? [])
         }
         document.romanizationTTMLTrack = cues.isEmpty ? nil : .init(ttml: ttml, cues: cues)
         return document

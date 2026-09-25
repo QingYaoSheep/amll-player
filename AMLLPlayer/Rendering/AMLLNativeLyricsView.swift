@@ -71,10 +71,11 @@ final class AMLLNativeCanvas: UIView {
     fileprivate struct RowLayouts {
         var original: AMLLCoreTextLayout
         var romanization: AMLLCoreTextLayout?
-        var romanizationCue: LyricLine?
+        var romanizationCue: RomanizationTTMLTrack.Cue?
+        var alignedRomanization: Bool
     }
     private var layouts: [Int: RowLayouts] = [:]
-    private var romanizationCues: [Int: LyricLine] = [:]
+    private var romanizationCues: [Int: RomanizationTTMLTrack.Cue] = [:]
     private var heights: [Double] = []
     private var rowViews: [Int: AMLLCompositeRow] = [:]
     private var retainedRows: [Int: AMLLCompositeRow] = [:]
@@ -140,7 +141,7 @@ final class AMLLNativeCanvas: UIView {
             hdrTime = nil
             source = document
             romanizationCues = Dictionary(document.romanizationTTMLTrack?.cues.map {
-                ($0.sourceLineIndex, $0.line)
+                ($0.sourceLineIndex, $0)
             } ?? [], uniquingKeysWith: { _, newest in newest })
             var displayLines = document.lines
             // A generated cue replaces provider pronunciation only in the
@@ -264,17 +265,29 @@ final class AMLLNativeCanvas: UIView {
         let font = UIFont.systemFont(ofSize: size, weight: configuration.bold || traitCollection.legibilityWeight == .bold ? .bold : .regular)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
         let cue = configuration.romanization ? romanizationCues[index] : nil
+        if let cue, !cue.tokens.isEmpty, line.precision == .word {
+            var placement = line
+            placement.generatedRomanization = cue.tokens
+            placement.generatedRomanizationLanguage = cue.line.generatedRomanizationLanguage
+            let aligned = AMLLCoreTextLayout(line: placement, width: width, font: font,
+                                             configuration: configuration)
+            if aligned.hasGeneratedRomanizationLayout {
+                return RowLayouts(original: aligned, romanization: nil,
+                                  romanizationCue: cue, alignedRomanization: true)
+            }
+        }
         var romanConfiguration = configuration
         romanConfiguration.romanization = false
         romanConfiguration.translation = false
         romanConfiguration.paragraphSpacing = 0
         let romanFont = font.withSize(max(10, size * (configuration.auxiliaryScale ?? 0.5)))
         let romanLayout = cue.map {
-            AMLLCoreTextLayout(line: $0, width: width, font: romanFont, configuration: romanConfiguration)
+            AMLLCoreTextLayout(line: $0.line, width: width, font: romanFont, configuration: romanConfiguration)
         }
         let original = AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration,
                                           romanizationReserve: romanLayout?.size.height ?? 0)
-        return RowLayouts(original: original, romanization: romanLayout, romanizationCue: cue)
+        return RowLayouts(original: original, romanization: romanLayout,
+                          romanizationCue: cue, alignedRomanization: false)
     }
 
     private func draw(delta: Double) {
@@ -547,12 +560,14 @@ final class AMLLNativeCanvas: UIView {
 private final class AMLLCompositeRow: UIView {
     private let original: AMLLNativeRow
     private let romanization: AMLLNativeRow?
+    private let alignedRomanization: AMLLRomanizationOverlay?
     private let romanizationCue: LyricLine?
 
     var onSeek: (() -> Void)? {
         didSet {
             original.onSeek = onSeek
             romanization?.onSeek = onSeek
+            alignedRomanization?.onSeek = onSeek
         }
     }
 
@@ -561,10 +576,14 @@ private final class AMLLCompositeRow: UIView {
     }
 
     init(line: LyricLine, layouts: AMLLNativeCanvas.RowLayouts, scale: CGFloat) {
-        original = AMLLNativeRow(line: line, layout: layouts.original, scale: scale)
-        romanizationCue = layouts.romanizationCue
+        original = AMLLNativeRow(line: line, layout: layouts.original, scale: scale,
+                                 hideRomanization: layouts.alignedRomanization)
+        romanizationCue = layouts.romanizationCue?.line
+        alignedRomanization = layouts.alignedRomanization && layouts.romanizationCue != nil
+            ? AMLLRomanizationOverlay(layout: layouts.original, cue: layouts.romanizationCue!.line, scale: scale)
+            : nil
         if let cue = layouts.romanizationCue, let layout = layouts.romanization {
-            romanization = AMLLNativeRow(line: cue, layout: layout, scale: scale)
+            romanization = AMLLNativeRow(line: cue.line, layout: layout, scale: scale)
         } else {
             romanization = nil
         }
@@ -572,6 +591,10 @@ private final class AMLLCompositeRow: UIView {
         isOpaque = false
         original.frame = bounds
         addSubview(original)
+        if let alignedRomanization {
+            alignedRomanization.frame = bounds
+            addSubview(alignedRomanization)
+        }
         if let romanization, let layout = layouts.romanization {
             romanization.frame = CGRect(x: 0, y: layouts.original.romanizationSlotY ?? 0,
                                         width: layout.size.width, height: layout.size.height)
@@ -584,6 +607,7 @@ private final class AMLLCompositeRow: UIView {
     func setCanSeek(_ value: Bool) {
         original.setCanSeek(value)
         romanization?.setCanSeek(value)
+        alignedRomanization?.setCanSeek(value)
     }
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, lyricTime: Double,
@@ -591,6 +615,7 @@ private final class AMLLCompositeRow: UIView {
     {
         original.updateVisuals(renderer: renderer, gain: gain, row: row,
                                configuration: configuration, motionEnabled: motionEnabled)
+        alignedRomanization?.update(row: row, lyricTime: lyricTime, configuration: configuration)
         guard let cue = romanizationCue, let romanization else { return }
         var independent = row
         var clock = AMLLWordAnimationClock()
@@ -657,7 +682,7 @@ private final class AMLLNativeRow: UIView {
     private var hdrRow: LyricsHDRRow?
     var onSeek: (() -> Void)?
 
-    init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat) {
+    init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat, hideRomanization: Bool = false) {
         self.line = line; textLayout = layout
         let indexes = layout.maskWords.indices.filter { layout.maskWords[$0].width > 0 }
         maskWords = indexes.map { layout.maskWords[$0] }
@@ -665,13 +690,15 @@ private final class AMLLNativeRow: UIView {
         // piece must not sample a ruby or translation row from the full-line
         // bitmap when its contentsRect is animated independently.
         sharpImage = layout.raster(scale: scale, auxiliary: false, ruby: false)
-        sharpRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true)
+        sharpRubyImage = layout.raster(scale: scale, auxiliary: false, ruby: true,
+                                      romanization: hideRomanization ? false : nil)
         sharpAuxiliaryImage = layout.raster(scale: scale, auxiliary: true, ruby: false)
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         base.contents = sharpImage.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
         ruby.contents = sharpRubyImage.cgImage; ruby.contentsScale = scale; ruby.frame = bounds; layer.addSublayer(ruby)
         var rubyAdvances: [String: Double] = [:]
-        for fragment in layout.rubyFragments where fragment.rect.width > 0 {
+        for fragment in layout.rubyFragments where fragment.rect.width > 0
+            && (!hideRomanization || fragment.kind != .romanization) {
             let piece = CALayer()
             piece.frame = fragment.rect
             piece.contents = sharpRubyImage.cgImage
@@ -696,7 +723,8 @@ private final class AMLLNativeRow: UIView {
         // Blur the entire composed text, including annotations, before any
         // glyph cropping. Never feed blurred pixels through word masks.
         for (blurLayer, radius) in [(nearBlur, CGFloat(2)), (farBlur, CGFloat(5))] {
-            let image = layout.raster(scale: min(scale, 1), blurRadius: radius)
+            let image = layout.raster(scale: min(scale, 1), romanization: hideRomanization ? false : nil,
+                                      blurRadius: radius)
             blurLayer.contents = image.cgImage
             blurLayer.contentsScale = min(scale, 1)
             // Offset the padded texture back to the original text origin.

@@ -16,6 +16,8 @@ final class AMLLCoreTextLayout {
         var end: Double?
         var rtl: Bool
         var kind: Kind = .ruby
+        var motionStart: Double? = nil
+        var motionEnd: Double? = nil
     }
 
     struct WordFragment {
@@ -462,6 +464,8 @@ final class AMLLCoreTextLayout {
                     let leading = (romanHeight - romanFont.lineHeight) / 2
                     rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: top + leading + romanFont.ascender), ruby: true))
                     let nodeIndexes = token.sourceNodeIndexes.filter { line.words.indices.contains($0) }
+                    let tokenStart = nodeIndexes.map { line.words[$0].start }.min()
+                    let tokenEnd = nodeIndexes.map { line.words[$0].end }.max()
                     let parts = token.romanized.split(separator: " ", omittingEmptySubsequences: true)
                     let timedSyllables = token.language == "ko" && !nodeIndexes.isEmpty && parts.count == nodeIndexes.count
                     var segments: [(NSRange, Double?, Double?)] = []
@@ -487,7 +491,8 @@ final class AMLLCoreTextLayout {
                                 rect: CGRect(x: x + min(left, right), y: top + min(0, leading),
                                              width: abs(right - left), height: max(romanHeight, romanFont.lineHeight)),
                                 range: overlap, wordIndex: wordIndex, segmentIndex: segmentIndex,
-                                start: segment.1, end: segment.2, rtl: run.rtl, kind: .romanization
+                                start: segment.1, end: segment.2, rtl: run.rtl, kind: .romanization,
+                                motionStart: tokenStart, motionEnd: tokenEnd
                             ))
                         }
                     }

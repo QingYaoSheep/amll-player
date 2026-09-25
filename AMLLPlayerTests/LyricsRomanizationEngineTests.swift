@@ -82,7 +82,9 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         XCTAssertGreaterThan(layout.sourceAtoms.count, 1)
         XCTAssertTrue(layout.sourceAtoms.allSatisfy { $0.sourceWordIndex == 0 && $0.word.start == 0 && $0.word.end == 2 })
         XCTAssertTrue(layout.diagnostics.isEmpty)
-        XCTAssertFalse(layout.rubyFragments.filter { $0.kind == .romanization }.isEmpty)
+        let pronunciation = layout.rubyFragments.filter { $0.kind == .romanization }
+        XCTAssertFalse(pronunciation.isEmpty)
+        XCTAssertTrue(pronunciation.allSatisfy { $0.motionStart == 0 && $0.motionEnd == 2 })
     }
 
     func testPinnedMineradioSourceFixtures() async throws {

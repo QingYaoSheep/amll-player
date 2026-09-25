@@ -760,8 +760,10 @@ private final class AMLLNativeRow: UIView {
             let fragment = entry.fragment
             if textLayout.sourceAtoms.indices.contains(fragment.wordIndex) {
                 let word = textLayout.sourceAtoms[fragment.wordIndex].word
-                let elapsed = row.wordClock.floatElapsed(wordStart: word.start - line.start, duration: word.end - word.start)
-                let offset = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: word.end - word.start,
+                let start = fragment.motionStart ?? word.start
+                let end = fragment.motionEnd ?? word.end
+                let elapsed = row.wordClock.floatElapsed(wordStart: start - line.start, duration: end - start)
+                let offset = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: end - start,
                                                                isBackground: line.isBackground)
                 let staticKoreanRoman = fragment.kind == .romanization && line.generatedRomanizationLanguage == "ko"
                 entry.layer.setAffineTransform(CGAffineTransform(translationX: 0,

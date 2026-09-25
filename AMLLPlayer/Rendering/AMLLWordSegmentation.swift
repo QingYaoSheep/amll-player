@@ -48,8 +48,12 @@ enum AMLLWordSegmentation {
             if !(word.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
                 let leading = String(word.text.prefix(while: \.isWhitespace))
                 let withoutLeading = String(word.text.dropFirst(leading.count))
-                let trailing = String(withoutLeading.suffix(while: \.isWhitespace))
-                let body = String(withoutLeading.dropLast(trailing.count))
+                var body = withoutLeading
+                var trailing = ""
+                while let last = body.last, last.isWhitespace {
+                    trailing.insert(last, at: trailing.startIndex)
+                    body.removeLast()
+                }
                 if !leading.isEmpty {
                     process(.init(text: leading, start: word.start, end: word.start,
                                   voice: word.voice, isObscene: word.isObscene))

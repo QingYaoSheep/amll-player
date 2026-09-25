@@ -1,6 +1,16 @@
 import AVFoundation
 import SwiftUI
 
+@MainActor private enum ArtworkAudioPolicy {
+    static var configured = false
+
+    static func prepare() throws {
+        guard !configured else { return }
+        try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
+        configured = true
+    }
+}
+
 struct AnimatedArtworkConfiguration: Codable, Equatable, Sendable {
     enum Presentation: String, Codable, CaseIterable, Sendable {
         case square
@@ -14,8 +24,7 @@ struct AnimatedArtworkConfiguration: Codable, Equatable, Sendable {
     var reflection: Bool?
 }
 
-/// Static artwork remains underneath until the local video's first frame.
-/// Does not configure AVAudioSession or publish Now Playing metadata.
+/// The video is silent and uses a mixing audio session so Spotify keeps playing.
 struct AnimatedArtwork: UIViewRepresentable {
     var url: URL
     var active: Bool
@@ -23,6 +32,8 @@ struct AnimatedArtwork: UIViewRepresentable {
     var reflectionFrames: ArtworkReflectionFrames?
     var onFailure: (URL, Error?) -> Void = { _, _ in }
     var onState: (URL, ArtworkPlaybackState) -> Void = { _, _ in }
+    var onFirstFrame: (URL, CGSize) -> Void = { _, _ in }
+    var gravity: AVLayerVideoGravity = .resizeAspectFill
 
     func makeUIView(context _: Context) -> Surface {
         Surface()
@@ -31,7 +42,9 @@ struct AnimatedArtwork: UIViewRepresentable {
     func updateUIView(_ view: Surface, context _: Context) {
         view.onFailure = onFailure
         view.onState = onState
-        view.configure(url: url, active: active, allowCellular: allowCellular, reflectionFrames: reflectionFrames)
+        view.onFirstFrame = onFirstFrame
+        view.configure(url: url, active: active, allowCellular: allowCellular,
+                       reflectionFrames: reflectionFrames, gravity: gravity)
     }
 
     static func dismantleUIView(_ view: Surface, coordinator _: ()) {
@@ -41,6 +54,7 @@ struct AnimatedArtwork: UIViewRepresentable {
     final class Surface: UIView {
         var onFailure: (URL, Error?) -> Void = { _, _ in }
         var onState: (URL, ArtworkPlaybackState) -> Void = { _, _ in }
+        var onFirstFrame: (URL, CGSize) -> Void = { _, _ in }
         private var reportedState: ArtworkPlaybackState?
         override class var layerClass: AnyClass {
             AVPlayerLayer.self
@@ -68,6 +82,9 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var lastTick: CFTimeInterval?
         private var playbackActive = false
         private var failed = false
+        private var reportedFirstFrame = false
+        private var reportedVideoSize = CGSize.zero
+        private var generation = UUID()
         @MainActor private final class Target: NSObject {
             weak var surface: Surface?
             @objc func tick(_ link: CADisplayLink) {
@@ -83,8 +100,10 @@ struct AnimatedArtwork: UIViewRepresentable {
             player.volume = 0
             player.preventsDisplaySleepDuringVideoPlayback = false
             playerLayer.player = player
+            playerLayer.backgroundColor = UIColor.clear.cgColor
             playerLayer.videoGravity = .resizeAspectFill
             playerLayer.opacity = 0
+            isOpaque = false
             NotificationCenter.default.addObserver(self, selector: #selector(resetWatchdogTimestamp),
                                                    name: UIApplication.willResignActiveNotification, object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(resetWatchdogTimestamp),
@@ -105,18 +124,35 @@ struct AnimatedArtwork: UIViewRepresentable {
             lastTick = nil
         }
 
-        func configure(url: URL, active: Bool, allowCellular: Bool = false, reflectionFrames: ArtworkReflectionFrames? = nil) {
+        func configure(url: URL, active: Bool, allowCellular: Bool = false,
+                       reflectionFrames: ArtworkReflectionFrames? = nil,
+                       gravity: AVLayerVideoGravity = .resizeAspectFill) {
             guard url.isFileURL || url.scheme?.lowercased() == "https" else { stop(); return }
+            playerLayer.videoGravity = gravity
             if self.url != url || self.allowCellular != allowCellular {
                 stop()
                 self.url = url
                 self.allowCellular = allowCellular
+                do {
+                    // Configure before AVPlayerLooper inserts an item or playback begins.
+                    // Ambient mixes with the existing music session without taking control.
+                    try ArtworkAudioPolicy.prepare()
+                } catch {
+                    let generation = generation
+                    Task { @MainActor [weak self] in
+                        guard let self, self.generation == generation else { return }
+                        self.fail(error)
+                    }
+                    return
+                }
                 let asset = AVURLAsset(url: url, options: [
                     AVURLAssetAllowsCellularAccessKey: allowCellular,
                     AVURLAssetAllowsExpensiveNetworkAccessKey: allowCellular,
                     AVURLAssetAllowsConstrainedNetworkAccessKey: false,
                 ])
-                looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(asset: asset))
+                let template = AVPlayerItem(asset: asset)
+                disableAudio(in: template)
+                looper = AVPlayerLooper(player: player, templateItem: template)
                 observeCurrentItem()
             }
             if self.reflectionFrames !== reflectionFrames {
@@ -149,9 +185,12 @@ struct AnimatedArtwork: UIViewRepresentable {
         }
 
         func stop() {
+            generation = UUID()
             watchdog = ArtworkPlaybackWatchdog()
             reportedState = nil
             lastTick = nil; playbackActive = false; failed = false
+            reportedFirstFrame = false
+            reportedVideoSize = .zero
             tracksObservation = nil; statusObservation = nil; observedItem = nil
             clearReflection()
             player.pause()
@@ -203,6 +242,16 @@ struct AnimatedArtwork: UIViewRepresentable {
             CATransaction.setDisableActions(true)
             playerLayer.opacity = visible ? 1 : 0
             CATransaction.commit()
+            let size = player.currentItem?.presentationSize ?? .zero
+            if visible, let url, !reportedFirstFrame || (size.width > 0 && size.height > 0 && size != reportedVideoSize) {
+                reportedFirstFrame = true
+                reportedVideoSize = size
+                let generation = generation
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == generation, self.url == url else { return }
+                    onFirstFrame(url, size)
+                }
+            }
         }
 
         private func clearReflection() {
@@ -220,6 +269,10 @@ struct AnimatedArtwork: UIViewRepresentable {
             let elapsed = lastTick.map { link.timestamp - $0 } ?? 0
             lastTick = eligible ? link.timestamp : nil
             guard !failed else { return }
+            if playerLayer.isReadyForDisplay,
+               player.currentItem?.presentationSize != reportedVideoSize {
+                updateVisibility()
+            }
             let state: ArtworkPlaybackState = !eligible ? .paused
                 : !playerLayer.isReadyForDisplay ? .preparing
                 : player.timeControlStatus == .waitingToPlayAtSpecifiedRate ? .buffering : .displayed

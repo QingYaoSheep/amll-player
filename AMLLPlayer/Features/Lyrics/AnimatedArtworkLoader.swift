@@ -11,6 +11,8 @@ final class AnimatedArtworkLoader {
     private(set) var failureCode: String?
     private(set) var streamingURL: URL?
     private(set) var playbackState: ArtworkPlaybackState = .preparing
+    private(set) var hasPresentedFrame = false
+    private(set) var videoSize: CGSize?
     var requestToken: UUID {
         revision
     }
@@ -18,6 +20,12 @@ final class AnimatedArtworkLoader {
     func playbackChanged(token: UUID, url: URL, state: ArtworkPlaybackState) {
         guard token == revision, url == playbackURL else { return }
         playbackState = state
+    }
+
+    func firstFramePresented(token: UUID, url: URL, size: CGSize) {
+        guard token == revision, url == playbackURL else { return }
+        hasPresentedFrame = true
+        if size.width > 0, size.height > 0 { videoSize = size }
     }
 
     var playbackURL: URL? {
@@ -36,6 +44,7 @@ final class AnimatedArtworkLoader {
         // actual decoder rejected. Retrying starts a fresh request revision.
         revision = UUID()
         localURL = nil; streamingURL = nil; kind = nil
+        hasPresentedFrame = false; videoSize = nil
         status = .failed
         playbackState = .failed
         let failure = (error ?? URLError(.cannotDecodeContentData)) as NSError
@@ -47,9 +56,11 @@ final class AnimatedArtworkLoader {
         failureCode = nil
         streamingURL = nil
         playbackState = .preparing
+        hasPresentedFrame = false; videoSize = nil
     }
 
     func load(trackID: String, kind: ArtworkAsset.Kind = .squareVideo,
+              fallbackKind: ArtworkAsset.Kind? = nil,
               streamWhileDownloading: Bool = false,
               assets: @MainActor () async throws -> [ArtworkAsset],
               download: @MainActor (URL) async throws -> URL) async
@@ -64,7 +75,8 @@ final class AnimatedArtworkLoader {
             guard revision == self.revision else { return }
             // A portrait-only release must not be cropped into the standard
             // square page. The separate immersive layout owns tall resources.
-            guard let asset = assets.first(where: { $0.kind == kind }) else {
+            guard let asset = assets.first(where: { $0.kind == kind })
+                ?? fallbackKind.flatMap({ fallback in assets.first(where: { $0.kind == fallback }) }) else {
                 status = .unavailable; return
             }
             if streamWhileDownloading, asset.url.scheme?.lowercased() == "https" {
@@ -74,7 +86,11 @@ final class AnimatedArtworkLoader {
             try Task.checkCancellation()
             guard revision == self.revision else { return }
             guard local.isFileURL else { throw URLError(.unsupportedURL) }
-            if playbackURL != local { playbackState = .preparing }
+            if playbackURL != local {
+                playbackState = .preparing
+                hasPresentedFrame = false
+                videoSize = nil
+            }
             localURL = local; self.kind = asset.kind; status = .ready
         } catch {
             guard revision == self.revision else { return }

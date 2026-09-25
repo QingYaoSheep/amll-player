@@ -18,7 +18,6 @@ struct AMLLLyricsPlayer: View {
     @State private var shellMotion = LyricsMotionModel()
     @State private var artworkLoader = AnimatedArtworkLoader()
     @State private var artworkNetwork = ArtworkNetworkPolicy.shared
-    @State private var artworkSlot: CGRect?
     @State private var artworkPortraitViewport = false
     @State private var artworkReflectionFrames = ArtworkReflectionFrames()
     @GestureState private var dismissalDrag: CGFloat = 0
@@ -38,17 +37,22 @@ struct AMLLLyricsPlayer: View {
                                blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
                                color: configuration.backgroundColor ?? .sourceDefault,
                                gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault)
-                if let item = model.playbackSnapshot?.item,
-                   configuration.animatedArtwork?.enabled == true,
-                   configuration.animatedArtwork?.presentation == .immersive,
-                   geometry.size.height > geometry.size.width, let artworkSlot
-                {
-                    immersiveArtwork(item, slot: artworkSlot, size: geometry.size)
+                if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
+                    let videoFrame = AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size,
+                                                                         video: artworkLoader.videoSize ?? .zero)
+                    immersiveArtwork(item, frame: videoFrame, size: geometry.size)
+                    if artworkLoader.hasPresentedFrame, !reduceTransparency {
+                        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame,
+                                                                                       viewportHeight: geometry.size.height)
+                        ArtworkVideoTransition(frames: artworkReflectionFrames)
+                            .frame(width: transition.width, height: transition.height)
+                            .position(x: transition.midX, y: transition.midY)
+                            .accessibilityHidden(true)
+                    }
                     if configuration.animatedArtwork?.reflection == true, !reduceMotion,
-                       artworkLoader.kind == .portraitVideo, artworkLoader.trackID == item.uri,
-                       artworkLoader.playbackURL != nil
+                       artworkLoader.hasPresentedFrame
                     {
-                        let reflection = ArtworkReflectionGeometry.frame(cover: artworkSlot, viewportHeight: geometry.size.height)
+                        let reflection = ArtworkReflectionGeometry.frame(cover: videoFrame, viewportHeight: geometry.size.height)
                         ArtworkReflection(frames: artworkReflectionFrames)
                             .frame(width: reflection.width, height: reflection.height)
                             .scaleEffect(1.035, anchor: .top)
@@ -69,11 +73,9 @@ struct AMLLLyricsPlayer: View {
             // that first establishes a compositing boundary for this page.
             .compositingGroup()
             .modifier(LyricsPageDynamicRange())
-            .coordinateSpace(name: "lyricsArtwork")
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
             }
-            .onPreferenceChange(ArtworkSlotPreference.self) { artworkSlot = $0 }
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
             .scaleEffect(drag.scale)
@@ -124,7 +126,8 @@ struct AMLLLyricsPlayer: View {
     private func artworkPlayer(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics, size: CGSize) -> some View {
         let artworkSide = min(size.width - metrics.expandedArtworkInset * 2, size.height * 0.405)
         return VStack(spacing: 0) {
-            artwork(item, side: artworkSide, radius: 12)
+            artwork(item, side: artworkSide, radius: 12,
+                    hideStatic: mountsImmersiveArtwork(item, size: size) && artworkLoader.hasPresentedFrame)
                 .padding(.top, metrics.expandedArtworkTop)
             fullMetadata(item: item)
                 .padding(.top, metrics.expandedMetadataGap)
@@ -269,15 +272,31 @@ struct AMLLLyricsPlayer: View {
         }
     }
 
-    private func artwork(_ item: PlaybackItem, side: CGFloat, radius: CGFloat) -> some View {
+    private var phoneLyricsUsesStaticArtwork: Bool {
+        AMLLArtworkDisplayPolicy.usesStaticLyricsCover(isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+                                                       showsLyrics: configuration.showLyrics)
+    }
+
+    private func mountsImmersiveArtwork(_ item: PlaybackItem, size: CGSize) -> Bool {
+        AMLLArtworkDisplayPolicy.mountsImmersive(
+            enabled: configuration.animatedArtwork?.enabled == true, reduceMotion: reduceMotion,
+            staticLyricsCover: phoneLyricsUsesStaticArtwork,
+            selectedImmersive: configuration.animatedArtwork?.presentation == .immersive,
+            portraitViewport: size.height > size.width, kind: artworkLoader.kind,
+            currentTrack: artworkLoader.trackID == item.uri, hasURL: artworkLoader.playbackURL != nil)
+    }
+
+    private func artwork(_ item: PlaybackItem, side: CGFloat, radius: CGFloat,
+                         hideStatic: Bool = false) -> some View {
         AsyncImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
             placeholder: { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
             .frame(width: side, height: side)
             .overlay {
-                if configuration.animatedArtwork?.enabled == true, !reduceMotion,
-                   configuration.animatedArtwork?.presentation != .immersive,
-                   artworkLoader.kind == .squareVideo,
-                   artworkLoader.trackID == item.uri, let url = artworkLoader.playbackURL
+                if AMLLArtworkDisplayPolicy.mountsSquare(
+                    enabled: configuration.animatedArtwork?.enabled == true, reduceMotion: reduceMotion,
+                    staticLyricsCover: phoneLyricsUsesStaticArtwork, kind: artworkLoader.kind,
+                    currentTrack: artworkLoader.trackID == item.uri, hasURL: artworkLoader.playbackURL != nil),
+                   let url = artworkLoader.playbackURL
                 {
                     let token = artworkLoader.requestToken
                     AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices && model.playbackSnapshot?.isPlaying == true, allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
@@ -287,42 +306,26 @@ struct AMLLLyricsPlayer: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? radius, style: .continuous))
-            .background {
-                GeometryReader { geometry in
-                    Color.clear.preference(key: ArtworkSlotPreference.self, value: geometry.frame(in: .named("lyricsArtwork")))
-                }
-            }
+            .opacity(hideStatic ? 0 : 1)
             .id(item.uri)
             .accessibilityHidden(true)
     }
 
-    private func immersiveArtwork(_ item: PlaybackItem, slot: CGRect, size: CGSize) -> some View {
-        let frame = AMLLImmersiveArtworkGeometry.frame(viewport: size, slot: slot)
-        return AsyncImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
-            placeholder: { Color.clear }
+    private func immersiveArtwork(_ item: PlaybackItem, frame: CGRect, size: CGSize) -> some View {
+        let url = artworkLoader.playbackURL!
+        let token = artworkLoader.requestToken
+        return AnimatedArtwork(url: url,
+                               active: scenePhase == .active && !search && !devices && model.playbackSnapshot?.isPlaying == true,
+                               allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
+                               reflectionFrames: artworkReflectionFrames,
+                               onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
+                               onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) },
+                               onFirstFrame: { url, videoSize in artworkLoader.firstFramePresented(token: token, url: url, size: videoSize) },
+                               gravity: .resizeAspect)
+            .id(token)
             .frame(width: frame.width, height: frame.height)
-            .overlay {
-                if !reduceMotion, artworkLoader.kind == .portraitVideo,
-                   artworkLoader.trackID == item.uri, let url = artworkLoader.playbackURL
-                {
-                    let token = artworkLoader.requestToken
-                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices && model.playbackSnapshot?.isPlaying == true,
-                                    allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
-                                    reflectionFrames: configuration.animatedArtwork?.reflection == true ? artworkReflectionFrames : nil,
-                                    onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
-                                    onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) })
-                        .id(token)
-                }
-            }
-            .clipped()
-            .mask {
-                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.7),
-                                       .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom)
-            }
             .position(x: frame.midX, y: frame.midY)
             .frame(width: size.width, height: size.height)
-            .clipped()
-            .animation(reduceMotion ? nil : .interpolatingSpring(stiffness: 200, damping: 30), value: frame)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -339,14 +342,16 @@ struct AMLLLyricsPlayer: View {
     private func loadAnimatedArtwork() async {
         let settings = configuration.animatedArtwork ?? .init()
         guard settings.enabled, !reduceMotion,
-              settings.presentation != .immersive || artworkPortraitViewport,
               artworkNetwork.permits(allowCellular: settings.allowCellular),
               let item = model.playbackSnapshot?.item, let track = TrackIdentity(item),
               let provider = model.lyrics.apple else { artworkLoader.reset(); return }
         let candidate = model.lyrics.selection.candidate
         let lyricsSettings = model.lyrics.settings
-        let kind: ArtworkAsset.Kind = settings.presentation == .immersive ? .portraitVideo : .squareVideo
-        await artworkLoader.load(trackID: item.uri, kind: kind, streamWhileDownloading: true, assets: {
+        let prefersPortrait = settings.presentation == .immersive && artworkPortraitViewport
+        let kind: ArtworkAsset.Kind = prefersPortrait ? .portraitVideo : .squareVideo
+        await artworkLoader.load(trackID: item.uri, kind: kind,
+                                 fallbackKind: prefersPortrait ? .squareVideo : nil,
+                                 streamWhileDownloading: true, assets: {
             let songID: String
             if let candidate, candidate.source == .apple {
                 songID = candidate.sourceID
@@ -445,6 +450,9 @@ struct AMLLLyricsPlayer: View {
     }
 
     private var artworkStatus: String {
+        if phoneLyricsUsesStaticArtwork {
+            return "动态封面：歌词模式使用静态封面"
+        }
         if reduceMotion {
             return "动态封面：减少动态效果，使用静态图"
         }
@@ -552,15 +560,6 @@ private struct LyricsPageDynamicRange: ViewModifier {
             content.allowedDynamicRange(.high)
         } else {
             content
-        }
-    }
-}
-
-private struct ArtworkSlotPreference: PreferenceKey {
-    static let defaultValue: CGRect? = nil
-    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
-        if let next = nextValue() {
-            value = next
         }
     }
 }

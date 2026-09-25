@@ -161,16 +161,58 @@ final class ArtworkMediaTests: XCTestCase {
         XCTAssertNil(loader.localURL)
     }
 
-    func testImmersiveCoverUsesSourceSlotCenterAndExtent() {
-        let compact = AMLLImmersiveArtworkGeometry.frame(viewport: CGSize(width: 402, height: 874),
-                                                         slot: CGRect(x: 32, y: 95, width: 72, height: 72))
-        XCTAssertEqual(compact.width, 482.4, accuracy: 0.001)
-        XCTAssertEqual(compact.midX, 68, accuracy: 0.001)
-        XCTAssertEqual(compact.midY, 131, accuracy: 0.001)
-        let expanded = AMLLImmersiveArtworkGeometry.frame(viewport: CGSize(width: 402, height: 874),
-                                                          slot: CGRect(x: 24, y: 95, width: 354, height: 354))
-        XCTAssertEqual(expanded.width, 652.8, accuracy: 0.001)
-        XCTAssertEqual(expanded.midY, 272, accuracy: 0.001)
+    func testImmersiveVideoFitsWithoutCroppingAndTransitionStaysAttached() {
+        let viewport = CGSize(width: 402, height: 874)
+        let tall = AMLLImmersiveArtworkGeometry.frame(viewport: viewport, video: CGSize(width: 1080, height: 1920))
+        XCTAssertEqual(tall.width, 402, accuracy: 0.001)
+        XCTAssertEqual(tall.height, 714.667, accuracy: 0.001)
+        XCTAssertEqual(tall.minY, 0)
+        XCTAssertLessThanOrEqual(tall.maxY, viewport.height)
+        let wide = AMLLImmersiveArtworkGeometry.frame(viewport: viewport, video: CGSize(width: 1920, height: 1080))
+        XCTAssertEqual(wide.width, viewport.width)
+        XCTAssertLessThanOrEqual(wide.maxY, viewport.height)
+        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: tall, viewportHeight: viewport.height)
+        XCTAssertEqual(transition.minY, tall.maxY - tall.height * 0.2, accuracy: 0.001)
+        XCTAssertGreaterThan(transition.maxY, tall.maxY)
+    }
+
+    func testLyricsCoverAndImmersiveResourceDisplayMatrix() {
+        XCTAssertTrue(AMLLArtworkDisplayPolicy.usesStaticLyricsCover(isPhone: true, showsLyrics: true))
+        XCTAssertFalse(AMLLArtworkDisplayPolicy.usesStaticLyricsCover(isPhone: false, showsLyrics: true))
+        XCTAssertFalse(AMLLArtworkDisplayPolicy.usesStaticLyricsCover(isPhone: true, showsLyrics: false))
+        func immersive(_ kind: ArtworkAsset.Kind?, staticLyrics: Bool = false, portrait: Bool = true) -> Bool {
+            AMLLArtworkDisplayPolicy.mountsImmersive(enabled: true, reduceMotion: false,
+                staticLyricsCover: staticLyrics, selectedImmersive: true, portraitViewport: portrait,
+                kind: kind, currentTrack: true, hasURL: true)
+        }
+        XCTAssertTrue(immersive(.portraitVideo))
+        XCTAssertFalse(immersive(.portraitVideo, staticLyrics: true))
+        XCTAssertFalse(immersive(.portraitVideo, portrait: false))
+        XCTAssertFalse(immersive(.squareVideo))
+        XCTAssertTrue(AMLLArtworkDisplayPolicy.mountsSquare(enabled: true, reduceMotion: false,
+            staticLyricsCover: false, kind: .squareVideo, currentTrack: true, hasURL: true))
+        XCTAssertFalse(AMLLArtworkDisplayPolicy.mountsSquare(enabled: true, reduceMotion: false,
+            staticLyricsCover: true, kind: .squareVideo, currentTrack: true, hasURL: true))
+    }
+
+    func testImmersiveResourceFallsBackToSquareAndFirstFrameIsRequestScoped() async throws {
+        let square = try ArtworkAsset(kind: .squareVideo,
+                                      url: XCTUnwrap(URL(string: "https://example.com/square.m3u8")),
+                                      albumID: "1", storefront: "us")
+        let loader = AnimatedArtworkLoader()
+        let local = URL(fileURLWithPath: "/square.movpkg")
+        await loader.load(trackID: "one", kind: .portraitVideo, fallbackKind: .squareVideo,
+                          assets: { [square] }, download: { _ in local })
+        XCTAssertEqual(loader.kind, .squareVideo)
+        let token = loader.requestToken
+        loader.firstFramePresented(token: token, url: local, size: CGSize(width: 1000, height: 1000))
+        XCTAssertTrue(loader.hasPresentedFrame)
+        loader.playbackChanged(token: token, url: local, state: .buffering)
+        XCTAssertTrue(loader.hasPresentedFrame)
+        loader.reset()
+        loader.firstFramePresented(token: token, url: local, size: CGSize(width: 1000, height: 1000))
+        XCTAssertFalse(loader.hasPresentedFrame)
+        XCTAssertNil(loader.videoSize)
     }
 
     func testPackageOwnershipSurvivesCachePurgeAndCorruptPrimaryIndex() throws {

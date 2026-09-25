@@ -87,6 +87,21 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         XCTAssertTrue(pronunciation.allSatisfy { $0.motionStart == 0 && $0.motionEnd == 2 })
     }
 
+    func testGeneratedLineFallbackTakesPriorityOverProviderWordAnnotation() async {
+        let original = LyricLine(id: "ja-provider", text: "君の名は", start: 0, end: 2,
+                                 words: [.init(text: "君の名は", start: 0, end: 2, romanWord: "provider")],
+                                 precision: .word)
+        let source = document([original], language: "ja")
+        let result = await LyricsRomanizationEngine.shared.generate(document: source)
+        let line = result.applying(to: source).lines[0]
+        var configuration = LyricsRenderConfiguration()
+        configuration.romanization = true
+        let layout = AMLLCoreTextLayout(line: line, width: 600,
+                                        font: UIFont.systemFont(ofSize: 32), configuration: configuration)
+        XCTAssertTrue(layout.rubyFragments.filter { $0.kind == .romanization }.isEmpty)
+        XCTAssertEqual(configuration.auxiliaryText(for: line), ["kimi no na wa"])
+    }
+
     func testPinnedMineradioSourceFixtures() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "mineradio-romanization", withExtension: "json"))
         let fixtures = try JSONDecoder().decode(SourceFixtures.self, from: Data(contentsOf: url))

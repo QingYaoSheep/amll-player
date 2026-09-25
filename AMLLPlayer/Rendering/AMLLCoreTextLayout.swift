@@ -224,7 +224,8 @@ final class AMLLCoreTextLayout {
         let wantsWordRomanization = configuration.romanization && line.precision == .word && line.words.contains {
             !($0.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         }
-        let hasWordRomanization = validGenerated || (wantsWordRomanization && unambiguousRomanization)
+        let hasWordRomanization = !generated.isEmpty ? validGenerated
+            : (wantsWordRomanization && unambiguousRomanization)
         func rubyText(_ word: LyricWord) -> String {
             word.rubySegments.isEmpty ? (word.ruby ?? "") : word.rubySegments.map(\.text).joined()
         }

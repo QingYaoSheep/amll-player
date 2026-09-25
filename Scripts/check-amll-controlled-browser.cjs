@@ -45,6 +45,21 @@ async function main() {
     await delay(100);
   }
   assert.equal(await evaluate('!!window.frames[0]?.amllReference'),true,'reference initialized');
+  if (process.env.AMLL_ROMANIZATION_PROBE === '1') {
+    const probe = require('./probe-amll-romanization.cjs');
+    const fixture = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../AMLLPlayerTests/Fixtures/romanization-containers.json'), 'utf8'));
+    const results = await evaluate('(' + probe.toString() + ')(window.frames[0].amllReference,' + JSON.stringify(fixture) + ')');
+    assert.equal(results.length, fixture.lines.length);
+    for (const row of results) for (const word of row) {
+      assert.equal(word.fontSize, '16px');
+      assert.equal(word.lineHeight, '16px');
+      assert.equal(word.paddingInlineEnd, '4.8px');
+      assert.ok(word.width > 0);
+    }
+    fs.writeFileSync(path.resolve(root, '../romanization-probe.json'), JSON.stringify(results, null, 2));
+    console.log('Pinned original romanization: 7 multilingual cases passed');
+    return;
+  }
   const expression='JSON.stringify(window.frames[0].amllReference.capture(true))';
   const frozen=await evaluate(expression);await delay(300);
   assert.equal(await evaluate(expression),frozen,'wall time must not change frozen geometry or animations');

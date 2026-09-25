@@ -1,0 +1,159 @@
+{
+  "fontSize": 32,
+  "lines": [
+    {
+      "startTime": 0,
+      "endTime": 5000,
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "",
+      "romanLyric": "",
+      "words": [
+        {
+          "word": "こんにちは",
+          "romanWord": "konnichiwa",
+          "startTime": 0,
+          "endTime": 2500
+        },
+        {
+          "word": " next",
+          "romanWord": "",
+          "startTime": 2500,
+          "endTime": 5000
+        }
+      ]
+    },
+    {
+      "startTime": 5000,
+      "endTime": 10000,
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "",
+      "romanLyric": "",
+      "words": [
+        {
+          "word": "안녕하세요",
+          "romanWord": "annyeonghaseyo",
+          "startTime": 5000,
+          "endTime": 7500
+        },
+        {
+          "word": " next",
+          "romanWord": "",
+          "startTime": 7500,
+          "endTime": 10000
+        }
+      ]
+    },
+    {
+      "startTime": 10000,
+      "endTime": 15000,
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "",
+      "romanLyric": "",
+      "words": [
+        {
+          "word": "中文",
+          "romanWord": "zhong wen",
+          "startTime": 10000,
+          "endTime": 12500
+        },
+        {
+          "word": " next",
+          "romanWord": "",
+          "startTime": 12500,
+          "endTime": 15000
+        }
+      ]
+    },
+    {
+      "startTime": 15000,
+      "endTime": 20000,
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "",
+      "romanLyric": "",
+      "words": [
+        {
+          "word": "مرحبا بالعالم",
+          "romanWord": "marhaban",
+          "startTime": 15000,
+          "endTime": 17500
+        },
+        {
+          "word": " next",
+          "romanWord": "",
+          "startTime": 17500,
+          "endTime": 20000
+        }
+      ]
+    },
+    {
+      "startTime": 20000,
+      "endTime": 25000,
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "",
+      "romanLyric": "",
+      "words": [
+        {
+          "word": "hello 世界",
+          "romanWord": "hello shi jie",
+          "startTime": 20000,
+          "endTime": 22500
+        },
+        {
+          "word": " next",
+          "romanWord": "",
+          "startTime": 22500,
+          "endTime": 25000
+        }
+      ]
+    },
+    {
+      "startTime": 25000,
+      "endTime": 30000,
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "",
+      "romanLyric": "",
+      "words": [
+        {
+          "word": "👩‍💻 é",
+          "romanWord": "developer accent",
+          "startTime": 25000,
+          "endTime": 27500
+        },
+        {
+          "word": " next",
+          "romanWord": "",
+          "startTime": 27500,
+          "endTime": 30000
+        }
+      ]
+    },
+    {
+      "startTime": 30000,
+      "endTime": 35000,
+      "isBG": false,
+      "isDuet": false,
+      "translatedLyric": "",
+      "romanLyric": "",
+      "words": [
+        {
+          "word": "字",
+          "romanWord": "a very long pronunciation",
+          "startTime": 30000,
+          "endTime": 32500
+        },
+        {
+          "word": " next",
+          "romanWord": "",
+          "startTime": 32500,
+          "endTime": 35000
+        }
+      ]
+    }
+  ]
+}

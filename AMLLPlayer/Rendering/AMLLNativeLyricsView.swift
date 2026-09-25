@@ -689,9 +689,7 @@ private final class AMLLNativeRow: UIView {
         // The layout already applies the visibility/profile rules. Repeating
         // them here keeps VoiceOver in the same order as the pixels without
         // exposing parser-only metadata.
-        let translation = accessibilityConfiguration.translation ? line.translation : ""
-        let roman = accessibilityConfiguration.romanization ? line.romanization : ""
-        return [translation, roman].filter { !$0.isEmpty }
+        accessibilityConfiguration.auxiliaryText(for: line)
     }
 
     private var accessibilityConfiguration = LyricsRenderConfiguration()

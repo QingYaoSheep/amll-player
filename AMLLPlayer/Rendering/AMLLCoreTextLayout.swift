@@ -219,7 +219,7 @@ final class AMLLCoreTextLayout {
         // instead of repeating the same pronunciation under every atom.
         diagnostics = wantsWordRomanization && !unambiguousRomanization
             ? ["逐词罗马音对应关系不唯一，回退行级显示。"] : []
-        let romanHeight = hasWordRomanization ? romanFont.pointSize * 1.5 : 0
+        let romanHeight = hasWordRomanization ? romanFont.pointSize : 0
         let rubyHeight = timedWords.contains { !$0.rubySegments.isEmpty || !($0.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
             ? rubyFont.pointSize * 1.5
             : 0
@@ -253,7 +253,10 @@ final class AMLLCoreTextLayout {
                     let width = containerWidth(word)
                     let shaped = CTLineCreateWithAttributedString(NSAttributedString(string: word.text, attributes: attributes))
                     let mainWidth = CTLineGetTypographicBounds(shaped, nil, nil, nil)
-                    let originX = atomX + (width - mainWidth) / 2
+                    // Only wordBody inside wordWithRuby centers its children.
+                    // Plain romanWord containers inherit text-align: start.
+                    let wordRTL = Self.visualRuns(in: shaped).first?.rtl ?? line.isRTL
+                    let originX = atomX + (rubyHeight > 0 ? (width - mainWidth) / 2 : (wordRTL ? width - mainWidth : 0))
                     rows.append(.init(line: shaped, origin: CGPoint(x: originX, y: y + rubyHeight + font.ascender)))
                     atomX += width
                     let runs = Self.visualRuns(in: shaped)
@@ -343,22 +346,27 @@ final class AMLLCoreTextLayout {
                 let minX = firstRow.map(\.rect.minX).min() ?? first.rect.minX
                 let maxX = firstRow.map(\.rect.maxX).max() ?? first.rect.maxX
                 let value = NSAttributedString(string: text, attributes: [
-                    .font: romanFont, .foregroundColor: UIColor.white.withAlphaComponent(0.3),
+                    .font: romanFont, .foregroundColor: UIColor.white,
                     .kern: configuration.tracking,
                 ])
                 let ctLine = CTLineCreateWithAttributedString(value)
                 let width = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
                 let padding = romanFont.pointSize * 0.3
-                let x = minX + (maxX - minX - width) / 2 + (first.rtl ? padding / 2 : -padding / 2)
+                let x = rubyHeight > 0
+                    ? minX + (maxX - minX - width) / 2 + (first.rtl ? padding / 2 : -padding / 2)
+                    : (first.rtl ? maxX - width : minX)
                 let top = first.rect.maxY
                 // Both inline annotation kinds use the disjoint annotation
                 // raster; the separate line-level auxiliary raster stays intact.
-                rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: top + romanFont.ascender), ruby: true))
+                let leading = (romanHeight - romanFont.lineHeight) / 2
+                rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: top + leading + romanFont.ascender), ruby: true))
                 for run in Self.visualRuns(in: ctLine) {
                     rubyFragments.append(.init(
-                        rect: CGRect(x: x + run.left, y: top, width: run.right - run.left, height: romanHeight),
+                        // Preserve ink extending beyond CSS's compact line box.
+                        rect: CGRect(x: x + run.left, y: top + min(0, leading), width: run.right - run.left,
+                                     height: max(romanHeight, romanFont.lineHeight)),
                         range: run.range, wordIndex: wordIndex, segmentIndex: 0,
-                        start: word.start, end: word.end, rtl: run.rtl, kind: .romanization
+                        start: word.romanStart ?? word.start, end: word.romanEnd ?? word.end, rtl: run.rtl, kind: .romanization
                     ))
                 }
             }

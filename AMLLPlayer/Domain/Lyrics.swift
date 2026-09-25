@@ -72,6 +72,9 @@ struct LyricWord: Codable, Equatable, Sendable {
     var start: Double
     var end: Double
     var romanWord: String? = nil
+    /// Provider annotation timing, when supplied separately from the body.
+    var romanStart: Double? = nil
+    var romanEnd: Double? = nil
     /// Optional AMLL metadata retained by the renderer adapter. Providers may
     /// omit these fields when their source format has no equivalent.
     var ruby: String? = nil
@@ -83,12 +86,15 @@ struct LyricWord: Codable, Equatable, Sendable {
     var isObscene = false
 
     init(text: String, start: Double, end: Double, romanWord: String? = nil, ruby: String? = nil,
-         rubySegments: [LyricRuby] = [], voice: String? = nil, isObscene: Bool = false)
+         rubySegments: [LyricRuby] = [], voice: String? = nil, isObscene: Bool = false,
+         romanStart: Double? = nil, romanEnd: Double? = nil)
     {
         self.text = text
         self.start = start
         self.end = end
         self.romanWord = romanWord
+        self.romanStart = romanStart
+        self.romanEnd = romanEnd
         self.ruby = ruby
         self.rubySegments = rubySegments
         self.voice = voice
@@ -96,7 +102,7 @@ struct LyricWord: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case text, start, end, romanWord, ruby, rubySegments, voice, isObscene
+        case text, start, end, romanWord, romanStart, romanEnd, ruby, rubySegments, voice, isObscene
     }
 
     init(from decoder: Decoder) throws {
@@ -105,6 +111,8 @@ struct LyricWord: Codable, Equatable, Sendable {
         start = try values.decode(Double.self, forKey: .start)
         end = try values.decode(Double.self, forKey: .end)
         romanWord = try values.decodeIfPresent(String.self, forKey: .romanWord)
+        romanStart = try values.decodeIfPresent(Double.self, forKey: .romanStart)
+        romanEnd = try values.decodeIfPresent(Double.self, forKey: .romanEnd)
         ruby = try values.decodeIfPresent(String.self, forKey: .ruby)
         rubySegments = try values.decodeIfPresent([LyricRuby].self, forKey: .rubySegments) ?? []
         voice = try values.decodeIfPresent(String.self, forKey: .voice)
@@ -120,6 +128,8 @@ struct LyricWord: Codable, Equatable, Sendable {
         try values.encode(start, forKey: .start)
         try values.encode(end, forKey: .end)
         try values.encodeIfPresent(romanWord, forKey: .romanWord)
+        try values.encodeIfPresent(romanStart, forKey: .romanStart)
+        try values.encodeIfPresent(romanEnd, forKey: .romanEnd)
         try values.encodeIfPresent(ruby, forKey: .ruby)
         try values.encode(rubySegments, forKey: .rubySegments)
         try values.encodeIfPresent(voice, forKey: .voice)
@@ -148,7 +158,7 @@ struct LyricsDocument: Codable, Equatable, Sendable {
     // Bump when the TTML/LRC semantic mapping changes. Existing cached
     // documents are reparsed from their payload so provider fixes become
     // visible without asking the user to clear the lyric cache.
-    static let parserVersion = 4
+    static let parserVersion = 5
     var candidate: LyricCandidate
     var lines: [LyricLine]
     var language: String

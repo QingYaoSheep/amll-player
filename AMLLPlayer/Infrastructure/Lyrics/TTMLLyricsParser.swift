@@ -400,26 +400,7 @@ enum TTMLLyricsParser {
                 let roText = roman.map { cleanEmptyMarkers(text($0, excluding: { $0.role.contains("bg") })) } ?? ""
                 if let roman {
                     let romanWords = words(roman, duration: duration, mode: timingMode)
-                    var cursor = 0
-                    for i in timedWords.indices {
-                        var best: Int?, bestScore = 0.0
-                        for j in romanWords.indices.dropFirst(cursor) {
-                            if abs(romanWords[j].start - timedWords[i].start) <= 0.003 {
-                                best = j; bestScore = 1; break
-                            }
-                            let overlap = max(0, min(romanWords[j].end, timedWords[i].end) - max(romanWords[j].start, timedWords[i].start))
-                            let union = max(0.001, max(romanWords[j].end, timedWords[i].end) - min(romanWords[j].start, timedWords[i].start))
-                            if overlap / union > bestScore {
-                                best = j; bestScore = overlap / union
-                            }
-                            if romanWords[j].start >= timedWords[i].end {
-                                break
-                            }
-                        }
-                        if let best, bestScore >= 0.1 {
-                            timedWords[i].romanWord = romanWords[best].text.trimmingCharacters(in: .whitespacesAndNewlines); cursor = best + 1
-                        }
-                    }
+                    LyricsRomanizationAlignment.merge(romanWords, into: &timedWords)
                 }
                 var bounds = range(node, duration: duration, mode: timingMode)
                 if node.attr("begin") == nil, let first = timedWords.first {

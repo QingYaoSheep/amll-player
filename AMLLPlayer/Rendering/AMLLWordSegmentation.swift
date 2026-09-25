@@ -43,6 +43,29 @@ enum AMLLWordSegmentation {
         for (index, word) in words.enumerated() {
             sourceWordIndex = index
             sourceOffset = 0
+            // Provider pronunciation owns the whole word, including internal
+            // spaces. Do not duplicate it or manufacture child timings.
+            if !(word.romanWord?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+                let leading = String(word.text.prefix(while: \.isWhitespace))
+                let withoutLeading = String(word.text.dropFirst(leading.count))
+                let trailing = String(withoutLeading.suffix(while: \.isWhitespace))
+                let body = String(withoutLeading.dropLast(trailing.count))
+                if !leading.isEmpty {
+                    process(.init(text: leading, start: word.start, end: word.start,
+                                  voice: word.voice, isObscene: word.isObscene))
+                }
+                if !body.isEmpty {
+                    process(.init(text: body, start: word.start, end: word.end,
+                                  romanWord: word.romanWord, ruby: word.ruby, rubySegments: word.rubySegments,
+                                  voice: word.voice, isObscene: word.isObscene,
+                                  romanStart: word.romanStart, romanEnd: word.romanEnd))
+                }
+                if !trailing.isEmpty {
+                    process(.init(text: trailing, start: word.end, end: word.end,
+                                  voice: word.voice, isObscene: word.isObscene))
+                }
+                continue
+            }
             let hasRuby = !word.rubySegments.isEmpty || !(word.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             if word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasRuby {
                 process(word); continue

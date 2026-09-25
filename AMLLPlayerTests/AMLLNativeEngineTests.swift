@@ -4,6 +4,38 @@ import UIKit
 import XCTest
 
 final class AMLLNativeEngineTests: XCTestCase {
+    @MainActor
+    func testInlinePronunciationPreservesMultilingualOwnershipAndProviderTime() throws {
+        struct Fixture: Decodable {
+            struct Line: Decodable {
+                struct Word: Decodable { var word: String; var romanWord: String }
+                var words: [Word]
+            }
+
+            var lines: [Line]
+        }
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "romanization-containers", withExtension: "json"))
+        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
+        for source in fixture.lines {
+            let text = try XCTUnwrap(source.words.first).word
+            let word = LyricWord(text: text, start: 0, end: 4, romanWord: source.words[0].romanWord,
+                                 romanStart: 0.25, romanEnd: 3.75)
+            let line = LyricLine(id: text, text: text, start: 0, end: 4, words: [word], precision: .word)
+            var configuration = LyricsRenderConfiguration()
+            configuration.romanization = true
+            let layout = AMLLCoreTextLayout(line: line, width: 160, font: .systemFont(ofSize: 32), configuration: configuration)
+            let annotations = layout.rubyFragments.filter { $0.kind == .romanization }
+            XCTAssertFalse(annotations.isEmpty, text)
+            XCTAssertEqual(layout.sourceAtoms.count, 1, text)
+            XCTAssertEqual(layout.sourceAtoms[0].sourceRange.length, text.utf16.count)
+            XCTAssertTrue(annotations.allSatisfy { $0.start == 0.25 && $0.end == 3.75 }, text)
+            configuration.romanization = false
+            let hidden = AMLLCoreTextLayout(line: line, width: 160, font: .systemFont(ofSize: 32), configuration: configuration)
+            XCTAssertFalse(hidden.rubyFragments.contains { $0.kind == .romanization }, text)
+            XCTAssertEqual(line.words[0], word)
+        }
+    }
+
     func testSplitAtomsRetainSourceUTF16OwnershipWithoutSplittingGraphemes() {
         let words: [LyricWord] = [
             .init(text: "中日", start: 1, end: 3),
@@ -24,19 +56,22 @@ final class AMLLNativeEngineTests: XCTestCase {
             XCTAssertEqual(offset, word.text.utf16.count)
         }
         XCTAssertEqual(atoms.filter { $0.sourceWordIndex == 0 }.count, 2)
-        XCTAssertTrue(atoms.filter { $0.sourceWordIndex == 1 }.allSatisfy { $0.word.romanWord == nil })
+        XCTAssertEqual(atoms.filter { $0.sourceWordIndex == 1 }.map(\.word.romanWord), ["one annotation"])
         XCTAssertEqual(words[1].romanWord, "one annotation")
     }
 
     @MainActor
-    func testAmbiguousRomanizationRemainsSingleSourceFallback() {
+    func testProviderPhraseKeepsSingleInlineRomanizationContainer() {
         let line = LyricLine(id: "phrase", text: "one two", start: 0, end: 5,
                              words: [.init(text: "one two", start: 0, end: 5, romanWord: "single annotation")], precision: .word)
         var configuration = LyricsRenderConfiguration()
         configuration.romanization = true
         let layout = AMLLCoreTextLayout(line: line, width: 300, font: .systemFont(ofSize: 32), configuration: configuration)
-        XCTAssertFalse(layout.diagnostics.isEmpty)
-        XCTAssertTrue(layout.rubyFragments.allSatisfy { $0.kind != .romanization })
+        XCTAssertTrue(layout.diagnostics.isEmpty)
+        let annotations = layout.rubyFragments.filter { $0.kind == .romanization }
+        XCTAssertFalse(annotations.isEmpty)
+        XCTAssertTrue(annotations.allSatisfy { $0.wordIndex == 0 && $0.start == 0 && $0.end == 5 })
+        XCTAssertEqual(layout.sourceAtoms.count, 1)
         XCTAssertEqual(configuration.auxiliaryText(for: line).filter { $0 == "single annotation" }.count, 1)
         XCTAssertTrue(layout.sourceAtoms.allSatisfy { $0.sourceWordIndex == 0 })
     }
@@ -298,7 +333,7 @@ final class AMLLNativeEngineTests: XCTestCase {
     }
 
     @MainActor
-    func testWordRomanizationIsPlacedBelowItsWordAndCanBeDisabled() {
+    func testWordRomanizationIsPlacedBelowItsWordAndCanBeDisabled() throws {
         let word = LyricWord(text: "漢", start: 1, end: 4, romanWord: "kan", ruby: "かん")
         let line = LyricLine(id: "roman", text: word.text, start: 1, end: 4, words: [word], precision: .word)
         let font = UIFont.systemFont(ofSize: 32)
@@ -306,7 +341,7 @@ final class AMLLNativeEngineTests: XCTestCase {
         let roman = layout.rubyFragments.filter { $0.kind == .romanization }
         XCTAssertFalse(roman.isEmpty)
         XCTAssertTrue(roman.allSatisfy { $0.start == 1 && $0.end == 4 && $0.wordIndex == 0 })
-        XCTAssertEqual(roman.first?.rect.minY, layout.fragments.first?.rect.maxY)
+        XCTAssertEqual(try XCTUnwrap(roman.first).rect.midY, try XCTUnwrap(layout.fragments.first).rect.maxY + font.pointSize * 0.25, accuracy: 0.01)
         XCTAssertTrue(layout.diagnostics.isEmpty)
         var hidden = LyricsRenderConfiguration()
         hidden.romanization = false
@@ -314,6 +349,7 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertFalse(without.rubyFragments.contains { $0.kind == .romanization })
         XCTAssertTrue(without.rubyFragments.contains { $0.kind == .ruby })
         XCTAssertGreaterThan(layout.size.height, without.size.height)
+        XCTAssertEqual(layout.size.height - without.size.height, font.pointSize * 0.5, accuracy: 0.01)
     }
 
     @MainActor
@@ -326,7 +362,7 @@ final class AMLLNativeEngineTests: XCTestCase {
         let main = try XCTUnwrap(layout.fragments.first)
         let roman = try XCTUnwrap(layout.rubyFragments.first)
         XCTAssertGreaterThan(roman.rect.width, main.rect.width)
-        XCTAssertEqual(roman.rect.midX, main.rect.midX - 32 * 0.5 * 0.3 / 2, accuracy: 0.01)
+        XCTAssertEqual(roman.rect.minX, main.rect.minX, accuracy: 0.01)
         XCTAssertEqual(LyricsRenderConfiguration().auxiliaryText(for: line), try [XCTUnwrap(word.romanWord)])
     }
 
@@ -353,7 +389,7 @@ final class AMLLNativeEngineTests: XCTestCase {
         let main = try XCTUnwrap(layout.fragments.first)
         let roman = try XCTUnwrap(layout.rubyFragments.first)
         XCTAssertTrue(main.rtl)
-        XCTAssertEqual(roman.rect.midX, main.rect.midX + 32 * 0.5 * 0.3 / 2, accuracy: 0.01)
+        XCTAssertEqual(roman.rect.maxX, main.rect.maxX, accuracy: 0.01)
     }
 
     @MainActor

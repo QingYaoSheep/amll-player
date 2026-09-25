@@ -112,6 +112,10 @@ enum LyricsParserPipeline {
     }
 
     private static func merge(_ auxiliary: [LyricLine], into primary: inout [LyricLine], role: AuxiliaryRole) {
+        if case .romanization = role {
+            LyricsRomanizationAlignment.mergeLines(auxiliary, into: &primary)
+            return
+        }
         let auxiliary = auxiliary.sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
         var cursor = 0
         for index in primary.indices {
@@ -134,34 +138,71 @@ enum LyricsParserPipeline {
                     primary[index].translation = auxiliary[best].text
                 }
             case .romanization:
-                if primary[index].romanization.isEmpty {
-                    primary[index].romanization = auxiliary[best].text
-                }
-                mergeRomanizedWords(auxiliary[best].words, into: &primary[index].words)
+                break // Handled by the voice-aware, mutual match above.
             }
         }
     }
+}
 
-    private static func mergeRomanizedWords(_ romanized: [LyricWord], into primary: inout [LyricWord]) {
-        guard !romanized.isEmpty, !primary.isEmpty else { return }
-        var cursor = 0
-        for index in primary.indices {
-            var best: Int?
-            var bestOverlap = 0.0
-            for candidate in romanized.indices.dropFirst(cursor) {
-                let overlap = max(0, min(primary[index].end, romanized[candidate].end) - max(primary[index].start, romanized[candidate].start))
-                if overlap > bestOverlap {
-                    best = candidate
-                    bestOverlap = overlap
-                }
-                if romanized[candidate].start > primary[index].end {
-                    break
-                }
+/// Require a unique mutual match. A whole-line pronunciation overlapping many
+/// words must remain line-level, not become an arbitrary first-word annotation.
+enum LyricsRomanizationAlignment {
+    static func mergeLines(_ annotations: [LyricLine], into lines: inout [LyricLine]) {
+        func candidates(for line: LyricLine, among others: [LyricLine]) -> [Int] {
+            let eligible = others.indices.filter {
+                let other = others[$0]
+                return abs(line.start - other.start) <= 0.250001 &&
+                    line.isBackground == other.isBackground && line.isDuet == other.isDuet &&
+                    (line.agent == nil || other.agent == nil || line.agent == other.agent)
             }
-            if let best, bestOverlap > 0 {
-                primary[index].romanWord = romanized[best].text.trimmingCharacters(in: .whitespacesAndNewlines)
-                cursor = best + 1
+            guard let nearest = eligible.map({ abs(line.start - others[$0].start) }).min() else { return [] }
+            return eligible.filter { abs(abs(line.start - others[$0].start) - nearest) < 0.000001 }
+        }
+        let original = lines
+        for index in lines.indices {
+            let matches = candidates(for: original[index], among: annotations)
+            guard matches.count == 1, let match = matches.first,
+                  candidates(for: annotations[match], among: original) == [index] else { continue }
+            if lines[index].romanization.isEmpty {
+                lines[index].romanization = annotations[match].text
             }
+            merge(annotations[match].words, into: &lines[index].words)
+        }
+    }
+
+    static func merge(_ annotations: [LyricWord], into words: inout [LyricWord]) {
+        func score(_ a: LyricWord, _ b: LyricWord) -> Double {
+            guard a.start.isFinite, a.end.isFinite, b.start.isFinite, b.end.isFinite else { return 0 }
+            if abs(a.start - b.start) <= 0.003, abs(a.end - b.end) <= 0.003 {
+                return 2
+            }
+            let overlap = max(0, min(a.end, b.end) - max(a.start, b.start))
+            return overlap / max(0.001, max(a.end, b.end) - min(a.start, b.start))
+        }
+        func uniqueBest(_ scores: [Double]) -> Int? {
+            guard let maximum = scores.max(), maximum >= 0.5 else { return nil }
+            let matches = scores.indices.filter { abs(scores[$0] - maximum) < 0.000001 }
+            return matches.count == 1 ? matches[0] : nil
+        }
+        let matrix = words.map { word in annotations.map { score(word, $0) } }
+        for index in words.indices where words[index].romanWord?.isEmpty ?? true {
+            guard let candidate = uniqueBest(matrix[index]),
+                  uniqueBest(matrix.map { $0[candidate] }) == index else { continue }
+            let annotation = annotations[candidate]
+            // Reject unequal-length whole-line annotations too: choosing the
+            // longest overlap would otherwise attach the entire phrase to one
+            // word. Only tolerate the parser's 3 ms boundary precision.
+            let overlaps = words.indices.filter {
+                min(words[$0].end, annotation.end) - max(words[$0].start, annotation.start) > 0.003
+            }
+            guard overlaps.count <= 1 else { continue }
+            let text = annotation.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            words[index].romanWord = text
+            // Equal timing is already represented by the body timestamps;
+            // preserve old cache/golden values without redundant metadata.
+            words[index].romanStart = annotation.start == words[index].start ? nil : annotation.start
+            words[index].romanEnd = annotation.end == words[index].end ? nil : annotation.end
         }
     }
 }

@@ -130,11 +130,42 @@ final class AMLLCoreTextLayout {
     init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration) {
         self.font = font
         let availableWidth = max(1, width)
-        let mappedChunks = line.precision == .word ? AMLLWordSegmentation.mappedChunks(line.words) : []
-        let atoms = mappedChunks.flatMap(\.self)
-        sourceAtoms = atoms
         let generated = configuration.romanization && line.precision == .word
             ? (line.generatedRomanization ?? []) : []
+        let originalChunks = line.precision == .word ? AMLLWordSegmentation.mappedChunks(line.words) : []
+        // A provider may time a whole phrase while the dictionary identifies
+        // several lexical words. Split only the visual atom at safe Unicode
+        // boundaries; every piece retains the one real provider time range.
+        // No per-token timestamp is inferred from character length.
+        var globalOffset = 0
+        let mappedChunks: [[AMLLWordSegmentation.Atom]] = originalChunks.map { chunk in
+            chunk.flatMap { atom -> [AMLLWordSegmentation.Atom] in
+                let start = globalOffset
+                let end = start + atom.word.text.utf16.count
+                globalOffset = end
+                let hasAnnotation = atom.word.romanWord != nil || atom.word.ruby != nil || !atom.word.rubySegments.isEmpty
+                guard !hasAnnotation, !generated.isEmpty else { return [atom] }
+                let boundaries = Set(generated.flatMap { [$0.utf16Start, $0.utf16End] })
+                    .filter { $0 > start && $0 < end }.sorted()
+                guard !boundaries.isEmpty else { return [atom] }
+                let limits = [start] + boundaries + [end]
+                let source = atom.word.text as NSString
+                var pieces: [AMLLWordSegmentation.Atom] = []
+                for index in 0 ..< limits.count - 1 {
+                    let local = NSRange(location: limits[index] - start,
+                                        length: limits[index + 1] - limits[index])
+                    guard Range(local, in: atom.word.text) != nil else { return [atom] }
+                    var word = atom.word
+                    word.text = source.substring(with: local)
+                    pieces.append(.init(word: word, sourceWordIndex: atom.sourceWordIndex,
+                                        sourceRange: NSRange(location: atom.sourceRange.location + local.location,
+                                                             length: local.length)))
+                }
+                return pieces
+            }
+        }
+        let atoms = mappedChunks.flatMap(\.self)
+        sourceAtoms = atoms
         var sourceRanges: [NSRange] = []
         var sourceCursor = 0
         for atom in atoms {
@@ -142,7 +173,8 @@ final class AMLLCoreTextLayout {
             sourceRanges.append(NSRange(location: sourceCursor, length: length))
             sourceCursor += length
         }
-        let validGenerated = !generated.isEmpty && sourceCursor == line.text.utf16.count &&
+        let validGenerated = !generated.isEmpty && atoms.map(\.word.text).joined() == line.text &&
+            sourceCursor == line.text.utf16.count &&
             generated.allSatisfy { token in
                 token.utf16Start >= 0 && token.utf16End <= sourceCursor && token.utf16End > token.utf16Start &&
                     sourceRanges.contains { $0.location == token.utf16Start } &&

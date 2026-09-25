@@ -68,6 +68,23 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         XCTAssertEqual(result.processedLineIndexes, [0, 1])
     }
 
+    func testJapaneseDictionaryBoundaryInsideOneTimedProviderWordKeepsItsTime() async {
+        let original = LyricLine(id: "ja-wide", text: "君の名は", start: 0, end: 2,
+                                 words: [.init(text: "君の名は", start: 0, end: 2)], precision: .word)
+        let source = document([original], language: "ja")
+        let result = await LyricsRomanizationEngine.shared.generate(document: source)
+        let augmented = result.applying(to: source).lines[0]
+        var configuration = LyricsRenderConfiguration()
+        configuration.romanization = true
+        let layout = AMLLCoreTextLayout(line: augmented, width: 600,
+                                        font: UIFont.systemFont(ofSize: 32), configuration: configuration)
+        XCTAssertEqual(layout.sourceAtoms.map(\.word.text).joined(), original.text)
+        XCTAssertGreaterThan(layout.sourceAtoms.count, 1)
+        XCTAssertTrue(layout.sourceAtoms.allSatisfy { $0.sourceWordIndex == 0 && $0.word.start == 0 && $0.word.end == 2 })
+        XCTAssertTrue(layout.diagnostics.isEmpty)
+        XCTAssertFalse(layout.rubyFragments.filter { $0.kind == .romanization }.isEmpty)
+    }
+
     func testPinnedMineradioSourceFixtures() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "mineradio-romanization", withExtension: "json"))
         let fixtures = try JSONDecoder().decode(SourceFixtures.self, from: Data(contentsOf: url))

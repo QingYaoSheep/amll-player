@@ -1199,7 +1199,8 @@ private final class AMLLNativeRow: UIView {
         let sharpWeight = Float(max(0, 1 - radius / 2))
         // A blurred bitmap has no word mask. Preserve the same unplayed
         // brightness instead of displaying its white pixels at full alpha.
-        let blurredAlpha = Float(words.isEmpty ? 1 : dark)
+        let lineBrightness = row.active || row.visualFocus == .holding ? 1.0 : dark
+        let blurredAlpha = Float(words.isEmpty ? lineBrightness : dark)
         nearBlur.opacity = Float(radius <= 2 ? radius / 2 : (5 - radius) / 3) * blurredAlpha
         farBlur.opacity = Float(max(0, (radius - 2) / 3)) * blurredAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
@@ -1237,7 +1238,7 @@ private final class AMLLNativeRow: UIView {
             entry.mask.endPoint = CGPoint(x: fragment.rtl ? 1 - last : last, y: 0.5)
         }
         auxiliary.opacity = sharpWeight
-        base.opacity = Float(words.isEmpty ? 1 : dark) * sharpWeight
+        base.opacity = Float(words.isEmpty ? lineBrightness : dark) * sharpWeight
         // Fully blurred inactive rows need only two whole-line layers.
         // Their word clocks remain engine-owned and catch up when sharp.
         for entry in words {

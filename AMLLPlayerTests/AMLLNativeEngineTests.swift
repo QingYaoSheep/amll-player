@@ -649,7 +649,9 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertTrue(current.active)
         XCTAssertGreaterThan(current.opacity, 0.1, "Scroll-ahead must not hide a still-sung line")
         XCTAssertFalse(future.active, "The next line must not become sung before its source timestamp")
-        XCTAssertGreaterThan(future.blur, 0, "The unsung line must retain its inactive appearance")
+        XCTAssertTrue([.waiting, .preparing].contains(future.visualFocus),
+                      "Early scrolling changes visual focus without starting the song clock")
+        XCTAssertFalse(future.fillComplete)
         XCTAssertFalse(future.wordClock.enabled)
         XCTAssertEqual(future.wordClock.time, 0, accuracy: 0.000_001)
         XCTAssertEqual(try XCTUnwrap(normal.rows.first { $0.lineIndex == 1 }).wordClock.time,
@@ -684,5 +686,120 @@ final class AMLLNativeEngineTests: XCTestCase {
         XCTAssertEqual(clock.time, 0.4, accuracy: 0.000_001)
         XCTAssertEqual(clock.reverseElapsed, 0)
         XCTAssertTrue(clock.enabled)
+    }
+}
+
+final class AMLLFocusHandoffTests: XCTestCase {
+    private func engine(nextStart: Double = 2, advance: Double = 0) -> AMLLFrameEngine {
+        let lines = [
+            LyricLine(id: "old", text: "Stay", start: 0, end: 1,
+                      words: [.init(text: "Stay", start: 0, end: 1)], precision: .word),
+            LyricLine(id: "next", text: "Next", start: nextStart, end: nextStart + 1,
+                      words: [.init(text: "Next", start: nextStart, end: nextStart + 1)], precision: .word),
+        ]
+        var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+        environment.alignPosition = 0.28
+        environment.advance = advance
+        return AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines),
+                               environment: environment, heights: [60, 60])
+    }
+
+    func testCompletedSentenceHoldsFillAndHDRUntilScheduledScrollStarts() throws {
+        var player = engine()
+        _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+        let held = player.render(.init(position: 1.1, playing: true), delta: 1)
+        let old = try XCTUnwrap(held.rows.first { $0.lineIndex == 0 })
+        XCTAssertEqual(old.visualFocus, .holding)
+        XCTAssertTrue(old.fillComplete)
+        XCTAssertTrue(old.hdrHold)
+        XCTAssertEqual(old.scale, 1, accuracy: 0.001)
+        var sawWaitingTarget = false
+        var handoff: AMLLFrameState?
+        var waitingScale = 0.0
+        for frame in 1 ... 180 {
+            let time = 1.1 + Double(frame) / 120
+            let state = player.render(.init(position: time, playing: true), delta: 1 / 120)
+            let incoming = try XCTUnwrap(state.rows.first { $0.lineIndex == 1 })
+            if state.focusGroup == 1 && incoming.visualFocus == .waiting {
+                sawWaitingTarget = true
+                waitingScale = incoming.scale
+                XCTAssertEqual(try XCTUnwrap(state.rows.first { $0.lineIndex == 0 }).visualFocus, .holding)
+            }
+            if incoming.visualFocus == .preparing {
+                handoff = state
+                break
+            }
+        }
+        let prepared = try XCTUnwrap(handoff)
+        let incoming = try XCTUnwrap(prepared.rows.first { $0.lineIndex == 1 })
+        let outgoing = try XCTUnwrap(prepared.rows.first { $0.lineIndex == 0 })
+        XCTAssertTrue(sawWaitingTarget, "The outgoing line must survive the queued spring delay")
+        XCTAssertGreaterThan(incoming.scale, waitingScale)
+        XCTAssertFalse(incoming.fillComplete)
+        XCTAssertFalse(incoming.hdrHold)
+        XCTAssertEqual(incoming.wordClock.time, 0)
+        XCTAssertEqual(outgoing.visualFocus, .passed)
+        XCTAssertTrue(outgoing.fillComplete, "Passing focus must not reverse the sung mask")
+        XCTAssertFalse(outgoing.hdrHold)
+    }
+
+    func testSeekAndLongInterludeDoNotRetainAnOldHighlight() throws {
+        var player = engine(nextStart: 10)
+        _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+        let interlude = player.render(.init(position: 1.1, playing: true), delta: 1)
+        XCTAssertNotNil(interlude.interlude)
+        XCTAssertFalse(try XCTUnwrap(interlude.rows.first { $0.lineIndex == 0 }).hdrHold)
+        let reversed = player.render(.init(position: 0.5, playing: true, seekRevision: 1), delta: 0)
+        let old = try XCTUnwrap(reversed.rows.first { $0.lineIndex == 0 })
+        XCTAssertFalse(old.fillComplete)
+        XCTAssertFalse(old.hdrHold)
+    }
+
+    func testHandoffSurvivesDroppedFramesAndScrollAheadWithoutChangingLyricTime() throws {
+        for step in [1.0 / 60, 1.0 / 120, 0.09] {
+            for advance in [0.0, 0.3, 1.0] {
+                var player = engine(nextStart: 2, advance: advance)
+                _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+                var time = 0.1
+                var handoffs = 0
+                var wasPreparing = false
+                while time < 2.6 {
+                    time += step
+                    let frame = player.render(.init(position: time, playing: true), delta: step)
+                    let next = try XCTUnwrap(frame.rows.first { $0.lineIndex == 1 })
+                    if next.visualFocus == .preparing && !wasPreparing { handoffs += 1 }
+                    wasPreparing = next.visualFocus == .preparing
+                    if next.visualFocus == .preparing && time < 2 {
+                        XCTAssertFalse(next.active)
+                        XCTAssertFalse(next.fillComplete)
+                        XCTAssertFalse(next.hdrHold)
+                        XCTAssertEqual(next.wordClock.time, 0, accuracy: 0.000_001)
+                    }
+                    XCTAssertEqual(frame.lyricTime, time, accuracy: 0.001)
+                }
+                XCTAssertEqual(handoffs, 1, "One handoff for step \(step) and advance \(advance)")
+            }
+        }
+    }
+
+    func testPauseAndFinalLineKeepFullFillWithoutCreatingNewHandoff() throws {
+        var player = engine()
+        _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+        let paused = player.render(.init(position: 1.1, playing: false), delta: 1)
+        let held = try XCTUnwrap(paused.rows.first { $0.lineIndex == 0 })
+        XCTAssertTrue(held.fillComplete)
+        XCTAssertTrue(held.hdrHold)
+        let stillPaused = player.render(.init(position: 1.1, playing: false), delta: 2)
+        XCTAssertEqual(try XCTUnwrap(stillPaused.rows.first { $0.lineIndex == 0 }).visualFocus, held.visualFocus)
+
+        var last = AMLLFrameEngine(document: AMLLDisplayDocument(lines: [
+            LyricLine(id: "last", text: "Last", start: 0, end: 1,
+                      words: [.init(text: "Last", start: 0, end: 1)], precision: .word),
+        ]), environment: AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32),
+                                   heights: [60])
+        _ = last.render(.init(position: 0.2, playing: true), delta: 0)
+        let end = last.render(.init(position: 1.2, playing: true), delta: 1)
+        XCTAssertEqual(try XCTUnwrap(end.rows.first).visualFocus, .holding)
+        XCTAssertTrue(try XCTUnwrap(end.rows.first).hdrHold)
     }
 }

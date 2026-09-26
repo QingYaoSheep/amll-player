@@ -490,7 +490,8 @@ final class AMLLNativeCanvas: UIView {
             guard sourceLines.indices.contains(row.lineIndex) else { return nil }
             let line = sourceLines[row.lineIndex]
             return line.start.isFinite && line.end.isFinite && line.end > line.start
-                && actualTime >= line.start && actualTime < line.end ? row.lineIndex : nil
+                && ((actualTime >= line.start && actualTime < line.end) || row.hdrHold)
+                ? row.lineIndex : nil
         }) : []
         let hdr = LyricsHDRFrameState(activeLineIndexes: activeHDR, outputBrightness: brightness)
         let indexes = Set(visible.map(\.lineIndex))
@@ -916,6 +917,8 @@ private final class AMLLCompositeRow: UIView {
         var clock = AMLLWordAnimationClock()
         clock.enable(at: max(0, lyricTime - cue.start))
         independent.wordClock = clock
+        independent.fillComplete = cue.precision == .word && lyricTime >= cue.end
+        independent.hdrHold = false
         independent.active = lyricTime >= cue.start && lyricTime < cue.end
         if cue.precision == .line, !independent.active {
             independent.opacity *= row.darkAlpha
@@ -1256,7 +1259,9 @@ private final class AMLLNativeRow: UIView {
             let feather = textLayout.font.lineHeight * configuration.gradientWidth
             // Original mask WAAPI animations advance independently between enable/seek
             // events, pause with playback and retain their current time on disable.
-            let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex, words: maskWords, feather: feather) - entry.advance
+            let edge = row.fillComplete ? entry.fragment.rect.width + feather
+                : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
+                                    words: maskWords, feather: feather) - entry.advance
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
             entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
@@ -1288,8 +1293,9 @@ private final class AMLLNativeRow: UIView {
             entry.layer.shadowOpacity = Float(presentation?.glowOpacity ?? 0)
             entry.layer.shadowOffset = .zero
             let feather = textLayout.font.lineHeight * configuration.gradientWidth
-            let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
-                                         words: maskWords, feather: feather) - entry.advance
+            let edge = row.fillComplete ? entry.fragment.rect.width + feather
+                : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
+                                    words: maskWords, feather: feather) - entry.advance
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
             entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
@@ -1325,15 +1331,17 @@ private final class AMLLNativeRow: UIView {
                                 feather: 0, dark: opacity, bright: opacity))
         } else {
             for entry in words where !entry.layer.isHidden {
-                let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
-                                             words: maskWords, feather: feather) - entry.advance
+                let edge = row.fillComplete ? entry.fragment.rect.width + feather
+                    : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
+                                        words: maskWords, feather: feather) - entry.advance
                 pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
                                     rtl: entry.fragment.rtl, edge: edge, feather: feather,
                                     dark: row.darkAlpha, bright: row.brightAlpha))
             }
             for entry in characters {
-                let edge = AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
-                                             words: maskWords, feather: feather) - entry.advance
+                let edge = row.fillComplete ? entry.fragment.rect.width + feather
+                    : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
+                                        words: maskWords, feather: feather) - entry.advance
                 pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
                                     rtl: entry.fragment.rtl, edge: edge, feather: feather,
                                     dark: row.darkAlpha, bright: row.brightAlpha,

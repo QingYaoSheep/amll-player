@@ -392,7 +392,9 @@ final class AMLLVisualActivityTests: XCTestCase {
         defer { canvas.stop(); canvas.removeFromSuperview() }
         var position = 0.1
         canvas.position = { position }
-        canvas.configure(document: document, configuration: .init(), input: .init(position: position, playing: true),
+        var configuration = LyricsRenderConfiguration()
+        configuration.advance = 0 // Match the explicit 1.4 s handoff boundary of this fixture.
+        canvas.configure(document: document, configuration: configuration, input: .init(position: position, playing: true),
                          active: false, reduceMotion: false)
         canvas.advanceFrame(delta: 0)
         position = 1.39

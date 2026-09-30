@@ -262,6 +262,7 @@ struct AMLLFrameEngine {
         var blur = 0.0
         var mainCompleted = false
         var visualActive = false
+        var backgroundVisualActive = false
         var mainSinging = false
         var backgroundSinging = false
         var mainFocusRetained = false
@@ -521,21 +522,21 @@ struct AMLLFrameEngine {
             layoutGroups(playing: input.playing, seeking: seeking, frameStart: animationTime - elapsed)
             dirty = false
         }
-        for index in motions.indices {
-            motions[index].y.advance(to: animationTime)
-            motions[index].slide.advance(to: animationTime)
-        }
         let forceAlpha = seeking || firstFrame || environment.reduceMotion
         if let pending = pendingVisualFocus, !browsing, pending.startTime <= animationTime {
             let boundary = max(animationTime - elapsed, pending.startTime)
             advanceAppearance(delta: boundary - (animationTime - elapsed), forceAlpha: forceAlpha)
             selectVisualFocus(pending.index)
             pendingVisualFocus = nil
-            layoutGroups(playing: input.playing, seeking: false,
-                         frameStart: boundary, appearanceOnly: true)
+            layoutGroups(playing: input.playing, seeking: false, frameStart: boundary)
+            dirty = false
             advanceAppearance(delta: animationTime - boundary, forceAlpha: forceAlpha)
         } else {
             advanceAppearance(delta: elapsed, forceAlpha: forceAlpha)
+        }
+        for index in motions.indices {
+            motions[index].y.advance(to: animationTime)
+            motions[index].slide.advance(to: animationTime)
         }
         var rows: [AMLLFrameState.Row] = []
         rows.reserveCapacity(document.groups.count * 2)
@@ -569,7 +570,7 @@ struct AMLLFrameEngine {
             let bgFirst = group.backgroundFirst && !environment.alwaysPostpositionBackground
             let bgHeight = group.background.map(height) ?? 0
             let backgroundVisible = motion.active || !input.playing
-            let bgAdvance = bgFirst ? bgHeight * progress + (backgroundVisible ? environment.fontSize * 0.3 : 0) : 0
+            let bgAdvance = bgFirst ? bgHeight * progress : 0
             let y = (yPosition * 10).rounded() / 10
             rows.append(.init(lineIndex: group.main, groupIndex: index, y: y + padding + bgAdvance,
                               scale: mainScalePosition / 100, brightAlpha: motion.mainAlpha.bright,
@@ -583,8 +584,9 @@ struct AMLLFrameEngine {
             if let background = group.background {
                 let backgroundState: AMLLFrameState.Row.VisualFocus = motion.backgroundSinging ? .current
                     : motion.backgroundFocusRetained && motion.backgroundCompleted ? .holding
-                    : motion.backgroundCompleted ? .passed : .waiting
-                let top = bgFirst ? y + padding - bgHeight * (1 - progress) : y + padding + height(group.main) + environment.fontSize * 0.3
+                    : motion.backgroundCompleted ? .passed
+                    : motion.backgroundVisualActive && !browsing ? .preparing : .waiting
+                let top = bgFirst ? y + padding - bgHeight * (1 - progress) : y + padding + height(group.main)
                 rows.append(.init(lineIndex: background, groupIndex: index, y: top + bgHeight * slidePosition / 100,
                                   scale: backgroundScalePosition / 100 * (0.8 + progress * 0.2),
                                   brightAlpha: motion.backgroundAlpha.bright, darkAlpha: motion.backgroundAlpha.dark,
@@ -661,14 +663,16 @@ struct AMLLFrameEngine {
                 motions[index].opacityTransition.update(elapsed)
                 motions[index].blurTransition.update(elapsed)
             }
+            // Completed rows use the played mask immediately at handoff.
+            // Their size spring can finish independently without re-brightening.
             let mainAppearanceScale = environment.enableScale ? (environment.enableSpring ? motions[index].mainScale.position : motions[index].mainScaleTransition.value) / 100
                 : (motions[index].visualActive ? 1 : 0.97)
             let backgroundAppearanceScale = environment.enableScale ? (environment.enableSpring ? motions[index].backgroundScale.position : motions[index].backgroundScaleTransition.value) / 100
-                : ((motions[index].backgroundSinging || motions[index].backgroundFocusRetained) ? 1 : 0.97)
-            motions[index].mainAlpha.update(scale: mainAppearanceScale,
+                : (motions[index].backgroundVisualActive ? 1 : 0.97)
+            motions[index].mainAlpha.update(scale: motions[index].mainCompleted && !motions[index].visualActive ? 0.97 : mainAppearanceScale,
                                             gradient: motions[index].visualActive, delta: elapsed, force: forceAlpha)
-            motions[index].backgroundAlpha.update(scale: backgroundAppearanceScale,
-                                                  gradient: motions[index].backgroundSinging || motions[index].backgroundFocusRetained, delta: elapsed, force: forceAlpha)
+            motions[index].backgroundAlpha.update(scale: motions[index].backgroundCompleted && !motions[index].backgroundVisualActive ? 0.97 : backgroundAppearanceScale,
+                                                  gradient: motions[index].backgroundVisualActive, delta: elapsed, force: forceAlpha)
         }
     }
 
@@ -676,10 +680,16 @@ struct AMLLFrameEngine {
         for index in motions.indices where index != incoming {
             if !motions[index].mainSinging, motions[index].mainFocusRetained {
                 motions[index].mainFocusRetained = false
+                if motions[index].mainCompleted {
+                    motions[index].mainAlpha.update(scale: 0.97, gradient: false, delta: 0, force: true)
+                }
                 dirty = true
             }
             if !motions[index].backgroundSinging, motions[index].backgroundFocusRetained {
                 motions[index].backgroundFocusRetained = false
+                if motions[index].backgroundCompleted {
+                    motions[index].backgroundAlpha.update(scale: 0.97, gradient: false, delta: 0, force: true)
+                }
                 dirty = true
             }
         }
@@ -693,24 +703,26 @@ struct AMLLFrameEngine {
         }
     }
 
-    private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double,
-                                       appearanceOnly: Bool = false)
-    {
-        let active = motions.map { $0.mainSinging || $0.backgroundSinging || $0.backgroundFocusRetained }
+    private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double) {
+        for index in motions.indices {
+            let preparesBackground = document.groups[index].background != nil && visualFocus == index
+                && !browsing && !motions[index].backgroundCompleted
+            motions[index].backgroundVisualActive = motions[index].backgroundSinging
+                || motions[index].backgroundFocusRetained || preparesBackground
+        }
+        let active = motions.map { $0.mainSinging || $0.backgroundVisualActive }
         let groupHeights = document.groups.enumerated().map { index, group in
             height(group.main) + environment.fontSize * 0.8
-                + (active[index] || !playing ? group.background.map { height($0) + environment.fontSize * 0.3 } ?? 0 : 0)
+                + (active[index] || !playing ? group.background.map { height($0) } ?? 0 : 0)
         }
         let preceding = groupHeights.prefix(timeline.focus).reduce(0, +)
-        if browsing && !appearanceOnly {
+        if browsing {
             // Automatic focus can advance while the user is reading. Keep
             // the browsed content stationary until the release boundary.
             scrollOffset += previousPreceding - preceding
         }
-        if !appearanceOnly {
-            previousPreceding = preceding
-            scrollMinimum = -preceding
-        }
+        previousPreceding = preceding
+        scrollMinimum = -preceding
         var y = -scrollOffset - preceding + environment.height * environment.alignPosition
         if let interlude, interlude.anchor != -1 {
             y -= environment.dotHeight + environment.fontSize * 0.8
@@ -752,19 +764,19 @@ struct AMLLFrameEngine {
             let hiddenSlide = group.backgroundFirst && !environment.alwaysPostpositionBackground ? 80.0 : -80.0
             let slide = active[index] || !playing ? 0 : hiddenSlide
             let mainScale = !focused && environment.enableScale && (playing || visualFocus != nil) ? 97.0 : 100
-            let bgFocused = motions[index].backgroundSinging || motions[index].backgroundFocusRetained
+            let bgFocused = motions[index].backgroundVisualActive
             let bgScale = !bgFocused && playing && environment.enableScale ? 75.0 : 100
             // Reduce Motion is a source-defined accessibility variant: it
             // keeps the AMLL geometry but resolves every transition in the
             // same frame instead of leaving opacity/blur on a stale value.
             let immediate = seeking || firstFrame || environment.reduceMotion
             let immediatePosition = immediate || browsing || positionReset
-            if !appearanceOnly, motions[index].y.target != y || motions[index].slide.target != slide {
+            if motions[index].y.target != y || motions[index].slide.target != slide {
                 if !revisedPositions {
                     positionRevision &+= 1; revisedPositions = true
                 }
             }
-            if !appearanceOnly, immediatePosition {
+            if immediatePosition {
                 motions[index].y.setPosition(y, at: frameStart)
                 motions[index].slide.setPosition(slide, at: frameStart)
                 motions[index].yTransition.setPosition(y)
@@ -778,13 +790,13 @@ struct AMLLFrameEngine {
                 motions[index].opacityTransition.setPosition(motions[index].opacity)
                 motions[index].blurTransition.setPosition(blur)
             } else if !environment.enableSpring {
-                if !appearanceOnly, !immediatePosition {
+                if !immediatePosition {
                     motions[index].yTransition.setTarget(y)
                     motions[index].slideTransition.setTarget(slide)
                 }
                 motions[index].mainScaleTransition.setTarget(mainScale)
                 motions[index].backgroundScaleTransition.setTarget(bgScale)
-                if !appearanceOnly, !immediatePosition {
+                if !immediatePosition {
                     motions[index].y.setPosition(y, at: frameStart)
                     motions[index].slide.setPosition(slide, at: frameStart)
                 }
@@ -793,9 +805,10 @@ struct AMLLFrameEngine {
                 motions[index].opacityTransition.setTarget(motions[index].opacity, duration: 0.4)
                 motions[index].blurTransition.setTarget(blur, duration: 0.4)
             } else {
-                if !appearanceOnly, !immediatePosition {
+                if !immediatePosition {
                     motions[index].y.setTarget(y, startTime: frameStart + delay, at: frameStart, revision: positionRevision)
-                    motions[index].slide.setTarget(slide, startTime: frameStart + delay, at: frameStart, revision: positionRevision)
+                    // The local background reveal shares the focus event; do not queue a second stagger.
+                    motions[index].slide.setTarget(slide, startTime: frameStart, at: frameStart, revision: positionRevision)
                 }
                 // DomLyricLine.setTransform deliberately does not delay its scale spring.
                 if motions[index].mainScale.target != mainScale {
@@ -804,10 +817,8 @@ struct AMLLFrameEngine {
                 if motions[index].backgroundScale.target != bgScale {
                     motions[index].backgroundScale.setTarget(bgScale)
                 }
-                if !appearanceOnly {
-                    motions[index].yTransition.setPosition(y)
-                    motions[index].slideTransition.setPosition(slide)
-                }
+                motions[index].yTransition.setPosition(y)
+                motions[index].slideTransition.setPosition(slide)
                 motions[index].mainScaleTransition.setPosition(mainScale)
                 motions[index].backgroundScaleTransition.setPosition(bgScale)
                 motions[index].opacityTransition.setTarget(motions[index].opacity, duration: 0.4)
@@ -816,7 +827,7 @@ struct AMLLFrameEngine {
             if browsing {
                 motions[index].blurTransition.setPosition(0)
             }
-            if !appearanceOnly, !seeking, !browsing, playing, !environment.reduceMotion,
+            if !seeking, !browsing, playing, !environment.reduceMotion,
                visualFocus != nil, index == timeline.focus, visualFocus != index
             {
                 pendingVisualFocus = (index: index, startTime: environment.enableSpring
@@ -830,9 +841,7 @@ struct AMLLFrameEngine {
                 }
             }
         }
-        if !appearanceOnly {
-            scrollMaximum = max(scrollMinimum, y + scrollOffset - environment.height / 2)
-            positionReset = false
-        }
+        scrollMaximum = max(scrollMinimum, y + scrollOffset - environment.height / 2)
+        positionReset = false
     }
 }

@@ -358,10 +358,10 @@ final class AMLLCoreTextLayout {
         var fragments: [WordFragment] = []
         var characterFragments: [CharacterFragment] = []
         var rubyFragments: [RubyFragment] = []
-        // lyricBgLine's nested main line carries 1.2em vertical padding in
-        // the source CSS; the ordinary wrapper padding is supplied by the
-        // frame engine, so only the background-specific inset belongs here.
-        let backgroundPadding = line.isBackground ? font.pointSize * 1.2 : 0
+        // The original CSS uses 1.2em. The native compact secondary voice
+        // uses 0.4em per the requested spacing; this is the entire inter-voice
+        // gap, without an additional inset from the group layout.
+        let backgroundPadding = line.isBackground ? font.pointSize * 0.4 : 0
         var y: CGFloat = backgroundPadding
         let mainHeight = max(font.lineHeight, font.pointSize * 1.2)
         // Segmentation can split one provider word into several atoms.

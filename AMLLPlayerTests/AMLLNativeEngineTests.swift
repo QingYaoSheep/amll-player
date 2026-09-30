@@ -491,28 +491,29 @@ final class AMLLNativeEngineTests: XCTestCase {
 
     func testPausedBackgroundOccupiesFlowAndKeepsItsOwnMaskScale() throws {
         let lines = [
+            LyricLine(id: "previous", text: "Previous", start: 0, end: 0.5),
             LyricLine(id: "main", text: "Lead", start: 1, end: 3),
             LyricLine(id: "background", text: "Echo", start: 1, end: 3, isBackground: true),
             LyricLine(id: "next", text: "Next", start: 8, end: 10),
         ]
         var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
         environment.enableSpring = false
-        var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines), environment: environment, heights: [60, 30, 60])
+        var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines), environment: environment, heights: [60, 60, 30, 60])
         let playing = engine.render(.init(position: 0, playing: true), delta: 0)
         _ = engine.render(.init(position: 0, playing: false), delta: 0)
         var paused = engine.render(.init(position: 0, playing: false), delta: 0)
         for _ in 0 ..< 30 {
             paused = engine.render(.init(position: 0, playing: false), delta: 1.0 / 60)
         }
-        let background = try XCTUnwrap(paused.rows.first { $0.lineIndex == 1 })
+        let background = try XCTUnwrap(paused.rows.first { $0.lineIndex == 2 })
         XCTAssertFalse(background.hidden)
         XCTAssertGreaterThan(background.opacity, 0)
         XCTAssertEqual(background.scale, 1, accuracy: 0.000_001)
         XCTAssertEqual(background.darkAlpha, 0.4, accuracy: 0.000_001)
         // CSS :not(.playing) puts inactive background wrappers back into normal flow.
-        let before = try XCTUnwrap(playing.rows.first { $0.lineIndex == 2 })
-        let after = try XCTUnwrap(paused.rows.first { $0.lineIndex == 2 })
-        XCTAssertEqual(after.y - before.y, 30 + 32 * 0.3, accuracy: 0.000_001)
+        let before = try XCTUnwrap(playing.rows.first { $0.lineIndex == 3 })
+        let after = try XCTUnwrap(paused.rows.first { $0.lineIndex == 3 })
+        XCTAssertEqual(after.y - before.y, 30, accuracy: 0.000_001)
     }
 
     @MainActor

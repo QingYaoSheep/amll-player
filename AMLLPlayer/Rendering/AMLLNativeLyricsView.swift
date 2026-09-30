@@ -124,6 +124,7 @@ final class AMLLNativeCanvas: UIView {
     private var hdrOffset = 0.0
     #if DEBUG
         var hdrCapabilitiesOverride: LyricsHDRCapabilities?
+        private(set) var hdrFrameState: LyricsHDRFrameState?
         private var controlledReplay = false
     #endif
     private(set) var frameState: AMLLFrameState?
@@ -501,6 +502,9 @@ final class AMLLNativeCanvas: UIView {
                 ? row.lineIndex : nil
         }) : []
         let hdr = LyricsHDRFrameState(activeLineIndexes: activeHDR, outputBrightness: brightness)
+        #if DEBUG
+            hdrFrameState = hdr
+        #endif
         let indexes = Set(visible.map(\.lineIndex))
         for index in Array(rowViews.keys) where !indexes.contains(index) {
             if let view = rowViews.removeValue(forKey: index) {

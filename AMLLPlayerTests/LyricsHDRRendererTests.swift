@@ -93,12 +93,14 @@ final class LyricsHDRRendererTests: XCTestCase {
         func metalCount(_ layer: CALayer) -> Int {
             (layer is CAMetalLayer ? 1 : 0) + (layer.sublayers ?? []).reduce(0) { $0 + metalCount($1) }
         }
-        XCTAssertEqual(metalCount(canvas.layer), 0)
+        XCTAssertTrue(try XCTUnwrap(canvas.hdrFrameState).activeLineIndexes.isEmpty)
         time = 1
         canvas.advanceFrame(delta: 1 / 120)
         XCTAssertFalse(try XCTUnwrap(canvas.frameState?.rows.first).fillComplete)
         XCTAssertEqual(try XCTUnwrap(canvas.frameState?.rows.first).wordClock.time, time, accuracy: 0.001)
-        XCTAssertGreaterThan(metalCount(canvas.layer), 0, "Paused HDR must use the acknowledged seek time, not the old request frame")
+        XCTAssertEqual(try XCTUnwrap(canvas.hdrFrameState).activeLineIndexes, [0],
+                       "Paused HDR must use the acknowledged seek time, not the old request frame")
+        XCTAssertGreaterThan(metalCount(canvas.layer), 0, "Eligible highlighter must have a real Metal replacement layer")
     }
 
     func testPausedCanvasReusesGlyphStateButSeekInvalidatesIt() throws {

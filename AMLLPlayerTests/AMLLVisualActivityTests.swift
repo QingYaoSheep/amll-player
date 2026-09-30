@@ -19,6 +19,63 @@ final class AMLLVisualActivityTests: XCTestCase {
                                heights: Array(repeating: 60, count: lines.count))
     }
 
+    func testDelayedBackwardSeekClearsCompletionForEveryPreviouslySungVoice() {
+        for step in [1.0 / 60, 1.0 / 120, 0.037] {
+            for playing in [false, true] {
+                var engine = makeEngine([(0, 4), (1, 3), (5, 8), (9, 12)], background: 1)
+                _ = engine.render(.init(position: 0.2, playing: true), delta: 0)
+                _ = engine.render(.init(position: 12.5, playing: true), delta: 12.3)
+                engine.handle(.beginBrowsing)
+                engine.handle(.browseBy(-120))
+                // AppModel publishes the seek revision before Spotify returns its new position.
+                _ = engine.render(.init(position: 12.5, playing: playing, seekRevision: 1), delta: step)
+                let rewound = engine.render(.init(position: 1.5, playing: playing, seekRevision: 1), delta: step)
+                XCTAssertFalse(rewound.browsing)
+                for row in rewound.rows {
+                    XCTAssertFalse(row.fillComplete, "A previous playthrough cannot fill the new timeline")
+                    XCTAssertFalse(row.hdrHold)
+                }
+                XCTAssertTrue(rewound.rows[0].active)
+                XCTAssertTrue(rewound.rows[1].active)
+                XCTAssertEqual(rewound.rows[0].wordClock.time, 1.5, accuracy: 0.001)
+                XCTAssertEqual(rewound.rows[1].wordClock.time, 0.5, accuracy: 0.001)
+                let advancing = engine.render(.init(position: playing ? 1.5 + step : 1.5,
+                                                    playing: playing, seekRevision: 1), delta: step)
+                XCTAssertEqual(advancing.rows[0].wordClock.time, playing ? 1.5 + step : 1.5, accuracy: 0.001)
+                XCTAssertFalse(advancing.rows[0].fillComplete)
+                XCTAssertFalse(advancing.rows[2].fillComplete)
+            }
+        }
+    }
+
+    func testDelayedSeekWithinActiveSentenceReanchorsWordClock() {
+        var engine = makeEngine([(0, 4), (5, 8)])
+        _ = engine.render(.init(position: 3, playing: true), delta: 0)
+        _ = engine.render(.init(position: 3, playing: true, seekRevision: 1), delta: 0)
+        let rewound = engine.render(.init(position: 0.5, playing: true, seekRevision: 1), delta: 1 / 120)
+        XCTAssertEqual(rewound.rows[0].wordClock.time, 0.5, accuracy: 0.001)
+        XCTAssertFalse(rewound.rows[0].fillComplete)
+        XCTAssertTrue(rewound.rows[0].active)
+    }
+
+    func testDelayedSeekIntoEarlierGapClearsFutureHoldAndKeepsPastFill() {
+        var engine = makeEngine([(0, 1), (2, 3), (4, 5)])
+        _ = engine.render(.init(position: 0.2, playing: true), delta: 0)
+        _ = engine.render(.init(position: 5.2, playing: true), delta: 5)
+        _ = engine.render(.init(position: 5.2, playing: true, seekRevision: 1), delta: 0)
+        let rewound = engine.render(.init(position: 1.2, playing: true, seekRevision: 1), delta: 1 / 60)
+        XCTAssertTrue(rewound.rows[0].fillComplete)
+        for row in rewound.rows.dropFirst() {
+            XCTAssertFalse(row.fillComplete)
+            XCTAssertFalse(row.hdrHold)
+            XCTAssertFalse(row.wordClock.enabled)
+        }
+        let singing = engine.render(.init(position: 2.2, playing: true, seekRevision: 1), delta: 1)
+        XCTAssertFalse(singing.rows[1].fillComplete)
+        XCTAssertTrue(singing.rows[1].active)
+        XCTAssertEqual(singing.rows[1].wordClock.time, 0.2, accuracy: 0.001)
+    }
+
     func testOverlappingRowsSingIndependentlyWithoutStealingScrollAnchor() {
         for step in [1.0 / 60, 1.0 / 120, 0.037] {
             var engine = makeEngine([(0, 4), (1, 3), (1.5, 5), (6, 7)])

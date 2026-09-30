@@ -337,6 +337,80 @@ final class AMLLVisualActivityTests: XCTestCase {
         }
     }
 
+    func testCompletedRowRestoresOrdinarySizeAndBrightnessAtTheUpwardDeadline() {
+        for step in [1.0 / 60, 1.0 / 120, 0.037] {
+            var engine = makeEngine([(0, 1), (2, 3)])
+            _ = engine.render(.init(position: 0.1, playing: true), delta: 0)
+            let held = engine.render(.init(position: 1.39, playing: true), delta: 1.29)
+            XCTAssertEqual(held.rows[0].scale, 1, accuracy: 0.000_001)
+            XCTAssertTrue(held.rows[0].hdrHold)
+            // Scheduling starts now, before a single pixel of upward motion.
+            let released = engine.render(.init(position: 1.41, playing: true), delta: 0)
+            XCTAssertEqual(released.rows[0].y, held.rows[0].y, accuracy: 0.001)
+            XCTAssertEqual(released.rows[0].visualFocus, .passed)
+            XCTAssertEqual(released.rows[0].scale, 0.97, accuracy: 0.000_001)
+            XCTAssertEqual(released.rows[0].brightAlpha, 0.2, accuracy: 0.001)
+            XCTAssertEqual(released.rows[0].darkAlpha, 0.2, accuracy: 0.001)
+            XCTAssertFalse(released.rows[0].hdrHold)
+            XCTAssertTrue(released.rows[0].fillComplete)
+            let moving = engine.render(.init(position: 1.41, playing: true), delta: step)
+            XCTAssertLessThan(moving.rows[0].y, held.rows[0].y)
+            XCTAssertEqual(moving.rows[0].scale, 0.97, accuracy: 0.000_001)
+            XCTAssertLessThan(moving.rows[0].opacity * moving.rows[0].brightAlpha,
+                              held.rows[0].opacity * held.rows[0].brightAlpha)
+            XCTAssertNil(moving.rows[1].positionMotion?.startedAt)
+        }
+    }
+
+    func testCompletedBackgroundRetiresWithoutShrinkingItsStillSingingMain() {
+        var engine = makeEngine([(0, 4), (0.1, 1), (2, 3)], background: 1)
+        _ = engine.render(.init(position: 0.2, playing: true), delta: 0)
+        let held = engine.render(.init(position: 1.2, playing: true), delta: 1)
+        XCTAssertTrue(held.rows[1].hdrHold)
+        let handedOff = engine.render(.init(position: 2.01, playing: true), delta: 1 / 120)
+        XCTAssertTrue(handedOff.rows[0].active)
+        XCTAssertEqual(handedOff.rows[0].scale, 1, accuracy: 0.001)
+        XCTAssertGreaterThan(handedOff.rows[0].brightAlpha, handedOff.rows[0].darkAlpha)
+        XCTAssertEqual(handedOff.rows[1].visualFocus, .passed)
+        XCTAssertFalse(handedOff.rows[1].hdrHold)
+        XCTAssertEqual(handedOff.rows[1].scale, 0.75, accuracy: 0.001)
+        XCTAssertEqual(handedOff.rows[1].brightAlpha, 0.2, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testRealCanvasShrinksCompletedRowBeforeItsFirstUpwardPixel() throws {
+        let lines = [(0.0, 1.0), (2.0, 3.0)].enumerated().map { index, span in
+            LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
+                      words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
+        }
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "immediate-handoff",
+                                                       title: "Handoff", artists: []),
+                                      lines: lines, language: "en", selectionReason: "Same-frame handoff")
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        defer { canvas.stop(); canvas.removeFromSuperview() }
+        var position = 0.1
+        canvas.position = { position }
+        canvas.configure(document: document, configuration: .init(), input: .init(position: position, playing: true),
+                         active: false, reduceMotion: false)
+        canvas.advanceFrame(delta: 0)
+        position = 1.39
+        canvas.advanceFrame(delta: 1.29)
+        let view = try XCTUnwrap(canvas.subviews.first { $0.accessibilityIdentifier == "lyricRow.0" })
+        let heldPosition = view.layer.position
+        XCTAssertEqual(view.transform.a, 1, accuracy: 0.000_001)
+        let heldAlpha = view.alpha
+        position = 1.41
+        canvas.advanceFrame(delta: 0)
+        XCTAssertEqual(view.layer.position, heldPosition)
+        XCTAssertEqual(view.transform.a, 0.97, accuracy: 0.000_001)
+        let row = try XCTUnwrap(canvas.frameState?.rows.first)
+        XCTAssertEqual(row.brightAlpha, 0.2, accuracy: 0.001)
+        XCTAssertLessThan(view.alpha * row.brightAlpha, heldAlpha)
+        XCTAssertFalse(row.hdrHold)
+    }
+
     func testCompletedRowRetiresAtItsOwnUpwardStartBeforeIncomingSpringStarts() {
         for step in [1.0 / 60, 1.0 / 120, 0.037] {
             var engine = makeEngine([(0, 1), (2, 3)])

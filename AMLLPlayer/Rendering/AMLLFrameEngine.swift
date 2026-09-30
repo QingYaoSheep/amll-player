@@ -714,7 +714,7 @@ struct AMLLFrameEngine {
                 motions[index].blurTransition.update(elapsed)
             }
             // Completed rows use the played mask immediately at handoff.
-            // Their size spring can finish independently without re-brightening.
+            // Size and mask retire together; only position/blur continue their transition.
             let mainAppearanceScale = environment.enableScale ? (environment.enableSpring ? motions[index].mainScale.position : motions[index].mainScaleTransition.value) / 100
                 : (motions[index].visualActive ? 1 : 0.97)
             let backgroundAppearanceScale = environment.enableScale ? (environment.enableSpring ? motions[index].backgroundScale.position : motions[index].backgroundScaleTransition.value) / 100
@@ -731,6 +731,11 @@ struct AMLLFrameEngine {
         if !motions[index].mainSinging, motions[index].mainFocusRetained {
             motions[index].mainFocusRetained = false
             if motions[index].mainCompleted {
+                // A completed sentence retires at its own upward deadline.
+                // Do not leave a separate size spring displaying focus after handoff.
+                let scale = environment.enableScale ? 97.0 : 100
+                motions[index].mainScale.setPosition(scale)
+                motions[index].mainScaleTransition.setPosition(scale)
                 motions[index].mainAlpha.update(scale: 0.97, gradient: false, delta: 0, force: true)
             }
             dirty = true
@@ -738,6 +743,9 @@ struct AMLLFrameEngine {
         if !motions[index].backgroundSinging, motions[index].backgroundFocusRetained {
             motions[index].backgroundFocusRetained = false
             if motions[index].backgroundCompleted {
+                let scale = environment.enableScale ? 75.0 : 100
+                motions[index].backgroundScale.setPosition(scale)
+                motions[index].backgroundScaleTransition.setPosition(scale)
                 motions[index].backgroundAlpha.update(scale: 0.97, gradient: false, delta: 0, force: true)
             }
             dirty = true

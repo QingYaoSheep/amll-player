@@ -212,11 +212,12 @@ final class AMLLVisualActivityTests: XCTestCase {
                              words: [.init(text: "Echo", start: 0, end: 4)], isBackground: true, precision: .word)
         let font = UIFont.systemFont(ofSize: 22.4)
         let background = AMLLCoreTextLayout(line: line, width: 360, font: font, configuration: .init())
-        let first = try XCTUnwrap(background.rows.first)
-        XCTAssertEqual(first.origin.y - font.ascender, font.pointSize * 0.4, accuracy: 0.001)
         var main = line
         main.isBackground = false
         let lead = AMLLCoreTextLayout(line: main, width: 360, font: font, configuration: .init())
+        let backgroundWord = try XCTUnwrap(background.fragments.first)
+        let mainWord = try XCTUnwrap(lead.fragments.first)
+        XCTAssertEqual(backgroundWord.rect.minY - mainWord.rect.minY, font.pointSize * 0.4, accuracy: 0.001)
         XCTAssertEqual(background.size.height - lead.size.height, font.pointSize * 0.8, accuracy: 0.001)
     }
 

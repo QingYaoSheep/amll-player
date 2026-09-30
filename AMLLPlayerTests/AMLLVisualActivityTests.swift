@@ -136,6 +136,90 @@ final class AMLLVisualActivityTests: XCTestCase {
         XCTAssertLessThan(moved.rows[5].y, scheduled.rows[5].y)
     }
 
+    func testIncomingBackgroundPreparesWithItsMainBeforeItsOwnSingingTime() {
+        for step in [1.0 / 60, 1.0 / 120, 0.037] {
+            var engine = makeEngine([(0, 1), (2, 4), (2.5, 3.5), (5, 6)], background: 2)
+            _ = engine.render(.init(position: 0.1, playing: true), delta: 0)
+            let waiting = engine.render(.init(position: 1.39, playing: true), delta: 1.29)
+            let initialScale = waiting.rows[2].scale
+            var prepared = engine.render(.init(position: 1.41, playing: true), delta: 0.02)
+            for _ in 0 ..< 60 {
+                if prepared.rows[1].visualFocus == .preparing {
+                    break
+                }
+                prepared = engine.render(.init(position: 1.41, playing: true), delta: step)
+            }
+            XCTAssertEqual(prepared.rows[1].visualFocus, .preparing)
+            XCTAssertEqual(prepared.rows[2].visualFocus, .preparing)
+            XCTAssertGreaterThan(prepared.rows[2].scale, initialScale)
+            XCTAssertGreaterThan(prepared.rows[2].opacity, 0)
+            XCTAssertFalse(prepared.rows[2].hidden)
+            XCTAssertFalse(prepared.rows[2].active)
+            XCTAssertFalse(prepared.rows[2].wordClock.enabled)
+            XCTAssertFalse(prepared.rows[2].hdrHold)
+        }
+    }
+
+    func testCompletedHighlightReleasesWhileIncomingRowIsStillMoving() {
+        for step in [1.0 / 60, 1.0 / 120, 0.037] {
+            var engine = makeEngine([(0, 1), (2, 3)])
+            _ = engine.render(.init(position: 0.1, playing: true), delta: 0)
+            let held = engine.render(.init(position: 1.39, playing: true), delta: 1.29)
+            XCTAssertEqual(held.rows[0].visualFocus, .holding)
+            XCTAssertTrue(held.rows[0].hdrHold)
+            var handoff = engine.render(.init(position: 1.41, playing: true), delta: 0.02)
+            for _ in 0 ..< 60 {
+                if handoff.rows[1].visualFocus == .preparing {
+                    break
+                }
+                handoff = engine.render(.init(position: 1.41, playing: true), delta: step)
+            }
+            let incoming = handoff.rows[1]
+            let outgoing = handoff.rows[0]
+            XCTAssertEqual(incoming.visualFocus, .preparing)
+            XCTAssertGreaterThan(abs(incoming.y - 700 * 0.28 - 32 * 0.4), 1)
+            XCTAssertEqual(outgoing.visualFocus, .passed)
+            XCTAssertTrue(outgoing.fillComplete)
+            XCTAssertFalse(outgoing.hdrHold)
+            XCTAssertEqual(outgoing.brightAlpha, outgoing.darkAlpha, accuracy: 0.001)
+            XCTAssertEqual(outgoing.darkAlpha, 0.2, accuracy: 0.001)
+            let settled = engine.render(.init(position: 1.41, playing: true), delta: 1)
+            XCTAssertEqual(settled.rows[0].brightAlpha, settled.rows[0].darkAlpha, accuracy: 0.001)
+        }
+    }
+
+    func testBackgroundSpacingHasNoSecondOuterGapAboveOrBelowMain() {
+        for backgroundFirst in [false, true] {
+            let lines = [
+                LyricLine(id: "main", text: "Lead", start: backgroundFirst ? 1 : 0, end: 4,
+                          words: [.init(text: "Lead", start: backgroundFirst ? 1 : 0, end: 4)], precision: .word),
+                LyricLine(id: "echo", text: "Echo", start: 0, end: 4,
+                          words: [.init(text: "Echo", start: 0, end: 4)], isBackground: true, precision: .word),
+            ]
+            var engine = AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines),
+                                         environment: .init(width: 400, height: 700, screenWidth: 400, fontSize: 32),
+                                         heights: [60, 30])
+            let frame = engine.render(.init(position: 2, playing: true), delta: 0)
+            let gap = backgroundFirst ? frame.rows[0].y - frame.rows[1].y - 30
+                : frame.rows[1].y - frame.rows[0].y - 60
+            XCTAssertEqual(gap, 0, accuracy: 0.001)
+        }
+    }
+
+    @MainActor
+    func testBackgroundTextUsesCompactPaddingWithoutChangingMainLayout() throws {
+        let line = LyricLine(id: "echo", text: "Echo", start: 0, end: 4,
+                             words: [.init(text: "Echo", start: 0, end: 4)], isBackground: true, precision: .word)
+        let font = UIFont.systemFont(ofSize: 22.4)
+        let background = AMLLCoreTextLayout(line: line, width: 360, font: font, configuration: .init())
+        let first = try XCTUnwrap(background.rows.first)
+        XCTAssertEqual(first.origin.y - font.ascender, font.pointSize * 0.4, accuracy: 0.001)
+        var main = line
+        main.isBackground = false
+        let lead = AMLLCoreTextLayout(line: main, width: 360, font: font, configuration: .init())
+        XCTAssertEqual(background.size.height - lead.size.height, font.pointSize * 0.8, accuracy: 0.001)
+    }
+
     @MainActor
     func testRealCanvasUpdatesBothOverlappingRowsAndExportsSubmissionTiming() throws {
         let lines = [

@@ -138,12 +138,12 @@ final class ArtworkTransitionTests: XCTestCase {
         CVPixelBufferUnlockBaseAddress(pixels, [])
         surface.display(pixels)
         try await waitForImage(surface)
-        let original = try XCTUnwrap(surface.layer.contents as? CGImage)
+        let original = try presentedImage(surface)
         surface.frame.size = CGSize(width: 160, height: 240)
         surface.configure(videoSize: CGSize(width: 160, height: 500))
         surface.layoutSubviews()
         try await waitForImage(surface)
-        let resized = try XCTUnwrap(surface.layer.contents as? CGImage)
+        let resized = try presentedImage(surface)
         XCTAssertGreaterThan(resized.width, original.width)
         try surface.display(XCTUnwrap(buffer))
         surface.clear()
@@ -156,6 +156,15 @@ final class ArtworkTransitionTests: XCTestCase {
     func testInvalidGeometryDoesNotProduceAnOldTransition() {
         XCTAssertNil(ArtworkVideoTransitionImage.image(source: CIImage(color: .red).cropped(to: .zero),
                                                        videoSize: .zero, surfaceSize: CGSize(width: 100, height: 100), outputSize: CGSize(width: 100, height: 100)))
+    }
+
+    private func presentedImage(_ surface: ArtworkVideoTransition.Surface) throws -> CGImage {
+        let contents = try XCTUnwrap(surface.layer.contents)
+        guard CFGetTypeID(contents as CFTypeRef) == CGImageGetTypeID() else {
+            XCTFail("The transition must present a Core Graphics image")
+            throw NSError(domain: "ArtworkTransitionTests", code: 1)
+        }
+        return contents as! CGImage
     }
 
     private func waitForImage(_ surface: ArtworkVideoTransition.Surface) async throws {

@@ -192,6 +192,9 @@ final class AMLLNativeCanvas: UIView {
     @objc private func releaseOffscreenResources() {
         retainedRows.removeAll()
         retainedOrder.removeAll()
+        #if DEBUG
+            installedAt.removeAll(); firstSubmittedAt.removeAll()
+        #endif
         prewarmGeneration &+= 1
         preparedRows.removeAll()
         preparedOrder.removeAll()
@@ -278,7 +281,10 @@ final class AMLLNativeCanvas: UIView {
             layouts.removeAll()
             rowViews.values.forEach { $0.removeFromSuperview() }; rowViews.removeAll()
             retainedRows.removeAll(); retainedOrder.removeAll()
-            prewarmGeneration &+= 1
+            #if DEBUG
+            installedAt.removeAll(); firstSubmittedAt.removeAll()
+        #endif
+        prewarmGeneration &+= 1
             preparedRows.removeAll(); preparedOrder.removeAll(); preparingRows.removeAll()
             lastVisibleCenter = nil
             heights = display.lines.indices.map { makeLayout($0).original.size.height }
@@ -528,6 +534,9 @@ final class AMLLNativeCanvas: UIView {
                 }
                 rowViews[row.lineIndex] = view; addSubview(view)
             }
+            #if DEBUG
+                if installedAt[row.lineIndex] == nil { installedAt[row.lineIndex] = state.animationTime }
+            #endif
             let line = display.lines[row.lineIndex]
             let width = layouts[row.lineIndex]?.original.size.width ?? bounds.width - inset * 2
             let anchor = CGPoint(x: line.isDuet ? 1 : 0, y: 0.5)
@@ -544,6 +553,11 @@ final class AMLLNativeCanvas: UIView {
                                gain: gain, lyricTime: state.lyricTime,
                                row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
             if view.needsHDRRetry { needsFrame = true }
+            #if DEBUG
+                if !view.needsHDRRetry, firstSubmittedAt[row.lineIndex] == nil {
+                    firstSubmittedAt[row.lineIndex] = state.animationTime
+                }
+            #endif
         }
         if let interlude = state.interlude,
            let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
@@ -557,7 +571,7 @@ final class AMLLNativeCanvas: UIView {
         }
         trimRetainedRows()
         CATransaction.commit()
-        schedulePrewarm(visible: visible)
+        schedulePrewarm(visible: visible, rows: state.rows)
         if performanceRecordingEnabled {
             let finished = CACurrentMediaTime()
             let hdrTimings = hdrRenderer?.drainTimings()
@@ -594,7 +608,7 @@ final class AMLLNativeCanvas: UIView {
         }
     }
 
-    private func schedulePrewarm(visible: [AMLLFrameState.Row]) {
+    private func schedulePrewarm(visible: [AMLLFrameState.Row], rows: [AMLLFrameState.Row]) {
         guard active, window != nil,
               let first = visible.map(\.lineIndex).min(),
               let last = visible.map(\.lineIndex).max(), let display else { return }
@@ -602,8 +616,15 @@ final class AMLLNativeCanvas: UIView {
         let direction = center < (lastVisibleCenter ?? center) ? -1 : 1
         lastVisibleCenter = center
         let edge = direction > 0 ? last : first
-        for distance in 1 ... 2 where preparingRows.isEmpty {
-            let index = edge + direction * distance
+        // Prepare scheduled destinations before their delayed rows enter.
+        let incoming = rows.compactMap { row -> (index: Int, distance: Double)? in
+            guard let target = row.positionMotion?.target,
+                  target + heights[row.lineIndex] >= -bounds.height * 0.5,
+                  target <= bounds.height * 1.5 else { return nil }
+            return (row.lineIndex, abs(row.y - target))
+        }.sorted { $0.distance < $1.distance }.map(\.index)
+        let candidates = incoming + (1 ... 2).map { edge + direction * $0 }
+        for index in candidates where preparingRows.isEmpty {
             guard display.lines.indices.contains(index), rowViews[index] == nil,
                   retainedRows[index] == nil, preparedRows[index] == nil,
                   !preparingRows.contains(index), let layout = layouts[index] else { continue }
@@ -633,11 +654,22 @@ final class AMLLNativeCanvas: UIView {
     }
 
     #if DEBUG
+        private var installedAt: [Int: Double] = [:]
+        private var firstSubmittedAt: [Int: Double] = [:]
+
+        struct RowSubmissionTiming: Codable {
+            var lineIndex: Int
+            var installedAt: Double
+            /// Model submission, not proof that a GPU drawable reached screen.
+            var firstSubmittedAt: Double?
+        }
+
         struct ResourceCounts: Codable {
             var visibleRows: Int
             var retainedRows: Int
             var layouts: Int
             var layers: Int
+            var submissions: [RowSubmissionTiming]?
         }
 
         var resourceCounts: ResourceCounts {
@@ -648,7 +680,10 @@ final class AMLLNativeCanvas: UIView {
             return .init(visibleRows: rowViews.count, retainedRows: retainedRows.count,
                          layouts: layouts.count,
                          layers: Array(rowViews.values).reduce(0) { $0 + count($1.layer) }
-                             + Array(retainedRows.values).reduce(0) { $0 + count($1.layer) })
+                             + Array(retainedRows.values).reduce(0) { $0 + count($1.layer) },
+                         submissions: installedAt.keys.sorted().map {
+                             .init(lineIndex: $0, installedAt: installedAt[$0]!, firstSubmittedAt: firstSubmittedAt[$0])
+                         })
         }
 
         var glyphUpdateCount: Int {
@@ -709,6 +744,9 @@ final class AMLLNativeCanvas: UIView {
 
     func stop() {
         link?.invalidate(); link = nil; linkTarget = nil; lastTick = 0
+        #if DEBUG
+            installedAt.removeAll(); firstSubmittedAt.removeAll()
+        #endif
         prewarmGeneration &+= 1
         preparedRows.removeAll(); preparedOrder.removeAll(); preparingRows.removeAll()
     }

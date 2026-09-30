@@ -76,8 +76,10 @@ final class LyricsHDRRendererTests: XCTestCase {
         let line = LyricLine(id: "hdr-late", text: "First second", start: 0, end: 4,
                              words: [.init(text: "First ", start: 0, end: 2),
                                      .init(text: "second", start: 2, end: 4)], precision: .word)
+        let next = LyricLine(id: "hdr-next", text: "Next", start: 5, end: 7,
+                             words: [.init(text: "Next", start: 5, end: 7)], precision: .word)
         let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "hdr-late", title: "Seek", artists: []),
-                                      lines: [line], language: "en", selectionReason: "Paused HDR seek regression")
+                                      lines: [line, next], language: "en", selectionReason: "Paused HDR seek regression")
         var time = 5.0
         canvas.position = { time }
         var configuration = LyricsRenderConfiguration()
@@ -93,7 +95,7 @@ final class LyricsHDRRendererTests: XCTestCase {
         func metalCount(_ layer: CALayer) -> Int {
             (layer is CAMetalLayer ? 1 : 0) + (layer.sublayers ?? []).reduce(0) { $0 + metalCount($1) }
         }
-        XCTAssertTrue(try XCTUnwrap(canvas.hdrFrameState).activeLineIndexes.isEmpty)
+        XCTAssertEqual(try XCTUnwrap(canvas.hdrFrameState).activeLineIndexes, [1])
         time = 1
         canvas.advanceFrame(delta: 1 / 120)
         XCTAssertFalse(try XCTUnwrap(canvas.frameState?.rows.first).fillComplete)

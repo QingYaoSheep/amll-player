@@ -397,17 +397,20 @@ final class AMLLVisualActivityTests: XCTestCase {
         canvas.advanceFrame(delta: 0)
         position = 1.39
         canvas.advanceFrame(delta: 1.29)
-        let view = try XCTUnwrap(canvas.subviews.first { $0.accessibilityIdentifier == "lyricRow.0" })
+        let view = try XCTUnwrap(canvas.subviews.first { row in
+            row.subviews.contains { $0.accessibilityIdentifier == "lyricRow.0" }
+        })
+        let text = try XCTUnwrap(view.subviews.first { $0.accessibilityIdentifier == "lyricRow.0" })
         let heldPosition = view.layer.position
         XCTAssertEqual(view.transform.a, 1, accuracy: 0.000_001)
-        let heldAlpha = view.alpha
+        let heldAlpha = text.alpha
         position = 1.41
         canvas.advanceFrame(delta: 0)
         XCTAssertEqual(view.layer.position, heldPosition)
         XCTAssertEqual(view.transform.a, 0.97, accuracy: 0.000_001)
         let row = try XCTUnwrap(canvas.frameState?.rows.first)
         XCTAssertEqual(row.brightAlpha, 0.2, accuracy: 0.001)
-        XCTAssertLessThan(view.alpha * row.brightAlpha, heldAlpha)
+        XCTAssertLessThan(text.alpha * row.brightAlpha, heldAlpha)
         XCTAssertFalse(row.hdrHold)
     }
 

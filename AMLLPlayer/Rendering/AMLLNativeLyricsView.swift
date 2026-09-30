@@ -619,8 +619,8 @@ final class AMLLNativeCanvas: UIView {
         // Prepare scheduled destinations before their delayed rows enter.
         let incoming = rows.compactMap { row -> (index: Int, distance: Double)? in
             guard let target = row.positionMotion?.target,
-                  target + heights[row.lineIndex] >= -bounds.height * 0.5,
-                  target <= bounds.height * 1.5 else { return nil }
+                  max(row.y, target) + heights[row.lineIndex] >= -bounds.height * 0.5,
+                  min(row.y, target) <= bounds.height * 1.5 else { return nil }
             return (row.lineIndex, abs(row.y - target))
         }.sorted { $0.distance < $1.distance }.map(\.index)
         let candidates = incoming + (1 ... 2).map { edge + direction * $0 }

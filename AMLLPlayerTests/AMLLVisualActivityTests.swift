@@ -95,21 +95,21 @@ final class AMLLVisualActivityTests: XCTestCase {
     }
 
     func testAppearanceAdvancesOnlyAfterTheSharedPositionDeadline() throws {
-        var engine = makeEngine([(0, 1), (2, 3)], advance: 1)
+        var engine = makeEngine([(0, 1), (2, 3)], advance: 0.3)
         _ = engine.render(.init(position: 0.1, playing: true), delta: 0)
-        _ = engine.render(.init(position: 0.39, playing: true), delta: 0.29)
-        let waiting = engine.render(.init(position: 0.4, playing: true), delta: 0)
+        _ = engine.render(.init(position: 1.09, playing: true), delta: 0.99)
+        let waiting = engine.render(.init(position: 1.1, playing: true), delta: 0)
         let deadline = try XCTUnwrap(waiting.rows[1].positionMotion?.scheduledAt)
         var fine = engine
         var time = waiting.animationTime
         let end = deadline + 0.04
         while time < end {
             let delta = min(1.0 / 120, end - time)
-            _ = fine.render(.init(position: 0.4, playing: true), delta: delta)
+            _ = fine.render(.init(position: 1.1, playing: true), delta: delta)
             time += delta
         }
-        let fineFrame = fine.render(.init(position: 0.4, playing: true), delta: 0)
-        let coarse = engine.render(.init(position: 0.4, playing: true), delta: end - waiting.animationTime)
+        let fineFrame = fine.render(.init(position: 1.1, playing: true), delta: 0)
+        let coarse = engine.render(.init(position: 1.1, playing: true), delta: end - waiting.animationTime)
         XCTAssertEqual(coarse.rows[1].visualFocus, .preparing)
         XCTAssertFalse(coarse.rows[1].active)
         XCTAssertEqual(coarse.rows[1].scale, fineFrame.rows[1].scale, accuracy: 0.000_001)

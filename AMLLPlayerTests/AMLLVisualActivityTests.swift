@@ -151,7 +151,9 @@ final class AMLLVisualActivityTests: XCTestCase {
         func masks(_ layer: CALayer) -> [[Double]] {
             var result: [[Double]] = []
             if let gradient = layer as? CAGradientLayer {
-                result.append((gradient.locations ?? []).map(\.doubleValue))
+                result.append([Double(gradient.startPoint.x), Double(gradient.startPoint.y),
+                               Double(gradient.endPoint.x), Double(gradient.endPoint.y)]
+                        + (gradient.locations ?? []).map(\.doubleValue))
             }
             if let mask = layer.mask {
                 result += masks(mask)

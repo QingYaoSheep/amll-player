@@ -160,6 +160,47 @@ final class AMLLVisualActivityTests: XCTestCase {
         }
     }
 
+    func testBackwardClockCorrectionDoesNotRequeueRetirementOfASingingVoice() {
+        for background in [false, true] {
+            let spans: [(Double, Double)] = background ? [(0, 1), (0.1, 1), (2, 3)] : [(0, 1), (2, 3)]
+            var engine = makeEngine(spans, advance: 0.3, background: background ? 1 : nil)
+            _ = engine.render(.init(position: 0.1, playing: true), delta: 0)
+            _ = engine.render(.init(position: 1.01, playing: true), delta: 0.91)
+            _ = engine.render(.init(position: 1.11, playing: true), delta: 0.016)
+            // Spotify can correct its clock across an end without an explicit seek.
+            let corrected = engine.render(.init(position: 0.99, playing: true), delta: 0.016)
+            for row in corrected.rows.prefix(background ? 2 : 1) {
+                XCTAssertTrue(row.active)
+                XCTAssertEqual(row.visualFocus, .current)
+                XCTAssertTrue(row.wordClock.enabled)
+            }
+            XCTAssertEqual(corrected.lyricTime, 0.99, accuracy: 0.001)
+        }
+    }
+
+    func testCompletedRowRetiresAtItsOwnUpwardStartBeforeIncomingSpringStarts() {
+        for step in [1.0 / 60, 1.0 / 120, 0.037] {
+            var engine = makeEngine([(0, 1), (2, 3)])
+            _ = engine.render(.init(position: 0.1, playing: true), delta: 0)
+            let held = engine.render(.init(position: 1.39, playing: true), delta: 1.29)
+            XCTAssertEqual(held.rows[0].visualFocus, .holding)
+            _ = engine.render(.init(position: 1.41, playing: true), delta: 0)
+            let moved = engine.render(.init(position: 1.41, playing: true), delta: step)
+            let outgoing = moved.rows[0]
+            let incoming = moved.rows[1]
+            XCTAssertLessThan(outgoing.y, held.rows[0].y)
+            XCTAssertEqual(incoming.y, held.rows[1].y, accuracy: 0.001)
+            XCTAssertNil(incoming.positionMotion?.startedAt)
+            XCTAssertEqual(incoming.visualFocus, .waiting)
+            XCTAssertEqual(outgoing.visualFocus, .passed)
+            XCTAssertTrue(outgoing.fillComplete)
+            XCTAssertFalse(outgoing.hdrHold)
+            XCTAssertEqual(outgoing.brightAlpha, outgoing.darkAlpha, accuracy: 0.001)
+            XCTAssertEqual(outgoing.darkAlpha, 0.2, accuracy: 0.001)
+            XCTAssertGreaterThan(outgoing.blur, 0)
+        }
+    }
+
     func testCompletedHighlightReleasesWhileIncomingRowIsStillMoving() {
         for step in [1.0 / 60, 1.0 / 120, 0.037] {
             var engine = makeEngine([(0, 1), (2, 3)])

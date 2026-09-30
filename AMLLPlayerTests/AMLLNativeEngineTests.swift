@@ -724,7 +724,11 @@ final class AMLLFocusHandoffTests: XCTestCase {
             if state.focusGroup == 1 && incoming.visualFocus == .waiting {
                 sawWaitingTarget = true
                 waitingScale = incoming.scale
-                XCTAssertEqual(try XCTUnwrap(state.rows.first { $0.lineIndex == 0 }).visualFocus, .holding)
+                let outgoing = try XCTUnwrap(state.rows.first { $0.lineIndex == 0 })
+                // The outgoing row has an earlier stagger than the incoming row.
+                // Once its own motion starts it is played, even while Next waits.
+                let started = outgoing.positionMotion?.startedAt != nil
+                XCTAssertEqual(outgoing.visualFocus, started ? .passed : .holding)
             }
             if incoming.visualFocus == .preparing {
                 handoff = state
@@ -734,7 +738,7 @@ final class AMLLFocusHandoffTests: XCTestCase {
         let prepared = try XCTUnwrap(handoff)
         let incoming = try XCTUnwrap(prepared.rows.first { $0.lineIndex == 1 })
         let outgoing = try XCTUnwrap(prepared.rows.first { $0.lineIndex == 0 })
-        XCTAssertTrue(sawWaitingTarget, "The outgoing line must survive the queued spring delay")
+        XCTAssertTrue(sawWaitingTarget, "The incoming line must retain its own queued spring delay")
         XCTAssertGreaterThan(incoming.scale, waitingScale)
         XCTAssertFalse(incoming.fillComplete)
         XCTAssertFalse(incoming.hdrHold)

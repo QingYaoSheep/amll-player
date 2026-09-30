@@ -268,6 +268,7 @@ struct AMLLFrameEngine {
         var mainFocusRetained = false
         var backgroundCompleted = false
         var backgroundFocusRetained = false
+        var completedReleaseAt: Double?
     }
 
     let document: AMLLDisplayDocument
@@ -386,6 +387,7 @@ struct AMLLFrameEngine {
             for index in motions.indices {
                 motions[index].mainFocusRetained = false
                 motions[index].backgroundFocusRetained = false
+                motions[index].completedReleaseAt = nil
             }
         }
         if browsing, !touching, abs(scrollVelocity) > 0.001, elapsed > 0 {
@@ -523,17 +525,31 @@ struct AMLLFrameEngine {
             dirty = false
         }
         let forceAlpha = seeking || firstFrame || environment.reduceMotion
-        if let pending = pendingVisualFocus, !browsing, pending.startTime <= animationTime {
-            let boundary = max(animationTime - elapsed, pending.startTime)
-            advanceAppearance(delta: boundary - (animationTime - elapsed), forceAlpha: forceAlpha)
-            selectVisualFocus(pending.index)
-            pendingVisualFocus = nil
+        var appearanceTime = animationTime - elapsed
+        while !browsing {
+            var nextEvent = pendingVisualFocus?.startTime
+            for motion in motions {
+                if let deadline = motion.completedReleaseAt, deadline < (nextEvent ?? .infinity) {
+                    nextEvent = deadline
+                }
+            }
+            guard let nextEvent, nextEvent <= animationTime else { break }
+            let boundary = max(appearanceTime, nextEvent)
+            advanceAppearance(delta: boundary - appearanceTime, forceAlpha: forceAlpha)
+            for index in motions.indices {
+                if let deadline = motions[index].completedReleaseAt, deadline <= boundary {
+                    releaseVisualFocus(in: index)
+                }
+            }
+            if let pending = pendingVisualFocus, pending.startTime <= boundary {
+                selectVisualFocus(pending.index)
+                pendingVisualFocus = nil
+            }
             layoutGroups(playing: input.playing, seeking: false, frameStart: boundary)
             dirty = false
-            advanceAppearance(delta: animationTime - boundary, forceAlpha: forceAlpha)
-        } else {
-            advanceAppearance(delta: elapsed, forceAlpha: forceAlpha)
+            appearanceTime = boundary
         }
+        advanceAppearance(delta: animationTime - appearanceTime, forceAlpha: forceAlpha)
         for index in motions.indices {
             motions[index].y.advance(to: animationTime)
             motions[index].slide.advance(to: animationTime)
@@ -676,22 +692,27 @@ struct AMLLFrameEngine {
         }
     }
 
+    private mutating func releaseVisualFocus(in index: Int) {
+        motions[index].completedReleaseAt = nil
+        if !motions[index].mainSinging, motions[index].mainFocusRetained {
+            motions[index].mainFocusRetained = false
+            if motions[index].mainCompleted {
+                motions[index].mainAlpha.update(scale: 0.97, gradient: false, delta: 0, force: true)
+            }
+            dirty = true
+        }
+        if !motions[index].backgroundSinging, motions[index].backgroundFocusRetained {
+            motions[index].backgroundFocusRetained = false
+            if motions[index].backgroundCompleted {
+                motions[index].backgroundAlpha.update(scale: 0.97, gradient: false, delta: 0, force: true)
+            }
+            dirty = true
+        }
+    }
+
     private mutating func releaseCompletedFocus(except incoming: Int?) {
         for index in motions.indices where index != incoming {
-            if !motions[index].mainSinging, motions[index].mainFocusRetained {
-                motions[index].mainFocusRetained = false
-                if motions[index].mainCompleted {
-                    motions[index].mainAlpha.update(scale: 0.97, gradient: false, delta: 0, force: true)
-                }
-                dirty = true
-            }
-            if !motions[index].backgroundSinging, motions[index].backgroundFocusRetained {
-                motions[index].backgroundFocusRetained = false
-                if motions[index].backgroundCompleted {
-                    motions[index].backgroundAlpha.update(scale: 0.97, gradient: false, delta: 0, force: true)
-                }
-                dirty = true
-            }
+            releaseVisualFocus(in: index)
         }
     }
 
@@ -746,7 +767,8 @@ struct AMLLFrameEngine {
             let group = document.groups[index]
             let focused = motions[index].mainSinging || motions[index].mainFocusRetained
                 || (visualFocus == index && !browsing && !motions[index].mainCompleted)
-            let appearanceFocus = visualFocus ?? singingTimeline.focus
+            let appearanceFocus = motions[index].mainCompleted && !motions[index].mainFocusRetained
+                ? max(visualFocus ?? singingTimeline.focus, timeline.focus) : visualFocus ?? singingTimeline.focus
             motions[index].visualActive = focused
             motions[index].active = active[index]
             motions[index].opacity = environment.hidePassedLines && playing && !active[index] && !focused
@@ -826,6 +848,18 @@ struct AMLLFrameEngine {
             }
             if browsing {
                 motions[index].blurTransition.setPosition(0)
+            }
+            if seeking || browsing || positionReset {
+                motions[index].completedReleaseAt = nil
+            } else if index < timeline.focus, y < motions[index].y.position,
+                      (motions[index].mainCompleted && motions[index].mainFocusRetained && !motions[index].mainSinging)
+                      || (motions[index].backgroundCompleted && motions[index].backgroundFocusRetained && !motions[index].backgroundSinging),
+                      motions[index].completedReleaseAt == nil
+            {
+                // Retire the completed row when its OWN upward motion starts,
+                // independently of the incoming row's staggered spring deadline.
+                motions[index].completedReleaseAt = environment.enableSpring
+                    ? max(frameStart, motions[index].y.schedule.scheduledAt ?? frameStart) : frameStart
             }
             if !seeking, !browsing, playing, !environment.reduceMotion,
                visualFocus != nil, index == timeline.focus, visualFocus != index

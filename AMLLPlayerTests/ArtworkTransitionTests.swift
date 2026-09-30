@@ -160,7 +160,7 @@ final class ArtworkTransitionTests: XCTestCase {
 
     private func presentedImage(_ surface: ArtworkVideoTransition.Surface) throws -> CGImage {
         let contents = try XCTUnwrap(surface.layer.contents)
-        guard CFGetTypeID(contents as CFTypeRef) == CGImageGetTypeID() else {
+        guard CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else {
             XCTFail("The transition must present a Core Graphics image")
             throw NSError(domain: "ArtworkTransitionTests", code: 1)
         }

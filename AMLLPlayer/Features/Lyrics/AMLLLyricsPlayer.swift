@@ -55,7 +55,6 @@ struct AMLLLyricsPlayer: View {
                         let reflection = ArtworkReflectionGeometry.frame(cover: videoFrame, viewportHeight: geometry.size.height)
                         ArtworkReflection(frames: artworkReflectionFrames)
                             .frame(width: reflection.width, height: reflection.height)
-                            .scaleEffect(1.035, anchor: .top)
                             .clipped()
                             .position(x: reflection.midX, y: reflection.midY)
                             .accessibilityHidden(true)

@@ -33,21 +33,49 @@ final class ArtworkTransitionTests: XCTestCase {
         let image = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
                                                                     videoSize: CGSize(width: 200, height: 400), surfaceSize: CGSize(width: 200, height: 200),
                                                                     outputSize: CGSize(width: 200, height: 200), blurRadius: 0))
-        // 112 pt overlaps the real video and 88 pt extends below it.
+        // 136 pt overlaps the real video and 64 pt extends below it.
         for y in [100, 140, 180] {
             let actual = pixel(image, x: 100, y: y)
-            let expected = pixel(source, x: 100, y: y - 88)
+            let expected = pixel(source, x: 100, y: y - 64)
             for channel in 0 ..< 4 {
                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
             }
         }
-        for y in [0, 20, 80] {
+        for y in [0, 20, 60] {
             let actual = pixel(image, x: 100, y: y)
             let expected = pixel(source, x: 100, y: 0)
             for channel in 0 ..< 4 {
                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
             }
         }
+    }
+
+    func testWiderTransitionKeepsVideoPixelsAlignedAndExtendsOnlyTheEdges() throws {
+        let source = try XCTUnwrap(CIFilter(name: "CILinearGradient", parameters: [
+            "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 200, y: 0),
+            "inputColor0": CIColor.blue, "inputColor1": CIColor.red,
+        ])?.outputImage).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 400))
+        let image = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
+                                                                    videoSize: CGSize(width: 200, height: 400),
+                                                                    surfaceSize: CGSize(width: 264, height: 200),
+                                                                    outputSize: CGSize(width: 264, height: 200), blurRadius: 0))
+        for x in [0, 50, 100, 150, 199] {
+            let actual = pixel(image, x: x + 32, y: 100)
+            let expected = pixel(source, x: x, y: 36)
+            for channel in 0 ..< 4 {
+                XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
+            }
+        }
+        for (x, edge) in [(0, 0), (263, 199)] {
+            let actual = pixel(image, x: x, y: 100)
+            let expected = pixel(source, x: edge, y: 36)
+            for channel in 0 ..< 4 {
+                XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
+            }
+        }
+        let surface = ArtworkReflection.Surface(frame: CGRect(x: 0, y: 0, width: 200, height: 240))
+        XCTAssertEqual(surface.layer.opacity, 0.32, accuracy: 0.001)
+        XCTAssertGreaterThan(surface.layer.opacity, 0.24)
     }
 
     func testBlurProgressivelyRemovesDetailTowardsTheBottom() throws {
@@ -100,7 +128,7 @@ final class ArtworkTransitionTests: XCTestCase {
         let result = masked(source, mainMask)
             .transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - frame.maxY))
             .composited(over: masked(transition, tailMask)
-                .transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - tail.maxY)))
+                .transformed(by: CGAffineTransform(translationX: tail.minX, y: viewport.height - tail.maxY)))
             .composited(over: CIImage(color: .blue))
             .cropped(to: CGRect(origin: .zero, size: viewport))
         let boundary = Int(viewport.height - frame.maxY)

@@ -31,7 +31,7 @@ import SwiftUI
 
 enum ArtworkReflectionGeometry {
     static func frame(cover: CGRect, viewportHeight: CGFloat) -> CGRect {
-        CGRect(x: cover.minX, y: ceil(cover.maxY) + 49, width: cover.width,
+        CGRect(x: cover.minX, y: cover.maxY, width: cover.width,
                height: max(220, min(viewportHeight * 0.30, 340)))
     }
 }
@@ -82,6 +82,7 @@ struct ArtworkReflection: UIViewRepresentable {
                     .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
                     .transformed(by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: height))
                     .transformed(by: CGAffineTransform(scaleX: frame.size.width / crop.width, y: frame.size.height / height))
+                    .clampedToExtent()
                     .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 9 * frame.scale])
                     .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.06])
                 return context.createCGImage(image, from: CGRect(origin: .zero, size: frame.size))
@@ -93,7 +94,7 @@ struct ArtworkReflection: UIViewRepresentable {
             isOpaque = false
             isUserInteractionEnabled = false
             isAccessibilityElement = false
-            layer.opacity = 0.24
+            layer.opacity = 0.32
             fade.colors = [0.78, 0.58, 0.34, 0.15, 0.045, 0].map { UIColor(white: 1, alpha: $0).cgColor }
             fade.locations = [0, 0.22, 0.50, 0.72, 0.88, 1]
             layer.mask = fade
@@ -164,14 +165,16 @@ enum ArtworkVideoTransitionImage {
               videoSize.width > 0, videoSize.height > 0,
               surfaceSize.width > 0, surfaceSize.height > 0,
               outputSize.width > 0, outputSize.height > 0 else { return nil }
+        let pixelScaleX = outputSize.width / surfaceSize.width
         let pixelScaleY = outputSize.height / surfaceSize.height
+        let horizontalExtension = max(0, (surfaceSize.width - videoSize.width) / 2) * pixelScaleX
         let overlap = videoSize.height * AMLLImmersiveArtworkGeometry.overlapFraction
         let extensionHeight = max(0, surfaceSize.height - overlap) * pixelScaleY
         let image = source
             .transformed(by: CGAffineTransform(translationX: -source.extent.minX, y: -source.extent.minY))
-            .transformed(by: CGAffineTransform(scaleX: outputSize.width / source.extent.width,
+            .transformed(by: CGAffineTransform(scaleX: videoSize.width * pixelScaleX / source.extent.width,
                                                y: videoSize.height * pixelScaleY / source.extent.height))
-            .transformed(by: CGAffineTransform(translationX: 0, y: extensionHeight))
+            .transformed(by: CGAffineTransform(translationX: horizontalExtension, y: extensionHeight))
             .clampedToExtent()
         let output = CGRect(origin: .zero, size: outputSize)
         guard blurRadius > 0 else { return image.cropped(to: output) }

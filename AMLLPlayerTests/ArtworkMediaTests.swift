@@ -134,10 +134,10 @@ final class ArtworkMediaTests: XCTestCase {
         XCTAssertFalse(value.reflection ?? false)
     }
 
-    func testReflectionGeometryUsesSourceGapAndHeightLimits() {
+    func testReflectionGeometryAttachesExactlyToVideoBottomAndKeepsHeightLimits() {
         let cover = CGRect(x: 24, y: 95.4, width: 354, height: 354)
         let phone = ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: 874)
-        XCTAssertEqual(phone.minY, 499)
+        XCTAssertEqual(phone.minY, cover.maxY, accuracy: 0.000_001)
         XCTAssertEqual(phone.height, 262.2, accuracy: 0.001)
         XCTAssertEqual(phone.width, cover.width)
         XCTAssertEqual(ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: 400).height, 220)
@@ -174,6 +174,11 @@ final class ArtworkMediaTests: XCTestCase {
         let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: tall, viewportHeight: viewport.height)
         XCTAssertEqual(transition.minY, tall.maxY - tall.height * AMLLImmersiveArtworkGeometry.overlapFraction, accuracy: 0.001)
         XCTAssertGreaterThan(transition.maxY, tall.maxY)
+        XCTAssertGreaterThan(transition.width, tall.width)
+        XCTAssertEqual(transition.midX, tall.midX, accuracy: 0.001)
+        let reflection = ArtworkReflectionGeometry.frame(cover: tall, viewportHeight: viewport.height)
+        XCTAssertEqual(reflection.minY, tall.maxY, accuracy: 0.001)
+        XCTAssertLessThan(reflection.minY, transition.maxY)
     }
 
     func testLyricsCoverAndImmersiveResourceDisplayMatrix() {

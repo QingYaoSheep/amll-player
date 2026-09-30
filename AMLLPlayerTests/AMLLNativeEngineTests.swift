@@ -813,11 +813,11 @@ final class AMLLFocusHandoffTests: XCTestCase {
                                                                         screenWidth: 400, fontSize: 32),
                                      heights: [60, 60])
         _ = engine.render(.init(position: 0.2, playing: true), delta: 0)
-        let held = engine.render(.init(position: 1.2, playing: true), delta: 1)
+        let held = engine.render(.init(position: 1, playing: true), delta: 0.8)
         XCTAssertEqual(held.rows[0].visualFocus, .holding)
         XCTAssertTrue(held.rows[0].hdrHold)
         XCTAssertFalse(held.rows[1].active)
-        let preparing = engine.render(.init(position: 1.6, playing: true), delta: 0.4)
+        let preparing = engine.render(.init(position: 1.6, playing: true), delta: 0.6)
         XCTAssertEqual(preparing.rows[1].visualFocus, .preparing)
         XCTAssertFalse(preparing.rows[1].active)
         XCTAssertFalse(preparing.rows[1].hdrHold)

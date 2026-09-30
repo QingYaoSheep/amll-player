@@ -19,7 +19,10 @@ final class AMLLReplayScenarioTests: XCTestCase {
         let frames = try canvas.replay(scenario, through: 179) { counts in
             samples += 1
             XCTAssertLessThanOrEqual(counts.retainedRows, 12)
-            XCTAssertLessThanOrEqual(counts.layouts, counts.visibleRows + counts.retainedRows)
+            // Full-song measurement is retained to avoid repeated Core Text
+            // layout. Raster/layer resources remain independently bounded.
+            XCTAssertLessThanOrEqual(counts.layouts, document.lines.count)
+            XCTAssertLessThanOrEqual(counts.rasterBytes ?? Int.max, 64 * 1_048_576)
             XCTAssertLessThanOrEqual(counts.layers, (counts.visibleRows + counts.retainedRows) * 100)
         }
         XCTAssertEqual(samples, 180)

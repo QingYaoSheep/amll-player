@@ -670,6 +670,7 @@ final class AMLLNativeCanvas: UIView {
             var layouts: Int
             var layers: Int
             var submissions: [RowSubmissionTiming]?
+            var rasterBytes: Int?
         }
 
         var resourceCounts: ResourceCounts {
@@ -683,7 +684,7 @@ final class AMLLNativeCanvas: UIView {
                              + Array(retainedRows.values).reduce(0) { $0 + count($1.layer) },
                          submissions: installedAt.keys.sorted().map {
                              .init(lineIndex: $0, installedAt: installedAt[$0]!, firstSubmittedAt: firstSubmittedAt[$0])
-                         })
+                         }, rasterBytes: resourceBytes)
         }
 
         var glyphUpdateCount: Int {

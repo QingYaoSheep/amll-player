@@ -48,6 +48,8 @@ struct AMLLPlayerInput: Sendable {
     var playing: Bool
     /// Explicit event revision; ordinary clock corrections must not be inferred to be seeks.
     var seekRevision = 0
+    /// The requested position can precede the authoritative Spotify clock update.
+    var seekPosition: Double?
     var seeking = false
     var document: LyricsDocument?
     var playbackSnapshot: PlaybackSnapshot?
@@ -55,7 +57,7 @@ struct AMLLPlayerInput: Sendable {
     var configuration: LyricsRenderConfiguration?
     var event: AMLLPlaybackEvent?
 
-    init(position: Double, offset: Double = 0, playing: Bool, seekRevision: Int = 0,
+    init(position: Double, offset: Double = 0, playing: Bool, seekRevision: Int = 0, seekPosition: Double? = nil,
          seeking: Bool = false, document: LyricsDocument? = nil,
          playbackSnapshot: PlaybackSnapshot? = nil, artworkURL: URL? = nil,
          configuration: LyricsRenderConfiguration? = nil, event: AMLLPlaybackEvent? = nil)
@@ -64,6 +66,7 @@ struct AMLLPlayerInput: Sendable {
         self.offset = offset
         self.playing = playing
         self.seekRevision = seekRevision
+        self.seekPosition = seekPosition
         self.seeking = seeking
         self.document = document
         self.playbackSnapshot = playbackSnapshot
@@ -290,6 +293,9 @@ struct AMLLFrameEngine {
     private var dirty = true
     private var firstFrame = true
     private var previousInput: AMLLPlayerInput?
+    private var pendingSeek: (target: Double, origin: Double, requestedAt: Double)?
+    /// Advances when the actual lyric clock is reanchored, including delayed seek delivery.
+    private(set) var timeAnchorRevision = 0
     private var interlude: AMLLFrameState.Interlude?
     private var visualFocus: Int?
     private var pendingVisualFocus: (index: Int, startTime: Double)?
@@ -377,8 +383,34 @@ struct AMLLFrameEngine {
         case .seek, .trackChanged: true
         default: false
         }
-        let seeking = firstFrame || input.seeking || eventRequiresSeek || previousInput?.seekRevision != input.seekRevision
+        let revisionChanged = previousInput.map { $0.seekRevision != input.seekRevision } ?? false
+        let seekRequested = input.seeking || eventRequiresSeek || revisionChanged
+        if seekRequested {
+            if let target = input.seekPosition, target.isFinite, abs(target - input.position) > 0.001 {
+                pendingSeek = (target, input.position, animationTime)
+            } else {
+                pendingSeek = nil
+            }
+        }
+        if input.seekPosition == nil {
+            pendingSeek = nil
+        }
+        var seekArrived = false
+        if let pending = pendingSeek {
+            // Accept only movement toward this explicit request. Do not infer
+            // a seek from ordinary snapshot corrections or rewrite song time.
+            let moved = pending.target < pending.origin
+                ? input.position <= (pending.origin + pending.target) / 2
+                : input.position >= pending.target - 0.001
+            let tolerance = 0.25 + (input.playing ? animationTime - pending.requestedAt : 0)
+            if moved, abs(input.position - pending.target) <= tolerance {
+                seekArrived = true
+                pendingSeek = nil
+            }
+        }
+        let seeking = firstFrame || seekRequested || seekArrived
         if seeking {
+            timeAnchorRevision &+= 1
             scrollOffset = 0; scrollVelocity = 0; touching = false; browsing = false
             resumeAtLineStart = nil
             pendingVisualFocus = nil
@@ -424,15 +456,16 @@ struct AMLLFrameEngine {
             if mainSinging {
                 motions[index].mainFocusRetained = true
             }
-            if seeking {
-                motions[index].mainCompleted = false
-            }
-            if time / 1000 >= mainEnd && time / 1000 >= mainStart {
-                if !motions[index].mainCompleted {
-                    dirty = true
+            let mainCompleted = time / 1000 >= mainEnd && time / 1000 >= mainStart
+            if mainCompleted != motions[index].mainCompleted {
+                dirty = true
+                if !mainCompleted {
+                    motions[index].mainFocusRetained = mainSinging
+                    motions[index].mainWords = AMLLWordAnimationClock()
+                    motions[index].completedReleaseAt = nil
                 }
-                motions[index].mainCompleted = true
             }
+            motions[index].mainCompleted = mainCompleted
             if mainSinging, seeking || !motions[index].mainWords.enabled {
                 motions[index].mainWords.enable(at: time / 1000 - document.lines[group.main].start)
             } else if seeking {
@@ -454,15 +487,16 @@ struct AMLLFrameEngine {
                 if backgroundSinging {
                     motions[index].backgroundFocusRetained = true
                 }
-                if seeking {
-                    motions[index].backgroundCompleted = false
-                }
-                if time / 1000 >= document.actualLineEnds[background] {
-                    if !motions[index].backgroundCompleted {
-                        dirty = true
+                let backgroundCompleted = time / 1000 >= document.actualLineEnds[background]
+                if backgroundCompleted != motions[index].backgroundCompleted {
+                    dirty = true
+                    if !backgroundCompleted {
+                        motions[index].backgroundFocusRetained = backgroundSinging
+                        motions[index].backgroundWords = AMLLWordAnimationClock()
+                        motions[index].completedReleaseAt = nil
                     }
-                    motions[index].backgroundCompleted = true
                 }
+                motions[index].backgroundCompleted = backgroundCompleted
                 if backgroundSinging, seeking || !motions[index].backgroundWords.enabled {
                     motions[index].backgroundWords.enable(at: time / 1000 - document.lines[background].start)
                 } else if seeking {

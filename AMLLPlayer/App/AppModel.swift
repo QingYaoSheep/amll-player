@@ -10,6 +10,8 @@ final class AppModel {
     /// Monotonic lyric-time anchor revision. Renderer input uses this instead
     /// of guessing a seek from a normal playback snapshot correction.
     private(set) var lyricsSeekRevision = 0
+    /// Requested Spotify position, kept separate from the asynchronously reported progress.
+    private(set) var lyricsSeekPosition: TimeInterval?
     private(set) var devicesState: LoadableState<[PlaybackDevice]> = .idle
     private(set) var isPerformingAction = false
     var presentedError: SpotifyServiceError?
@@ -107,6 +109,9 @@ final class AppModel {
             for await snapshot in environment.spotifyPlayback.playbackSnapshots {
                 guard !Task.isCancelled else {
                     return
+                }
+                if playbackSnapshot?.item?.uri != snapshot.item?.uri {
+                    lyricsSeekPosition = nil
                 }
                 playbackSnapshot = snapshot
                 clock = PlayerClock(anchor: snapshot)
@@ -242,9 +247,15 @@ final class AppModel {
 
     func seek(to position: TimeInterval) async {
         guard !isPerformingAction else { return }
+        lyricsSeekPosition = position
         lyricsSeekRevision &+= 1
         await perform {
-            try await environment.spotifyPlayback.seek(to: position)
+            do {
+                try await environment.spotifyPlayback.seek(to: position)
+            } catch {
+                lyricsSeekPosition = nil
+                throw error
+            }
         }
     }
 

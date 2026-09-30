@@ -28,8 +28,8 @@ final class AMLLVisualActivityTests: XCTestCase {
                 engine.handle(.beginBrowsing)
                 engine.handle(.browseBy(-120))
                 // AppModel publishes the seek revision before Spotify returns its new position.
-                _ = engine.render(.init(position: 12.5, playing: playing, seekRevision: 1), delta: step)
-                let rewound = engine.render(.init(position: 1.5, playing: playing, seekRevision: 1), delta: step)
+                _ = engine.render(.init(position: 12.5, playing: playing, seekRevision: 1, seekPosition: 1.5), delta: step)
+                let rewound = engine.render(.init(position: 1.5, playing: playing, seekRevision: 1, seekPosition: 1.5), delta: step)
                 XCTAssertFalse(rewound.browsing)
                 for row in rewound.rows {
                     XCTAssertFalse(row.fillComplete, "A previous playthrough cannot fill the new timeline")
@@ -38,9 +38,9 @@ final class AMLLVisualActivityTests: XCTestCase {
                 XCTAssertTrue(rewound.rows[0].active)
                 XCTAssertTrue(rewound.rows[1].active)
                 XCTAssertEqual(rewound.rows[0].wordClock.time, 1.5, accuracy: 0.001)
-                XCTAssertEqual(rewound.rows[1].wordClock.time, 0.5, accuracy: 0.001)
+                XCTAssertEqual(engine.document.lines[1].start + rewound.rows[1].wordClock.time, 1.5, accuracy: 0.001)
                 let advancing = engine.render(.init(position: playing ? 1.5 + step : 1.5,
-                                                    playing: playing, seekRevision: 1), delta: step)
+                                                    playing: playing, seekRevision: 1, seekPosition: 1.5), delta: step)
                 XCTAssertEqual(advancing.rows[0].wordClock.time, playing ? 1.5 + step : 1.5, accuracy: 0.001)
                 XCTAssertFalse(advancing.rows[0].fillComplete)
                 XCTAssertFalse(advancing.rows[2].fillComplete)
@@ -51,8 +51,8 @@ final class AMLLVisualActivityTests: XCTestCase {
     func testDelayedSeekWithinActiveSentenceReanchorsWordClock() {
         var engine = makeEngine([(0, 4), (5, 8)])
         _ = engine.render(.init(position: 3, playing: true), delta: 0)
-        _ = engine.render(.init(position: 3, playing: true, seekRevision: 1), delta: 0)
-        let rewound = engine.render(.init(position: 0.5, playing: true, seekRevision: 1), delta: 1 / 120)
+        _ = engine.render(.init(position: 3, playing: true, seekRevision: 1, seekPosition: 0.5), delta: 0)
+        let rewound = engine.render(.init(position: 0.5, playing: true, seekRevision: 1, seekPosition: 0.5), delta: 1 / 120)
         XCTAssertEqual(rewound.rows[0].wordClock.time, 0.5, accuracy: 0.001)
         XCTAssertFalse(rewound.rows[0].fillComplete)
         XCTAssertTrue(rewound.rows[0].active)
@@ -62,18 +62,118 @@ final class AMLLVisualActivityTests: XCTestCase {
         var engine = makeEngine([(0, 1), (2, 3), (4, 5)])
         _ = engine.render(.init(position: 0.2, playing: true), delta: 0)
         _ = engine.render(.init(position: 5.2, playing: true), delta: 5)
-        _ = engine.render(.init(position: 5.2, playing: true, seekRevision: 1), delta: 0)
-        let rewound = engine.render(.init(position: 1.2, playing: true, seekRevision: 1), delta: 1 / 60)
+        _ = engine.render(.init(position: 5.2, playing: true, seekRevision: 1, seekPosition: 1.2), delta: 0)
+        let rewound = engine.render(.init(position: 1.2, playing: true, seekRevision: 1, seekPosition: 1.2), delta: 1 / 60)
         XCTAssertTrue(rewound.rows[0].fillComplete)
         for row in rewound.rows.dropFirst() {
             XCTAssertFalse(row.fillComplete)
             XCTAssertFalse(row.hdrHold)
             XCTAssertFalse(row.wordClock.enabled)
         }
-        let singing = engine.render(.init(position: 2.2, playing: true, seekRevision: 1), delta: 1)
+        let singing = engine.render(.init(position: 2.2, playing: true, seekRevision: 1, seekPosition: 1.2), delta: 1)
         XCTAssertFalse(singing.rows[1].fillComplete)
         XCTAssertTrue(singing.rows[1].active)
-        XCTAssertEqual(singing.rows[1].wordClock.time, 0.2, accuracy: 0.001)
+        XCTAssertEqual(engine.document.lines[1].start + singing.rows[1].wordClock.time, 2.2, accuracy: 0.001)
+    }
+
+    func testPendingSeekReanchorsOnlyOnceAfterSeveralStaleFrames() {
+        var engine = makeEngine([(0, 10)])
+        _ = engine.render(.init(position: 8, playing: true), delta: 0)
+        _ = engine.render(.init(position: 8, playing: true, seekRevision: 1, seekPosition: 1), delta: 0)
+        let requestedRevision = engine.timeAnchorRevision
+        for index in 1 ... 60 {
+            _ = engine.render(.init(position: 8 + Double(index) / 120, playing: true,
+                                    seekRevision: 1, seekPosition: 1), delta: 1 / 120)
+            XCTAssertEqual(engine.timeAnchorRevision, requestedRevision)
+        }
+        let acknowledged = engine.render(.init(position: 1.1, playing: true, seekRevision: 1, seekPosition: 1), delta: 1 / 120)
+        XCTAssertEqual(acknowledged.rows[0].wordClock.time, 1.1, accuracy: 0.001)
+        XCTAssertEqual(engine.timeAnchorRevision, requestedRevision + 1)
+        let next = engine.render(.init(position: 1.1 + 1 / 120, playing: true, seekRevision: 1, seekPosition: 1), delta: 1 / 120)
+        XCTAssertEqual(next.rows[0].wordClock.time, 1.1 + 1 / 120, accuracy: 0.001)
+        XCTAssertEqual(engine.timeAnchorRevision, requestedRevision + 1)
+    }
+
+    func testNewAndFailedSeekDoNotReviveAnOlderPendingTarget() {
+        var engine = makeEngine([(0, 10)])
+        _ = engine.render(.init(position: 8, playing: true), delta: 0)
+        _ = engine.render(.init(position: 8, playing: true, seekRevision: 1, seekPosition: 1), delta: 0)
+        _ = engine.render(.init(position: 8, playing: true, seekRevision: 2, seekPosition: 3), delta: 0)
+        let revision = engine.timeAnchorRevision
+        _ = engine.render(.init(position: 1, playing: true, seekRevision: 2, seekPosition: 3), delta: 1 / 120)
+        XCTAssertEqual(engine.timeAnchorRevision, revision, "An old target must not acknowledge the latest request")
+        _ = engine.render(.init(position: 3, playing: true, seekRevision: 2, seekPosition: 3), delta: 1 / 120)
+        XCTAssertEqual(engine.timeAnchorRevision, revision + 1)
+        _ = engine.render(.init(position: 3, playing: true, seekRevision: 3, seekPosition: 1), delta: 0)
+        let failedRevision = engine.timeAnchorRevision
+        _ = engine.render(.init(position: 3, playing: true, seekRevision: 3), delta: 0)
+        let corrected = engine.render(.init(position: 1, playing: true, seekRevision: 3), delta: 1 / 120)
+        XCTAssertEqual(engine.timeAnchorRevision, failedRevision)
+        XCTAssertEqual(corrected.rows[0].wordClock.time, 3 + 1 / 120, accuracy: 0.001)
+    }
+
+    func testDelayedForwardSeekUsesRealOffsetWithoutChangingSnapshotCorrectionRules() {
+        var engine = makeEngine([(0, 10)])
+        _ = engine.render(.init(position: 2, offset: 0.5, playing: true), delta: 0)
+        _ = engine.render(.init(position: 2, offset: 0.5, playing: true, seekRevision: 1, seekPosition: 5), delta: 0)
+        let arrived = engine.render(.init(position: 5.05, offset: 0.5, playing: true, seekRevision: 1, seekPosition: 5), delta: 1 / 60)
+        XCTAssertEqual(arrived.lyricTime, 4.55, accuracy: 0.001)
+        XCTAssertEqual(arrived.rows[0].wordClock.time, 4.55, accuracy: 0.001)
+        let corrected = engine.render(.init(position: 5, offset: 0.5, playing: true, seekRevision: 1, seekPosition: 5), delta: 1 / 60)
+        XCTAssertEqual(corrected.rows[0].wordClock.time, 4.55 + 1 / 60, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testRealCanvasRestoresFreshWordMasksWhenPausedSeekPositionArrivesLate() throws {
+        let line = LyricLine(id: "replayed", text: "First second", start: 0, end: 4,
+                             words: [.init(text: "First ", start: 0, end: 2),
+                                     .init(text: "second", start: 2, end: 4)], precision: .word)
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "late-seek", title: "Seek", artists: []),
+                                      lines: [line], language: "en", selectionReason: "Delayed seek regression")
+        var configuration = LyricsRenderConfiguration()
+        configuration.blurInactive = false
+        let reused = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let fresh = AMLLNativeCanvas(frame: reused.frame)
+        let window = UIWindow(frame: reused.frame)
+        window.addSubview(reused)
+        window.addSubview(fresh)
+        defer { reused.stop(); fresh.stop(); reused.removeFromSuperview(); fresh.removeFromSuperview() }
+        var position = 5.0
+        reused.position = { position }
+        reused.configure(document: document, configuration: configuration, input: .init(position: position, playing: false),
+                         active: false, reduceMotion: true)
+        reused.advanceFrame(delta: 0)
+        reused.configure(document: document, configuration: configuration,
+                         input: .init(position: position, playing: false, seekRevision: 1, seekPosition: 1),
+                         active: false, reduceMotion: true)
+        reused.advanceFrame(delta: 0)
+        XCTAssertTrue(try XCTUnwrap(reused.frameState?.rows.first).fillComplete)
+        func masks(_ layer: CALayer) -> [[Double]] {
+            var result: [[Double]] = []
+            if let gradient = layer as? CAGradientLayer {
+                result.append((gradient.locations ?? []).map(\.doubleValue))
+            }
+            if let mask = layer.mask {
+                result += masks(mask)
+            }
+            for child in layer.sublayers ?? [] {
+                result += masks(child)
+            }
+            return result
+        }
+        let full = masks(reused.layer)
+        position = 1
+        reused.advanceFrame(delta: 1 / 120)
+        fresh.position = { position }
+        fresh.configure(document: document, configuration: configuration, input: .init(position: position, playing: false),
+                        active: false, reduceMotion: true)
+        fresh.advanceFrame(delta: 0)
+        let row = try XCTUnwrap(reused.frameState?.rows.first)
+        XCTAssertFalse(row.fillComplete)
+        XCTAssertTrue(row.wordClock.enabled)
+        XCTAssertEqual(row.wordClock.time, position, accuracy: 0.001)
+        XCTAssertNotEqual(masks(reused.layer), full, "Actual cached word layers must discard the full mask")
+        XCTAssertEqual(masks(reused.layer), masks(fresh.layer), "Replaying must match a fresh canvas at the target time")
     }
 
     func testOverlappingRowsSingIndependentlyWithoutStealingScrollAnchor() {

@@ -49,6 +49,7 @@ struct AMLLLyricsDisplay: View {
             offset: model.lyrics.selection.offset,
             playing: snapshot.isPlaying,
             seekRevision: model.lyricsSeekRevision,
+            seekPosition: model.lyricsSeekPosition,
             seeking: false,
             document: document,
             playbackSnapshot: snapshot,

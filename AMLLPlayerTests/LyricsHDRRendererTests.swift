@@ -67,6 +67,40 @@ final class LyricsHDRRendererTests: XCTestCase {
         layer.acquire = nil
     }
 
+    func testPausedHDRReanchorsWhenSeekPositionArrivesAfterItsRevision() throws {
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        canvas.hdrCapabilitiesOverride = .init(supportsEDR: true, headroom: 2)
+        defer { canvas.stop(); canvas.removeFromSuperview() }
+        let line = LyricLine(id: "hdr-late", text: "First second", start: 0, end: 4,
+                             words: [.init(text: "First ", start: 0, end: 2),
+                                     .init(text: "second", start: 2, end: 4)], precision: .word)
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "hdr-late", title: "Seek", artists: []),
+                                      lines: [line], language: "en", selectionReason: "Paused HDR seek regression")
+        var time = 5.0
+        canvas.position = { time }
+        var configuration = LyricsRenderConfiguration()
+        configuration.hdr = .init(enabled: true)
+        configuration.blurInactive = false
+        canvas.configure(document: document, configuration: configuration, input: .init(position: time, playing: false),
+                         active: false, reduceMotion: true)
+        canvas.advanceFrame(delta: 0)
+        canvas.configure(document: document, configuration: configuration,
+                         input: .init(position: time, playing: false, seekRevision: 1, seekPosition: 1),
+                         active: false, reduceMotion: true)
+        canvas.advanceFrame(delta: 0)
+        func metalCount(_ layer: CALayer) -> Int {
+            (layer is CAMetalLayer ? 1 : 0) + (layer.sublayers ?? []).reduce(0) { $0 + metalCount($1) }
+        }
+        XCTAssertEqual(metalCount(canvas.layer), 0)
+        time = 1
+        canvas.advanceFrame(delta: 1 / 120)
+        XCTAssertFalse(try XCTUnwrap(canvas.frameState?.rows.first).fillComplete)
+        XCTAssertEqual(try XCTUnwrap(canvas.frameState?.rows.first).wordClock.time, time, accuracy: 0.001)
+        XCTAssertGreaterThan(metalCount(canvas.layer), 0, "Paused HDR must use the acknowledged seek time, not the old request frame")
+    }
+
     func testPausedCanvasReusesGlyphStateButSeekInvalidatesIt() throws {
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         let window = UIWindow(frame: canvas.bounds)

@@ -249,7 +249,8 @@ final class AMLLNativeCanvas: UIView {
         }
         if self.canSeek != canSeek { needsFrame = true }
         if accessibilityChanged
-            || self.input.seekRevision != input.seekRevision || self.input.playing != input.playing
+            || self.input.seekRevision != input.seekRevision || self.input.seekPosition != input.seekPosition
+            || self.input.playing != input.playing
             || self.input.offset != input.offset || self.input.event != input.event
             || self.input.position != input.position {
             needsFrame = true
@@ -475,11 +476,11 @@ final class AMLLNativeCanvas: UIView {
         }
         frameState = state
         needsFrame = false
-        if hdrTime == nil || input.playing || hdrWasPlaying || input.seeking || hdrSeekRevision != input.seekRevision || hdrOffset != input.offset {
+        if hdrTime == nil || input.playing || hdrWasPlaying || input.seeking || hdrSeekRevision != engine!.timeAnchorRevision || hdrOffset != input.offset {
             hdrTime = state.lyricTime
         }
         hdrWasPlaying = input.playing
-        hdrSeekRevision = input.seekRevision
+        hdrSeekRevision = engine!.timeAnchorRevision
         hdrOffset = input.offset
         var capabilities = LyricsHDRCapabilities(supportsEDR: (window?.screen.potentialEDRHeadroom ?? 1) > 1,
                                                  headroom: Double(window?.screen.currentEDRHeadroom ?? 1))

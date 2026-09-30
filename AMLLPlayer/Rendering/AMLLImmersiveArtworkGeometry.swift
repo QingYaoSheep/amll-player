@@ -20,6 +20,19 @@ enum AMLLArtworkDisplayPolicy {
 
 /// Keep the complete portrait frame visible in the page's background viewport.
 enum AMLLImmersiveArtworkGeometry {
+    static let overlapFraction: CGFloat = 0.28
+    static let maximumBlur: CGFloat = 32
+
+    /// Smooth both ends so the original video cannot leave a rectangular bottom edge.
+    static let transitionFadeStops: [(location: Double, alpha: Double)] = (0 ... 16).map { sample in
+        let t = Double(sample) / 16
+        return (t, 1 - t * t * (3 - 2 * t))
+    }
+
+    static let videoFadeStops: [(location: Double, alpha: Double)] = [(0, 1)] + transitionFadeStops.map {
+        (1 - Double(overlapFraction) + $0.location * Double(overlapFraction), $0.alpha)
+    }
+
     static func frame(viewport: CGSize, video: CGSize) -> CGRect {
         guard viewport.width > 0, viewport.height > 0 else { return .zero }
         let source = video.width > 0 && video.height > 0 ? video : CGSize(width: 9, height: 16)
@@ -30,8 +43,8 @@ enum AMLLImmersiveArtworkGeometry {
     }
 
     static func transitionFrame(video: CGRect, viewportHeight: CGFloat) -> CGRect {
-        let extensionHeight = min(140, max(64, viewportHeight * 0.1))
-        return CGRect(x: video.minX, y: video.maxY - video.height * 0.2,
-                      width: video.width, height: video.height * 0.2 + extensionHeight)
+        let extensionHeight = min(220, max(96, viewportHeight * 0.18))
+        return CGRect(x: video.minX, y: video.maxY - video.height * overlapFraction,
+                      width: video.width, height: video.height * overlapFraction + extensionHeight)
     }
 }

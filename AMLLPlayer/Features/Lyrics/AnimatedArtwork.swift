@@ -34,6 +34,7 @@ struct AnimatedArtwork: UIViewRepresentable {
     var onState: (URL, ArtworkPlaybackState) -> Void = { _, _ in }
     var onFirstFrame: (URL, CGSize) -> Void = { _, _ in }
     var gravity: AVLayerVideoGravity = .resizeAspectFill
+    var fadesBottom = false
 
     func makeUIView(context _: Context) -> Surface {
         Surface()
@@ -44,7 +45,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         view.onState = onState
         view.onFirstFrame = onFirstFrame
         view.configure(url: url, active: active, allowCellular: allowCellular,
-                       reflectionFrames: reflectionFrames, gravity: gravity)
+                       reflectionFrames: reflectionFrames, gravity: gravity, fadesBottom: fadesBottom)
     }
 
     static func dismantleUIView(_ view: Surface, coordinator _: ()) {
@@ -63,6 +64,8 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var playerLayer: AVPlayerLayer {
             layer as! AVPlayerLayer
         }
+
+        private let bottomFade = CAGradientLayer()
 
         private let player = AVQueuePlayer()
         private var looper: AVPlayerLooper?
@@ -104,6 +107,10 @@ struct AnimatedArtwork: UIViewRepresentable {
             playerLayer.videoGravity = .resizeAspectFill
             playerLayer.opacity = 0
             isOpaque = false
+            bottomFade.colors = AMLLImmersiveArtworkGeometry.videoFadeStops.map {
+                UIColor(white: 1, alpha: CGFloat($0.alpha)).cgColor
+            }
+            bottomFade.locations = AMLLImmersiveArtworkGeometry.videoFadeStops.map { NSNumber(value: $0.location) }
             NotificationCenter.default.addObserver(self, selector: #selector(resetWatchdogTimestamp),
                                                    name: UIApplication.willResignActiveNotification, object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(resetWatchdogTimestamp),
@@ -120,15 +127,27 @@ struct AnimatedArtwork: UIViewRepresentable {
             nil
         }
 
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            bottomFade.frame = bounds
+            CATransaction.commit()
+        }
+
         @objc private func resetWatchdogTimestamp() {
             lastTick = nil
         }
 
         func configure(url: URL, active: Bool, allowCellular: Bool = false,
                        reflectionFrames: ArtworkReflectionFrames? = nil,
-                       gravity: AVLayerVideoGravity = .resizeAspectFill) {
+                       gravity: AVLayerVideoGravity = .resizeAspectFill, fadesBottom: Bool = false)
+        {
             guard url.isFileURL || url.scheme?.lowercased() == "https" else { stop(); return }
             playerLayer.videoGravity = gravity
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            layer.mask = fadesBottom ? bottomFade : nil
+            bottomFade.frame = bounds
+            CATransaction.commit()
             if self.url != url || self.allowCellular != allowCellular {
                 stop()
                 self.url = url

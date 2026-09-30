@@ -40,15 +40,15 @@ struct AMLLLyricsPlayer: View {
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                     let videoFrame = AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size,
                                                                          video: artworkLoader.videoSize ?? .zero)
-                    immersiveArtwork(item, frame: videoFrame, size: geometry.size)
                     if artworkLoader.hasPresentedFrame, !reduceTransparency {
                         let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame,
                                                                                        viewportHeight: geometry.size.height)
-                        ArtworkVideoTransition(frames: artworkReflectionFrames)
+                        ArtworkVideoTransition(frames: artworkReflectionFrames, videoSize: videoFrame.size)
                             .frame(width: transition.width, height: transition.height)
                             .position(x: transition.midX, y: transition.midY)
                             .accessibilityHidden(true)
                     }
+                    immersiveArtwork(item, frame: videoFrame, size: geometry.size)
                     if configuration.animatedArtwork?.reflection == true, !reduceMotion,
                        artworkLoader.hasPresentedFrame
                     {
@@ -321,7 +321,7 @@ struct AMLLLyricsPlayer: View {
                                onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
                                onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) },
                                onFirstFrame: { url, videoSize in artworkLoader.firstFramePresented(token: token, url: url, size: videoSize) },
-                               gravity: .resizeAspect)
+                               gravity: .resizeAspect, fadesBottom: !reduceTransparency)
             .id(token)
             .frame(width: frame.width, height: frame.height)
             .position(x: frame.midX, y: frame.midY)

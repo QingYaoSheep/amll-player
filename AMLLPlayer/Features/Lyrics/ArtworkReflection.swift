@@ -154,18 +154,56 @@ struct ArtworkReflection: UIViewRepresentable {
     }
 }
 
+/// Production image mapping, shared with the pixel regressions. The overlap has
+/// the exact video scale; only the bottommost pixels extend beyond the frame.
+enum ArtworkVideoTransitionImage {
+    static func image(source: CIImage, videoSize: CGSize, surfaceSize: CGSize,
+                      outputSize: CGSize, blurRadius: CGFloat = AMLLImmersiveArtworkGeometry.maximumBlur) -> CIImage?
+    {
+        guard source.extent.width > 0, source.extent.height > 0,
+              videoSize.width > 0, videoSize.height > 0,
+              surfaceSize.width > 0, surfaceSize.height > 0,
+              outputSize.width > 0, outputSize.height > 0 else { return nil }
+        let pixelScaleY = outputSize.height / surfaceSize.height
+        let overlap = videoSize.height * AMLLImmersiveArtworkGeometry.overlapFraction
+        let extensionHeight = max(0, surfaceSize.height - overlap) * pixelScaleY
+        let image = source
+            .transformed(by: CGAffineTransform(translationX: -source.extent.minX, y: -source.extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: outputSize.width / source.extent.width,
+                                               y: videoSize.height * pixelScaleY / source.extent.height))
+            .transformed(by: CGAffineTransform(translationX: 0, y: extensionHeight))
+            .clampedToExtent()
+        let output = CGRect(origin: .zero, size: outputSize)
+        guard blurRadius > 0 else { return image.cropped(to: output) }
+        let mask = CIFilter(name: "CILinearGradient", parameters: [
+            "inputPoint0": CIVector(x: 0, y: outputSize.height),
+            "inputPoint1": CIVector(x: 0, y: 0),
+            "inputColor0": CIColor(red: 0, green: 0, blue: 0, alpha: 1),
+            "inputColor1": CIColor(red: 1, green: 1, blue: 1, alpha: 1),
+        ])?.outputImage
+        guard let mask else { return nil }
+        return image.applyingFilter("CIMaskedVariableBlur", parameters: [
+            kCIInputRadiusKey: blurRadius * outputSize.width / surfaceSize.width,
+            "inputMask": mask,
+        ]).cropped(to: output)
+    }
+}
+
 /// Uses the same silent player's frame output as the optional reflection.
-/// The full video remains untouched; this layer blends its lower edge into the background.
+/// Sits underneath the fading full video, so neither layer has a visible cut edge.
 struct ArtworkVideoTransition: UIViewRepresentable {
     let frames: ArtworkReflectionFrames
+    let videoSize: CGSize
 
     func makeUIView(context _: Context) -> Surface {
         let view = Surface()
+        view.configure(videoSize: videoSize)
         frames.transitionSurface = view
         return view
     }
 
     func updateUIView(_ view: Surface, context _: Context) {
+        view.configure(videoSize: videoSize)
         frames.transitionSurface = view
     }
 
@@ -177,7 +215,8 @@ struct ArtworkVideoTransition: UIViewRepresentable {
         private struct Frame: @unchecked Sendable {
             let buffer: CVPixelBuffer
             let size: CGSize
-            let scale: CGFloat
+            let surfaceSize: CGSize
+            let videoSize: CGSize
             let generation: UUID
         }
 
@@ -186,27 +225,10 @@ struct ArtworkVideoTransition: UIViewRepresentable {
             let context = CIContext(options: [.cacheIntermediates: false])
 
             func render(_ frame: Frame) -> CGImage? {
-                let source = CIImage(cvPixelBuffer: frame.buffer)
-                let height = max(2, (source.extent.height * 0.2).rounded())
-                let crop = CGRect(x: source.extent.minX, y: source.extent.minY,
-                                  width: source.extent.width, height: height)
-                let image = source.cropped(to: crop)
-                    .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
-                    .transformed(by: CGAffineTransform(scaleX: frame.size.width / crop.width,
-                                                       y: frame.size.height / crop.height))
-                    .clampedToExtent()
-                let mask = CIFilter(name: "CILinearGradient", parameters: [
-                    "inputPoint0": CIVector(x: 0, y: frame.size.height),
-                    "inputPoint1": CIVector(x: 0, y: 0),
-                    "inputColor0": CIColor(red: 0, green: 0, blue: 0, alpha: 1),
-                    "inputColor1": CIColor(red: 1, green: 1, blue: 1, alpha: 1),
-                ])?.outputImage
-                let blurred = mask.map {
-                    image.applyingFilter("CIMaskedVariableBlur", parameters: [
-                        kCIInputRadiusKey: 24 * frame.scale, "inputMask": $0,
-                    ])
-                } ?? image.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 24 * frame.scale])
-                return context.createCGImage(blurred, from: CGRect(origin: .zero, size: frame.size))
+                guard let image = ArtworkVideoTransitionImage.image(source: CIImage(cvPixelBuffer: frame.buffer),
+                                                                    videoSize: frame.videoSize, surfaceSize: frame.surfaceSize, outputSize: frame.size)
+                else { return nil }
+                return context.createCGImage(image, from: CGRect(origin: .zero, size: frame.size))
             }
         }
 
@@ -216,43 +238,72 @@ struct ArtworkVideoTransition: UIViewRepresentable {
         private var rendering = false
         private var pending: Frame?
         private var previousSize = CGSize.zero
+        private var videoSize = CGSize.zero
+        private var lastBuffer: CVPixelBuffer?
 
         override init(frame: CGRect) {
             super.init(frame: frame)
             isOpaque = false
             isUserInteractionEnabled = false
             isAccessibilityElement = false
-            fade.colors = [0.0, 0.9, 0.9, 0.0].map { UIColor(white: 1, alpha: $0).cgColor }
-            fade.locations = [0, 0.18, 0.42, 1]
+            fade.colors = AMLLImmersiveArtworkGeometry.transitionFadeStops.map {
+                UIColor(white: 1, alpha: CGFloat($0.alpha)).cgColor
+            }
+            fade.locations = AMLLImmersiveArtworkGeometry.transitionFadeStops.map { NSNumber(value: $0.location) }
             layer.mask = fade
         }
 
-        required init?(coder _: NSCoder) { nil }
+        required init?(coder _: NSCoder) {
+            nil
+        }
 
         override func layoutSubviews() {
             super.layoutSubviews()
-            if previousSize != bounds.size {
-                previousSize = bounds.size
-                clear()
-            }
             CATransaction.begin(); CATransaction.setDisableActions(true)
             fade.frame = bounds
             CATransaction.commit()
+            if previousSize != bounds.size {
+                previousSize = bounds.size
+                invalidateGeometry()
+            }
+        }
+
+        func configure(videoSize: CGSize) {
+            guard self.videoSize != videoSize else { return }
+            self.videoSize = videoSize
+            invalidateGeometry()
         }
 
         func display(_ buffer: CVPixelBuffer) {
-            guard bounds.width > 0, bounds.height > 0, window != nil else { return }
+            lastBuffer = buffer
+            guard bounds.width > 0, bounds.height > 0, window != nil,
+                  videoSize.width > 0, videoSize.height > 0 else { return }
             let scale = min(1.5, window?.screen.scale ?? 1)
             let size = CGSize(width: max(2, (bounds.width * scale).rounded()),
                               height: max(2, (bounds.height * scale).rounded()))
-            pending = Frame(buffer: buffer, size: size, scale: scale, generation: generation)
+            pending = Frame(buffer: buffer, size: size, surfaceSize: bounds.size,
+                            videoSize: videoSize, generation: generation)
             renderNext()
         }
 
         func clear() {
             generation = UUID()
             pending = nil
+            lastBuffer = nil
+            CATransaction.begin(); CATransaction.setDisableActions(true)
             layer.contents = nil
+            CATransaction.commit()
+        }
+
+        private func invalidateGeometry() {
+            generation = UUID()
+            pending = nil
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            layer.contents = nil
+            CATransaction.commit()
+            if let lastBuffer {
+                display(lastBuffer)
+            }
         }
 
         private func renderNext() {

@@ -20,7 +20,11 @@ import XCTest
     }
     func testCookieNormalizationRejectsHeaderInjectionAndKeepsOnlyCredentialFields() throws {
         XCTAssertEqual(try NetEaseCookie.normalized("other=ignore; MUSIC_U=a=b; __csrf=c"), "MUSIC_U=a=b; __csrf=c")
-        XCTAssertThrowsError(try NetEaseCookie.normalized("MUSIC_U=a\r\nHost:evil"))
+        for separator in ["\r", "\n", "\r\n", "\n\r", "\u{0}", "\u{7f}"] {
+            let injected = "MUSIC_U=a" + separator + "Host:evil"
+            XCTAssertThrowsError(try NetEaseCookie.normalized(injected))
+            XCTAssertThrowsError(try NetEaseAPI.request("/cloudsearch/pc", [:], cookie: injected))
+        }
         XCTAssertThrowsError(try NetEaseCookie.normalized("os=pc"))
     }
     func testFailedImportKeepsValidSessionAndStoredCookie() async throws {

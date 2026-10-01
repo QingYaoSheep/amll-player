@@ -63,7 +63,7 @@ private final class NetEaseRedirectPolicy: NSObject, URLSessionTaskDelegate, @un
     static func request(_ path: String, _ parameters: [String: Any], cookie: String?, secret: String? = nil) throws -> URLRequest {
         guard path.hasPrefix("/"), !path.contains(".."), !path.contains("?"), !path.contains("#"),
               let url = URL(string: "https://music.163.com/weapi" + path) else { throw NetEaseError.invalidResponse }
-        guard cookie.map({ !$0.contains("\r") && !$0.contains("\n") && $0.utf8.count <= 16384 }) ?? true else { throw NetEaseError.invalidCookie }
+        guard cookie.map(NetEaseCookie.validHeaderValue) ?? true else { throw NetEaseError.invalidCookie }
         var object = parameters
         object["csrf_token"] = NetEaseCookie.values(cookie ?? "")["__csrf"] ?? ""
         let fields = try NetEaseCrypto.encrypt(object, secret: secret)
@@ -81,6 +81,10 @@ private final class NetEaseRedirectPolicy: NSObject, URLSessionTaskDelegate, @un
 }
 enum NetEaseCookie {
     static let allowed: Set<String> = ["MUSIC_U", "MUSIC_A", "__csrf", "NMTID", "WNMCID"]
+    static func validHeaderValue(_ raw: String) -> Bool {
+        // Inspect bytes: Swift treats CRLF as one extended grapheme cluster.
+        raw.utf8.count <= 16384 && raw.utf8.allSatisfy { $0 >= 0x20 && $0 != 0x7F }
+    }
     static func values(_ raw: String) -> [String: String] {
         raw.split(separator: ";").reduce(into: [:]) { result, part in
             let pieces = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
@@ -91,7 +95,7 @@ enum NetEaseCookie {
         }
     }
     static func normalized(_ raw: String) throws -> String {
-        guard raw.utf8.count <= 16384, !raw.contains("\n"), !raw.contains("\r") else { throw NetEaseError.invalidCookie }
+        guard validHeaderValue(raw) else { throw NetEaseError.invalidCookie }
         let v = values(raw)
         guard !(v["MUSIC_U"] ?? "").isEmpty || !(v["MUSIC_A"] ?? "").isEmpty else { throw NetEaseError.invalidCookie }
         return v.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "; ")

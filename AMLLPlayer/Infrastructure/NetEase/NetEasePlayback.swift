@@ -379,8 +379,9 @@ struct NetEaseQueueState: Codable {
         guard observers.isEmpty else { return }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] notification in
+            let finishedID = (notification.object as? AVPlayerItem).map(ObjectIdentifier.init)
             MainActor.assumeIsolated {
-                guard let self, self.selected, notification.object as? AVPlayerItem === self.player.currentItem else { return }
+                guard let self, self.selected, let current = self.player.currentItem, finishedID == ObjectIdentifier(current) else { return }
                 let epoch = self.generation
                 Task { @MainActor in
                     guard self.selected, self.generation == epoch else { return }

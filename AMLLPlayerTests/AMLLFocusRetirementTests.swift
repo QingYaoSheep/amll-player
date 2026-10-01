@@ -299,7 +299,8 @@ final class AMLLFocusRetirementTests: XCTestCase {
             _ = player.render(.init(position: 1.01, playing: true), delta: 0.91)
             _ = player.render(.init(position: 1.11, playing: true), delta: 0.016)
             for index in 0 ..< 3 {
-                let row = player.render(.init(position: 0.99 + Double(index) * 0.001, playing: true), delta: 0.001).rows[0]
+                // Cross the pending incoming row's staggered deadline too.
+                let row = player.render(.init(position: 0.99 + Double(index) * 0.001, playing: true), delta: 0.04).rows[0]
                 XCTAssertTrue(row.active)
                 XCTAssertEqual(row.visualFocus, .current)
                 XCTAssertNil(row.retirement)

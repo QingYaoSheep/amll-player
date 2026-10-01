@@ -586,7 +586,7 @@ struct AMLLFrameEngine {
             advanceAppearance(delta: boundary - appearanceTime, forceAlpha: forceAlpha)
             for index in motions.indices {
                 if let deadline = motions[index].completedReleaseAt, deadline <= boundary {
-                    releaseVisualFocus(in: index, at: boundary)
+                    releaseVisualFocus(in: index, at: boundary, allowEarly: true)
                 }
             }
             if let pending = pendingVisualFocus, pending.startTime <= boundary {
@@ -753,11 +753,11 @@ struct AMLLFrameEngine {
             && document.actualLineEnds[line] * 1000 <= document.singingTimings[timeline.focus].startTime
     }
 
-    private mutating func releaseVisualFocus(in index: Int, at time: Double) {
+    private mutating func releaseVisualFocus(in index: Int, at time: Double, allowEarly: Bool = false) {
         motions[index].completedReleaseAt = nil
         let group = document.groups[index]
-        let releaseMainAhead = canReleaseBeforeWordEnd(in: index, line: group.main)
-        let releaseBackgroundAhead = group.background.map { canReleaseBeforeWordEnd(in: index, line: $0) } ?? false
+        let releaseMainAhead = allowEarly && canReleaseBeforeWordEnd(in: index, line: group.main)
+        let releaseBackgroundAhead = allowEarly && (group.background.map { canReleaseBeforeWordEnd(in: index, line: $0) } ?? false)
         if !motions[index].mainSinging || releaseMainAhead, motions[index].mainFocusRetained {
             motions[index].mainFocusRetained = false
             if motions[index].mainCompleted || releaseMainAhead, motions[index].mainRetirement == nil {

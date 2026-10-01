@@ -34,6 +34,8 @@ final class AppleMusicSession: MusicSessionProviding {
         generation = UUID()
         connectionID = UUID()
         let token = generation
+        subscriptionTask?.cancel()
+        subscriptionTask = nil
         wantsConnection = true
         currentState.requesting = true
         currentState.connected = false
@@ -104,11 +106,19 @@ final class AppleMusicSession: MusicSessionProviding {
 
     private func observeSubscription() {
         guard subscriptionTask == nil else { return }
+        let token = generation
         subscriptionTask = Task { [weak self] in
+            defer {
+                if let self, generation == token {
+                    subscriptionTask = nil
+                }
+            }
             guard let updates = self?.account.subscriptionUpdates else { return }
             for await capabilities in updates {
-                guard !Task.isCancelled, let self, wantsConnection, currentState.connected,
-                      account.authorization == .authorized else { return }
+                guard !Task.isCancelled, let self, wantsConnection, generation == token else { return }
+                guard account.authorization == .authorized else { await refresh(); return }
+                // A temporary network failure does not terminate the official update sequence.
+                guard currentState.connected else { continue }
                 let old = currentState.capabilities
                 currentState.capabilities = capabilities
                 if old.canModifyLibrary != capabilities.canModifyLibrary {

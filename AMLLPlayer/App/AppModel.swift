@@ -445,7 +445,10 @@ final class AppModel {
     func mutateAppleLibrary(_ action: (any MusicLibraryMutating) async throws -> Void) async throws {
         guard selectedMusicService == .appleMusic, currentServiceConnected else { throw MusicCatalogError.signInRequired }
         let epoch = sourceGeneration
-        try await action(appleLibrary)
+        do { try await action(appleLibrary) } catch {
+            guard epoch == sourceGeneration else { throw CancellationError() }
+            throw error
+        }
         try Task.checkCancellation()
         guard epoch == sourceGeneration else { throw CancellationError() }
         // Force all private pages to reload from the service; never guess favorites.

@@ -188,6 +188,34 @@ final class AppleMusicIntegrationTests: XCTestCase {
         XCTAssertEqual(state.entries.map(\.item.name), ["Keep"])
     }
 
+    func testSubscriptionObservationSurvivesOfflineRefreshAndRecovers() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(true, forKey: "appleMusic.connected.v1")
+        let api = MusicTestAPI(), account = MusicTestAccount()
+        let session = AppleMusicSession(api: api, defaults: defaults, account: account)
+        let initial = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 1 }
+        api.pending[0].resume(returning: Data(#"{"data":[{"id":"us"}]}"#.utf8))
+        await initial.value
+        let offline = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 2 }
+        api.pending[1].resume(throwing: MusicCatalogError.offline)
+        await offline.value
+        account.updates.yield(.init(canBrowse: true))
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        let recovery = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 3 }
+        api.pending[2].resume(returning: Data(#"{"data":[{"id":"us"}]}"#.utf8))
+        await recovery.value
+        XCTAssertTrue(session.currentState.capabilities.canPlayCatalog)
+        account.updates.yield(.init(canBrowse: true, canPlayCatalog: false, canModifyLibrary: false))
+        await waitUntil { !session.currentState.capabilities.canPlayCatalog }
+        XCTAssertFalse(session.currentState.capabilities.canModifyLibrary)
+        session.disconnect()
+    }
+
     func testCreatedPlaylistRegistrySurvivesRestartAndDisconnectWithoutGrantingOtherPlaylistsAccess() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
         let session = AppleMusicSession(api: MusicTestAPI(), defaults: defaults, account: MusicTestAccount())
@@ -241,6 +269,29 @@ final class AppleMusicIntegrationTests: XCTestCase {
                                      availability: .available, service: .appleMusic)
         try await model.playCatalog(album, shuffled: true)
         XCTAssertEqual(apple.commands, ["shuffled:123"])
+    }
+
+    func testLateLibraryFailureBecomesCancellationAfterSourceSwitch() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let preferences = MusicSourcePreferences(defaults: defaults)
+        preferences.selected = .appleMusic
+        let model = AppModel(environment: .init(configuration: .preview, diagnostics: DiagnosticsStore(),
+                                                spotifySession: MusicTestSpotifySession(), spotifyPlayback: MusicTestPlayback()),
+                             catalogProvider: MusicTestCatalog(service: .spotify), lyrics: .init(providers: [], cache: MemoryLyricsCache()),
+                             appleSession: MusicTestSession(), applePlayback: MusicTestPlayback(), appleCatalog: MusicTestCatalog(service: .appleMusic),
+                             musicPreferences: preferences)
+        var pending: CheckedContinuation<Void, Error>?
+        let request = Task {
+            do {
+                try await model.mutateAppleLibrary { _ in try await withCheckedThrowingContinuation { pending = $0 } }
+                XCTFail("Expected the obsolete request to be cancelled")
+            } catch is CancellationError {} catch { XCTFail("Obsolete errors must not reach the active source: \(error)") }
+        }
+        await waitUntil { pending != nil }
+        model.selectMusicService(.spotify)
+        pending?.resume(throwing: MusicServiceError.cloudLibraryRequired)
+        await request.value
+        XCTAssertNil(model.presentedError)
     }
 
     private func waitUntil(_ predicate: () -> Bool) async {
@@ -388,12 +439,16 @@ private final class MusicTestCatalog: MusicCatalogProviding {
 
 @MainActor private final class MusicTestAccount: AppleMusicAccountChecking {
     var authorization: MusicAuthorizationState = .authorized
+    let subscriptionUpdates: AsyncStream<MusicServiceCapabilities>
+    let updates: AsyncStream<MusicServiceCapabilities>.Continuation
+    init() {
+        let stream = AsyncStream<MusicServiceCapabilities>.makeStream()
+        subscriptionUpdates = stream.stream
+        updates = stream.continuation
+    }
+
     func requestAuthorization() async {}
     func subscription() async throws -> MusicServiceCapabilities {
         .init(canBrowse: true, canPlayCatalog: true, canModifyLibrary: true)
-    }
-
-    var subscriptionUpdates: AsyncStream<MusicServiceCapabilities> {
-        AsyncStream { $0.finish() }
     }
 }

@@ -33,6 +33,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     let playbackSnapshots: AsyncStream<PlaybackSnapshot>
     private let continuation: AsyncStream<PlaybackSnapshot>.Continuation
     private let session: AppleMusicSession
+    private let systemArtwork = AppleMusicSystemArtwork()
     private var polling: Task<Void, Never>?
     private var subscriptions = Set<AnyCancellable>()
     private var enabled = false
@@ -65,6 +66,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         polling?.cancel(); polling = nil
         subscriptions.removeAll()
         previous = nil
+        systemArtwork.reset()
         knownContext = nil
     }
 
@@ -270,6 +272,13 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
                          artists: [entry.subtitle ?? ""], albumTitle: nil,
                          artworkURL: entry.artwork?.url(width: 1000, height: 1000), duration: 0,
                          isEpisode: true, isAdvertisement: false, service: .appleMusic)
+        }
+        if let current = item {
+            if let localURL = systemArtwork.url(for: current) {
+                item?.artworkURL = localURL
+            }
+        } else {
+            systemArtwork.reset()
         }
         let time = player.playbackTime
         let now = ProcessInfo.processInfo.systemUptime

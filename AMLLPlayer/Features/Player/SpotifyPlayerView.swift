@@ -150,7 +150,7 @@ struct SpotifyPlayerView: View {
     @ViewBuilder
     private func artwork(_ item: PlaybackItem) -> some View {
         if let artworkURL = item.artworkURL {
-            AsyncImage(url: artworkURL) { image in
+            PlaybackArtworkImage(url: artworkURL) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 artworkPlaceholder

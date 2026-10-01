@@ -132,7 +132,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
             // network request is not a visual state, and must not flash gray.
             loadTask = Task { [weak self] in
                 do {
-                    let (data, _) = try await URLSession.shared.data(from: url)
+                    let data = try await ArtworkImageData.load(url)
                     try Task.checkCancellation()
                     guard let loaded = Self.albumTexture(data: data, device: device, blurRadius: self?.blurRadius ?? 2)
                     else { throw URLError(.cannotDecodeContentData) }

@@ -13,7 +13,7 @@ struct AlbumArtworkBackground: View {
                     if let previewImage {
                         filled(previewImage, size: geometry.size)
                     } else {
-                        AsyncImage(url: url) { image in filled(image, size: geometry.size) }
+                        PlaybackArtworkImage(url: url) { image in filled(image, size: geometry.size) }
                             placeholder: { Color(white: 0.08) }
                             .id(url)
                     }
@@ -164,7 +164,7 @@ struct FullscreenLyricsPlayer: View {
         let showLarge = !configuration.showLyrics || wide || configuration.coverLayout == .normal
         VStack(spacing: 10) {
             if configuration.coverLayout != .immersive || !configuration.showLyrics {
-                AsyncImage(url: item.artworkURL) { image in image.resizable().scaledToFit() }
+                PlaybackArtworkImage(url: item.artworkURL) { image in image.resizable().scaledToFit() }
                     placeholder: { RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
                     .frame(width: showLarge ? (wide ? 260 : 160) : 48, height: showLarge ? (wide ? 260 : 160) : 48)
                     .clipShape(RoundedRectangle(cornerRadius: showLarge ? 16 : 8))

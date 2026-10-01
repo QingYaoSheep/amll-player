@@ -103,7 +103,7 @@ struct AMLLPixiBackground: UIViewRepresentable {
             guard let value else { layers.removeAll(); view?.setNeedsDisplay(); return }
             task = Task { [weak self] in
                 do {
-                    let (data, _) = try await URLSession.shared.data(from: value)
+                    let data = try await ArtworkImageData.load(value)
                     try Task.checkCancellation()
                     guard let self, self.url == value, let device = self.view?.device,
                           let image = UIImage(data: data)?.cgImage else { return }

@@ -27,7 +27,7 @@ struct TabMusicAccessory: View {
         HStack(spacing: 8) {
             Button(action: openPlayer) {
                 HStack(spacing: 8) {
-                    AsyncImage(url: snapshot.item?.artworkURL) { image in
+                    PlaybackArtworkImage(url: snapshot.item?.artworkURL) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         Color.secondary.opacity(0.2).overlay { Image(systemName: "music.note") }
@@ -147,7 +147,7 @@ struct MiniPlayerBar: View {
     @ViewBuilder
     private var artwork: some View {
         if let url = snapshot.item?.artworkURL {
-            AsyncImage(url: url) { image in
+            PlaybackArtworkImage(url: url) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 artworkPlaceholder

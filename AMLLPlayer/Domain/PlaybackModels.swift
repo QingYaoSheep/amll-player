@@ -6,7 +6,7 @@ struct PlaybackItem: Equatable, Sendable {
     let title: String
     let artists: [String]
     let albumTitle: String?
-    let artworkURL: URL?
+    var artworkURL: URL?
     let duration: TimeInterval
     let isEpisode: Bool
     let isAdvertisement: Bool

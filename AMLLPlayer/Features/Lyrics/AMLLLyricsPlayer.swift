@@ -305,7 +305,7 @@ struct AMLLLyricsPlayer: View {
     private func artwork(_ item: PlaybackItem, side: CGFloat, radius: CGFloat,
                          hideStatic: Bool = false) -> some View
     {
-        AsyncImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
+        PlaybackArtworkImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
             placeholder: { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
             .frame(width: side, height: side)
             .overlay {

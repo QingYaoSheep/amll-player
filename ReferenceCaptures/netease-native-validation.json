@@ -1,0 +1,40 @@
+{
+  "sourceCommit": "1e8cb5383a359d1800b204dd0eba34cbb5995b55",
+  "runID": 36896586723,
+  "runURL": "https://github.com/QingYaoSheep/amll-player/actions/runs/36896586723",
+  "direct": {
+    "path": "E:/AMLL-Swift/Builds/NetEase-1e8cb538/direct/AMLLPlayer-Xcode27-direct-unsigned.ipa",
+    "sha256": "66b87d14cc17a8582772fdd25d3a7da3fdaf82163f5da06dd4f74eed7a1684e9",
+    "artifact": 11180205831,
+    "result": "success"
+  },
+  "tested": {
+    "path": "E:/AMLL-Swift/Builds/NetEase-1e8cb538/tested/AMLLPlayer-Xcode27-tested-unsigned.ipa",
+    "sha256": "b09dad875de1eb9ab9f33fad1a9be3591c4b69a0928a83f0699a622c564981ba",
+    "artifact": 11181133422,
+    "result": "success"
+  },
+  "reviews": {
+    "spec": "original findings fixed; QR recovery reviewed",
+    "standards": "original findings and multiwindow QR finding fixed"
+  },
+  "deviceAcceptance": "pending; automatic tests use injected fixtures, not real account authorization",
+  "tests": {
+    "unit": 390,
+    "unitFailures": 0,
+    "ui": 5,
+    "uiFailures": 0,
+    "netease": 26,
+    "neteaseFailures": 0,
+    "nodeReplay": 14,
+    "nodeReplayFailures": 0
+  },
+  "builds": {
+    "direct": "success",
+    "tested": "success",
+    "iPad": "success",
+    "iOS27SDK": "success",
+    "deviceArchive": "success",
+    "bundleCheck": "success"
+  }
+}

@@ -83,5 +83,41 @@
         "album"
       ]
     }
-  ]
+  ],
+  "additionalPublicChecks": {
+    "date": "2026-10-02",
+    "authenticated": false,
+    "searchTypes": [
+      {
+        "type": 1,
+        "kind": "songs",
+        "http": 200,
+        "code": 200
+      },
+      {
+        "type": 10,
+        "kind": "albums",
+        "http": 200,
+        "code": 200
+      },
+      {
+        "type": 100,
+        "kind": "artists",
+        "http": 200,
+        "code": 200
+      },
+      {
+        "type": 1000,
+        "kind": "playlists",
+        "http": 200,
+        "code": 200
+      }
+    ],
+    "suggestions": {
+      "path": "/search/suggest/keyword",
+      "http": 200,
+      "code": 200,
+      "shape": "result.allMatch"
+    }
+  }
 }

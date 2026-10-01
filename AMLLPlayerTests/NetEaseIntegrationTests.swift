@@ -100,6 +100,7 @@ import XCTest
         XCTAssertFalse(try XCTUnwrap(readonly).libraryWritable)
         let liked = NetEaseDecoder.item(["id": 99, "name": "Liked", "creator": ["userId": 1], "specialType": 5], kind: .playlist, owner: "1")
         XCTAssertFalse(try XCTUnwrap(liked).editablePlaylist)
+        XCTAssertFalse(try XCTUnwrap(liked).libraryWritable)
     }
     func testQueuePersistsDuplicateEntriesAndRestoresPausedOnSourceSwitch() async throws {
         let api = NetEaseFixtureAPI(), session = NetEaseSession(api: NetEaseFixtureAPI(), store: NetEaseMemoryStore())
@@ -129,11 +130,144 @@ import XCTest
         XCTAssertEqual(p.selected, .spotify); p.selected = .netease
         XCTAssertEqual(MusicSourcePreferences(defaults: d).selected, .netease)
     }
+
+    func testQRCodeExpiryStopsPollingAndRequiresRefresh() async {
+        let api = NetEaseFixtureAPI(); api.qrCode = 800
+        let session = NetEaseSession(api: api, store: NetEaseMemoryStore())
+        await session.beginQR()
+        for _ in 0..<100 where session.currentState.requesting { await Task.yield() }
+        XCTAssertNil(session.qrURL); XCTAssertFalse(session.currentState.requesting)
+        XCTAssertTrue(session.qrStatus.contains("过期"))
+        XCTAssertEqual(api.paths.filter { $0 == "/login/qrcode/client/login" }.count, 1)
+    }
+    func testQRCodeConfirmedAccountIsValidatedBeforeCredentialStorage() async throws {
+        let api = NetEaseFixtureAPI(); api.qrCode = 803
+        let store = NetEaseMemoryStore(), session = NetEaseSession(api: api, store: NetEaseMemoryStore())
+        let valid = NetEaseSession(api: api, store: store)
+        await valid.beginQR()
+        for _ in 0..<100 where valid.currentState.requesting { await Task.yield() }
+        XCTAssertTrue(valid.currentState.connected)
+        XCTAssertEqual(String(data: try XCTUnwrap(store.load()), encoding: .utf8), "MUSIC_U=qr")
+        XCTAssertNil(valid.qrURL)
+        api.invalidAccount = true
+        await session.beginQR()
+        for _ in 0..<100 where session.currentState.requesting { await Task.yield() }
+        XCTAssertFalse(session.currentState.connected)
+    }
+    func testExpiredPrivateRequestClearsSessionWithoutRetriedAuthentication() async throws {
+        let api = NetEaseFixtureAPI(), store = NetEaseMemoryStore()
+        let session = NetEaseSession(api: api, store: store)
+        try await session.importCookie("MUSIC_U=x")
+        do { _ = try await session.call("/fixture/expired"); XCTFail("Must expire") } catch {}
+        XCTAssertFalse(session.currentState.connected); XCTAssertNil(try store.load())
+        XCTAssertEqual(api.paths.filter { $0 == "/fixture/expired" }.count, 1)
+    }
+    func testLateAudioURLAfterSourceSwitchCannotAcquireAudioSession() async throws {
+        let api = NetEaseFixtureAPI(); api.deferAudio = true
+        let session = NetEaseSession(api: api, store: NetEaseMemoryStore())
+        try await session.importCookie("MUSIC_U=x")
+        let d = try XCTUnwrap(UserDefaults(suiteName: "NetEaseLateAudio-\(UUID())"))
+        let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: d)
+        playback.start()
+        let song = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Song"], kind: .track))
+        let work = Task { try await playback.play(item: song, context: nil, position: nil) }
+        for _ in 0..<100 where api.audioContinuation == nil { await Task.yield() }
+        playback.deselect()
+        api.audioContinuation?.resume(returning: .init(object: ["data": [["id": 42, "code": 200, "url": "https://m7.music.126.net/a.mp3", "level": "exhigh"]]], cookie: nil))
+        do { try await work.value; XCTFail("Late source must cancel") } catch is CancellationError {} catch { XCTFail("\(error)") }
+        XCTAssertFalse(MusicAudioSession.ownsPlayback)
+    }
+    func testPauseDuringAudioLookupDoesNotStartReturnedSource() async throws {
+        let api = NetEaseFixtureAPI(); api.deferAudio = true
+        let session = NetEaseSession(api: api, store: NetEaseMemoryStore())
+        try await session.importCookie("MUSIC_U=x")
+        let d = try XCTUnwrap(UserDefaults(suiteName: "NetEasePauseLookup-\(UUID())"))
+        let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: d)
+        playback.start()
+        let song = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Song"], kind: .track))
+        let work = Task { try await playback.play(item: song, context: nil, position: nil) }
+        for _ in 0..<100 where api.audioContinuation == nil { await Task.yield() }
+        try await playback.pause()
+        api.audioContinuation?.resume(returning: .init(object: ["data": [["id": 42, "code": 200, "url": "https://m7.music.126.net/a.mp3"]]], cookie: nil))
+        do { try await work.value; XCTFail("Paused lookup must cancel") } catch is CancellationError {} catch { XCTFail("\(error)") }
+        XCTAssertFalse(MusicAudioSession.ownsPlayback); playback.deselect()
+    }
+    func testRandomContextRequestsOnlyOneStartingAudioSource() async throws {
+        let api = NetEaseFixtureAPI()
+        let session = NetEaseSession(api: api, store: NetEaseMemoryStore())
+        try await session.importCookie("MUSIC_U=x")
+        let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session),
+                                      defaults: try XCTUnwrap(UserDefaults(suiteName: "NetEaseRandom-\(UUID())")))
+        playback.start()
+        let playlist = try XCTUnwrap(NetEaseDecoder.item(["id": 99, "name": "List"], kind: .playlist))
+        do { try await playback.playShuffled(playlist); XCTFail("Fixture has no audio") } catch {}
+        XCTAssertEqual(api.paths.filter { $0 == "/song/enhance/player/url/v1" }.count, 1)
+        XCTAssertEqual(Set(playback.queue.shuffleOrder ?? []).count, playback.queue.entries.count)
+        XCTAssertEqual(playback.queue.shuffleOrder?.first, playback.queue.currentID)
+        playback.deselect()
+    }
+    func testQueueRemovalDoesNotLeaveDeletedSongPlayingOrDuplicateIdentity() async throws {
+        let session = NetEaseSession(api: NetEaseFixtureAPI(), store: NetEaseMemoryStore())
+        try await session.importCookie("MUSIC_U=x")
+        let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session),
+                                      defaults: try XCTUnwrap(UserDefaults(suiteName: "NetEaseRemove-\(UUID())")))
+        playback.start()
+        let item = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Song"], kind: .track))
+        try await playback.enqueue(item, next: false); try await playback.enqueue(item, next: false)
+        let old = playback.queue.currentID
+        playback.remove(at: [0])
+        XCTAssertEqual(playback.queue.entries.count, 1); XCTAssertNotEqual(playback.queue.currentID, old)
+        XCTAssertFalse(MusicAudioSession.ownsPlayback)
+        playback.remove(at: [0]); XCTAssertNil(playback.queue.currentID); playback.deselect()
+    }
+    func testUnsignedBrowsingHasOnlyPublicHomeSectionsAndWritesRemainUnavailable() {
+        let session = NetEaseSession(api: NetEaseFixtureAPI(), store: NetEaseMemoryStore())
+        let catalog = NetEaseCatalog(session: session)
+        XCTAssertEqual(catalog.homeSections, [.recommendations, .charts])
+        XCTAssertTrue(catalog.librarySections.isEmpty)
+        XCTAssertFalse(session.currentState.capabilities.canEditPlaylists)
+        XCTAssertFalse(session.currentState.capabilities.canEditQueue)
+    }
+
+    func testAudioInterruptionInvalidatesPendingURLAndNeverResumesAutomatically() async throws {
+        let api = NetEaseFixtureAPI(); api.deferAudio = true
+        let session = NetEaseSession(api: api, store: NetEaseMemoryStore())
+        try await session.importCookie("MUSIC_U=x")
+        let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session),
+                                      defaults: try XCTUnwrap(UserDefaults(suiteName: "NetEaseInterrupt-\(UUID())")))
+        playback.start()
+        let song = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Song"], kind: .track))
+        let work = Task { try await playback.play(item: song, context: nil, position: nil) }
+        for _ in 0..<100 where api.audioContinuation == nil { await Task.yield() }
+        playback.suspendForInterruption()
+        api.audioContinuation?.resume(returning: .init(object: ["data": [["id": 42, "code": 200, "url": "https://m7.music.126.net/a.mp3"]]], cookie: nil))
+        do { try await work.value; XCTFail("Interrupted lookup must cancel") } catch is CancellationError {} catch { XCTFail("\(error)") }
+        XCTAssertFalse(MusicAudioSession.ownsPlayback); playback.deselect()
+    }
+    func testPlayNextInShuffleAppearsImmediatelyAfterCurrentEntry() async throws {
+        let session = NetEaseSession(api: NetEaseFixtureAPI(), store: NetEaseMemoryStore())
+        try await session.importCookie("MUSIC_U=x")
+        let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session),
+                                      defaults: try XCTUnwrap(UserDefaults(suiteName: "NetEasePlayNext-\(UUID())")))
+        playback.start()
+        let song = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Song"], kind: .track))
+        for _ in 0..<4 { try await playback.enqueue(song, next: false) }
+        try await playback.setShuffle(true)
+        let prior = playback.displayedEntries.map(\.id)
+        try await playback.enqueue(song, next: true)
+        let after = playback.displayedEntries.map(\.id)
+        XCTAssertEqual(after[0], prior[0]); XCTAssertFalse(prior.contains(after[1]))
+        XCTAssertEqual(Array(after.dropFirst(2)), Array(prior.dropFirst()))
+        playback.deselect()
+    }
 }
 @MainActor private final class NetEaseFixtureAPI: NetEaseRequesting {
     var userID = 1
     var invalidAccount = false
     var deferQR = false
+    var deferAudio = false
+    var qrCode = 800
+    var audioContinuation: CheckedContinuation<NetEaseResponse, Never>?
     var qrContinuation: CheckedContinuation<NetEaseResponse, Never>?
     var paths: [String] = []
     func send(_ path: String, _ parameters: [String: Any], cookie: String?) async throws -> NetEaseResponse {
@@ -144,6 +278,12 @@ import XCTest
         case "/login/qrcode/unikey":
             if deferQR { return await withCheckedContinuation { qrContinuation = $0 } }
             return .init(object: ["code": 200, "unikey": "key"], cookie: nil)
+        case "/login/qrcode/client/login":
+            return .init(object: ["code": qrCode], cookie: qrCode == 803 ? "MUSIC_U=qr" : nil)
+        case "/fixture/expired": throw NetEaseError.expired
+        case "/song/enhance/player/url/v1":
+            if deferAudio { return await withCheckedContinuation { audioContinuation = $0 } }
+            throw NetEaseError.unavailable
         case "/v6/playlist/detail":
             let ids = (0..<60).map { ["id": $0 < 2 ? 42 : $0] }
             return .init(object: ["playlist": ["id": 99, "name": "List", "trackIds": ids, "creator": ["userId": userID]]], cookie: nil)

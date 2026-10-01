@@ -122,7 +122,7 @@ struct NetEaseQueueView: View {
             List {
                 if let failure = model.netEasePlayback.failure { Text(failure).foregroundStyle(.secondary) }
                 if !model.netEasePlayback.actualQuality.isEmpty { Text("实际音质：\(model.netEasePlayback.actualQuality)") }
-                ForEach(model.netEasePlayback.queue.entries) { entry in
+                ForEach(model.netEasePlayback.displayedEntries) { entry in
                     Button {
                         Task { do { try await model.netEasePlayback.selectEntry(entry.id) } catch { failure = error.localizedDescription } }
                     } label: {
@@ -132,9 +132,9 @@ struct NetEaseQueueView: View {
                         }
                     }
                 }
-                .onDelete { model.netEasePlayback.remove(at: $0) }
+                .onDelete { model.netEasePlayback.removeDisplayed(at: $0) }
                 .onMove { model.netEasePlayback.move(from: $0, to: $1) }
-                Text("正在播放的条目保留；可调整其他条目的顺序。").font(.footnote).foregroundStyle(.secondary)
+                Text("移除正在播放的条目会暂停；其余条目可自由排序。").font(.footnote).foregroundStyle(.secondary)
             }.navigationTitle("网易云播放队列")
                 .toolbar { EditButton(); Button("完成") { dismiss() } }
                 .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {

@@ -31,7 +31,7 @@ enum NetEaseDecoder {
                                                         description: value["description"] as? String, total: value["trackCount"] as? Int) : nil,
                      service: .netease, publicURL: URL(string: "https://music.163.com/#/\(kind == .track ? "song" : kind.rawValue)?id=\(identifier)"),
                      catalogID: identifier, inFavorites: value["subscribed"] as? Bool,
-                     editablePlaylist: own && (value["specialType"] as? Int != 5), libraryWritable: own)
+                     editablePlaylist: own && (value["specialType"] as? Int != 5), libraryWritable: own && (value["specialType"] as? Int != 5))
     }
     static func missingTrack(_ id: String) -> MusicCatalogItem {
         .init(spotifyID: id, kind: .track, name: "不可用歌曲", subtitle: "", artworkURL: nil,

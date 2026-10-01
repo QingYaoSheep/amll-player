@@ -46,6 +46,11 @@ struct NetEaseQueueState: Codable {
     @ObservationIgnored private var lastPosition = 0.0
     @ObservationIgnored private var stallSeconds = 0
     var currentEntry: NetEaseQueueEntry? { queue.entries.first { $0.id == queue.currentID } }
+    var displayedEntries: [NetEaseQueueEntry] {
+        guard queue.shuffle, let order = queue.shuffleOrder else { return queue.entries }
+        let entries = Dictionary(uniqueKeysWithValues: queue.entries.map { ($0.id, $0) })
+        return order.compactMap { entries[$0] }
+    }
     init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard) {
         self.session = session; self.catalog = catalog; self.defaults = defaults
         quality = defaults.string(forKey: "netease.quality.v1").flatMap(NetEaseQuality.init(rawValue:)) ?? .exhigh
@@ -148,17 +153,38 @@ struct NetEaseQueueState: Codable {
         if next, let index = queue.entries.firstIndex(where: { $0.id == queue.currentID }) { queue.entries.insert(entry, at: index + 1) }
         else { queue.entries.append(entry) }
         if queue.currentID == nil { queue.currentID = entry.id }
-        if queue.shuffle { queue.shuffleOrder = (queue.shuffleOrder ?? []) + [entry.id] }
+        if queue.shuffle {
+            var order = queue.shuffleOrder ?? []
+            if next, let index = order.firstIndex(where: { $0 == queue.currentID }) { order.insert(entry.id, at: index + 1) }
+            else { order.append(entry.id) }
+            queue.shuffleOrder = order
+        }
         save(); publish()
     }
     func remove(at offsets: IndexSet) {
-        // The playing entry cannot disappear while its audio continues.
-        let removing = offsets.filter { queue.entries.indices.contains($0) && queue.entries[$0].id != queue.currentID }
+        let removing = offsets.filter { queue.entries.indices.contains($0) }
+        let currentIndex = queue.entries.firstIndex { $0.id == queue.currentID }
+        let removesCurrent = currentIndex.map { removing.contains($0) } ?? false
+        if removesCurrent {
+            generation = UUID(); intentPlaying = false; player.pause(); player.replaceCurrentItem(with: nil)
+            itemObservation?.invalidate(); itemObservation = nil; queue.position = 0
+            removeCommands(); MusicAudioSession.releasePlayback()
+        }
         for i in removing.sorted(by: >) { queue.entries.remove(at: i) }
+        if removesCurrent { queue.currentID = queue.entries.isEmpty ? nil : queue.entries[min(currentIndex ?? 0, queue.entries.count - 1)].id }
         let remaining = Set(queue.entries.map(\.id)); queue.shuffleOrder = queue.shuffleOrder?.filter { remaining.contains($0) }
         save(); publish()
     }
-    func move(from offsets: IndexSet, to target: Int) { queue.entries.move(fromOffsets: offsets, toOffset: target); save(); publish() }
+    func removeDisplayed(at offsets: IndexSet) {
+        let entries = displayedEntries
+        let ids = Set(offsets.compactMap { entries.indices.contains($0) ? entries[$0].id : nil })
+        remove(at: IndexSet(queue.entries.indices.filter { ids.contains(queue.entries[$0].id) }))
+    }
+    func move(from offsets: IndexSet, to target: Int) {
+        if queue.shuffle { queue.shuffleOrder?.move(fromOffsets: offsets, toOffset: target) }
+        else { queue.entries.move(fromOffsets: offsets, toOffset: target) }
+        save(); publish()
+    }
     func selectEntry(_ id: UUID) async throws {
         guard queue.entries.contains(where: { $0.id == id }), selected else { throw CancellationError() }
         queue.currentID = id; try await loadCurrent(position: 0, resetRetries: true)
@@ -191,13 +217,13 @@ struct NetEaseQueueState: Codable {
             player.replaceCurrentItem(with: item)
             itemObservation = item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
                 Task { @MainActor in
-                    guard let self, let item, selected, intentPlaying, player.currentItem === item else { return }
+                    guard let self, let item, self.selected, self.intentPlaying, self.player.currentItem === item else { return }
                     if item.status == .failed {
-                        if reloads < 1 {
-                            reloads += 1
-                            do { try await loadCurrent(position: position, resetRetries: false) }
-                            catch is CancellationError {} catch { fail(error) }
-                        } else { fail(NetEaseError.unavailable) }
+                        if self.reloads < 1 {
+                            self.reloads += 1
+                            do { try await self.loadCurrent(position: self.position, resetRetries: false) }
+                            catch is CancellationError {} catch { self.fail(error) }
+                        } else { self.fail(NetEaseError.unavailable) }
                     }
                 }
             }
@@ -308,8 +334,8 @@ struct NetEaseQueueState: Codable {
         func command(_ c: MPRemoteCommand, _ action: @escaping @MainActor () async throws -> Void) {
             let target = c.addTarget { [weak self] _ in
                 Task { @MainActor in
-                    guard let self, selected else { return }
-                    do { try await action() } catch { fail(error) }
+                    guard let self, self.selected else { return }
+                    do { try await action() } catch is CancellationError {} catch { self.fail(error) }
                 }
                 return .success
             }
@@ -326,8 +352,8 @@ struct NetEaseQueueState: Codable {
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let time = event.positionTime
             Task { @MainActor in
-                guard let self, selected else { return }
-                do { try await seek(to: time) } catch { fail(error) }
+                guard let self, self.selected else { return }
+                do { try await self.seek(to: time) } catch is CancellationError {} catch { self.fail(error) }
             }
             return .success
         }
@@ -337,40 +363,46 @@ struct NetEaseQueueState: Codable {
         commands.forEach { $0.0.removeTarget($0.1) }; commands.removeAll()
         if MusicAudioSession.ownsPlayback { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil }
     }
+    /// Invalidates pending source/seek work as well as pausing ready audio.
+    func suspendForInterruption() {
+        guard selected else { return }
+        generation = UUID(); intentPlaying = false; player.pause()
+        queue.position = position; save(); publish()
+    }
+    private func resetAudioServices() {
+        guard selected else { return }
+        suspendForInterruption()
+        player = AVPlayer(); itemObservation?.invalidate(); itemObservation = nil
+        removeCommands(); MusicAudioSession.releasePlayback(); publish()
+    }
     private func installNotifications() {
         guard observers.isEmpty else { return }
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] n in
+        observers.append(center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] notification in
             MainActor.assumeIsolated {
-                guard let self, selected, n.object as? AVPlayerItem === player.currentItem else { return }
-                let epoch = generation
+                guard let self, self.selected, notification.object as? AVPlayerItem === self.player.currentItem else { return }
+                let epoch = self.generation
                 Task { @MainActor in
                     guard self.selected, self.generation == epoch else { return }
-                    do { try await self.advance(forward: true, automatic: true) } catch is CancellationError {} catch { self.fail(error) }
+                    do { try await self.advance(forward: true, automatic: true) }
+                    catch is CancellationError {} catch { self.fail(error) }
                 }
             }
         })
-        observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
-            let type = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+        observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
+            let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             MainActor.assumeIsolated {
-                guard let self, selected, type == AVAudioSession.InterruptionType.began.rawValue else { return }
-                intentPlaying = false; player.pause(); queue.position = position; save(); publish()
+                if type == AVAudioSession.InterruptionType.began.rawValue { self?.suspendForInterruption() }
             }
         })
-        observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] n in
-            let reason = n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+        observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
+            let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
             MainActor.assumeIsolated {
-                guard let self, selected, reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
-                intentPlaying = false; player.pause(); save(); publish()
+                if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.suspendForInterruption() }
             }
         })
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, selected else { return }
-                queue.position = position; intentPlaying = false; player = AVPlayer(); generation = UUID()
-                itemObservation?.invalidate(); itemObservation = nil
-                removeCommands(); MusicAudioSession.releasePlayback(); save(); publish()
-            }
+            MainActor.assumeIsolated { self?.resetAudioServices() }
         })
     }
 }

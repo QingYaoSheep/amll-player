@@ -283,4 +283,29 @@ final class AMLLFocusRetirementTests: XCTestCase {
         XCTAssertEqual(frame.rows[0].brightAlpha, 0.2, accuracy: 0.001)
         XCTAssertGreaterThan(frame.rows[0].blur, 0)
     }
+
+    func testBackwardEndCorrectionDoesNotRetireTheRestoredVoiceAgain() {
+        for spring in [false, true] {
+            let lines = [(0.0, 1.0), (2.0, 3.0)].enumerated().map { index, span in
+                LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
+                          words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
+            }
+            var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+            environment.advance = 0.3
+            environment.enableSpring = spring
+            environment.hidePassedLines = true
+            var player = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: [60, 60])
+            _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+            _ = player.render(.init(position: 1.01, playing: true), delta: 0.91)
+            _ = player.render(.init(position: 1.11, playing: true), delta: 0.016)
+            for index in 0 ..< 3 {
+                let row = player.render(.init(position: 0.99 + Double(index) * 0.001, playing: true), delta: 0.001).rows[0]
+                XCTAssertTrue(row.active)
+                XCTAssertEqual(row.visualFocus, .current)
+                XCTAssertNil(row.retirement)
+                XCTAssertTrue(row.wordClock.enabled)
+                XCTAssertGreaterThan(row.opacity, 0.1)
+            }
+        }
+    }
 }

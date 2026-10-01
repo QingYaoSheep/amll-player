@@ -569,7 +569,7 @@ struct AMLLFrameEngine {
                     }
                 }
             }
-            layoutGroups(playing: input.playing, seeking: seeking, frameStart: animationTime - elapsed)
+            layoutGroups(playing: input.playing, seeking: seeking, frameStart: animationTime - elapsed, sourcePosition: input.position)
             dirty = false
         }
         let forceAlpha = seeking || firstFrame || environment.reduceMotion
@@ -593,7 +593,7 @@ struct AMLLFrameEngine {
                 selectVisualFocus(pending.index, at: boundary)
                 pendingVisualFocus = nil
             }
-            layoutGroups(playing: input.playing, seeking: false, frameStart: boundary)
+            layoutGroups(playing: input.playing, seeking: false, frameStart: boundary, sourcePosition: input.position)
             dirty = false
             appearanceTime = boundary
         }
@@ -795,7 +795,7 @@ struct AMLLFrameEngine {
         }
     }
 
-    private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double) {
+    private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double, sourcePosition: Double) {
         for index in motions.indices {
             let preparesBackground = document.groups[index].background != nil && visualFocus == index
                 && !browsing && !motions[index].backgroundCompleted && motions[index].backgroundRetirement == nil
@@ -843,6 +843,7 @@ struct AMLLFrameEngine {
             motions[index].visualActive = focused
             motions[index].active = active[index]
             motions[index].opacity = environment.hidePassedLines && playing && !active[index] && !focused
+                && !motions[index].mainSinging && !motions[index].backgroundSinging
                 && index < (interlude.map { $0.anchor + 1 } ?? appearanceFocus)
                 ? 0.0001 : (active[index] || focused ? 0.85 : (nonDynamic ? 0.2 : 1))
             var blur = 0.0
@@ -872,6 +873,7 @@ struct AMLLFrameEngine {
             // same frame instead of leaving opacity/blur on a stale value.
             let immediate = seeking || firstFrame || environment.reduceMotion
             let immediatePosition = immediate || browsing || positionReset
+            let positionTargetChanged = motions[index].y.target != y
             if motions[index].y.target != y || motions[index].slide.target != slide {
                 if !revisedPositions {
                     positionRevision &+= 1; revisedPositions = true
@@ -928,11 +930,16 @@ struct AMLLFrameEngine {
             if browsing {
                 motions[index].blurTransition.setPosition(0)
             }
+            // A source-clock correction can restore a singing row while its
+            // previous upward motion is already running. Do not consume that
+            // old motion's appearance event again on an unrelated layout.
+            let startsUpwardMotion = (previousInput.map { $0.position <= sourcePosition } ?? true)
+                && (positionTargetChanged || (environment.enableSpring && motions[index].y.schedule.startedAt == nil))
             if seeking || browsing || positionReset {
                 motions[index].completedReleaseAt = nil
             } else if index < timeline.focus, y < motions[index].y.position,
-                      (motions[index].mainFocusRetained && (motions[index].mainCompleted || canReleaseBeforeWordEnd(in: index, line: group.main)))
-                      || (motions[index].backgroundFocusRetained && group.background.map { motions[index].backgroundCompleted || canReleaseBeforeWordEnd(in: index, line: $0) } == true),
+                      (motions[index].mainFocusRetained && (motions[index].mainCompleted || (startsUpwardMotion && canReleaseBeforeWordEnd(in: index, line: group.main))))
+                      || (motions[index].backgroundFocusRetained && group.background.map { motions[index].backgroundCompleted || (startsUpwardMotion && canReleaseBeforeWordEnd(in: index, line: $0)) } == true),
                       motions[index].completedReleaseAt == nil
             {
                 // Retire the outgoing row when its OWN upward motion starts,

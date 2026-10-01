@@ -68,7 +68,7 @@ final class MusicCatalogPageState {
                 // Cancellation is not a user-visible network failure.
             } catch {
                 guard let self, generation == epoch else { return }
-                self.error = error as? SpotifyCatalogError ?? .invalidResponse
+                self.error = .presenting(error, service: provider.service)
             }
             guard let self, generation == epoch else { return }
             isLoading = false
@@ -115,7 +115,7 @@ final class MusicCatalogDetailState {
             } catch is CancellationError {
             } catch {
                 guard let self, generation == epoch else { return }
-                self.error = error as? SpotifyCatalogError ?? .invalidResponse
+                self.error = .presenting(error, service: provider.service)
             }
             guard let self, generation == epoch else { return }
             isLoading = false
@@ -238,7 +238,7 @@ final class MusicCatalogStore {
             } catch is CancellationError {
             } catch {
                 guard identity == epoch else { return }
-                profileError = error as? SpotifyCatalogError ?? .invalidResponse
+                profileError = .presenting(error, service: provider.service)
             }
         }
         profileTask = work

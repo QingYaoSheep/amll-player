@@ -48,7 +48,7 @@ final class MusicPlaylistEditingState {
             isLoaded = true
         } catch is CancellationError {} catch {
             guard token == generation else { return }
-            self.error = error.localizedDescription
+            self.error = MusicCatalogError.presenting(error, service: provider.service).localizedDescription
         }
     }
 }

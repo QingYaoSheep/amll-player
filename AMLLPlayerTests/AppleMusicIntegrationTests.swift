@@ -133,6 +133,18 @@ final class AppleMusicIntegrationTests: XCTestCase {
         XCTAssertEqual(PlayerClock(anchor: invalid).position(at: 10), 0)
     }
 
+    func testAppleMusicErrorsPreserveConfigurationAndCorrectServiceWording() {
+        let configuration = MusicCatalogError.presenting(MusicServiceError.musicConfiguration, service: .appleMusic)
+        XCTAssertEqual(configuration, .service(.musicConfiguration, retry: false))
+        XCTAssertFalse(configuration.allowsRetry)
+        XCTAssertTrue(configuration.localizedDescription.contains("MusicKit"))
+        let denied = MusicCatalogError.presenting(MusicCatalogError.forbidden, service: .appleMusic)
+        XCTAssertFalse(denied.allowsRetry)
+        XCTAssertTrue(denied.localizedDescription.contains("Apple Music"))
+        XCTAssertFalse(denied.localizedDescription.contains("Spotify"))
+        XCTAssertEqual(MusicCatalogError.presenting(MusicCatalogError.forbidden, service: .spotify), .forbidden)
+    }
+
     func testOlderAuthorizationRefreshCannotRestoreRevokedConnection() async throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
         defaults.set(true, forKey: "appleMusic.connected.v1")

@@ -201,6 +201,26 @@ struct MusicCatalogDetail: Sendable {
 enum MusicCatalogError: Error, Equatable, LocalizedError, Sendable {
     case signInRequired, forbidden, unavailable, quotaExceeded, invalidResponse, offline
     case rateLimited(until: Date)
+    case service(MusicServiceError, retry: Bool)
+
+    static func presenting(_ error: Error, service: MusicServiceID) -> Self {
+        if let error = error as? MusicServiceError {
+            let retry: Bool
+            switch error {
+            case .musicConfiguration, .musicPermissionDenied, .musicPermissionRestricted, .musicSubscriptionRequired, .cloudLibraryRequired: retry = false
+            default: retry = true
+            }
+            return .service(error, retry: retry)
+        }
+        let error = error as? Self ?? .invalidResponse
+        guard service == .appleMusic else { return error }
+        switch error {
+        case .signInRequired: return .service(.musicPermissionDenied, retry: false)
+        case .forbidden: return .service(.musicFailure("Apple Music 拒绝访问，请检查系统授权、订阅和同步资料库状态。"), retry: false)
+        case .invalidResponse: return .service(.musicFailure("Apple Music 返回了无法识别的响应。"), retry: true)
+        default: return error
+        }
+    }
 
     var errorDescription: String? {
         switch self {
@@ -210,6 +230,7 @@ enum MusicCatalogError: Error, Equatable, LocalizedError, Sendable {
         case .quotaExceeded: String(localized: "catalog.error.quota")
         case .invalidResponse: String(localized: "error.spotifyInvalidResponse")
         case .offline: String(localized: "error.offline")
+        case let .service(error, _): error.localizedDescription
         case let .rateLimited(until):
             String(localized: "catalog.error.rateLimit") + " " + until.formatted(date: .omitted, time: .standard)
         }
@@ -219,6 +240,7 @@ enum MusicCatalogError: Error, Equatable, LocalizedError, Sendable {
         switch self {
         case .quotaExceeded, .signInRequired, .forbidden: false
         case let .rateLimited(until): Date() >= until
+        case let .service(_, retry): retry
         default: true
         }
     }

@@ -88,7 +88,7 @@ final class AppleMusicSession: MusicSessionProviding {
             guard account.authorization == .authorized else { await refresh(); return }
             currentState.connected = false
             currentState.capabilities = .init()
-            currentState.error = error as? MusicServiceError ?? .musicFailure(error.localizedDescription)
+            currentState.error = error as? MusicServiceError ?? .musicFailure(MusicCatalogError.presenting(error, service: .appleMusic).localizedDescription)
         }
         publish()
     }

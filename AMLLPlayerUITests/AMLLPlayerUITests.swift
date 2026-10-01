@@ -16,7 +16,16 @@ final class AMLLPlayerUITests: XCTestCase {
         app.buttons["openSettings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 2))
         XCTAssertEqual(app.sheets.count, 0)
-        XCTAssertTrue(app.staticTexts["Spotify connection only"].exists)
+        XCTAssertTrue(app.buttons["spotifyLoginLink"].exists)
+        XCTAssertTrue(app.buttons["appleMusicLoginLink"].exists)
+
+        // Apple Music authorization must be reachable without configuring Spotify.
+        app.buttons["appleMusicLoginLink"].tap()
+        XCTAssertTrue(app.navigationBars["登录到 Apple Music"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["appleMusicAuthorize"].exists)
+        XCTAssertEqual(app.sheets.count, 0)
+        app.navigationBars["登录到 Apple Music"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["Settings"].exists)
 
         app.buttons["spotifyLoginLink"].tap()
         XCTAssertTrue(app.navigationBars["Sign in to Spotify"].waitForExistence(timeout: 2))

@@ -152,7 +152,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     }
 
     private func play(item: MusicCatalogItem, context: MusicResourceID?, position: Int?, shuffled: Bool) async throws {
-        try requireConnection()
+        try session.requireCatalog()
         guard session.currentState.capabilities.canPlayCatalog || item.scope == .library else { throw MusicServiceError.musicSubscriptionRequired }
         guard item.service == .appleMusic, item.canPlay else { throw MusicCatalogError.unavailable }
         let token = commandGeneration
@@ -186,7 +186,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         case .artist, .musicVideo: throw MusicServiceError.unsupportedOperation
         }
         try Task.checkCancellation()
-        guard token == commandGeneration, connection == session.connectionID, enabled else { throw CancellationError() }
+        guard token == commandGeneration, connection == session.connectionID, enabled, session.currentState.capabilities.canBrowse else { throw CancellationError() }
         player.state.shuffleMode = shuffled ? .songs : .off
         player.queue = queue
         try await player.play()
@@ -197,7 +197,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     }
 
     func enqueue(_ item: MusicCatalogItem, next: Bool) async throws {
-        try requireConnection()
+        try session.requireCatalog()
         guard let resource = item.resource, resource.service == .appleMusic, resource.kind == .track else { throw MusicServiceError.unsupportedOperation }
         let token = commandGeneration
         let connection = session.connectionID
@@ -208,6 +208,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     }
 
     func resolveSong(_ resource: MusicResourceID) async throws -> Song {
+        try session.requireCatalog()
         if resource.scope == .library {
             var request = MusicLibraryRequest<Song>()
             request.filter(matching: \.id, equalTo: MusicItemID(resource.rawValue))
@@ -220,6 +221,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     }
 
     func resolvePlaylist(_ resource: MusicResourceID) async throws -> Playlist {
+        try session.requireCatalog()
         if resource.scope == .library {
             var request = MusicLibraryRequest<Playlist>()
             request.filter(matching: \.id, equalTo: MusicItemID(resource.rawValue))
@@ -231,6 +233,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     }
 
     private func resolveAlbum(_ resource: MusicResourceID) async throws -> Album {
+        try session.requireCatalog()
         if resource.scope == .library {
             var request = MusicLibraryRequest<Album>()
             request.filter(matching: \.id, equalTo: MusicItemID(resource.rawValue))

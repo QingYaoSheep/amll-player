@@ -51,6 +51,8 @@ struct MusicConnectionState: Equatable, Sendable {
     var contextID = UUID()
     var connected = false
     var requesting = false
+    /// System authorization enables observation independently of catalog token checks.
+    var catalogChecking = false
     var authorization: MusicAuthorizationState = .notDetermined
     var storefront: String?
     var capabilities = MusicServiceCapabilities()

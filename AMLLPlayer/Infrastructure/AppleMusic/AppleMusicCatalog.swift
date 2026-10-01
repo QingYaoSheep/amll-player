@@ -31,7 +31,7 @@ final class AppleMusicCatalog: MusicCatalogProviding {
     }
 
     func page(_ query: MusicCatalogQuery, next: URL?) async throws -> MusicPage<MusicCatalogRow> {
-        try requireConnection()
+        try session.requireCatalog()
         if case .collection(.downloaded) = query {
             return try await downloaded(next: next)
         }
@@ -57,7 +57,7 @@ final class AppleMusicCatalog: MusicCatalogProviding {
     }
 
     func detail(resource: MusicResourceID) async throws -> MusicCatalogDetail {
-        try requireConnection()
+        try session.requireCatalog()
         let token = generation
         let context = session.connectionID
         let path = try AppleMusicAPI.resourcePath(resource, storefront: region)
@@ -78,7 +78,7 @@ final class AppleMusicCatalog: MusicCatalogProviding {
     }
 
     func suggestions(_ term: String) async throws -> [String] {
-        try requireConnection()
+        try session.requireCatalog()
         let token = generation
         let context = session.connectionID
         let data = try await session.api.send(AppleMusicAPI.request("/v1/catalog/\(region)/search/suggestions", parameters: [
@@ -216,6 +216,6 @@ final class AppleMusicCatalog: MusicCatalogProviding {
 
     private func check(_ token: UUID, _ context: UUID) throws {
         try Task.checkCancellation()
-        guard token == generation, context == session.connectionID, session.currentState.connected else { throw CancellationError() }
+        guard token == generation, context == session.connectionID, session.currentState.connected, session.currentState.capabilities.canBrowse else { throw CancellationError() }
     }
 }

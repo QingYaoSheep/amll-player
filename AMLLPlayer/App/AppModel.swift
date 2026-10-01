@@ -488,6 +488,7 @@ final class AppModel {
                     || appleMusicState.contextID != state.contextID
                     || appleMusicState.capabilities.canModifyLibrary != state.capabilities.canModifyLibrary
                     || appleMusicState.connected != state.connected
+                    || appleMusicState.capabilities.canBrowse != state.capabilities.canBrowse
                 appleMusicState = state
                 if changed {
                     appleStore.reset()

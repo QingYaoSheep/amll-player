@@ -213,10 +213,14 @@ final class AppleMusicIntegrationTests: XCTestCase {
         await waitUntil { api.pending.count == 2 }
         api.pending[1].resume(throwing: MusicCatalogError.offline)
         await offline.value
+        XCTAssertTrue(session.currentState.connected)
+        XCTAssertFalse(session.currentState.capabilities.canBrowse)
         account.updates.yield(.init(canBrowse: true))
         for _ in 0 ..< 20 {
             await Task.yield()
         }
+        XCTAssertFalse(session.currentState.capabilities.canBrowse)
+        XCTAssertFalse(session.currentState.capabilities.canModifyLibrary)
         let recovery = Task { await session.refresh() }
         await waitUntil { api.pending.count == 3 }
         api.pending[2].resume(returning: Data(#"{"data":[{"id":"us"}]}"#.utf8))
@@ -306,6 +310,99 @@ final class AppleMusicIntegrationTests: XCTestCase {
         XCTAssertNil(model.presentedError)
     }
 
+    func testAuthorizedSystemConnectionStartsBeforeCatalogCheckCompletes() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(true, forKey: "appleMusic.connected.v1")
+        let api = MusicTestAPI()
+        let session = AppleMusicSession(api: api, defaults: defaults, account: MusicTestAccount())
+        let request = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 1 }
+        XCTAssertTrue(session.currentState.connected)
+        XCTAssertFalse(session.currentState.capabilities.canBrowse)
+        XCTAssertTrue(session.currentState.capabilities.usesSystemRoutes)
+        api.pending[0].resume(throwing: MusicServiceError.musicConfiguration)
+        await request.value
+        XCTAssertTrue(session.currentState.connected)
+        XCTAssertEqual(session.currentState.error, .musicConfiguration)
+        XCTAssertFalse(session.currentState.capabilities.canPlayCatalog)
+        let catalog = AppleMusicCatalog(session: session, defaults: defaults)
+        let profile = try await catalog.profile()
+        XCTAssertEqual(profile.displayName, "Apple Music")
+        do {
+            _ = try await catalog.page(.search("song", .track), next: nil)
+            XCTFail("Unavailable catalog must not make another token request")
+        } catch let error as MusicServiceError {
+            XCTAssertEqual(error, .musicConfiguration)
+        }
+        XCTAssertEqual(api.pending.count, 1)
+        session.disconnect()
+    }
+
+    func testSubscriptionTokenFailureStillAllowsSystemSongAndLyricsObservation() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(true, forKey: "appleMusic.connected.v1")
+        let account = MusicTestAccount()
+        account.subscriptionError = MusicServiceError.musicConfiguration
+        let api = MusicTestAPI()
+        let session = AppleMusicSession(api: api, defaults: defaults, account: account)
+        let preferences = MusicSourcePreferences(defaults: defaults)
+        preferences.selected = .appleMusic
+        let apple = MusicTestPlayback()
+        let model = AppModel(environment: .init(configuration: .preview, diagnostics: DiagnosticsStore(),
+                                                spotifySession: MusicTestSpotifySession(), spotifyPlayback: MusicTestPlayback()),
+                             catalogProvider: MusicTestCatalog(service: .spotify), lyrics: .init(providers: [], cache: MemoryLyricsCache()),
+                             appleSession: session, applePlayback: apple, appleCatalog: AppleMusicCatalog(session: session, defaults: defaults),
+                             musicPreferences: preferences)
+        model.prepare()
+        await waitUntil { model.appleMusicState.error != nil }
+        XCTAssertTrue(model.currentServiceConnected)
+        XCTAssertTrue(apple.started)
+        XCTAssertTrue(api.pending.isEmpty)
+        let item = PlaybackItem(id: "42", uri: "applemusic:catalog:track:42", title: "System song", artists: ["Artist"],
+                                albumTitle: nil, artworkURL: nil, duration: 100, isEpisode: false, isAdvertisement: false,
+                                service: .appleMusic)
+        apple.continuation.yield(.init(item: item, isPlaying: true, position: 10, duration: 100, device: nil,
+                                       restrictions: .unrestricted, source: .musicKit, sampledAtUptime: 10))
+        await waitUntil { model.lyrics.track?.title == "System song" }
+        XCTAssertEqual(model.playbackSnapshot?.position, 10)
+        XCTAssertTrue(apple.commands.isEmpty)
+        model.disconnectAppleMusic()
+        XCTAssertFalse(apple.started)
+        XCTAssertNil(model.playbackSnapshot)
+    }
+
+    func testDisconnectDuringCatalogCheckCannotRestoreSystemConnection() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(true, forKey: "appleMusic.connected.v1")
+        let api = MusicTestAPI()
+        let session = AppleMusicSession(api: api, defaults: defaults, account: MusicTestAccount())
+        let request = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 1 }
+        session.disconnect()
+        api.pending[0].resume(returning: Data(#"{"data":[{"id":"us"}]}"#.utf8))
+        await request.value
+        XCTAssertFalse(session.currentState.connected)
+        XCTAssertFalse(session.currentState.capabilities.canBrowse)
+        XCTAssertNil(session.currentState.error)
+    }
+
+    func testCancelledCatalogCheckRechecksRevokedAuthorization() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(true, forKey: "appleMusic.connected.v1")
+        let api = MusicTestAPI(), account = MusicTestAccount()
+        let session = AppleMusicSession(api: api, defaults: defaults, account: account)
+        let request = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 1 }
+        account.authorization = .denied
+        api.pending[0].resume(throwing: CancellationError())
+        await request.value
+        XCTAssertFalse(session.currentState.connected)
+        XCTAssertEqual(session.currentState.authorization, .denied)
+        XCTAssertEqual(session.currentState.error, .musicPermissionDenied)
+        XCTAssertFalse(session.currentState.catalogChecking)
+        XCTAssertFalse(session.currentState.capabilities.usesSystemRoutes)
+    }
+
     private func waitUntil(_ predicate: () -> Bool) async {
         for _ in 0 ..< 1000 {
             if predicate() {
@@ -372,8 +469,15 @@ private final class MusicTestPlayback: SpotifyPlaybackProviding {
         playbackSnapshots = stream.stream; continuation = stream.continuation
     }
 
-    func start() {}
-    func stop() {}
+    var started = false
+    func start() {
+        started = true
+    }
+
+    func stop() {
+        started = false
+    }
+
     func enterForeground() {}
     func enterBackground() {}
     func refresh() async throws {}
@@ -460,7 +564,11 @@ private final class MusicTestCatalog: MusicCatalogProviding {
     }
 
     func requestAuthorization() async {}
+    var subscriptionError: Error?
     func subscription() async throws -> MusicServiceCapabilities {
-        .init(canBrowse: true, canPlayCatalog: true, canModifyLibrary: true)
+        if let subscriptionError {
+            throw subscriptionError
+        }
+        return .init(canBrowse: true, canPlayCatalog: true, canModifyLibrary: true)
     }
 }

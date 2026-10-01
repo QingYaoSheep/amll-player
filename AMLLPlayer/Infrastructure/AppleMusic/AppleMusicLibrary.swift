@@ -84,12 +84,12 @@ final class AppleMusicLibrary: MusicLibraryMutating {
     }
 
     private func requireLibrary() throws {
-        guard session.currentState.connected else { throw MusicServiceError.musicPermissionDenied }
+        try session.requireCatalog()
         guard session.currentState.capabilities.canModifyLibrary else { throw MusicServiceError.cloudLibraryRequired }
     }
 
     private func check(_ context: UUID) throws {
         try Task.checkCancellation()
-        guard context == session.connectionID, session.currentState.connected else { throw CancellationError() }
+        guard context == session.connectionID, session.currentState.connected, session.currentState.capabilities.canModifyLibrary else { throw CancellationError() }
     }
 }

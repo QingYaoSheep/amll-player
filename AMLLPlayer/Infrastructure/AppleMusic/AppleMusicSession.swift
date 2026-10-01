@@ -39,6 +39,8 @@ final class AppleMusicSession: MusicSessionProviding {
         wantsConnection = true
         currentState.requesting = true
         currentState.connected = false
+        currentState.catalogChecking = false
+        currentState.storefront = nil
         currentState.capabilities = .init()
         currentState.error = nil
         publish()
@@ -58,6 +60,8 @@ final class AppleMusicSession: MusicSessionProviding {
         currentState.requesting = false
         guard status == .authorized else {
             currentState.connected = false
+            currentState.catalogChecking = false
+            currentState.storefront = nil
             currentState.capabilities = .init()
             currentState.error = status == .restricted ? .musicPermissionRestricted : .musicPermissionDenied
             subscriptionTask?.cancel()
@@ -65,6 +69,13 @@ final class AppleMusicSession: MusicSessionProviding {
             publish()
             return
         }
+
+        // System observation depends on authorization, not on catalog tokens.
+        currentState.connected = true
+        currentState.catalogChecking = true
+        currentState.capabilities.usesSystemRoutes = true
+        currentState.error = nil
+        publish()
         do {
             let capabilities = try await account.subscription()
             let data = try await api.send(AppleMusicAPI.request("/v1/me/storefront"))
@@ -77,20 +88,37 @@ final class AppleMusicSession: MusicSessionProviding {
             if currentState.storefront != nil, currentState.storefront != region {
                 connectionID = UUID()
             }
-            currentState.connected = true
+            currentState.catalogChecking = false
             currentState.storefront = region
             currentState.capabilities = capabilities
             currentState.error = nil
             observeSubscription()
-        } catch is CancellationError { return }
-        catch {
+        } catch is CancellationError {
             guard token == generation, refreshToken == refreshGeneration else { return }
             guard account.authorization == .authorized else { await refresh(); return }
-            currentState.connected = false
-            currentState.capabilities = .init()
-            currentState.error = error as? MusicServiceError ?? .musicFailure(MusicCatalogError.presenting(error, service: .appleMusic).localizedDescription)
+            currentState.catalogChecking = false
+            publish()
+            return
+        } catch {
+            guard token == generation, refreshToken == refreshGeneration else { return }
+            guard account.authorization == .authorized else { await refresh(); return }
+            if currentState.capabilities.canBrowse {
+                connectionID = UUID() // Reject obsolete private catalog results.
+            }
+            currentState.catalogChecking = false
+            currentState.capabilities = .init(usesSystemRoutes: true)
+            currentState.error = error as? MusicServiceError ?? .musicFailure(error.localizedDescription)
         }
         publish()
+    }
+
+    func requireCatalog() throws {
+        guard currentState.connected else { throw MusicCatalogError.signInRequired }
+        guard currentState.capabilities.canBrowse else {
+            throw currentState.error ?? MusicServiceError.musicFailure(
+                currentState.catalogChecking ? "正在检查 Apple Music 目录服务，请稍后重试。" : "Apple Music 目录服务尚未验证。系统歌曲同步仍可使用。"
+            )
+        }
     }
 
     func disconnect() {
@@ -118,7 +146,7 @@ final class AppleMusicSession: MusicSessionProviding {
                 guard !Task.isCancelled, let self, wantsConnection, generation == token else { return }
                 guard account.authorization == .authorized else { await refresh(); return }
                 // A temporary network failure does not terminate the official update sequence.
-                guard currentState.connected else { continue }
+                guard currentState.connected, currentState.capabilities.canBrowse else { continue }
                 let old = currentState.capabilities
                 currentState.capabilities = capabilities
                 if old.canModifyLibrary != capabilities.canModifyLibrary {

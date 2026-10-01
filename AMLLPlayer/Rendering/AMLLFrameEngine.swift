@@ -874,6 +874,8 @@ struct AMLLFrameEngine {
             let immediate = seeking || firstFrame || environment.reduceMotion
             let immediatePosition = immediate || browsing || positionReset
             let positionTargetChanged = motions[index].y.target != y
+            let presentedY = environment.enableSpring && !environment.reduceMotion
+                ? motions[index].y.position : motions[index].yTransition.value
             if motions[index].y.target != y || motions[index].slide.target != slide {
                 if !revisedPositions {
                     positionRevision &+= 1; revisedPositions = true
@@ -937,7 +939,7 @@ struct AMLLFrameEngine {
                 && (positionTargetChanged || (environment.enableSpring && motions[index].y.schedule.startedAt == nil))
             if seeking || browsing || positionReset {
                 motions[index].completedReleaseAt = nil
-            } else if index < timeline.focus, y < motions[index].y.position,
+            } else if index < timeline.focus, y < presentedY,
                       (motions[index].mainFocusRetained && (motions[index].mainCompleted || (startsUpwardMotion && canReleaseBeforeWordEnd(in: index, line: group.main))))
                       || (motions[index].backgroundFocusRetained && group.background.map { motions[index].backgroundCompleted || (startsUpwardMotion && canReleaseBeforeWordEnd(in: index, line: $0)) } == true),
                       motions[index].completedReleaseAt == nil

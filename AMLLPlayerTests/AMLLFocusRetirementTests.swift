@@ -309,4 +309,28 @@ final class AMLLFocusRetirementTests: XCTestCase {
             }
         }
     }
+
+    func testScrollAheadReduceMotionResolvesExitWithoutChangingWordTime() {
+        let lines = [(0.0, 3.0), (3.0, 5.0)].enumerated().map { index, span in
+            LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
+                      words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
+        }
+        var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+        environment.advance = 1
+        environment.reduceMotion = true
+        var player = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: [60, 60])
+        _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+        var frame = player.render(.init(position: 0.1, playing: true), delta: 0)
+        for index in 1 ... 312 {
+            frame = player.render(.init(position: 0.1 + Double(index) / 120, playing: true), delta: 1.0 / 120)
+        }
+        let row = frame.rows[0]
+        XCTAssertNotNil(row.retirement)
+        XCTAssertTrue(row.active)
+        XCTAssertFalse(row.fillComplete)
+        XCTAssertEqual(row.scale, 0.97, accuracy: 0.001)
+        XCTAssertEqual(row.brightAlpha, 0.2, accuracy: 0.001)
+        XCTAssertEqual(row.blur, 0)
+        XCTAssertEqual(row.wordClock.time, 2.7, accuracy: 0.001)
+    }
 }

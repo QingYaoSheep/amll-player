@@ -22,6 +22,7 @@ struct NetEaseItemActions: View {
             }
         }
         .task(id: item.id) {
+            guard [.track, .playlist].contains(item.kind) else { return }
             let context = model.netEaseState.contextID
             let value = try? await model.netEaseLibrary.favoriteState(item)
             if !Task.isCancelled, model.selectedMusicService == .netease, context == model.netEaseState.contextID { favorite = value }

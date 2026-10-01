@@ -101,7 +101,7 @@ struct FullscreenLyricsPlayer: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     LyricsQuickMenu(coordinator: model.lyrics) { search = true }
                     Menu {
-                        if model.selectedMusicService == .appleMusic, let snapshot = model.playbackSnapshot {
+                        if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
                             Button("播放队列", systemImage: "list.bullet") { showingQueue = true }
                             Button(snapshot.shuffleEnabled ? "关闭随机" : "随机播放", systemImage: "shuffle") {
                                 Task { await model.setShuffle(!snapshot.shuffleEnabled) }
@@ -126,7 +126,10 @@ struct FullscreenLyricsPlayer: View {
             }
             .sheet(isPresented: $search) { LyricsSearchView(coordinator: model.lyrics) }
             .sheet(isPresented: $devices) { DevicePickerView(model: model) }
-            .sheet(isPresented: $showingQueue) { AppleMusicQueueView(model: model) }
+            .sheet(isPresented: $showingQueue) {
+                if model.selectedMusicService == .netease { NetEaseQueueView(model: model) }
+                else { AppleMusicQueueView(model: model) }
+            }
         }
         .preferredColorScheme(.dark)
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }

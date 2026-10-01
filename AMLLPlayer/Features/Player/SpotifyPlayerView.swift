@@ -323,7 +323,7 @@ struct DevicePickerView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if model.selectedMusicService == .appleMusic {
+                if model.selectedMusicService != .spotify {
                     SystemMusicRoutesView()
                 } else {
                     switch model.devicesState {

@@ -1,6 +1,6 @@
 # AMLL Player for SwiftUI
 
-AMLL Player is being rebuilt as a native SwiftUI application for iPhone and iPad. Audio remains in Spotify; this application provides Spotify browsing, remote controls, and native synchronized lyrics.
+AMLL Player is a native SwiftUI application for iPhone and iPad. It supports Spotify and Apple Music browsing, playback control, and native synchronized lyrics. Apple Music uses SystemMusicPlayer to follow the system Music app; Spotify retains its existing remote playback integration.
 
 This repository contains the reproducible XcodeGen foundation and the plan 2 Spotify vertical slice: PKCE authorization, Keychain-backed sessions, App Remote/Web API playback synchronization, controls, and Spotify Connect device switching.
 
@@ -11,8 +11,8 @@ Plan 3 now adds Home, Search, Library, and track/album/artist/playlist details, 
 Plan 4 provides Apple/QQ/NetEase lyrics, caching, and manual correction. Plan 5 uses the supplied Apple Music captures for the fullscreen spatial layout while porting AMLL's word-timed motion, TextKit/CALayer lyric rendering, and Metal artwork background. See [Plan 4 validation](Docs/Plan4-Validation.md) and [Plan 5 validation](Docs/Plan5-Validation.md) for implementation, CI results, and remaining device acceptance checks. Debug builds include an offline rendering preview in Settings.
 
 - iOS or iPadOS 18 or later
-- Xcode 27 stable (direct Release archive and IPA validation; CI device/simulator tests disabled by request)
-- A Spotify Developer application
+- Xcode 27 stable (independent direct IPA and simulator-tested IPA workflows)
+- A Spotify Developer application for Spotify, or a MusicKit-enabled explicit App ID matching the signed bundle for Apple Music
 - XcodeGen 2.46.0, installed automatically by `Scripts/generate-project.sh`
 
 ## Configure Spotify

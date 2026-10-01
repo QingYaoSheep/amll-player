@@ -25,6 +25,7 @@
 - 当前来源升级默认 Spotify；切换来源只停止观察和替换 UI 数据，不发送播放/暂停/队列重建。两者授权可并存。
 - 目录、资料库和歌单条目位置分别保存。Spotify 旧缓存键不变；Apple 曲目键按服务/范围命名，ISRC 不自动跨版本共享 offset。
 - 私人页面缓存为内存，受连接代次、地区和权限变化约束；不把临时连接 UUID 伪装成 Apple 账号 ID。
+- 本应用创建的歌单 ID 按安装 Bundle ID 保存，重启及断开重连后保留。只对当前真实资料库返回的匹配项目展示编辑入口，实际编辑仍由 MusicLibrary 校验应用创建权限；不会将其他可追加歌单视为本应用创建。该记录不缓存私人歌单名称或内容。
 - 系统队列只显示公开可读的当前条目；完整外部队列通过系统音乐查看。应用发起的上下文播放交给原专辑/歌单，不拼接第一页队列。
 - MV 只检索、详情、官方打开；本应用不另建视频音乐播放器。未核实公开支持的取消收藏/系统队列删除操作不开放。歌单条目编辑只允许应用创建的歌单，全部条目准备完成后才能编辑，保留重复位置。
 - Song.hasLyrics 不提供官方逐字正文。MusicKit 凭据不发送给歌词和动态封面发现服务。
@@ -34,3 +35,7 @@
 [MusicKit 自动 token](https://developer.apple.com/documentation/musickit/using-automatic-token-generation-for-apple-music-api)、[系统播放器](https://developer.apple.com/documentation/musickit/systemmusicplayer)、[订阅状态](https://developer.apple.com/documentation/musickit/musicsubscription)、[资料库请求及已下载过滤](https://developer.apple.com/documentation/musickit/musiclibraryrequest)、[歌单上下文起播](https://developer.apple.com/documentation/musickit/musicplayer/queue/init(playlist:startingat:))、[应用创建歌单编辑限制](https://developer.apple.com/documentation/musickit/musiclibrary/edit(_:name:description:authordisplayname:))、[收藏](https://developer.apple.com/documentation/applemusicapi/add-resource-to-favorites)。
 
 当前不能宣称实际重签授权、设备音频/视觉或性能验收通过。
+
+## 代码审查与首次构建修复
+
+首个工程提交 `e5a4cc43` 的 Actions `36797370941` 找到登录页 Section 构造与 Combine 观察闭包显式 self 两处编译问题，已修复。增加独立授权检查代次、完整歌单加载状态、跨切源设备结果隔离、原子随机起播及入队连接校验；补充对应异步回归。歌词页提供实际 Apple Music 收藏与系统队列入口，歌词操作继续保留在菜单中。等待修复提交的 Xcode 27 回归及两路 IPA。

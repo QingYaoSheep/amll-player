@@ -87,6 +87,7 @@ protocol MusicPlaybackProviding: AnyObject {
     func skipNext() async throws
     func skipPrevious() async throws
     func play(item: MusicCatalogItem, context: MusicResourceID?, position: Int?) async throws
+    func playShuffled(_ item: MusicCatalogItem) async throws
     func setVolume(percent: Int, on deviceID: String?) async throws
     func devices() async throws -> [PlaybackDevice]
     func transferPlayback(to deviceID: String) async throws
@@ -96,6 +97,10 @@ protocol MusicPlaybackProviding: AnyObject {
 }
 
 extension MusicPlaybackProviding {
+    func playShuffled(_: MusicCatalogItem) async throws {
+        throw MusicServiceError.unsupportedOperation
+    }
+
     func setVolume(percent _: Int, on _: String?) async throws {
         throw MusicServiceError.unsupportedOperation
     }

@@ -71,7 +71,7 @@ final class AppleMusicIntegrationTests: XCTestCase {
         let session = MusicTestSession()
         let model = AppModel(environment: .init(configuration: .preview, diagnostics: DiagnosticsStore(),
                                                 spotifySession: MusicTestSpotifySession(), spotifyPlayback: spotify),
-                             catalogProvider: MusicTestCatalog(service: .spotify), appleSession: session, applePlayback: apple,
+                             catalogProvider: MusicTestCatalog(service: .spotify), lyrics: .init(providers: [], cache: MemoryLyricsCache()), appleSession: session, applePlayback: apple,
                              appleCatalog: MusicTestCatalog(service: .appleMusic), musicPreferences: preferences)
         XCTAssertEqual(model.selectedMusicService, .spotify)
         model.selectMusicService(.appleMusic)
@@ -92,7 +92,7 @@ final class AppleMusicIntegrationTests: XCTestCase {
         let spotify = MusicTestPlayback()
         let model = AppModel(environment: .init(configuration: .preview, diagnostics: DiagnosticsStore(),
                                                 spotifySession: MusicTestSpotifySession(), spotifyPlayback: spotify),
-                             catalogProvider: MusicTestCatalog(service: .spotify), appleSession: MusicTestSession(), applePlayback: apple,
+                             catalogProvider: MusicTestCatalog(service: .spotify), lyrics: .init(providers: [], cache: MemoryLyricsCache()), appleSession: MusicTestSession(), applePlayback: apple,
                              appleCatalog: MusicTestCatalog(service: .appleMusic), musicPreferences: preferences)
         model.prepare()
         let item = PlaybackItem(id: "42", uri: "applemusic:catalog:track:42", title: "Song", artists: ["Artist"],
@@ -131,6 +131,125 @@ final class AppleMusicIntegrationTests: XCTestCase {
         let invalid = PlaybackSnapshot(item: nil, isPlaying: true, position: .nan, duration: 100,
                                        device: nil, restrictions: .unrestricted, source: .musicKit, sampledAtUptime: 0)
         XCTAssertEqual(PlayerClock(anchor: invalid).position(at: 10), 0)
+    }
+
+    func testOlderAuthorizationRefreshCannotRestoreRevokedConnection() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(true, forKey: "appleMusic.connected.v1")
+        let api = MusicTestAPI(), account = MusicTestAccount()
+        let session = AppleMusicSession(api: api, defaults: defaults, account: account)
+        let first = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 1 }
+        account.authorization = .denied
+        await session.refresh()
+        api.pending[0].resume(returning: Data(#"{"data":[{"id":"us"}]}"#.utf8))
+        await first.value
+        XCTAssertFalse(session.currentState.connected)
+        XCTAssertEqual(session.currentState.authorization, .denied)
+        XCTAssertFalse(session.currentState.capabilities.canPlayCatalog)
+    }
+
+    func testOldRefreshFailureCannotOverrideNewSuccessfulCheck() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(true, forKey: "appleMusic.connected.v1")
+        let api = MusicTestAPI()
+        let session = AppleMusicSession(api: api, defaults: defaults, account: MusicTestAccount())
+        let old = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 1 }
+        let new = Task { await session.refresh() }
+        await waitUntil { api.pending.count == 2 }
+        api.pending[1].resume(returning: Data(#"{"data":[{"id":"us"}]}"#.utf8))
+        await new.value
+        api.pending[0].resume(throwing: MusicCatalogError.offline)
+        await old.value
+        XCTAssertTrue(session.currentState.connected)
+        XCTAssertNil(session.currentState.error)
+    }
+
+    func testCancelledPlaylistLoadCannotUnlockOrOverwriteReplacementLoad() async {
+        let state = MusicPlaylistEditingState(), catalog = MusicTestCatalog(service: .appleMusic)
+        catalog.deferPages = true
+        let resource = MusicResourceID(service: .appleMusic, kind: .playlist, scope: .library, rawValue: "p.1")
+        let old = Task { await state.load(resource: resource, provider: catalog) }
+        await waitUntil { catalog.pendingPages.count == 1 }
+        state.cancel()
+        let new = Task { await state.load(resource: resource, provider: catalog) }
+        await waitUntil { catalog.pendingPages.count == 2 }
+        catalog.pendingPages[0].resume(returning: .init(items: [], next: nil, total: 0))
+        await old.value
+        XCTAssertTrue(state.isLoading)
+        XCTAssertFalse(state.isLoaded) // Saving a replacement remains forbidden.
+        let item = MusicCatalogItem(spotifyID: "42", kind: .track, name: "Keep", subtitle: "", artworkURL: nil,
+                                    availability: .available, service: .appleMusic)
+        catalog.pendingPages[1].resume(returning: .init(items: [.init(id: "p.1:0", item: item, position: 0)], next: nil, total: 1))
+        await new.value
+        XCTAssertFalse(state.isLoading)
+        XCTAssertTrue(state.isLoaded)
+        XCTAssertEqual(state.entries.map(\.item.name), ["Keep"])
+    }
+
+    func testCreatedPlaylistRegistrySurvivesRestartAndDisconnectWithoutGrantingOtherPlaylistsAccess() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let session = AppleMusicSession(api: MusicTestAPI(), defaults: defaults, account: MusicTestAccount())
+        let first = AppleMusicCatalog(session: session, defaults: defaults)
+        first.registerCreatedPlaylist("p.created")
+        session.disconnect()
+        let restored = AppleMusicCatalog(session: session, defaults: defaults)
+        XCTAssertTrue(restored.isCreatedPlaylist("p.created"))
+        XCTAssertFalse(restored.isCreatedPlaylist("p.personal"))
+        let raw: [String: Any] = ["id": "p.personal", "type": "library-playlists", "attributes": ["name": "Other", "canEdit": true]]
+        XCTAssertFalse(try XCTUnwrap(AppleMusicCatalogDecoder.item(raw, editableIDs: ["p.created"])).editablePlaylist)
+    }
+
+    func testLateDeviceResponseDoesNotPolluteNewMusicSource() async throws {
+        for fails in [false, true] {
+            let spotify = MusicTestPlayback(), apple = MusicTestPlayback()
+            spotify.deferDevices = true
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+            let model = AppModel(environment: .init(configuration: .preview, diagnostics: DiagnosticsStore(),
+                                                    spotifySession: MusicTestSpotifySession(), spotifyPlayback: spotify),
+                                 catalogProvider: MusicTestCatalog(service: .spotify), lyrics: .init(providers: [], cache: MemoryLyricsCache()),
+                                 appleSession: MusicTestSession(), applePlayback: apple, appleCatalog: MusicTestCatalog(service: .appleMusic),
+                                 musicPreferences: .init(defaults: defaults))
+            let request = Task { await model.loadDevices() }
+            await waitUntil { spotify.pendingDevices != nil }
+            model.selectMusicService(.appleMusic)
+            if fails {
+                spotify.pendingDevices?.resume(throwing: MusicServiceError.transport)
+            } else {
+                spotify.pendingDevices?.resume(returning: [.init(id: "old", name: "Old Spotify", type: "Speaker", isActive: true, isRestricted: false, volumePercent: 50, supportsVolume: true)])
+            }
+            await request.value
+            if case .idle = model.devicesState {} else {
+                XCTFail("An old service changed the device state")
+            }
+            XCTAssertNil(model.presentedError)
+        }
+    }
+
+    func testShuffleStartIsOneProviderCommand() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let preferences = MusicSourcePreferences(defaults: defaults)
+        preferences.selected = .appleMusic
+        let apple = MusicTestPlayback()
+        let model = AppModel(environment: .init(configuration: .preview, diagnostics: DiagnosticsStore(),
+                                                spotifySession: MusicTestSpotifySession(), spotifyPlayback: MusicTestPlayback()),
+                             catalogProvider: MusicTestCatalog(service: .spotify), lyrics: .init(providers: [], cache: MemoryLyricsCache()),
+                             appleSession: MusicTestSession(), applePlayback: apple, appleCatalog: MusicTestCatalog(service: .appleMusic),
+                             musicPreferences: preferences)
+        let album = MusicCatalogItem(spotifyID: "123", kind: .album, name: "Album", subtitle: "", artworkURL: nil,
+                                     availability: .available, service: .appleMusic)
+        try await model.playCatalog(album, shuffled: true)
+        XCTAssertEqual(apple.commands, ["shuffled:123"])
+    }
+
+    private func waitUntil(_ predicate: () -> Bool) async {
+        for _ in 0 ..< 1000 {
+            if predicate() {
+                return
+            }; await Task.yield()
+        }
+        XCTFail("Async fixture did not reach its expected suspension")
     }
 }
 
@@ -176,6 +295,8 @@ private final class MusicTestSpotifySession: SpotifySessionProviding {
 
 @MainActor
 private final class MusicTestPlayback: SpotifyPlaybackProviding {
+    var deferDevices = false
+    var pendingDevices: CheckedContinuation<[PlaybackDevice], Error>?
     var appRemoteState: SpotifyAppRemoteState {
         .disconnected
     }
@@ -219,7 +340,14 @@ private final class MusicTestPlayback: SpotifyPlaybackProviding {
 
     func setVolume(percent _: Int, on _: String?) async throws {}
     func devices() async throws -> [PlaybackDevice] {
-        []
+        if deferDevices {
+            return try await withCheckedThrowingContinuation { pendingDevices = $0 }
+        }
+        return []
+    }
+
+    func playShuffled(_ item: MusicCatalogItem) async throws {
+        commands.append("shuffled:" + item.spotifyID)
     }
 
     func transferPlayback(to _: String) async throws {}
@@ -227,6 +355,8 @@ private final class MusicTestPlayback: SpotifyPlaybackProviding {
 
 @MainActor
 private final class MusicTestCatalog: MusicCatalogProviding {
+    var deferPages = false
+    var pendingPages: [CheckedContinuation<MusicPage<MusicCatalogRow>, Error>] = []
     let service: MusicServiceID
     init(service: MusicServiceID) {
         self.service = service
@@ -238,10 +368,32 @@ private final class MusicTestCatalog: MusicCatalogProviding {
 
     func invalidate() {}
     func page(_: MusicCatalogQuery, next _: URL?) async throws -> MusicPage<MusicCatalogRow> {
-        .init(items: [], next: nil, total: 0)
+        if deferPages {
+            return try await withCheckedThrowingContinuation { pendingPages.append($0) }
+        }
+        return .init(items: [], next: nil, total: 0)
     }
 
     func detail(kind _: MusicCatalogKind, id _: String) async throws -> MusicCatalogDetail {
         throw MusicCatalogError.unavailable
+    }
+}
+
+@MainActor private final class MusicTestAPI: AppleMusicRequesting {
+    var pending: [CheckedContinuation<Data, Error>] = []
+    func send(_: URLRequest) async throws -> Data {
+        try await withCheckedThrowingContinuation { pending.append($0) }
+    }
+}
+
+@MainActor private final class MusicTestAccount: AppleMusicAccountChecking {
+    var authorization: MusicAuthorizationState = .authorized
+    func requestAuthorization() async {}
+    func subscription() async throws -> MusicServiceCapabilities {
+        .init(canBrowse: true, canPlayCatalog: true, canModifyLibrary: true)
+    }
+
+    var subscriptionUpdates: AsyncStream<MusicServiceCapabilities> {
+        AsyncStream { $0.finish() }
     }
 }

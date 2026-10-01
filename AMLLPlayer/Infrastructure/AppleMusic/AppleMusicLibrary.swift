@@ -13,7 +13,7 @@ final class AppleMusicLibrary: MusicLibraryMutating {
 
     func favorite(_ item: MusicCatalogItem) async throws {
         try requireLibrary()
-        guard session.currentState.capabilities.canFavorite, let kind = item.kind,
+        guard item.service == .appleMusic, session.currentState.capabilities.canFavorite, let kind = item.kind,
               [.track, .album, .playlist].contains(kind) else { throw MusicServiceError.unsupportedOperation }
         let context = session.connectionID
         let type = (item.scope == .library ? "library-" : "") + kind.appleType

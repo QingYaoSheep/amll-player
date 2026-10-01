@@ -9,12 +9,17 @@ final class AppleMusicSession: MusicSessionProviding {
     let api: any AppleMusicRequesting
     private let defaults: UserDefaults
     private var generation = UUID()
+    private var refreshGeneration = UUID()
+    private let account: any AppleMusicAccountChecking
     private var subscriptionTask: Task<Void, Never>?
     private(set) var connectionID = UUID()
     private var wantsConnection: Bool
 
-    init(api: any AppleMusicRequesting = AppleMusicAPI(), defaults: UserDefaults = .standard) {
+    init(api: any AppleMusicRequesting = AppleMusicAPI(), defaults: UserDefaults = .standard,
+         account: any AppleMusicAccountChecking = AppleMusicAccount())
+    {
         self.api = api
+        self.account = account
         self.defaults = defaults
         wantsConnection = defaults.bool(forKey: "appleMusic.connected.v1")
         let stream = AsyncStream<MusicConnectionState>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -35,7 +40,7 @@ final class AppleMusicSession: MusicSessionProviding {
         currentState.capabilities = .init()
         currentState.error = nil
         publish()
-        _ = await MusicAuthorization.request()
+        await account.requestAuthorization()
         guard generation == token else { return }
         defaults.set(true, forKey: "appleMusic.connected.v1")
         await refresh()
@@ -44,27 +49,26 @@ final class AppleMusicSession: MusicSessionProviding {
     func refresh() async {
         guard wantsConnection else { return }
         let token = generation
-        let status = MusicAuthorization.currentStatus
-        currentState.authorization = switch status {
-        case .authorized: .authorized
-        case .denied: .denied
-        case .restricted: .restricted
-        case .notDetermined: .notDetermined
-        @unknown default: .restricted
-        }
+        refreshGeneration = UUID()
+        let refreshToken = refreshGeneration
+        let status = account.authorization
+        currentState.authorization = status
         currentState.requesting = false
         guard status == .authorized else {
             currentState.connected = false
             currentState.capabilities = .init()
             currentState.error = status == .restricted ? .musicPermissionRestricted : .musicPermissionDenied
+            subscriptionTask?.cancel()
+            subscriptionTask = nil
             publish()
             return
         }
         do {
-            let subscription = try await MusicSubscription.current
+            let capabilities = try await account.subscription()
             let data = try await api.send(AppleMusicAPI.request("/v1/me/storefront"))
             try Task.checkCancellation()
-            guard token == generation else { return }
+            guard token == generation, refreshToken == refreshGeneration else { return }
+            guard account.authorization == .authorized else { await refresh(); return }
             let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             guard let rows = root?["data"] as? [[String: Any]], let region = rows.first?["id"] as? String,
                   region.count == 2, region.allSatisfy(\.isLetter) else { throw MusicCatalogError.invalidResponse }
@@ -73,17 +77,13 @@ final class AppleMusicSession: MusicSessionProviding {
             }
             currentState.connected = true
             currentState.storefront = region
-            currentState.capabilities = .init(
-                canBrowse: true, canPlayCatalog: subscription.canPlayCatalogContent,
-                canModifyLibrary: subscription.hasCloudLibraryEnabled,
-                canFavorite: subscription.canPlayCatalogContent && subscription.hasCloudLibraryEnabled,
-                usesSystemRoutes: true
-            )
+            currentState.capabilities = capabilities
             currentState.error = nil
             observeSubscription()
         } catch is CancellationError { return }
         catch {
-            guard token == generation else { return }
+            guard token == generation, refreshToken == refreshGeneration else { return }
+            guard account.authorization == .authorized else { await refresh(); return }
             currentState.connected = false
             currentState.capabilities = .init()
             currentState.error = error as? MusicServiceError ?? .musicFailure(error.localizedDescription)
@@ -105,13 +105,13 @@ final class AppleMusicSession: MusicSessionProviding {
     private func observeSubscription() {
         guard subscriptionTask == nil else { return }
         subscriptionTask = Task { [weak self] in
-            for await subscription in MusicSubscription.subscriptionUpdates {
-                guard !Task.isCancelled, let self, wantsConnection else { return }
+            guard let updates = self?.account.subscriptionUpdates else { return }
+            for await capabilities in updates {
+                guard !Task.isCancelled, let self, wantsConnection, currentState.connected,
+                      account.authorization == .authorized else { return }
                 let old = currentState.capabilities
-                currentState.capabilities.canPlayCatalog = subscription.canPlayCatalogContent
-                currentState.capabilities.canModifyLibrary = subscription.hasCloudLibraryEnabled
-                currentState.capabilities.canFavorite = subscription.canPlayCatalogContent && subscription.hasCloudLibraryEnabled
-                if old.canModifyLibrary != subscription.hasCloudLibraryEnabled {
+                currentState.capabilities = capabilities
+                if old.canModifyLibrary != capabilities.canModifyLibrary {
                     connectionID = UUID()
                 }
                 publish()

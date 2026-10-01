@@ -8,7 +8,7 @@ struct AppleMusicLoginView: View {
 
     var body: some View {
         Form {
-            Section("Apple Music") {
+            Section {
                 Label(status, systemImage: model.appleMusicState.connected ? "checkmark.circle" : "music.note")
                 if !model.appleMusicState.connected {
                     Button("登录到 Apple Music") { Task { await model.connectAppleMusic() } }
@@ -35,6 +35,8 @@ struct AppleMusicLoginView: View {
                         UIApplication.shared.open(url)
                     }
                 }
+            } header: {
+                Text("Apple Music")
             } footer: {
                 Text("通过系统授权连接，无需输入 Apple ID 密码。断开仅停止本应用观察，不退出系统账号或撤销系统权限。")
             }

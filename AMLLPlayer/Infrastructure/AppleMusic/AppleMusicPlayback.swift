@@ -78,16 +78,16 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         player.state.objectWillChange.sink { [weak self] in
             Task { @MainActor in
                 await Task.yield()
-                guard let self, enabled, foreground else { return }
-                sample()
+                guard let self, self.enabled, self.foreground else { return }
+                self.sample()
             }
         }.store(in: &subscriptions)
         player.queue.objectWillChange.sink { [weak self] in
             Task { @MainActor in
                 await Task.yield()
-                guard let self, enabled, foreground else { return }
-                knownContext = nil // External mutations invalidate the app's queue assumptions.
-                sample()
+                guard let self, self.enabled, self.foreground else { return }
+                self.knownContext = nil // External mutations invalidate the app's queue assumptions.
+                self.sample()
             }
         }.store(in: &subscriptions)
         polling = Task { [weak self] in
@@ -140,6 +140,15 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     }
 
     func play(item: MusicCatalogItem, context: MusicResourceID?, position: Int?) async throws {
+        try await play(item: item, context: context, position: position, shuffled: false)
+    }
+
+    func playShuffled(_ item: MusicCatalogItem) async throws {
+        guard [.album, .playlist].contains(item.kind) else { throw MusicServiceError.unsupportedOperation }
+        try await play(item: item, context: nil, position: nil, shuffled: true)
+    }
+
+    private func play(item: MusicCatalogItem, context: MusicResourceID?, position: Int?, shuffled: Bool) async throws {
         try requireConnection()
         guard session.currentState.capabilities.canPlayCatalog || item.scope == .library else { throw MusicServiceError.musicSubscriptionRequired }
         guard item.service == .appleMusic, item.canPlay else { throw MusicCatalogError.unavailable }
@@ -175,6 +184,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         }
         try Task.checkCancellation()
         guard token == commandGeneration, connection == session.connectionID, enabled else { throw CancellationError() }
+        player.state.shuffleMode = shuffled ? .songs : .off
         player.queue = queue
         try await player.play()
         guard token == commandGeneration else { throw CancellationError() }
@@ -187,9 +197,10 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         try requireConnection()
         guard let resource = item.resource, resource.service == .appleMusic, resource.kind == .track else { throw MusicServiceError.unsupportedOperation }
         let token = commandGeneration
+        let connection = session.connectionID
         let song = try await resolveSong(resource)
         try Task.checkCancellation()
-        guard token == commandGeneration, enabled else { throw CancellationError() }
+        guard token == commandGeneration, connection == session.connectionID, enabled else { throw CancellationError() }
         try await player.queue.insert(song, position: next ? .afterCurrentEntry : .tail)
     }
 

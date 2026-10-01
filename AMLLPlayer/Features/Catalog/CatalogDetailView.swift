@@ -50,9 +50,8 @@ private struct CatalogDetailContent: View {
                             if [.album, .playlist].contains(detail.item.kind), detail.item.canPlay {
                                 Button("随机播放") { Task {
                                     do {
-                                        try await model.playCatalog(detail.item)
-                                        await model.setShuffle(true)
-                                    } catch { model.presentedError = .musicFailure(error.localizedDescription) }
+                                        try await model.playCatalog(detail.item, shuffled: true)
+                                    } catch is CancellationError {} catch { model.presentedError = .musicFailure(error.localizedDescription) }
                                 } }
                             }
                             if detail.item.editablePlaylist {

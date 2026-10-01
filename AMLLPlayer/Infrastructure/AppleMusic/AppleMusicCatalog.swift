@@ -10,10 +10,14 @@ final class AppleMusicCatalog: MusicCatalogProviding {
     let session: AppleMusicSession
     private var generation = UUID()
     private var ownedPlaylists = Set<String>()
-    private var ownedContext: UUID?
+    private let defaults: UserDefaults
+    private let ownershipKey: String
 
-    init(session: AppleMusicSession) {
+    init(session: AppleMusicSession, defaults: UserDefaults = .standard) {
         self.session = session
+        self.defaults = defaults
+        ownershipKey = "appleMusic.createdPlaylists.v1." + (Bundle.main.bundleIdentifier ?? "AMLLPlayer")
+        ownedPlaylists = Set(defaults.stringArray(forKey: ownershipKey) ?? [])
     }
 
     func invalidate() {
@@ -57,10 +61,14 @@ final class AppleMusicCatalog: MusicCatalogProviding {
         let token = generation
         let context = session.connectionID
         let path = try AppleMusicAPI.resourcePath(resource, storefront: region)
-        let data = try await session.api.send(AppleMusicAPI.request(path, parameters: [
-            .init(name: "include", value: resource.kind == .track ? "artists,albums" : "artists"),
-            .init(name: "extend", value: "inFavorites"),
-        ]))
+        var parameters: [URLQueryItem] = []
+        if resource.scope == .catalog, [.track, .album, .musicVideo].contains(resource.kind) {
+            parameters.append(.init(name: "include", value: resource.kind == .track ? "artists,albums" : "artists"))
+        }
+        if [.track, .album, .playlist].contains(resource.kind) {
+            parameters.append(.init(name: "extend", value: "inFavorites"))
+        }
+        let data = try await session.api.send(AppleMusicAPI.request(path, parameters: parameters))
         try check(token, context)
         let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard let rows = root?["data"] as? [[String: Any]], let first = rows.first,
@@ -88,14 +96,12 @@ final class AppleMusicCatalog: MusicCatalogProviding {
     }
 
     private var editableIDs: Set<String> {
-        if ownedContext != session.connectionID {
-            ownedPlaylists.removeAll(); ownedContext = session.connectionID
-        }
         return ownedPlaylists
     }
 
     func registerCreatedPlaylist(_ id: String) {
-        _ = editableIDs; ownedPlaylists.insert(id)
+        ownedPlaylists.insert(id)
+        defaults.set(Array(ownedPlaylists).sorted(), forKey: ownershipKey)
     }
 
     func isCreatedPlaylist(_ id: String) -> Bool {

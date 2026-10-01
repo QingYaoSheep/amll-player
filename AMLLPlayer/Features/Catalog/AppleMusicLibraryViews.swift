@@ -3,6 +3,8 @@ import SwiftUI
 struct AppleMusicItemActions: View {
     @Bindable var model: AppModel
     let item: MusicCatalogItem
+    var onChoosePlaylist: ((MusicCatalogItem) -> Void)?
+    var onFailure: ((String) -> Void)?
     @State private var choosePlaylist = false
     @State private var failure: String?
 
@@ -23,7 +25,13 @@ struct AppleMusicItemActions: View {
             }
             if item.kind == .track {
                 if model.appleMusicState.capabilities.canModifyLibrary {
-                    Button("添加到歌单", systemImage: "text.badge.plus") { choosePlaylist = true }
+                    Button("添加到歌单", systemImage: "text.badge.plus") {
+                        if let onChoosePlaylist {
+                            onChoosePlaylist(item)
+                        } else {
+                            choosePlaylist = true
+                        }
+                    }
                 }
                 if item.canPlay {
                     Button("接下来播放", systemImage: "text.insert") { Task { await model.enqueue(item, next: true) } }
@@ -45,12 +53,18 @@ struct AppleMusicItemActions: View {
         Task {
             do { try await model.mutateAppleLibrary(action) }
             catch is CancellationError {}
-            catch { failure = error.localizedDescription }
+            catch {
+                if let onFailure {
+                    onFailure(error.localizedDescription)
+                } else {
+                    failure = error.localizedDescription
+                }
+            }
         }
     }
 }
 
-private struct AppleMusicPlaylistChooser: View {
+struct AppleMusicPlaylistChooser: View {
     @Bindable var model: AppModel
     let item: MusicCatalogItem
     @Environment(\.dismiss) private var dismiss
@@ -114,7 +128,7 @@ private struct AppleMusicPlaylistEditor: View {
     @State private var description = ""
     @State private var busy = false
     @State private var failure: String?
-    @State private var entries: [MusicCatalogRow] = []
+    @State private var entryState = MusicPlaylistEditingState()
     @State private var editEntries = false
 
     var body: some View {
@@ -124,14 +138,19 @@ private struct AppleMusicPlaylistEditor: View {
                 TextField("说明", text: $description, axis: .vertical)
                 if playlist != nil {
                     Toggle("编辑歌曲顺序和条目", isOn: $editEntries)
+                        .disabled(busy)
                     if editEntries {
-                        ForEach(entries) { row in Text(row.item.name) }
-                            .onDelete { entries.remove(atOffsets: $0) }
-                            .onMove { entries.move(fromOffsets: $0, toOffset: $1) }
+                        ForEach(entryState.entries) { row in Text(row.item.name) }
+                            .onDelete { entryState.entries.remove(atOffsets: $0) }
+                            .onMove { entryState.entries.move(fromOffsets: $0, toOffset: $1) }
+                            .disabled(busy || !entryState.isLoaded)
                     }
                 }
-                if busy {
+                if busy || entryState.isLoading {
                     ProgressView()
+                }
+                if let error = entryState.error {
+                    Text(error).foregroundStyle(.secondary)
                 }
                 if let failure {
                     Text(failure).foregroundStyle(.secondary)
@@ -142,7 +161,7 @@ private struct AppleMusicPlaylistEditor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(busy) }
                 ToolbarItem(placement: .confirmationAction) { Button("保存") { Task { await save() } }
-                    .disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(busy || (editEntries && !entryState.isLoaded) || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .task {
@@ -150,40 +169,23 @@ private struct AppleMusicPlaylistEditor: View {
                 description = playlist?.playlist?.description ?? ""
             }
             .task(id: editEntries) {
-                guard editEntries, let resource = playlist?.resource else { return }
-                busy = true
-                defer { busy = false }
-                do {
-                    var cursor: URL?
-                    var rows: [MusicCatalogRow] = []
-                    var visited = Set<URL>()
-                    repeat {
-                        let page = try await model.appleCatalog.page(.resourceChildren(resource), next: cursor)
-                        try Task.checkCancellation()
-                        rows += page.items
-                        cursor = page.next
-                        if let cursor, !visited.insert(cursor).inserted {
-                            throw MusicCatalogError.invalidResponse
-                        }
-                    } while cursor != nil
-                    guard rows.allSatisfy({ $0.item.kind == .track }) else {
-                        throw MusicServiceError.unsupportedOperation
-                    }
-                    entries = rows
-                } catch is CancellationError {}
-                catch { failure = error.localizedDescription; editEntries = false }
+                guard editEntries, let resource = playlist?.resource else { entryState.cancel(); return }
+                await entryState.load(resource: resource, provider: model.appleCatalog)
             }
+            .onDisappear { entryState.cancel() }
         }
     }
 
     private func save() async {
+        guard !busy, !editEntries || entryState.isLoaded else { return }
+        let replacement = editEntries ? entryState.entries.map(\.item) : nil
         busy = true
         defer { busy = false }
         do {
             try await model.mutateAppleLibrary { library in
                 if let playlist {
                     try await library.editPlaylist(playlist, name: name, description: description,
-                                                   entries: editEntries ? entries.map(\.item) : nil)
+                                                   entries: replacement)
                 } else {
                     _ = try await library.createPlaylist(name: name, description: description)
                 }
@@ -211,15 +213,63 @@ struct AppleMusicPlaybackOptions: View {
             Button("播放队列", systemImage: "list.bullet") { showingQueue = true }
         }
         .sheet(isPresented: $showingQueue) {
-            NavigationStack {
-                List {
-                    if let item = model.playbackSnapshot?.item {
-                        Section("正在播放") { Text(item.title); Text(item.artistLine) }
-                    }
-                    Section { Text("系统 MusicKit 仅提供当前队列条目。外部完整队列请在系统音乐 App 查看；本应用不推测或重排不可读取的队列。") }
-                    Link("打开音乐", destination: URL(string: "music://")!)
-                }.navigationTitle("系统播放队列")
-            }
+            AppleMusicQueueView(model: model)
         }
+    }
+}
+
+struct AppleMusicQueueView: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            List {
+                if let item = model.playbackSnapshot?.item {
+                    Section("正在播放") { Text(item.title); Text(item.artistLine) }
+                }
+                Section { Text("系统 MusicKit 仅提供当前队列条目。外部完整队列请在系统音乐 App 查看；本应用不推测或重排不可读取的队列。") }
+                Link("打开音乐", destination: URL(string: "music://")!)
+            }
+            .navigationTitle("系统播放队列")
+            .toolbar { Button("common.done") { dismiss() } }
+        }
+    }
+}
+
+struct AppleMusicCurrentFavorite: View {
+    @Bindable var model: AppModel
+    @State private var item: MusicCatalogItem?
+    @State private var busy = false
+    private var resource: MusicResourceID? {
+        guard let track = model.playbackSnapshot?.item, let id = track.id, track.service == .appleMusic, !track.isEpisode else { return nil }
+        return .init(service: .appleMusic, kind: .track, scope: track.resourceScope, rawValue: id)
+    }
+
+    var body: some View {
+        Button {
+            guard let item else { return }
+            Task {
+                busy = true
+                defer { busy = false }
+                do {
+                    try await model.mutateAppleLibrary { try await $0.favorite(item) }
+                    await reload()
+                } catch is CancellationError {} catch { model.presentedError = .musicFailure(error.localizedDescription) }
+            }
+        } label: {
+            Label(item?.inFavorites == true ? "已收藏" : "加入 Apple Music 收藏",
+                  systemImage: item?.inFavorites == true ? "star.fill" : "star")
+                .labelStyle(.iconOnly).font(.system(size: 25, weight: .semibold)).frame(width: 44, height: 44)
+        }
+        .disabled(busy || item == nil || item?.inFavorites == true || !model.appleMusicState.capabilities.canFavorite)
+        .task(id: resource) { item = nil; await reload() }
+        .accessibilityIdentifier("appleMusicFavorite")
+    }
+
+    private func reload() async {
+        guard let resource else { return }
+        let detail = try? await model.appleCatalog.detail(resource: resource)
+        guard !Task.isCancelled, self.resource == resource else { return }
+        item = detail?.item
     }
 }

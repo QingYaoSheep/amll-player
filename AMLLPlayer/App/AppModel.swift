@@ -298,13 +298,17 @@ final class AppModel {
 
     func seek(to position: TimeInterval) async {
         guard !isPerformingAction else { return }
+        let epoch = sourceGeneration
+        let playback = currentPlayback
         lyricsSeekPosition = position
         lyricsSeekRevision &+= 1
         await perform {
             do {
-                try await currentPlayback.seek(to: position)
+                try await playback.seek(to: position)
             } catch {
-                lyricsSeekPosition = nil
+                if epoch == sourceGeneration {
+                    lyricsSeekPosition = nil
+                }
                 throw error
             }
         }
@@ -320,10 +324,15 @@ final class AppModel {
     }
 
     func loadDevices() async {
+        let epoch = sourceGeneration
+        let playback = currentPlayback
         devicesState = .loading
         do {
-            devicesState = try await .loaded(currentPlayback.devices())
+            let devices = try await playback.devices()
+            guard epoch == sourceGeneration else { return }
+            devicesState = .loaded(devices)
         } catch {
+            guard epoch == sourceGeneration else { return }
             let appError = mapped(error)
             devicesState = .failed(.unavailable(appError.localizedDescription))
             presentedError = appError
@@ -331,14 +340,17 @@ final class AppModel {
     }
 
     func transferPlayback(to deviceID: String) async {
+        let epoch = sourceGeneration
+        let playback = currentPlayback
         await perform {
-            try await currentPlayback.transferPlayback(to: deviceID)
+            try await playback.transferPlayback(to: deviceID)
+            guard epoch == sourceGeneration else { return }
             selectedDeviceID = deviceID
             await loadDevices()
         }
     }
 
-    func playCatalog(_ item: SpotifyCatalogItem, contextURI: String? = nil, position: Int? = nil) async throws {
+    func playCatalog(_ item: SpotifyCatalogItem, contextURI: String? = nil, position: Int? = nil, shuffled: Bool = false) async throws {
         guard catalog.active, item.canPlay, let uri = item.uri else { throw SpotifyCatalogError.unavailable }
         guard !isPerformingAction else { return }
         isPerformingAction = true
@@ -347,7 +359,11 @@ final class AppModel {
         if selectedMusicService == .appleMusic {
             guard item.service == .appleMusic else { throw MusicCatalogError.unavailable }
             let context = contextURI.flatMap(MusicResourceID.init(appleURI:))
-            try await applePlayback.play(item: item, context: context, position: position)
+            if shuffled {
+                try await applePlayback.playShuffled(item)
+            } else {
+                try await applePlayback.play(item: item, context: context, position: position)
+            }
             guard catalog.identity == epoch else { throw CancellationError() }
             try? await applePlayback.refresh()
             return
@@ -525,12 +541,15 @@ final class AppModel {
         }
         isPerformingAction = true
         defer { isPerformingAction = false }
+        let epoch = sourceGeneration
 
         do {
             try await operation()
         } catch is CancellationError {
         } catch {
-            present(error)
+            if epoch == sourceGeneration {
+                present(error)
+            }
         }
     }
 

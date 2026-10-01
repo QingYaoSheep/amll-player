@@ -42,6 +42,7 @@ struct FullscreenLyricsPlayer: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var search = false
     @State private var devices = false
+    @State private var showingQueue = false
     @State private var browsing = false
     @State private var resumeToken = 0
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.3, dampingFraction: 1))) private var drag: CGFloat = 0
@@ -100,6 +101,15 @@ struct FullscreenLyricsPlayer: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     LyricsQuickMenu(coordinator: model.lyrics) { search = true }
                     Menu {
+                        if model.selectedMusicService == .appleMusic, let snapshot = model.playbackSnapshot {
+                            Button("播放队列", systemImage: "list.bullet") { showingQueue = true }
+                            Button(snapshot.shuffleEnabled ? "关闭随机" : "随机播放", systemImage: "shuffle") {
+                                Task { await model.setShuffle(!snapshot.shuffleEnabled) }
+                            }
+                            ForEach(MusicRepeatMode.allCases, id: \.self) { mode in
+                                Button(mode.title) { Task { await model.setRepeat(mode) } }
+                            }
+                        }
                         Button(configuration.showLyrics ? "render.hideLyrics" : "render.showLyrics", systemImage: "text.quote") {
                             model.renderPreferences.configuration.showLyrics.toggle()
                         }
@@ -116,6 +126,7 @@ struct FullscreenLyricsPlayer: View {
             }
             .sheet(isPresented: $search) { LyricsSearchView(coordinator: model.lyrics) }
             .sheet(isPresented: $devices) { DevicePickerView(model: model) }
+            .sheet(isPresented: $showingQueue) { AppleMusicQueueView(model: model) }
         }
         .preferredColorScheme(.dark)
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }

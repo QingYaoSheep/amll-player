@@ -174,6 +174,8 @@ struct CatalogRowView: View {
     @Bindable var model: AppModel
     let row: SpotifyCatalogRow
     var contextURI: String?
+    @State private var playlistItem: MusicCatalogItem?
+    @State private var failure: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -191,9 +193,18 @@ struct CatalogRowView: View {
         .contextMenu {
             CatalogExternalLink(item: row.item)
             if row.item.service == .appleMusic {
-                AppleMusicItemActions(model: model, item: row.item)
+                AppleMusicItemActions(model: model, item: row.item,
+                                      onChoosePlaylist: { playlistItem = $0 }, onFailure: { failure = $0 })
             }
         }
+        .sheet(item: $playlistItem) { AppleMusicPlaylistChooser(model: model, item: $0) }
+        .alert("操作未完成", isPresented: Binding(get: { failure != nil }, set: {
+            if !$0 {
+                failure = nil
+            }
+        })) {
+            Button("common.ok", role: .cancel) { failure = nil }
+        } message: { Text(failure ?? "") }
     }
 
     private var label: some View {

@@ -13,6 +13,7 @@ struct AMLLLyricsPlayer: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var search = false
     @State private var devices = false
+    @State private var showingQueue = false
     @State private var browsing = false
     @State private var resumeToken = 0
     @State private var shellMotion = LyricsMotionModel()
@@ -87,6 +88,7 @@ struct AMLLLyricsPlayer: View {
         .statusBarHidden(false)
         .sheet(isPresented: $search) { LyricsSearchView(coordinator: model.lyrics) }
         .sheet(isPresented: $devices) { DevicePickerView(model: model) }
+        .sheet(isPresented: $showingQueue) { AppleMusicQueueView(model: model) }
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }
         .task(id: artworkRequestKey) { await loadAnimatedArtwork() }
         .alert("error.title", isPresented: Binding(get: { model.presentedError != nil }, set: {
@@ -249,7 +251,11 @@ struct AMLLLyricsPlayer: View {
                 }
             }
             Spacer(minLength: 8)
-            lyricsActionsMenu
+            if model.selectedMusicService == .appleMusic {
+                AppleMusicCurrentFavorite(model: model)
+            } else {
+                lyricsActionsMenu
+            }
             optionsMenu
         }
         .frame(height: metrics.compactArtworkSize)
@@ -272,7 +278,11 @@ struct AMLLLyricsPlayer: View {
                 }
             }
             Spacer(minLength: 8)
-            lyricsActionsMenu
+            if model.selectedMusicService == .appleMusic {
+                AppleMusicCurrentFavorite(model: model)
+            } else {
+                lyricsActionsMenu
+            }
             optionsMenu
         }
     }
@@ -443,12 +453,20 @@ struct AMLLLyricsPlayer: View {
             Button("lyrics.find", systemImage: "magnifyingglass") { search = true }
             if model.selectedMusicService == .appleMusic, let snapshot = model.playbackSnapshot {
                 Section("Apple Music 播放") {
+                    Button("播放队列", systemImage: "list.bullet") { showingQueue = true }
                     Button(snapshot.shuffleEnabled ? "关闭随机" : "随机播放", systemImage: "shuffle") {
                         Task { await model.setShuffle(!snapshot.shuffleEnabled) }
                     }
                     ForEach(MusicRepeatMode.allCases, id: \.self) { mode in
                         Button(mode.title) { Task { await model.setRepeat(mode) } }
                     }
+                }
+                Section("歌词操作") {
+                    Button("lyrics.refresh", systemImage: "arrow.clockwise") { model.lyrics.reload(force: true) }
+                    Button("lyrics.automatic", systemImage: "arrow.uturn.backward") { model.lyrics.restoreAutomatic() }
+                    Button("lyrics.offset.minus") { model.lyrics.setOffset(model.lyrics.selection.offset - 0.1) }
+                    Button("lyrics.offset.plus") { model.lyrics.setOffset(model.lyrics.selection.offset + 0.1) }
+                    Button("lyrics.offset.zero") { model.lyrics.setOffset(0) }
                 }
             }
             if let document = model.lyrics.document, let credit = configuration.credits.content(in: document) {

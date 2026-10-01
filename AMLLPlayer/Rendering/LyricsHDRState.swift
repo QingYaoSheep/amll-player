@@ -24,6 +24,11 @@ struct LyricsHDRFrameState: Equatable, Sendable {
     var activeLineIndexes: Set<Int>
     var outputBrightness: Double
 
+    func brightness(for row: AMLLFrameState.Row) -> Double {
+        guard activeLineIndexes.contains(row.lineIndex) else { return 1 }
+        return 1 + (outputBrightness - 1) * (row.retirement?.hdrWeight ?? 1)
+    }
+
     static func sample(lines: [LyricLine], lyricTime: Double,
                        configuration: LyricsHDRConfiguration,
                        capabilities: LyricsHDRCapabilities,

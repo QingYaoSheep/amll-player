@@ -4,6 +4,46 @@ import XCTest
 
 @MainActor
 final class LyricsHDRRendererTests: XCTestCase {
+    func testProductionCanvasRetiresHDRAndBlurTogetherBeforeIncomingArrival() throws {
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        canvas.hdrCapabilitiesOverride = .init(supportsEDR: true, headroom: 2)
+        defer { canvas.stop(); canvas.removeFromSuperview() }
+        let lines = [(0.0, 1.0), (2.0, 3.0)].enumerated().map { index, span in
+            LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
+                      words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
+        }
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "hdr-retire", title: "Retire", artists: []),
+                                      lines: lines, language: "en", selectionReason: "HDR retirement integration")
+        var time = 0.1
+        canvas.position = { time }
+        var configuration = LyricsRenderConfiguration()
+        configuration.hdr = .init(enabled: true)
+        configuration.advance = 0
+        canvas.configure(document: document, configuration: configuration, input: .init(position: time, playing: true),
+                         active: false, reduceMotion: false)
+        canvas.advanceFrame(delta: 0)
+        time = 1.39
+        canvas.advanceFrame(delta: 1.29)
+        XCTAssertEqual(try XCTUnwrap(canvas.hdrFrameState).activeLineIndexes, [0])
+        time = 1.41
+        canvas.advanceFrame(delta: 1.0 / 120)
+        let row = try XCTUnwrap(canvas.frameState?.rows.first)
+        let hdr = try XCTUnwrap(canvas.hdrFrameState)
+        XCTAssertEqual(hdr.activeLineIndexes, [0])
+        XCTAssertGreaterThan(hdr.brightness(for: row), 1)
+        XCTAssertLessThan(hdr.brightness(for: row), 2)
+        XCTAssertGreaterThan(row.blur, 0)
+        XCTAssertLessThan(row.scale, 1)
+        XCTAssertGreaterThan(row.scale, 0.97)
+        XCTAssertTrue(row.fillComplete)
+        XCTAssertFalse(try XCTUnwrap(canvas.frameState?.rows.last).active)
+        canvas.advanceFrame(delta: 0.5)
+        XCTAssertEqual(try XCTUnwrap(canvas.hdrFrameState).activeLineIndexes, [])
+        XCTAssertEqual(try XCTUnwrap(canvas.frameState?.rows.first?.retirement).hdrWeight, 0)
+    }
+
     func testGlyphUploadPreservesCoverageAndOrientation() throws {
         let renderer = try XCTUnwrap(LyricsHDRRenderer())
         // Unequal alpha in every corner detects vertical flips and lost alpha.

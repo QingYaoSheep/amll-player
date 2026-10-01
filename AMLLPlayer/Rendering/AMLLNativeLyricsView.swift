@@ -498,7 +498,7 @@ final class AMLLNativeCanvas: UIView {
             guard sourceLines.indices.contains(row.lineIndex) else { return nil }
             let line = sourceLines[row.lineIndex]
             return line.start.isFinite && line.end.isFinite && line.end > line.start
-                && ((actualTime >= line.start && actualTime < line.end) || row.hdrHold)
+                && ((actualTime >= line.start && actualTime < line.end) || row.hdrHold || (row.retirement?.hdrWeight ?? 0) > 0)
                 ? row.lineIndex : nil
         }) : []
         let hdr = LyricsHDRFrameState(activeLineIndexes: activeHDR, outputBrightness: brightness)
@@ -553,7 +553,7 @@ final class AMLLNativeCanvas: UIView {
             if view.layer.position != rowPosition { view.layer.position = rowPosition }
             if view.transform != rowTransform { view.transform = rowTransform }
             view.setCanSeek(canSeek)
-            let gain = hdr.activeLineIndexes.contains(row.lineIndex) ? hdr.outputBrightness : 1
+            let gain = hdr.brightness(for: row)
             view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
                                gain: gain, lyricTime: state.lyricTime,
                                row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
@@ -1243,8 +1243,8 @@ private final class AMLLNativeRow: UIView {
         let sharpWeight = Float(max(0, 1 - radius / 2))
         // A blurred bitmap has no word mask. Preserve the same unplayed
         // brightness instead of displaying its white pixels at full alpha.
-        let lineBrightness = row.active || row.visualFocus == .holding ? 1.0 : dark
-        let blurredAlpha = Float(words.isEmpty ? lineBrightness : dark)
+        let lineBrightness = row.retirement != nil ? bright : (row.active || row.visualFocus == .holding ? 1.0 : dark)
+        let blurredAlpha = Float(row.retirement != nil ? bright : (words.isEmpty ? lineBrightness : dark))
         nearBlur.opacity = Float(radius <= 2 ? radius / 2 : (5 - radius) / 3) * blurredAlpha
         farBlur.opacity = Float(max(0, (radius - 2) / 3)) * blurredAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
@@ -1371,7 +1371,7 @@ private final class AMLLNativeRow: UIView {
         let feather = textLayout.font.lineHeight * configuration.gradientWidth
         var pieces: [LyricsHDRRow.Piece] = []
         if !base.isHidden {
-            let opacity = words.isEmpty ? 1.0 : row.darkAlpha
+            let opacity = words.isEmpty ? (row.retirement != nil ? row.brightAlpha : (row.active || row.visualFocus == .holding ? 1.0 : row.darkAlpha)) : row.darkAlpha
             pieces.append(.init(rect: bounds, transform: .identity, rtl: false, edge: bounds.width,
                                 feather: 0, dark: opacity, bright: opacity))
         } else {

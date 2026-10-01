@@ -337,7 +337,7 @@ final class AMLLVisualActivityTests: XCTestCase {
         }
     }
 
-    func testCompletedRowRestoresOrdinarySizeAndBrightnessAtTheUpwardDeadline() {
+    func testCompletedRowStartsContinuousRetirementAtTheUpwardDeadline() {
         for step in [1.0 / 60, 1.0 / 120, 0.037] {
             var engine = makeEngine([(0, 1), (2, 3)])
             _ = engine.render(.init(position: 0.1, playing: true), delta: 0)
@@ -348,14 +348,15 @@ final class AMLLVisualActivityTests: XCTestCase {
             let released = engine.render(.init(position: 1.41, playing: true), delta: 0)
             XCTAssertEqual(released.rows[0].y, held.rows[0].y, accuracy: 0.001)
             XCTAssertEqual(released.rows[0].visualFocus, .passed)
-            XCTAssertEqual(released.rows[0].scale, 0.97, accuracy: 0.000_001)
-            XCTAssertEqual(released.rows[0].brightAlpha, 0.2, accuracy: 0.001)
-            XCTAssertEqual(released.rows[0].darkAlpha, 0.2, accuracy: 0.001)
+            XCTAssertEqual(released.rows[0].scale, held.rows[0].scale, accuracy: 0.000_001)
+            XCTAssertEqual(released.rows[0].brightAlpha, held.rows[0].brightAlpha, accuracy: 0.001)
+            XCTAssertEqual(released.rows[0].darkAlpha, held.rows[0].darkAlpha, accuracy: 0.001)
             XCTAssertFalse(released.rows[0].hdrHold)
             XCTAssertTrue(released.rows[0].fillComplete)
             let moving = engine.render(.init(position: 1.41, playing: true), delta: step)
             XCTAssertLessThan(moving.rows[0].y, held.rows[0].y)
-            XCTAssertEqual(moving.rows[0].scale, 0.97, accuracy: 0.000_001)
+            XCTAssertLessThan(moving.rows[0].scale, 1)
+            XCTAssertGreaterThan(moving.rows[0].scale, 0.97)
             XCTAssertLessThan(moving.rows[0].opacity * moving.rows[0].brightAlpha,
                               held.rows[0].opacity * held.rows[0].brightAlpha)
             XCTAssertNil(moving.rows[1].positionMotion?.startedAt)
@@ -373,12 +374,16 @@ final class AMLLVisualActivityTests: XCTestCase {
         XCTAssertGreaterThan(handedOff.rows[0].brightAlpha, handedOff.rows[0].darkAlpha)
         XCTAssertEqual(handedOff.rows[1].visualFocus, .passed)
         XCTAssertFalse(handedOff.rows[1].hdrHold)
-        XCTAssertEqual(handedOff.rows[1].scale, 0.75, accuracy: 0.001)
-        XCTAssertEqual(handedOff.rows[1].brightAlpha, 0.2, accuracy: 0.001)
+        XCTAssertLessThan(handedOff.rows[1].scale, held.rows[1].scale)
+        XCTAssertGreaterThan(handedOff.rows[1].scale, 0.75)
+        XCTAssertLessThan(handedOff.rows[1].brightAlpha, held.rows[1].brightAlpha)
+        XCTAssertGreaterThan(handedOff.rows[1].brightAlpha, 0.2)
+        XCTAssertGreaterThan(handedOff.rows[1].blur, 0)
+        XCTAssertEqual(handedOff.rows[0].blur, 0, accuracy: 0.001)
     }
 
     @MainActor
-    func testRealCanvasShrinksCompletedRowBeforeItsFirstUpwardPixel() throws {
+    func testRealCanvasStartsShrinkingAndFadingWithItsFirstUpwardFrame() throws {
         let lines = [(0.0, 1.0), (2.0, 3.0)].enumerated().map { index, span in
             LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
                       words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
@@ -409,9 +414,14 @@ final class AMLLVisualActivityTests: XCTestCase {
         position = 1.41
         canvas.advanceFrame(delta: 0)
         XCTAssertEqual(view.layer.position, heldPosition)
-        XCTAssertEqual(view.transform.a, 0.97, accuracy: 0.000_001)
+        XCTAssertEqual(view.transform.a, 1, accuracy: 0.000_001)
+        canvas.advanceFrame(delta: 1 / 120)
         let row = try XCTUnwrap(canvas.frameState?.rows.first)
-        XCTAssertEqual(row.brightAlpha, 0.2, accuracy: 0.001)
+        XCTAssertLessThan(view.layer.position.y, heldPosition.y)
+        XCTAssertLessThan(view.transform.a, 1)
+        XCTAssertGreaterThan(view.transform.a, 0.97)
+        XCTAssertLessThan(row.brightAlpha, 1)
+        XCTAssertGreaterThan(row.brightAlpha, 0.2)
         XCTAssertLessThan(text.alpha * row.brightAlpha, heldAlpha)
         XCTAssertFalse(row.hdrHold)
     }
@@ -433,8 +443,9 @@ final class AMLLVisualActivityTests: XCTestCase {
             XCTAssertEqual(outgoing.visualFocus, .passed)
             XCTAssertTrue(outgoing.fillComplete)
             XCTAssertFalse(outgoing.hdrHold)
-            XCTAssertEqual(outgoing.brightAlpha, outgoing.darkAlpha, accuracy: 0.001)
-            XCTAssertEqual(outgoing.darkAlpha, 0.2, accuracy: 0.001)
+            XCTAssertGreaterThan(outgoing.brightAlpha, outgoing.darkAlpha)
+            XCTAssertLessThan(outgoing.brightAlpha * outgoing.opacity, held.rows[0].brightAlpha * held.rows[0].opacity)
+            XCTAssertGreaterThan(outgoing.brightAlpha, 0.2)
             XCTAssertGreaterThan(outgoing.blur, 0)
         }
     }
@@ -460,8 +471,9 @@ final class AMLLVisualActivityTests: XCTestCase {
             XCTAssertEqual(outgoing.visualFocus, .passed)
             XCTAssertTrue(outgoing.fillComplete)
             XCTAssertFalse(outgoing.hdrHold)
-            XCTAssertEqual(outgoing.brightAlpha, outgoing.darkAlpha, accuracy: 0.001)
-            XCTAssertEqual(outgoing.darkAlpha, 0.2, accuracy: 0.001)
+            XCTAssertGreaterThan(outgoing.brightAlpha, outgoing.darkAlpha)
+            XCTAssertLessThan(outgoing.brightAlpha * outgoing.opacity, held.rows[0].brightAlpha * held.rows[0].opacity)
+            XCTAssertGreaterThan(outgoing.brightAlpha, 0.2)
             let settled = engine.render(.init(position: 1.41, playing: true), delta: 1)
             XCTAssertEqual(settled.rows[0].brightAlpha, settled.rows[0].darkAlpha, accuracy: 0.001)
         }

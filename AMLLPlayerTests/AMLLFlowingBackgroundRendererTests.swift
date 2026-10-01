@@ -64,6 +64,33 @@ final class AMLLFlowingBackgroundRendererTests: XCTestCase {
         }
     }
 
+    func testOccupiedSlotsNotifyStaticRenderingWhenTheGPUBecomesAvailable() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let event = try XCTUnwrap(device.makeSharedEvent())
+        let gate = try XCTUnwrap(queue.makeCommandBuffer())
+        gate.encodeWaitForEvent(event, value: 1)
+        gate.commit()
+        defer { event.signaledValue = 1 }
+        let renderer = try XCTUnwrap(AMLLFlowingBackgroundRenderer(device: device, commandQueue: queue))
+        let first = try target(renderer), second = try target(renderer)
+        var completed = 0
+        renderer.onSubmissionCompleted = { completed += 1 }
+        XCTAssertNotNil(renderer.render(target: first, size: .init(width: 96, height: 64), state: .init()))
+        XCTAssertNotNil(renderer.render(target: second, size: .init(width: 96, height: 64), state: .init()))
+        XCTAssertNil(renderer.render(target: first, size: .init(width: 96, height: 64), state: .init()))
+        XCTAssertEqual(renderer.statistics.inFlight, 2)
+        XCTAssertFalse(renderer.failed, "An occupied pool is a retry, not a GPU failure")
+        event.signaledValue = 1
+        for _ in 0 ..< 400 {
+            if completed == 2 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(completed, 2)
+        XCTAssertEqual(renderer.statistics.inFlight, 0)
+        _ = try draw(renderer, first, state: .init())
+    }
+
     func testGaussianFiltersTheAlreadyWarpedFrameAndUsesViewportPoints() throws {
         let renderer = try XCTUnwrap(AMLLFlowingBackgroundRenderer())
         renderer.install(try texture(renderer) { x, y in

@@ -13,6 +13,11 @@ private final class FlowingFlightPool: @unchecked Sendable {
         return free.popLast()
     }
 
+    func markFailed() {
+        lock.lock(); defer { lock.unlock() }
+        failed = true
+    }
+
     func release(_ slot: Int, command: (any MTLCommandBuffer)? = nil) {
         lock.lock(); defer { lock.unlock() }
         free.append(slot)
@@ -57,6 +62,7 @@ final class AMLLFlowingBackgroundRenderer {
     }
 
     let device: any MTLDevice
+    var onSubmissionCompleted: (@MainActor @Sendable () -> Void)?
     private let queue: any MTLCommandQueue
     private let compose: any MTLRenderPipelineState
     private let copy: any MTLRenderPipelineState
@@ -75,8 +81,8 @@ final class AMLLFlowingBackgroundRenderer {
     private var cpuSamples: [Double] = []
     private var drawableWait = 0.0
 
-    init?(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice()) {
-        guard let device, MPSSupportsMTLDevice(device), let queue = device.makeCommandQueue(),
+    init?(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice(), commandQueue: (any MTLCommandQueue)? = nil) {
+        guard let device, MPSSupportsMTLDevice(device), let queue = commandQueue ?? device.makeCommandQueue(),
               let library = device.makeDefaultLibrary(),
               let vertex = library.makeFunction(name: "amllFlowingQuad") else { return nil }
         func pipeline(_ name: String, format: MTLPixelFormat) -> (any MTLRenderPipelineState)? {
@@ -128,7 +134,7 @@ final class AMLLFlowingBackgroundRenderer {
 
     var statistics: Statistics {
         let textures = targets.compactMap { $0 }.flatMap { [$0.raw, $0.blurred] }
-            + [current, outgoing, snapshotSource].compactMap { $0 }
+            + [current, outgoing, snapshotSource, lastComposite].compactMap { $0 }
         var identities = Set<ObjectIdentifier>()
         let bytes = textures.reduce(0) { value, texture in
             identities.insert(ObjectIdentifier(texture as AnyObject)).inserted
@@ -179,28 +185,29 @@ final class AMLLFlowingBackgroundRenderer {
         var committed = false
         defer { if !committed { pool.release(slot) } }
         let waiting = CACurrentMediaTime()
-        guard let (target, drawable) = targetProvider(), let command = queue.makeCommandBuffer() else { return nil }
+        guard let (target, drawable) = targetProvider() else { return nil }
+        guard let command = queue.makeCommandBuffer() else { return renderFailed() }
         drawableWait = CACurrentMediaTime() - waiting
-        guard target.pixelFormat == .bgra8Unorm else { return nil }
+        guard target.pixelFormat == .bgra8Unorm else { return renderFailed() }
         if targets[slot]?.raw.width != target.width || targets[slot]?.raw.height != target.height {
             guard let raw = makeTexture(width: target.width, height: target.height),
-                  let blurred = makeTexture(width: target.width, height: target.height) else { return nil }
+                  let blurred = makeTexture(width: target.width, height: target.height) else { return renderFailed() }
             targets[slot] = .init(raw: raw, blurred: blurred)
             allocatedTargetSets += 1
         }
-        guard let surfaces = targets[slot] else { return nil }
+        guard let surfaces = targets[slot] else { return renderFailed() }
         if state.artworkProgress >= 1 {
             outgoing = nil; snapshotSource = nil; outgoingIsSnapshot = false
         } else if let source = snapshotSource {
             guard let snapshot = makeTexture(width: source.width, height: source.height),
-                  let blit = command.makeBlitCommandEncoder() else { return nil }
+                  let blit = command.makeBlitCommandEncoder() else { return renderFailed() }
             blit.copy(from: source, sourceSlice: 0, sourceLevel: 0, sourceOrigin: .init(x: 0, y: 0, z: 0),
                       sourceSize: .init(width: source.width, height: source.height, depth: 1),
                       to: snapshot, destinationSlice: 0, destinationLevel: 0, destinationOrigin: .init(x: 0, y: 0, z: 0))
             blit.endEncoding()
             outgoing = snapshot; snapshotSource = nil
         }
-        guard let sourcePass = encoder(command, target: surfaces.raw) else { return nil }
+        guard let sourcePass = encoder(command, target: surfaces.raw) else { return renderFailed() }
         if let current {
             let previous = outgoing ?? current
             var uniforms = Uniforms(
@@ -224,18 +231,21 @@ final class AMLLFlowingBackgroundRenderer {
                 gaussian?.edgeMode = .clamp
                 gaussianSigma = sigma
             }
-            guard let gaussian else { return nil }
+            guard let gaussian else { return renderFailed() }
             gaussian.encode(commandBuffer: command, sourceTexture: surfaces.raw, destinationTexture: surfaces.blurred)
             output = surfaces.blurred
         }
-        guard let finalPass = encoder(command, target: target) else { return nil }
+        guard let finalPass = encoder(command, target: target) else { return renderFailed() }
         finalPass.setRenderPipelineState(copy)
         finalPass.setFragmentTexture(output, index: 0)
         finalPass.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         finalPass.endEncoding()
         if let drawable { command.present(drawable) }
-        let pool = pool
-        command.addCompletedHandler { buffer in pool.release(slot, command: buffer) }
+        let pool = pool, completion = onSubmissionCompleted
+        command.addCompletedHandler { buffer in
+            pool.release(slot, command: buffer)
+            if let completion { Task { @MainActor in completion() } }
+        }
         command.commit()
         committed = true
         lastComposite = surfaces.raw
@@ -244,5 +254,11 @@ final class AMLLFlowingBackgroundRenderer {
         cpuSamples.append(CACurrentMediaTime() - started)
         if cpuSamples.count > 240 { cpuSamples.removeFirst() }
         return command
+    }
+
+    private func renderFailed() -> (any MTLCommandBuffer)? {
+        pool.markFailed()
+        onSubmissionCompleted?()
+        return nil
     }
 }

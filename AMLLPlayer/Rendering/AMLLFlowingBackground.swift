@@ -129,6 +129,7 @@ struct AMLLFlowingBackground: UIViewRepresentable {
         private var staticMode = false
         private var reduceTransparency = false
         private var lastTimestamp: CFTimeInterval?
+        private var needsStaticFrame = false
 
         init(renderer: AMLLFlowingBackgroundRenderer? = AMLLFlowingBackgroundRenderer(),
              load: @escaping @Sendable (URL) async throws -> Data = { try await ArtworkImageData.load($0) }) {
@@ -140,6 +141,7 @@ struct AMLLFlowingBackground: UIViewRepresentable {
         func attach(_ surface: AMLLFlowingBackgroundSurface) {
             self.surface = surface
             surface.metal.delegate = self
+            renderer?.onSubmissionCompleted = { [weak self] in self?.submissionCompleted() }
             surface.metal.isHidden = renderer == nil
             surface.resized = { [weak self] in self?.resized() }
         }
@@ -149,6 +151,7 @@ struct AMLLFlowingBackground: UIViewRepresentable {
             let changedParameters = state.configuration != configuration.validated()
             state.configure(configuration, immediately: reduceMotion)
             let becameActive = active && !self.active
+            let becameVisible = active && !reduceTransparency && (!self.active || self.reduceTransparency)
             self.active = active
             if becameActive { failedURL = nil }
             self.staticMode = reduceMotion
@@ -178,7 +181,7 @@ struct AMLLFlowingBackground: UIViewRepresentable {
                 return
             }
             if let url, url != loadedURL, url != loadingURL, url != failedURL { request(url) }
-            if changedParameters, renderer == nil { updateFallback() }
+            if renderer == nil, changedParameters || becameVisible { updateFallback() }
             if reduceMotion { state.beginArtworkTransition(hasPrevious: false, immediately: true) }
             if !nextRunning { surface?.metal.setNeedsDisplay() }
         }
@@ -250,18 +253,31 @@ struct AMLLFlowingBackground: UIViewRepresentable {
         func draw(in view: MTKView) {
             guard active, !reduceTransparency, let renderer else { return }
             if renderer.failed {
-                self.renderer = nil; view.isPaused = true; view.isHidden = true
-                updateFallback()
+                submissionCompleted()
                 return
             }
             let start = CACurrentMediaTime()
             let interval = advanceClock(at: start)
-            _ = renderer.draw(in: view, state: state)
+            needsStaticFrame = renderer.draw(in: view, state: state) == nil && !running
             if let performanceRecorder {
                 let stats = renderer.statistics
                 performanceRecorder.append(.init(interval: interval * 1000, cpu: (CACurrentMediaTime() - start) * 1000,
                     layout: 0, raster: 0, engine: 0, layers: 0, drawableWait: stats.drawableWait * 1000,
                     gpuSubmission: stats.cpuP95 * 1000, gpu: stats.gpuP95 * 1000, cacheBytes: stats.residentTextureBytes))
+            }
+        }
+
+        private func submissionCompleted() {
+            guard active, !reduceTransparency, let renderer else { return }
+            if renderer.failed {
+                renderer.onSubmissionCompleted = nil
+                self.renderer = nil
+                surface?.metal.isPaused = true
+                surface?.metal.isHidden = true
+                needsStaticFrame = false
+                updateFallback()
+            } else if needsStaticFrame, !running {
+                surface?.metal.setNeedsDisplay()
             }
         }
 
@@ -274,7 +290,8 @@ struct AMLLFlowingBackground: UIViewRepresentable {
             surface?.metal.isPaused = true
             surface?.metal.enableSetNeedsDisplay = false
             running = false; active = false; lastTimestamp = nil
-            decoded = nil; renderer = nil
+            renderer?.onSubmissionCompleted = nil
+            decoded = nil; renderer = nil; needsStaticFrame = false
             surface?.fallback.image = nil
         }
     }

@@ -225,7 +225,9 @@ final class AMLLFocusRetirementTests: XCTestCase {
     }
 
     func testScrollAheadRetiresMainAndBackgroundIndependentlyOfTheirWordClocks() throws {
-        for backgroundEnd in [3.0, 4.0] {
+        // The source optimizer trims this short overlap for visual scheduling,
+        // while the retained source clock still records the real overlap.
+        for backgroundEnd in [3.0, 3.05] {
             let lines = [
                 LyricLine(id: "main", text: "Main", start: 0, end: 3,
                           words: [.init(text: "Main", start: 0, end: 3)], precision: .word),

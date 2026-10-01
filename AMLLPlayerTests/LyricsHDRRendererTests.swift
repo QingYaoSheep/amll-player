@@ -4,6 +4,52 @@ import XCTest
 
 @MainActor
 final class LyricsHDRRendererTests: XCTestCase {
+    func testProductionCanvasScrollAheadRetiresAppearanceBeforeActualWordEnd() throws {
+        for advance in [0.3, 1.0] {
+            let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+            let window = UIWindow(frame: canvas.bounds)
+            window.addSubview(canvas)
+            canvas.hdrCapabilitiesOverride = .init(supportsEDR: true, headroom: 2)
+            defer { canvas.stop(); canvas.removeFromSuperview() }
+            let lines = [(0.0, 3.0), (3.0, 5.0)].enumerated().map { index, span in
+                LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
+                          words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
+            }
+            let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "hdr-ahead", title: "Ahead", artists: []),
+                                          lines: lines, language: "en", selectionReason: "Scroll-ahead integration")
+            var time = 0.1
+            canvas.position = { time }
+            var configuration = LyricsRenderConfiguration()
+            configuration.hdr = .init(enabled: true)
+            configuration.advance = advance
+            canvas.configure(document: document, configuration: configuration, input: .init(position: time, playing: true),
+                             active: false, reduceMotion: false)
+            canvas.advanceFrame(delta: 0)
+            let initial = try XCTUnwrap(canvas.frameState?.rows.first)
+            var moved = false
+            while time < 3 - 1.0 / 120 {
+                time += 1.0 / 120
+                canvas.advanceFrame(delta: 1.0 / 120)
+                let row = try XCTUnwrap(canvas.frameState?.rows.first)
+                guard row.y < initial.y else { continue }
+                let retirement = try XCTUnwrap(row.retirement)
+                XCTAssertGreaterThan(retirement.progress, 0)
+                XCTAssertTrue(row.active)
+                XCTAssertFalse(row.fillComplete)
+                XCTAssertLessThan(row.scale, 1)
+                XCTAssertGreaterThan(row.blur, 0)
+                let gain = try XCTUnwrap(canvas.hdrFrameState).brightness(for: row)
+                XCTAssertGreaterThan(gain, 1)
+                XCTAssertLessThan(gain, 2)
+                XCTAssertEqual(row.wordClock.time, time, accuracy: 0.001)
+                XCTAssertFalse(try XCTUnwrap(canvas.frameState?.rows.last).active)
+                moved = true
+                break
+            }
+            XCTAssertTrue(moved)
+        }
+    }
+
     func testProductionCanvasRetiresHDRAndBlurTogetherBeforeIncomingArrival() throws {
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         let window = UIWindow(frame: canvas.bounds)

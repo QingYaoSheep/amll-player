@@ -45,6 +45,13 @@ private struct CatalogDetailContent: View {
                             CatalogPlayButton(model: model, item: detail.item, compact: false)
                         }
                         CatalogExternalLink(item: detail.item)
+                        if detail.item.service == .netease {
+                            NetEaseItemActions(model: model, item: detail.item)
+                            if [.album, .playlist].contains(detail.item.kind), detail.item.canPlay {
+                                Button("随机播放") { Task { do { try await model.playCatalog(detail.item, shuffled: true) } catch { model.presentedError = .musicFailure(error.localizedDescription) } } }
+                            }
+                            if detail.item.editablePlaylist { NetEasePlaylistEditorButton(model: model, playlist: detail.item) }
+                        }
                         if detail.item.service == .appleMusic {
                             AppleMusicItemActions(model: model, item: detail.item)
                             if [.album, .playlist].contains(detail.item.kind), detail.item.canPlay {
@@ -110,8 +117,8 @@ private struct CatalogDetailContent: View {
     }
 
     private func related(_ kind: MusicCatalogKind, _ id: String) -> CatalogRoute {
-        store.provider.service == .appleMusic
-            ? .resource(.init(service: .appleMusic, kind: kind, scope: scope, rawValue: id)) : .detail(kind, id)
+        store.provider.service != .spotify
+            ? .resource(.init(service: store.provider.service, kind: kind, scope: scope, rawValue: id)) : .detail(kind, id)
     }
 
     private func duration(_ milliseconds: Int) -> String {
@@ -130,7 +137,8 @@ private struct CatalogDetailChildren: View {
     var body: some View {
         Section(parent.kind == .artist ? String(localized: "catalog.albums") : String(localized: "catalog.tracks")) {
             ForEach(state.rows) { row in
-                CatalogRowView(model: model, row: row, contextURI: query.preservesPositions ? parent.uri : nil)
+                CatalogRowView(model: model, row: row, contextURI: query.preservesPositions ? parent.uri : nil,
+                               parentPlaylist: parent.service == .netease ? parent : nil)
             }
             if state.error == .forbidden || state.error == .unavailable {
                 Text("catalog.metadataOnly").foregroundStyle(.secondary)

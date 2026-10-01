@@ -89,7 +89,9 @@ struct AMLLLyricsPlayer: View {
         .statusBarHidden(false)
         .sheet(isPresented: $search) { LyricsSearchView(coordinator: model.lyrics) }
         .sheet(isPresented: $devices) { DevicePickerView(model: model) }
-        .sheet(isPresented: $showingQueue) { AppleMusicQueueView(model: model) }
+        .sheet(isPresented: $showingQueue) {
+            if model.selectedMusicService == .netease { NetEaseQueueView(model: model) } else { AppleMusicQueueView(model: model) }
+        }
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }
         .task(id: artworkRequestKey) { await loadAnimatedArtwork() }
         .alert("error.title", isPresented: Binding(get: { model.presentedError != nil }, set: {
@@ -147,7 +149,7 @@ struct AMLLLyricsPlayer: View {
                         .padding(.horizontal, 8)
                         .padding(.top, metrics.volumeTopGap)
                 }
-                if configuration.showVolume, model.selectedMusicService == .appleMusic {
+                if configuration.showVolume, model.selectedMusicService != .spotify {
                     SystemMusicVolumeView().frame(height: 44).padding(.top, metrics.volumeTopGap)
                 }
                 bottomActions
@@ -171,7 +173,7 @@ struct AMLLLyricsPlayer: View {
                     {
                         LyricsVolumeControl(model: model, device: device, volume: volume).padding(.top, 42)
                     }
-                    if configuration.showVolume, model.selectedMusicService == .appleMusic {
+                    if configuration.showVolume, model.selectedMusicService != .spotify {
                         SystemMusicVolumeView().frame(height: 44).padding(.top, 42)
                     }
                     bottomActions.padding(.top, 26)
@@ -254,6 +256,8 @@ struct AMLLLyricsPlayer: View {
             Spacer(minLength: 8)
             if model.selectedMusicService == .appleMusic {
                 AppleMusicCurrentFavorite(model: model)
+            } else if model.selectedMusicService == .netease {
+                NetEaseCurrentFavorite(model: model)
             } else {
                 lyricsActionsMenu
             }
@@ -281,6 +285,8 @@ struct AMLLLyricsPlayer: View {
             Spacer(minLength: 8)
             if model.selectedMusicService == .appleMusic {
                 AppleMusicCurrentFavorite(model: model)
+            } else if model.selectedMusicService == .netease {
+                NetEaseCurrentFavorite(model: model)
             } else {
                 lyricsActionsMenu
             }
@@ -452,8 +458,8 @@ struct AMLLLyricsPlayer: View {
             }
             Button("player.devices", systemImage: "airplayaudio") { devices = true; Task { await model.loadDevices() } }
             Button("lyrics.find", systemImage: "magnifyingglass") { search = true }
-            if model.selectedMusicService == .appleMusic, let snapshot = model.playbackSnapshot {
-                Section("Apple Music 播放") {
+            if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
+                Section("\(model.selectedMusicService.title) 播放") {
                     Button("播放队列", systemImage: "list.bullet") { showingQueue = true }
                     Button(snapshot.shuffleEnabled ? "关闭随机" : "随机播放", systemImage: "shuffle") {
                         Task { await model.setShuffle(!snapshot.shuffleEnabled) }

@@ -211,6 +211,9 @@ final class NetEaseLyricsProvider: LyricsProvider {
     }
 
     func search(track: TrackIdentity, query: String, settings _: LyricsSettings) async throws -> [LyricCandidate] {
+        if query.isEmpty, track.spotifyID.hasPrefix("netease:catalog:"), let id = track.spotifyID.split(separator: ":").last {
+            return [LyricCandidate(source: .netease, sourceID: String(id), title: track.title, artists: track.artists, album: track.album, duration: track.duration, score: 100)]
+        }
         let result = try await request("/search/get/web", query: [
             "s": query.isEmpty ? track.query : query, "type": "1", "offset": "0", "total": "true", "limit": "20",
         ])

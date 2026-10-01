@@ -18,6 +18,9 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("appleMusicLoginLink")
 
+                NavigationLink { NetEaseLoginView(model: model) } label: { Label("登录到网易云音乐", systemImage: "music.note.list") }
+                .accessibilityIdentifier("neteaseLoginLink")
+
                 MusicSourcePicker(model: model)
 
                 LabeledContent("settings.account") {
@@ -27,8 +30,8 @@ struct SettingsView: View {
             }
 
             Section("settings.playback") {
-                Label("Spotify 与 Apple Music", systemImage: "dot.radiowaves.left.and.right")
-                Text("Spotify 控制已连接设备，Apple Music 跟随系统音乐 App。切换来源不会自动播放、暂停或重建队列。")
+                Label("Spotify、Apple Music 与网易云音乐", systemImage: "dot.radiowaves.left.and.right")
+                Text("Spotify 控制已连接设备，Apple Music 跟随系统音乐 App，网易云在 AMLL 内播放。切走网易云会暂停并保存队列，切回后手动继续播放。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

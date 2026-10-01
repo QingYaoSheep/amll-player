@@ -126,7 +126,7 @@ final class AppleMusicCatalog: MusicCatalogProviding {
             case .charts:
                 path = "/v1/catalog/\(region)/charts"
                 parameters.append(.init(name: "types", value: "songs"))
-            case .topTracks, .downloaded: throw MusicCatalogError.unavailable
+            case .dailySongs, .topTracks, .downloaded: throw MusicCatalogError.unavailable
             }
         case let .search(term, kind):
             path = "/v1/catalog/\(region)/search"

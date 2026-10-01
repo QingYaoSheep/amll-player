@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-01",
+  "authenticated": false,
+  "results": [
+    {
+      "path": "/login/qrcode/unikey",
+      "http": 200,
+      "code": 200,
+      "validJSON": true,
+      "shape": [
+        "code",
+        "unikey"
+      ]
+    },
+    {
+      "path": "/cloudsearch/pc",
+      "http": 200,
+      "code": 200,
+      "validJSON": true,
+      "shape": [
+        "result",
+        "code",
+        "trp"
+      ]
+    },
+    {
+      "path": "/song/enhance/player/url/v1",
+      "http": 200,
+      "code": 200,
+      "validJSON": true,
+      "shape": [
+        "data",
+        "code"
+      ]
+    },
+    {
+      "path": "/toplist",
+      "http": 200,
+      "code": 200,
+      "keys": [
+        "code",
+        "list",
+        "artistToplist"
+      ]
+    },
+    {
+      "path": "/personalized/playlist",
+      "http": 200,
+      "code": 200,
+      "keys": [
+        "hasTaste",
+        "code",
+        "category",
+        "result"
+      ]
+    },
+    {
+      "path": "/v6/playlist/detail",
+      "http": 200,
+      "code": 200,
+      "keys": [
+        "code",
+        "relatedVideos",
+        "playlist",
+        "urls",
+        "privileges",
+        "sharedPrivilege",
+        "resEntrance",
+        "fromUsers",
+        "fromUserCount",
+        "songFromUsers"
+      ],
+      "trackIDs": 200
+    },
+    {
+      "path": "/v1/album/32311",
+      "http": 200,
+      "code": 200,
+      "keys": [
+        "resourceState",
+        "songs",
+        "code",
+        "album"
+      ]
+    }
+  ]
+}

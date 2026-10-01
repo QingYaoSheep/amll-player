@@ -72,3 +72,13 @@ Kana mappings are generated from WanaKana 5.3.1 (MIT); its license is in
 `Licenses/WanaKana-MIT.txt`. The iOS app contains native Swift code and resource
 data, without the development-time JavaScript dependencies. Source and resource
 hashes are recorded in `AMLLPlayer/Resources/Romanization/romanization-resources.json`.
+
+## NetEase community protocol
+
+Native Swift WEAPI interoperates with the AES/RSA and request contracts in
+chaunsin/netease-cloud-music c3de358294d1c23443f1c541ee4a77d1b393388b (MIT).
+Supplemental endpoint parameters reference NeteaseCloudMusicApiEnhanced/api-enhanced
+4a45a14aa7e035e22b824600409ab1a07b748a0e (MIT, Binaryify 2013-2022).
+Licenses: Licenses/NetEase-Community-MIT.txt and Licenses/NetEase-API-Enhanced-MIT.txt.
+Exact reference hashes: ReferenceCaptures/netease-inputs.json.
+No server, JavaScript runtime or audio-unlocking dependency is included in the app.

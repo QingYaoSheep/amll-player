@@ -43,6 +43,7 @@ struct SpotifyBrowserView: View {
                         }
                     }
                     .safeAreaInset(edge: .bottom) {
+                        if model.selectedMusicService == .netease, model.currentServiceConnected { NetEasePlaylistEditorButton(model: model).padding() }
                         if model.selectedMusicService == .appleMusic {
                             AppleMusicCreatePlaylistButton(model: model).padding()
                         }
@@ -91,7 +92,9 @@ private struct CatalogHomeView: View {
         List {
             Section {
                 MusicSourcePicker(model: model)
-                if let profile = store.profile {
+                if model.selectedMusicService == .netease, !model.currentServiceConnected {
+                    NavigationLink("登录到网易云音乐") { NetEaseLoginView(model: model) }
+                } else if let profile = store.profile {
                     Label(profile.displayName, systemImage: "person.crop.circle")
                         .font(.title2.bold())
                 } else if let error = store.profileError {

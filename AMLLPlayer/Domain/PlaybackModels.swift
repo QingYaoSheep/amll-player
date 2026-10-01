@@ -50,6 +50,7 @@ enum PlaybackSnapshotSource: String, Equatable, Sendable {
     case appRemote
     case webAPI
     case musicKit
+    case nativeAudio
 }
 
 struct PlaybackSnapshot: Equatable, Sendable {

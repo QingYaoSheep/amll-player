@@ -5,7 +5,7 @@ import SwiftUI
 struct SystemMusicRoutesView: View {
     var body: some View {
         VStack(spacing: 24) {
-            Text("Apple Music 使用系统 AirPlay 和音量控制。")
+            Text("当前音乐来源使用系统 AirPlay 和音量控制。")
             SystemAirPlayButton().frame(width: 60, height: 60)
             SystemMusicVolumeView().frame(height: 44)
         }.padding()

@@ -7,6 +7,14 @@ import SwiftUI
 final class AppModel {
     private(set) var selectedMusicService: MusicServiceID
     private(set) var appleMusicState = MusicConnectionState()
+    private(set) var netEaseState = MusicConnectionState()
+    @ObservationIgnored let netEaseSession: NetEaseSession
+    @ObservationIgnored let netEaseCatalog: NetEaseCatalog
+    @ObservationIgnored let netEaseLibrary: NetEaseLibrary
+    @ObservationIgnored let netEasePlayback: NetEasePlayback
+    @ObservationIgnored private var netEaseStore: SpotifyCatalogStore
+    @ObservationIgnored private var netEaseSessionTask: Task<Void, Never>?
+    @ObservationIgnored private var netEasePlaybackTask: Task<Void, Never>?
     @ObservationIgnored let appleSession: any MusicSessionProviding
     @ObservationIgnored private let applePlayback: any MusicPlaybackProviding
     @ObservationIgnored let appleCatalog: any MusicCatalogProviding
@@ -19,11 +27,19 @@ final class AppModel {
     @ObservationIgnored private var sourceGeneration = UUID()
 
     var currentServiceConnected: Bool {
-        selectedMusicService == .spotify ? sessionState.isAuthenticated : appleMusicState.connected
+        switch selectedMusicService {
+        case .spotify: sessionState.isAuthenticated
+        case .appleMusic: appleMusicState.connected
+        case .netease: netEaseState.connected
+        }
     }
 
     private var currentPlayback: any MusicPlaybackProviding {
-        selectedMusicService == .spotify ? environment.spotifyPlayback : applePlayback
+        switch selectedMusicService {
+        case .spotify: environment.spotifyPlayback
+        case .appleMusic: applePlayback
+        case .netease: netEasePlayback
+        }
     }
 
     private(set) var sessionState: SpotifySessionState
@@ -75,6 +91,7 @@ final class AppModel {
         applePlayback: (any MusicPlaybackProviding)? = nil,
         appleCatalog: (any MusicCatalogProviding)? = nil,
         appleLibrary: (any MusicLibraryMutating)? = nil,
+        netEaseSession: NetEaseSession? = nil,
         musicPreferences: MusicSourcePreferences = MusicSourcePreferences(),
         environmentFactory: @escaping @MainActor (AppConfiguration) -> AppEnvironment = {
             AppEnvironment.make(configuration: $0)
@@ -85,6 +102,14 @@ final class AppModel {
         let nativeCatalog = AppleMusicCatalog(session: nativeSession)
         let resolvedSession = appleSession ?? nativeSession
         let resolvedCatalog = appleCatalog ?? nativeCatalog
+        let nSession = netEaseSession ?? NetEaseSession()
+        let nCatalog = NetEaseCatalog(session: nSession)
+        self.netEaseSession = nSession
+        self.netEaseCatalog = nCatalog
+        self.netEaseLibrary = NetEaseLibrary(session: nSession, catalog: nCatalog)
+        self.netEasePlayback = NetEasePlayback(session: nSession, catalog: nCatalog)
+        self.netEaseStore = SpotifyCatalogStore(provider: nCatalog)
+        self.netEaseState = nSession.currentState
         let selectedService = musicPreferences.selected
         let spotifyStore = SpotifyCatalogStore(provider: catalogProvider ?? SpotifyCatalogClient(session: environment.spotifySession))
         let appleStore = SpotifyCatalogStore(provider: resolvedCatalog)
@@ -103,7 +128,11 @@ final class AppModel {
         sessionState = environment.spotifySession.currentState
         spotifyCatalog = spotifyStore
         self.appleStore = appleStore
-        catalog = selectedService == .spotify ? spotifyStore : appleStore
+        switch selectedService {
+        case .spotify: catalog = spotifyStore
+        case .appleMusic: catalog = appleStore
+        case .netease: catalog = self.netEaseStore
+        }
         if sessionState.isAuthenticated {
             spotifyCatalog.activate()
         }
@@ -117,6 +146,8 @@ final class AppModel {
         playbackTask?.cancel()
         appleSessionTask?.cancel()
         applePlaybackTask?.cancel()
+        netEaseSessionTask?.cancel()
+        netEasePlaybackTask?.cancel()
         lyricsMetadataTask?.cancel()
     }
 
@@ -128,6 +159,7 @@ final class AppModel {
         ArtworkMediaDownload.recoverAbandonedTransfers()
         environment.spotifyPlayback.start()
         prepareAppleMusic()
+        prepareNetEase()
 
         sessionTask = Task { [weak self] in
             guard let self else {
@@ -175,7 +207,7 @@ final class AppModel {
             isForeground = true
             lyrics.setForeground(true)
             currentPlayback.enterForeground()
-            Task { await appleSession.refresh() }
+            Task { await appleSession.refresh(); await netEaseSession.refresh() }
         case .background:
             isForeground = false
             lyricsMetadataTask?.cancel()
@@ -356,6 +388,19 @@ final class AppModel {
         isPerformingAction = true
         defer { isPerformingAction = false }
         let epoch = catalog.identity
+        if selectedMusicService == .netease {
+            guard netEaseSession.currentState.connected else { throw NetEaseError.expired }
+            guard item.service == .netease else { throw MusicCatalogError.unavailable }
+            let context = contextURI.flatMap { raw -> MusicResourceID? in
+                let parts = raw.split(separator: ":")
+                guard parts.count == 3, parts[0] == "netease", let kind = MusicCatalogKind(rawValue: String(parts[1])) else { return nil }
+                return .init(service: .netease, kind: kind, scope: .catalog, rawValue: String(parts[2]))
+            }
+            if shuffled { try await netEasePlayback.playShuffled(item) }
+            else { try await netEasePlayback.play(item: item, context: context, position: position) }
+            guard catalog.identity == epoch else { throw CancellationError() }
+            return
+        }
         if selectedMusicService == .appleMusic {
             guard item.service == .appleMusic else { throw MusicCatalogError.unavailable }
             let context = contextURI.flatMap(MusicResourceID.init(appleURI:))
@@ -389,6 +434,7 @@ final class AppModel {
         guard service != selectedMusicService else { return }
         sourceGeneration = UUID()
         currentPlayback.enterBackground()
+        if selectedMusicService == .netease { netEasePlayback.deselect() }
         if selectedMusicService == .appleMusic {
             applePlayback.stop()
         }
@@ -396,13 +442,16 @@ final class AppModel {
         clearPlayback()
         selectedMusicService = service
         musicPreferences.selected = service
-        catalog = service == .spotify ? spotifyCatalog : appleStore
-        if currentServiceConnected {
+        switch service {
+        case .spotify: catalog = spotifyCatalog
+        case .appleMusic: catalog = appleStore
+        case .netease: catalog = netEaseStore
+        }
+        if currentServiceConnected || service == .netease {
             catalog.activate()
         }
-        if service == .appleMusic {
-            applePlayback.start()
-        }
+        if service == .appleMusic { applePlayback.start() }
+        if service == .netease { netEasePlayback.start() }
         if isForeground {
             currentPlayback.enterForeground()
         }
@@ -453,6 +502,58 @@ final class AppModel {
         guard epoch == sourceGeneration else { throw CancellationError() }
         // Force all private pages to reload from the service; never guess favorites.
         await appleStore.refreshContent()
+    }
+
+    func disconnectNetEase() {
+        netEasePlayback.clearAccount()
+        netEaseSession.disconnect()
+        netEaseState = netEaseSession.currentState
+        netEaseStore.reset(); netEaseStore.activate()
+        if selectedMusicService == .netease { clearPlayback() }
+    }
+
+    func mutateNetEase(_ action: @MainActor (NetEaseLibrary) async throws -> Void) async throws {
+        guard selectedMusicService == .netease, currentServiceConnected else { throw NetEaseError.expired }
+        let epoch = sourceGeneration
+        let context = netEaseSession.currentState.contextID
+        try await action(netEaseLibrary)
+        guard epoch == sourceGeneration, context == netEaseSession.currentState.contextID else { throw CancellationError() }
+        netEaseCatalog.invalidate()
+        await netEaseStore.refreshContent()
+    }
+
+    private func prepareNetEase() {
+        netEaseStore.activate()
+        guard netEaseSessionTask == nil else { return }
+        netEaseSessionTask = Task { [weak self] in
+            guard let self else { return }
+            for await state in netEaseSession.connectionStates {
+                guard !Task.isCancelled else { return }
+                let changed = state.contextID != netEaseState.contextID || state.connected != netEaseState.connected
+                netEaseState = state
+                if changed {
+                    netEaseStore.reset()
+                    netEasePlayback.accountChanged()
+                    if selectedMusicService == .netease { clearPlayback() }
+                }
+                if state.connected {
+                    netEaseStore.activate()
+                    if selectedMusicService == .netease { netEasePlayback.start() }
+                } else {
+                    netEasePlayback.stop()
+                    if selectedMusicService == .netease { clearPlayback() }
+                    netEaseStore.activate()
+                }
+            }
+        }
+        netEasePlaybackTask = Task { [weak self] in
+            guard let self else { return }
+            for await snapshot in netEasePlayback.playbackSnapshots {
+                guard !Task.isCancelled else { return }
+                if selectedMusicService == .netease { receive(snapshot) }
+            }
+        }
+        Task { await netEaseSession.refresh() }
     }
 
     private func clearPlayback() {
@@ -562,6 +663,6 @@ final class AppModel {
     }
 
     private func mapped(_ error: Error) -> SpotifyServiceError {
-        error as? SpotifyServiceError ?? (selectedMusicService == .appleMusic ? .musicFailure(error.localizedDescription) : .transport)
+        error as? SpotifyServiceError ?? (selectedMusicService != .spotify ? .musicFailure(error.localizedDescription) : .transport)
     }
 }

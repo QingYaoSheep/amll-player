@@ -3,12 +3,15 @@ import SwiftUI
 struct SpotifyPlayerView: View {
     @Bindable var model: AppModel
     @State private var isShowingDevices = false
+    @State private var isShowingQueue = false
     @State private var isShowingLyricsSearch = false
 
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if model.selectedMusicService == .appleMusic {
+                if model.selectedMusicService == .netease {
+                    if model.currentServiceConnected { playerContent } else { NetEaseLoginView(model: model) }
+                } else if model.selectedMusicService == .appleMusic {
                     if model.appleMusicState.connected {
                         playerContent
                     } else {
@@ -45,6 +48,7 @@ struct SpotifyPlayerView: View {
                     .accessibilityIdentifier("openSettings")
                 }
             }
+            .sheet(isPresented: $isShowingQueue) { NetEaseQueueView(model: model) }
             .sheet(isPresented: $isShowingDevices) {
                 DevicePickerView(model: model)
             }
@@ -101,9 +105,15 @@ struct SpotifyPlayerView: View {
                             .multilineTextAlignment(.center)
                     }
 
+                    if model.selectedMusicService == .netease {
+                        if let failure = model.netEasePlayback.failure { Text(failure).foregroundStyle(.secondary) }
+                        if !model.netEasePlayback.actualQuality.isEmpty { Text(model.netEasePlayback.actualQuality).font(.footnote).foregroundStyle(.secondary) }
+                        Button("播放队列", systemImage: "list.bullet") { isShowingQueue = true }
+                        NetEaseCurrentFavorite(model: model)
+                    }
                     ProgressControl(model: model, snapshot: snapshot)
                     PlaybackControls(model: model, snapshot: snapshot)
-                    if model.selectedMusicService == .appleMusic {
+                    if model.selectedMusicService != .spotify {
                         AppleMusicPlaybackOptions(model: model, snapshot: snapshot)
                         SystemMusicVolumeView().frame(height: 44)
                     }
@@ -113,7 +123,7 @@ struct SpotifyPlayerView: View {
                     }
 
                     Label(
-                        snapshot.source == .musicKit ? "Apple Music" : (snapshot.source == .appRemote
+                        snapshot.source == .nativeAudio ? "网易云音乐" : snapshot.source == .musicKit ? "Apple Music" : (snapshot.source == .appRemote
                             ? "player.source.appRemote" : "player.source.webAPI"),
                         systemImage: snapshot.source == .appRemote
                             ? "bolt.horizontal.circle" : "network"

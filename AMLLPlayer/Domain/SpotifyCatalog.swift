@@ -15,35 +15,35 @@ enum MusicCatalogKind: String, CaseIterable, Hashable, Codable, Sendable {
     }
 }
 
-enum MusicContentAvailability: Hashable, Sendable {
+enum MusicContentAvailability: String, Codable, Hashable, Sendable {
     case available, restricted, unsupported, metadataOnly
 }
 
-struct MusicArtist: Hashable, Sendable {
+struct MusicArtist: Codable, Hashable, Sendable {
     let id: String
     let name: String
 }
 
-struct MusicAlbum: Hashable, Sendable {
+struct MusicAlbum: Codable, Hashable, Sendable {
     let id: String
     let name: String
 }
 
-struct MusicTrack: Hashable, Sendable {
+struct MusicTrack: Codable, Hashable, Sendable {
     let durationMS: Int
     let artists: [MusicArtist]
     let album: MusicAlbum?
     let isrc: String?
 }
 
-struct MusicPlaylist: Hashable, Sendable {
+struct MusicPlaylist: Codable, Hashable, Sendable {
     let ownerName: String?
     let description: String?
     let total: Int?
 }
 
 /// Shared identity/presentation plus type-specific metadata. No playable audio URLs.
-struct MusicCatalogItem: Identifiable, Hashable, Sendable {
+struct MusicCatalogItem: Codable, Identifiable, Hashable, Sendable {
     let spotifyID: String
     let kind: MusicCatalogKind?
     let name: String
@@ -69,16 +69,17 @@ struct MusicCatalogItem: Identifiable, Hashable, Sendable {
 
     var id: String {
         service == .spotify ? "\(kind?.rawValue ?? "unsupported"):\(spotifyID)"
-            : resource?.key ?? "appleMusic:unsupported:\(spotifyID)"
+            : resource?.key ?? "\(service.rawValue):unsupported:\(spotifyID)"
     }
 
     var uri: String? {
         guard let kind, !spotifyID.isEmpty, availability != .unsupported else { return nil }
+        if service == .netease { return "netease:\(kind.rawValue):\(spotifyID)" }
         return service == .spotify ? "spotify:\(kind.rawValue):\(spotifyID)" : "applemusic:\(scope.rawValue):\(kind.rawValue):\(spotifyID)"
     }
 
     var externalURL: URL? {
-        if service == .appleMusic {
+        if service != .spotify {
             return publicURL
         }
         guard let kind, !spotifyID.isEmpty, availability != .unsupported else { return nil }
@@ -110,12 +111,13 @@ struct MusicProfile: Equatable, Sendable {
 }
 
 enum MusicLibrarySection: String, CaseIterable, Hashable, Sendable {
-    case playlists, savedTracks, savedAlbums, followedArtists, recent, topTracks, recentlyAdded, recommendations, charts, downloaded
+    case dailySongs, playlists, savedTracks, savedAlbums, followedArtists, recent, topTracks, recentlyAdded, recommendations, charts, downloaded
 
     static let library: [Self] = [.savedTracks, .savedAlbums, .followedArtists, .playlists]
 
     var title: String {
         switch self {
+        case .dailySongs: "每日推荐歌曲"
         case .playlists: String(localized: "catalog.myPlaylists")
         case .savedTracks: String(localized: "catalog.savedTracks")
         case .savedAlbums: String(localized: "catalog.savedAlbums")
@@ -131,6 +133,7 @@ enum MusicLibrarySection: String, CaseIterable, Hashable, Sendable {
 
     var symbol: String {
         switch self {
+        case .dailySongs: "sun.max"
         case .playlists: "music.note.list"
         case .savedTracks: "heart"
         case .savedAlbums: "square.stack"
@@ -163,7 +166,7 @@ enum MusicCatalogQuery: Hashable, Sendable {
         case .collection(.followedArtists): "me/following?type=artist&limit=20"
         case .collection(.recent): "me/player/recently-played?limit=20"
         case .collection(.topTracks): "me/top/tracks?time_range=short_term&limit=20"
-        case .collection(.recentlyAdded), .collection(.recommendations), .collection(.charts), .collection(.downloaded), .librarySearch, .resourceChildren, .libraryItems: ""
+        case .collection(.dailySongs), .collection(.recentlyAdded), .collection(.recommendations), .collection(.charts), .collection(.downloaded), .librarySearch, .resourceChildren, .libraryItems: ""
         case let .search(term, kind):
             Self.searchEndpoint(term, kind: kind)
         case let .albumTracks(id): "albums/\(id)/tracks?limit=20"
@@ -204,6 +207,7 @@ enum MusicCatalogError: Error, Equatable, LocalizedError, Sendable {
     case service(MusicServiceError, retry: Bool)
 
     static func presenting(_ error: Error, service: MusicServiceID) -> Self {
+        if let netease = error as? NetEaseError { return .service(.musicFailure(netease.localizedDescription), retry: netease != .expired) }
         if let error = error as? MusicServiceError {
             let retry: Bool
             switch error {
@@ -213,6 +217,7 @@ enum MusicCatalogError: Error, Equatable, LocalizedError, Sendable {
             return .service(error, retry: retry)
         }
         let error = error as? Self ?? .invalidResponse
+        if service == .netease { return .service(.musicFailure(error.localizedDescription), retry: true) }
         guard service == .appleMusic else { return error }
         switch error {
         case .signInRequired: return .service(.musicPermissionDenied, retry: false)

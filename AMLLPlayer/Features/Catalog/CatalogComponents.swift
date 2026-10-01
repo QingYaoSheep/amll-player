@@ -105,7 +105,7 @@ struct CatalogExternalLink: View {
                     }
                 }
             } label: {
-                Label(item.service == .appleMusic ? "在 Apple Music 打开" : String(localized: "catalog.openSpotify"), systemImage: "arrow.up.right.square")
+                Label(item.service == .spotify ? String(localized: "catalog.openSpotify") : "在 \(item.service.title) 打开", systemImage: "arrow.up.right.square")
             }
         }
     }
@@ -162,7 +162,7 @@ struct CatalogPlayButton: View {
             }
         })) {
             if let url = item.externalURL {
-                Button(item.service == .appleMusic ? "在 Apple Music 打开" : String(localized: "catalog.openSpotify")) { UIApplication.shared.open(url) }
+                Button(item.service == .spotify ? String(localized: "catalog.openSpotify") : "在 \(item.service.title) 打开") { UIApplication.shared.open(url) }
             }
             Button("common.ok", role: .cancel) { failure = nil }
         } message: { Text(failure ?? "") }
@@ -174,13 +174,15 @@ struct CatalogRowView: View {
     @Bindable var model: AppModel
     let row: SpotifyCatalogRow
     var contextURI: String?
+    var parentPlaylist: MusicCatalogItem?
+    @State private var netEasePlaylistItem: MusicCatalogItem?
     @State private var playlistItem: MusicCatalogItem?
     @State private var failure: String?
 
     var body: some View {
         HStack(spacing: 8) {
             if let kind = row.item.kind, row.item.availability != .unsupported {
-                NavigationLink(value: row.item.service == .appleMusic
+                NavigationLink(value: row.item.service != .spotify
                     ? CatalogRoute.resource(row.item.resource!) : CatalogRoute.detail(kind, row.item.spotifyID)) { label }
                     .buttonStyle(.plain)
             } else {
@@ -191,12 +193,22 @@ struct CatalogRowView: View {
             }
         }
         .contextMenu {
+            if row.item.service == .netease {
+                NetEaseItemActions(model: model, item: row.item, onChoosePlaylist: { netEasePlaylistItem = $0 }, onFailure: { failure = $0 })
+                if let parentPlaylist, parentPlaylist.libraryWritable, parentPlaylist.kind == .playlist {
+                    Button("从歌单移除此歌曲", role: .destructive) {
+                        Task { do { try await model.mutateNetEase { try await $0.remove(row.item, from: parentPlaylist) } }
+                            catch is CancellationError {} catch { failure = error.localizedDescription } }
+                    }
+                }
+            }
             CatalogExternalLink(item: row.item)
             if row.item.service == .appleMusic {
                 AppleMusicItemActions(model: model, item: row.item,
                                       onChoosePlaylist: { playlistItem = $0 }, onFailure: { failure = $0 })
             }
         }
+        .sheet(item: $netEasePlaylistItem) { NetEasePlaylistChooser(model: model, item: $0) }
         .sheet(item: $playlistItem) { AppleMusicPlaylistChooser(model: model, item: $0) }
         .alert("操作未完成", isPresented: Binding(get: { failure != nil }, set: {
             if !$0 {

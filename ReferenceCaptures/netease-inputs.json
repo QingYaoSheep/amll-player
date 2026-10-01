@@ -1,0 +1,166 @@
+{
+  "sources": [
+    {
+      "repository": "chaunsin/netease-cloud-music",
+      "revision": "c3de358294d1c23443f1c541ee4a77d1b393388b"
+    },
+    {
+      "repository": "NeteaseCloudMusicApiEnhanced/api-enhanced",
+      "revision": "4a45a14aa7e035e22b824600409ab1a07b748a0e"
+    }
+  ],
+  "files": [
+    {
+      "file": "api_weapi_album.go",
+      "sha256": "737267963f3d4a4f7c77bdc635d747bf9b947171e5f3255effb047b86e77e151"
+    },
+    {
+      "file": "api_weapi_artist.go",
+      "sha256": "87cd72d0508d6379b90fc39f5243a1094a27be7141eaf4e68e3e0c80479bd794"
+    },
+    {
+      "file": "api_weapi_login.go",
+      "sha256": "2f4c5221a5f7db147a2205fb7a5dd425541dc17b3b388fbdc254d00a65bf4f2e"
+    },
+    {
+      "file": "api_weapi_playlist.go",
+      "sha256": "97c182b26291724db6dc81902e67e30504ca2106c4d182228b2782f47ca368a4"
+    },
+    {
+      "file": "api_weapi_recommend.go",
+      "sha256": "c0c450fdaa5165dadd17b0925b17962da83d7dc55067740f04e150a67fa05cc3"
+    },
+    {
+      "file": "api_weapi_search.go",
+      "sha256": "ff374574f28270262a5727520e7bf500902cf44250d6f460d6159194bb1f1759"
+    },
+    {
+      "file": "api_weapi_song.go",
+      "sha256": "b14a4024ea670cb5bab9591dce0b8ac614ac69d6b7f876b1072dc61f200ed00e"
+    },
+    {
+      "file": "api_weapi_top.go",
+      "sha256": "0d38c06715c33ae5cc990f51f56743e5d03470f78cdc03ac40fa700c7bb7c79d"
+    },
+    {
+      "file": "api_weapi_user.go",
+      "sha256": "c30972c3531ef18a490647580f6e3ffd47ea3b2fe4815f7c14a11eb943ea7464"
+    },
+    {
+      "file": "api_weapi_weapi.go",
+      "sha256": "b23c0e80d4efc358ebd076cc8ff08f4f9bb40fed9c58bd376fec3265c1109901"
+    },
+    {
+      "file": "Enhanced-LICENSE",
+      "sha256": "e463bb821c363e6182f16ec1bf24405af3315b4adc72fc1402232fa98b9a0b12"
+    },
+    {
+      "file": "LICENSE",
+      "sha256": "20058d6234414afbd16664175bf55ff37ccda91b6ebe67849c09c1d5e75ca338"
+    },
+    {
+      "file": "module_album.js",
+      "sha256": "c7a2981784dcfd5f56196f3df3697545238f975c04956a9488bcfd2a328336af"
+    },
+    {
+      "file": "module_album_sublist.js",
+      "sha256": "f1144eaa094304e7509e509d19fa69c5cf25dfaf04328513a89f284438bad779"
+    },
+    {
+      "file": "module_artists.js",
+      "sha256": "b7adc45277b86324c4a742fc95dc1a4f809d2259c10b8582307c74d0a28802ad"
+    },
+    {
+      "file": "module_artist_album.js",
+      "sha256": "1db0660a631daa9ba64d82b2ab21c75fce7ddf3191e23d3a440ec4e9cc93c6c6"
+    },
+    {
+      "file": "module_artist_sublist.js",
+      "sha256": "377be7b3da05e1a560a8718755c608135650193aa6d74241eafee0ce2eaae260"
+    },
+    {
+      "file": "module_cloudsearch.js",
+      "sha256": "2c831a3a86413c2747b92970041387fcdb934aba5aabf9a6c2f91816ade80657"
+    },
+    {
+      "file": "module_like.js",
+      "sha256": "475a4f8880ce2fac8c5521533b6e93c045657fe783be2de4bb104bb3de5043d4"
+    },
+    {
+      "file": "module_likelist.js",
+      "sha256": "127011717cdf38e00d5e5ec83b191ccd73e6e7a05171fa618c33d27532b582c9"
+    },
+    {
+      "file": "module_login_qr_check.js",
+      "sha256": "0b6ced28e872d61882955010b8ca17d0037d8df352d757ced60980893002d1e0"
+    },
+    {
+      "file": "module_login_qr_key.js",
+      "sha256": "7065aecd94a73a73231e154b6d4086b93866d580a17bd0cddd009d9679f863aa"
+    },
+    {
+      "file": "module_login_status.js",
+      "sha256": "9f69e7bc09e8f7db393b16741b724b72ca8dc6d480e9e76b93e4250f59eb65ff"
+    },
+    {
+      "file": "module_personalized.js",
+      "sha256": "9c272a44dad27d0f18cbb2d169de58b03bf8f2ad3ed8e9cd336a58273c0ec0ec"
+    },
+    {
+      "file": "module_playlist_create.js",
+      "sha256": "6b4ed3828000e600e2ef301e03f7e8c8c032f5a97f497e08e01c5dcc0852190e"
+    },
+    {
+      "file": "module_playlist_delete.js",
+      "sha256": "9641144cabb2666c4cc9bf7f07a2d2dc8dbc1f218407aa8eee4337909643a1b4"
+    },
+    {
+      "file": "module_playlist_detail.js",
+      "sha256": "24016c435f942e9debd49053cd0d74fa5117f02db8062258583a10ddfe5af6e2"
+    },
+    {
+      "file": "module_playlist_subscribe.js",
+      "sha256": "1541d0d2ba4062bf51517c9b4a3d9e95682e701688fa2cc2a93f794858f3a089"
+    },
+    {
+      "file": "module_playlist_tracks.js",
+      "sha256": "882688ccb3053cf93910d1ab8d80ebacb7e89309145191fcee747b4b12714a8c"
+    },
+    {
+      "file": "module_playlist_update.js",
+      "sha256": "2a8c95d16871a824a9b89beb83fb18a1a46d3e94f412f80f337f74f16394afe7"
+    },
+    {
+      "file": "module_recommend_songs.js",
+      "sha256": "2a09b5ca8f0609c4d0efcac5c10ef49e6d457361ce3134b04f75b0e09edd35b2"
+    },
+    {
+      "file": "module_record_recent_song.js",
+      "sha256": "93b65c0d5bf6c9d912ce3c6d5da79f8d5168b3247473b7c0ddb54bbc8638c6db"
+    },
+    {
+      "file": "module_search_suggest.js",
+      "sha256": "d400e46560aaed24d85b02d3d2d192d9a1f10b2b00dcb7a230dd008d39da371b"
+    },
+    {
+      "file": "module_song_detail.js",
+      "sha256": "a85e79d888667b645301597a8c755fc468d62be0506fa94ca98e551bf4ee58a9"
+    },
+    {
+      "file": "module_song_url_v1.js",
+      "sha256": "623d86b61967dd1f2e1a2facdf1d5cd00850a47a55a09eab74c6d749d081a24f"
+    },
+    {
+      "file": "module_toplist.js",
+      "sha256": "c50b3bef037484d253b0402ab321b3b483d16e4ca70e58130e22524bb04f3043"
+    },
+    {
+      "file": "module_user_playlist.js",
+      "sha256": "8f67866eb8ac7306f326511bda66e8b18583d74396ffba2d16ebf52f6166bbb3"
+    },
+    {
+      "file": "pkg_crypto_crypto.go",
+      "sha256": "26e96a6f9178ad31df888668a07247b3ef3a67376242fad53ae7d419b00cbff4"
+    }
+  ]
+}

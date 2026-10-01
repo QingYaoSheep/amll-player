@@ -62,6 +62,8 @@ targets:
     info:
       path: Generated/AMLLPlayer-Info.plist
       properties:
+        UIBackgroundModes:
+          - audio
         NSAppleMusicUsageDescription: 允许 AMLL 访问 Apple Music 资料库并同步系统音乐播放与歌词。
         CFBundleDisplayName: AMLL Player
         CADisableMinimumFrameDurationOnPhone: true

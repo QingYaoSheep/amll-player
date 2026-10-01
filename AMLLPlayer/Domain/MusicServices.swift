@@ -1,13 +1,13 @@
 import Foundation
 
 enum MusicServiceID: String, Codable, CaseIterable, Identifiable, Sendable {
-    case spotify, appleMusic
+    case spotify, appleMusic, netease
     var id: String {
         rawValue
     }
 
     var title: String {
-        self == .spotify ? "Spotify" : "Apple Music"
+        switch self { case .spotify: "Spotify"; case .appleMusic: "Apple Music"; case .netease: "网易云音乐" }
     }
 }
 
@@ -39,6 +39,9 @@ struct MusicServiceCapabilities: Equatable, Sendable {
     var canPlayCatalog = false
     var canModifyLibrary = false
     var canFavorite = false
+    var canEditPlaylists = false
+    var canEditQueue = false
+    var canSelectQuality = false
     var usesSystemRoutes = false
     static let spotify = Self(canBrowse: true, canPlayCatalog: true)
 }
@@ -68,7 +71,7 @@ protocol MusicSessionProviding: AnyObject {
     func disconnect()
 }
 
-enum MusicRepeatMode: String, CaseIterable, Sendable {
+enum MusicRepeatMode: String, CaseIterable, Codable, Sendable {
     case off, all, one
     var title: String {
         switch self { case .off: "关闭"; case .all: "全部循环"; case .one: "单曲循环" }

@@ -2,12 +2,8 @@ import AVFoundation
 import SwiftUI
 
 @MainActor private enum ArtworkAudioPolicy {
-    static var configured = false
-
     static func prepare() throws {
-        guard !configured else { return }
-        try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
-        configured = true
+        try MusicAudioSession.prepareArtwork()
     }
 }
 

@@ -8,8 +8,10 @@ struct AMLLBackground: View {
     var mode: LyricsRenderConfiguration.BackgroundMode
     var color: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
     var gradientEnd: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
+    var flowing: FlowingBackgroundConfiguration = .init()
     @State private var usedMesh = false
     @State private var usedPixi = false
+    @State private var usedFlowing = false
 
     var body: some View {
         ZStack {
@@ -27,6 +29,10 @@ struct AMLLBackground: View {
                 AMLLPixiBackground(artworkURL: artworkURL, active: active && mode == .pixi)
                     .opacity(mode == .pixi ? 1 : 0)
             }
+            if usedFlowing || mode == .flowing {
+                AMLLFlowingBackground(artworkURL: artworkURL, active: active && mode == .flowing, configuration: flowing)
+                    .opacity(mode == .flowing ? 1 : 0)
+            }
         }
         .onChange(of: mode, initial: true) { _, value in
             if value == .mesh {
@@ -35,6 +41,7 @@ struct AMLLBackground: View {
             if value == .pixi {
                 usedPixi = true
             }
+            if value == .flowing { usedFlowing = true }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

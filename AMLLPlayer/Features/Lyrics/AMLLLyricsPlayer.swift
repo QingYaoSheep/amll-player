@@ -37,7 +37,8 @@ struct AMLLLyricsPlayer: View {
                                active: scenePhase == .active && !search && !devices,
                                blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
                                color: configuration.backgroundColor ?? .sourceDefault,
-                               gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault)
+                               gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
+                               flowing: configuration.flowingBackground ?? .init())
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                     let videoFrame = AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size,
                                                                         video: artworkLoader.videoSize ?? .zero)

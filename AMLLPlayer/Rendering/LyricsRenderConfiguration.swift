@@ -55,7 +55,7 @@ enum AMLLLyricSizePreset: String, Codable, CaseIterable, Sendable {
 }
 
 struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
-    enum BackgroundMode: String, Codable, CaseIterable { case mesh, pixi, solid, gradient }
+    enum BackgroundMode: String, Codable, CaseIterable { case mesh, pixi, flowing, solid, gradient }
     struct BackgroundColor: Codable, Equatable, Sendable {
         var red: Double
         var green: Double
@@ -115,6 +115,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var remainingTime = false
     var backgroundBlur: Double = 40
     var backgroundMode: BackgroundMode?
+    var flowingBackground: FlowingBackgroundConfiguration?
     var backgroundColor: BackgroundColor?
     var backgroundGradientEnd: BackgroundColor?
     // Optional additions retain decoding compatibility with installed v2 preferences.
@@ -206,6 +207,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         copy.anchor = anchor.isFinite ? min(0.7, max(0.2, anchor)) : 0.28
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         copy.backgroundBlur = backgroundBlur.isFinite ? min(80, max(0, backgroundBlur)) : 40
+        copy.flowingBackground = flowingBackground?.validated()
         copy.horizontalPadding = horizontalPadding.map { $0.isFinite ? min(60, max(12, $0)) : 20 }
         copy.paragraphSpacing = paragraphSpacing.map { $0.isFinite ? min(60, max(0, $0)) : 0 }
         copy.auxiliaryScale = auxiliaryScale.map { $0.isFinite ? min(1, max(0.3, $0)) : 0.5 }

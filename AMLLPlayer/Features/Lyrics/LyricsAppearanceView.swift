@@ -2,6 +2,18 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LyricsAppearanceView: View {
+    private func flowingAdjustment(_ title: String, key: WritableKeyPath<FlowingBackgroundConfiguration, Double>,
+                                   range: ClosedRange<Double>, step: Double, unit: String) -> some View {
+        let binding = Binding(get: { (preferences.configuration.flowingBackground ?? .init())[keyPath: key] }, set: { value in
+            var settings = preferences.configuration.flowingBackground ?? .init()
+            settings[keyPath: key] = value
+            preferences.configuration.flowingBackground = settings.validated()
+        })
+        return VStack(alignment: .leading) {
+            LabeledContent(title, value: String(format: "%.2g %@", binding.wrappedValue, unit))
+            Slider(value: binding, in: range, step: step).accessibilityLabel(Text(title))
+        }
+    }
     private func backgroundColorBinding(_ key: WritableKeyPath<LyricsRenderConfiguration, LyricsRenderConfiguration.BackgroundColor?>) -> Binding<Color> {
         Binding(get: { (preferences.configuration[keyPath: key] ?? .sourceDefault).swiftUIColor }, set: { color in
             var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
@@ -148,6 +160,7 @@ struct LyricsAppearanceView: View {
                 {
                     Text("Mesh 网格").tag(LyricsRenderConfiguration.BackgroundMode.mesh)
                     Text("Pixi 流动封面").tag(LyricsRenderConfiguration.BackgroundMode.pixi)
+                    Text("流动背景").tag(LyricsRenderConfiguration.BackgroundMode.flowing)
                     Text("纯色").tag(LyricsRenderConfiguration.BackgroundMode.solid)
                     Text("双色渐变").tag(LyricsRenderConfiguration.BackgroundMode.gradient)
                 }
@@ -158,6 +171,13 @@ struct LyricsAppearanceView: View {
                     LabeledContent("render.backgroundBlur", value: String(format: "%.0f pt", preferences.configuration.backgroundBlur))
                     Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
                     Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
+                } else if preferences.configuration.backgroundMode == .flowing {
+                    flowingAdjustment("旋转速度", key: \.rotationSpeed, range: 0 ... 6, step: 0.25, unit: "°/秒")
+                    flowingAdjustment("扭曲强度", key: \.distortion, range: 0 ... 8, step: 0.5, unit: "%")
+                    flowingAdjustment("高斯模糊程度", key: \.blur, range: 0 ... 80, step: 5, unit: "pt")
+                    Button("恢复流动背景默认值") { preferences.configuration.flowingBackground = .init() }
+                    Text("将专辑封面放大、缓慢旋转并柔和扭曲，再进行高斯模糊。暂停音乐时仍缓慢流动；扭曲百分比相对于屏幕短边。")
+                        .font(.footnote).foregroundStyle(.secondary)
                 } else if preferences.configuration.backgroundMode == .pixi {
                     Text("Pixi 使用原版多层封面、固定模糊和形变滤镜；歌词动效不受背景帧率影响。")
                         .font(.footnote).foregroundStyle(.secondary)

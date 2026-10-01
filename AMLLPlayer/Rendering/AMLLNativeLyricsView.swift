@@ -426,7 +426,7 @@ final class AMLLNativeCanvas: UIView {
         // `size` is already Dynamic Type adjusted by `resolvedPointSize`.
         // Applying UIFontMetrics.scaledFont here would scale the same value a
         // second time at accessibility text sizes.
-        let font = UIFont.systemFont(ofSize: size, weight: configuration.bold || traitCollection.legibilityWeight == .bold ? .bold : .regular)
+        let font = AMLLLyricsFont.make(pointSize: size, weight: configuration.bold || traitCollection.legibilityWeight == .bold ? .bold : .regular)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
         let cue = configuration.romanization ? romanizationCues[index] : nil
         if let cue, !cue.tokens.isEmpty, line.precision == .word {

@@ -39,7 +39,7 @@ final class LyricTextLayout {
         paragraph.lineSpacing = 0
         let baseSize = configuration.fontSize * (line.isBackground ? AMLLMotionMetrics.backgroundLineScale : 1)
         let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
-            for: .systemFont(ofSize: baseSize, weight: configuration.bold ? .bold : .medium), compatibleWith: traits
+            for: AMLLLyricsFont.make(pointSize: baseSize, weight: configuration.bold ? .bold : .medium), compatibleWith: traits
         )
         paragraph.minimumLineHeight = font.pointSize * 1.2
         paragraph.maximumLineHeight = font.pointSize * 1.2

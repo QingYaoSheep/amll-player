@@ -11,12 +11,14 @@ final class LyricsSystemFontTests: XCTestCase {
                                      .init(text: "世界", start: 1, end: 2, romanWord: "shi jie", ruby: "世界")],
                              translation: "你好，世界", precision: .word)
         for weight in [UIFont.Weight.regular, .bold] {
-            let requested = UIFont.systemFont(ofSize: 32, weight: weight)
+            let requested = AMLLLyricsFont.make(pointSize: 32, weight: weight)
             let layout = AMLLCoreTextLayout(line: line, width: 360, font: requested, configuration: .init())
             let runs = layout.glyphFontRuns
             XCTAssertFalse(runs.isEmpty)
+            XCTAssertEqual(requested.pointSize, 32)
+            XCTAssertEqual(requested.fontDescriptor.symbolicTraits.contains(.traitBold), weight == .bold)
             let body = runs.filter { $0.role == "body" }
-            XCTAssertTrue(body.contains { $0.name.contains("SF") || $0.family.contains("System") }, "Actual Latin glyph fonts: \(body)")
+            XCTAssertTrue(body.contains { $0.name == requested.fontName }, "The actual Latin glyphs must use the explicit system Display descriptor: \(body)")
             XCTAssertTrue(body.contains { $0.name.contains("PingFang") }, "Actual Chinese fallback fonts: \(body)")
             XCTAssertFalse(runs.contains { $0.name.contains("Times") || $0.name.contains("Helvetica") || $0.name.contains("Arial") || $0.name.contains("LastResort") },
                            "A requested system font must not silently resolve to another Latin face")

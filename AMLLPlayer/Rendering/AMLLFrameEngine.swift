@@ -465,8 +465,7 @@ struct AMLLFrameEngine {
             if beganSinging, !seeking, browsing || visualFocus == timeline.focus {
                 releaseCompletedFocus(except: index, at: animationTime - elapsed)
             }
-            if mainSinging {
-                motions[index].mainRetirement = nil
+            if mainSinging, motions[index].mainRetirement == nil {
                 motions[index].mainFocusRetained = true
             }
             let mainCompleted = time / 1000 >= mainEnd && time / 1000 >= mainStart
@@ -498,8 +497,7 @@ struct AMLLFrameEngine {
                 if beganBackground, !seeking, browsing || visualFocus == timeline.focus {
                     releaseCompletedFocus(except: index, at: animationTime - elapsed)
                 }
-                if backgroundSinging {
-                    motions[index].backgroundRetirement = nil
+                if backgroundSinging, motions[index].backgroundRetirement == nil {
                     motions[index].backgroundFocusRetained = true
                 }
                 let backgroundCompleted = time / 1000 >= document.actualLineEnds[background]
@@ -621,7 +619,9 @@ struct AMLLFrameEngine {
             let backgroundExit = motion.backgroundRetirement?.presentation(opacity: motion.opacityTransition.value)
             let group = document.groups[index]
             let actualStart = document.actualLineStarts[group.main]
-            let visualState: AMLLFrameState.Row.VisualFocus = if motion.mainSinging {
+            let visualState: AMLLFrameState.Row.VisualFocus = if motion.mainRetirement != nil {
+                .passed
+            } else if motion.mainSinging {
                 .current
             } else if motion.mainFocusRetained && motion.mainCompleted && !songEnded && interlude == nil {
                 .holding
@@ -650,7 +650,8 @@ struct AMLLFrameEngine {
                               visualFocus: visualState, fillComplete: motion.mainCompleted, hdrHold: holdHDR,
                               positionMotion: motion.y.schedule, retirement: mainExit?.state))
             if let background = group.background {
-                let backgroundState: AMLLFrameState.Row.VisualFocus = motion.backgroundSinging ? .current
+                let backgroundState: AMLLFrameState.Row.VisualFocus = motion.backgroundRetirement != nil ? .passed
+                    : motion.backgroundSinging ? .current
                     : motion.backgroundFocusRetained && motion.backgroundCompleted ? .holding
                     : motion.backgroundCompleted ? .passed
                     : motion.backgroundVisualActive && !browsing ? .preparing : .waiting
@@ -745,20 +746,30 @@ struct AMLLFrameEngine {
         }
     }
 
+    /// Scroll-ahead may transfer appearance before the outgoing word ends.
+    /// Genuine source-time overlap keeps each singing voice focused.
+    private func canReleaseBeforeWordEnd(in index: Int, line: Int) -> Bool {
+        !browsing && index < timeline.focus && document.singingTimings.indices.contains(timeline.focus)
+            && document.actualLineEnds[line] * 1000 <= document.singingTimings[timeline.focus].startTime
+    }
+
     private mutating func releaseVisualFocus(in index: Int, at time: Double) {
         motions[index].completedReleaseAt = nil
-        if !motions[index].mainSinging, motions[index].mainFocusRetained {
+        let group = document.groups[index]
+        let releaseMainAhead = canReleaseBeforeWordEnd(in: index, line: group.main)
+        let releaseBackgroundAhead = group.background.map { canReleaseBeforeWordEnd(in: index, line: $0) } ?? false
+        if !motions[index].mainSinging || releaseMainAhead, motions[index].mainFocusRetained {
             motions[index].mainFocusRetained = false
-            if motions[index].mainCompleted, motions[index].mainRetirement == nil {
+            if motions[index].mainCompleted || releaseMainAhead, motions[index].mainRetirement == nil {
                 motions[index].mainRetirement = .init(at: time,
                     bright: motions[index].mainAlpha.bright, dark: motions[index].mainAlpha.dark,
                     opacity: motions[index].opacityTransition.value, blur: motions[index].blurTransition.value)
             }
             dirty = true
         }
-        if !motions[index].backgroundSinging, motions[index].backgroundFocusRetained {
+        if !motions[index].backgroundSinging || releaseBackgroundAhead, motions[index].backgroundFocusRetained {
             motions[index].backgroundFocusRetained = false
-            if motions[index].backgroundCompleted, motions[index].backgroundRetirement == nil {
+            if motions[index].backgroundCompleted || releaseBackgroundAhead, motions[index].backgroundRetirement == nil {
                 motions[index].backgroundRetirement = .init(at: time,
                     bright: motions[index].backgroundAlpha.bright, dark: motions[index].backgroundAlpha.dark,
                     opacity: motions[index].opacityTransition.value, blur: motions[index].blurTransition.value)
@@ -788,10 +799,10 @@ struct AMLLFrameEngine {
         for index in motions.indices {
             let preparesBackground = document.groups[index].background != nil && visualFocus == index
                 && !browsing && !motions[index].backgroundCompleted
-            motions[index].backgroundVisualActive = motions[index].backgroundSinging
+            motions[index].backgroundVisualActive = (motions[index].backgroundSinging && motions[index].backgroundRetirement == nil)
                 || motions[index].backgroundFocusRetained || preparesBackground
         }
-        let active = motions.map { $0.mainSinging || $0.backgroundVisualActive }
+        let active = motions.map { ($0.mainSinging && $0.mainRetirement == nil) || $0.backgroundVisualActive }
         let groupHeights = document.groups.enumerated().map { index, group in
             height(group.main) + environment.fontSize * 0.8
                 + (active[index] || !playing ? group.background.map { height($0) } ?? 0 : 0)
@@ -825,7 +836,7 @@ struct AMLLFrameEngine {
                 y += environment.dotHeight + environment.fontSize * 0.4
             }
             let group = document.groups[index]
-            let focused = motions[index].mainSinging || motions[index].mainFocusRetained
+            let focused = (motions[index].mainSinging && motions[index].mainRetirement == nil) || motions[index].mainFocusRetained
                 || (visualFocus == index && !browsing && !motions[index].mainCompleted)
             let appearanceFocus = motions[index].mainCompleted && !motions[index].mainFocusRetained
                 ? max(visualFocus ?? singingTimeline.focus, timeline.focus) : visualFocus ?? singingTimeline.focus
@@ -920,11 +931,11 @@ struct AMLLFrameEngine {
             if seeking || browsing || positionReset {
                 motions[index].completedReleaseAt = nil
             } else if index < timeline.focus, y < motions[index].y.position,
-                      (motions[index].mainCompleted && motions[index].mainFocusRetained && !motions[index].mainSinging)
-                      || (motions[index].backgroundCompleted && motions[index].backgroundFocusRetained && !motions[index].backgroundSinging),
+                      (motions[index].mainFocusRetained && (motions[index].mainCompleted || canReleaseBeforeWordEnd(in: index, line: group.main)))
+                      || (motions[index].backgroundFocusRetained && group.background.map { motions[index].backgroundCompleted || canReleaseBeforeWordEnd(in: index, line: $0) } == true),
                       motions[index].completedReleaseAt == nil
             {
-                // Retire the completed row when its OWN upward motion starts,
+                // Retire the outgoing row when its OWN upward motion starts,
                 // independently of the incoming row's staggered spring deadline.
                 motions[index].completedReleaseAt = environment.enableSpring
                     ? max(frameStart, motions[index].y.schedule.scheduledAt ?? frameStart) : frameStart

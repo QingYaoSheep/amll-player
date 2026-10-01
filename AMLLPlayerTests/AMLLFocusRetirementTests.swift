@@ -223,4 +223,62 @@ final class AMLLFocusRetirementTests: XCTestCase {
             XCTAssertEqual(frame.rows[0].blur, 0)
         }
     }
+
+    func testScrollAheadRetiresMainAndBackgroundIndependentlyOfTheirWordClocks() throws {
+        for backgroundEnd in [3.0, 4.0] {
+            let lines = [
+                LyricLine(id: "main", text: "Main", start: 0, end: 3,
+                          words: [.init(text: "Main", start: 0, end: 3)], precision: .word),
+                LyricLine(id: "background", text: "Echo", start: 0.5, end: backgroundEnd, isBackground: true,
+                          words: [.init(text: "Echo", start: 0.5, end: backgroundEnd)], precision: .word),
+                LyricLine(id: "next", text: "Next", start: 3, end: 5,
+                          words: [.init(text: "Next", start: 3, end: 5)], precision: .word),
+            ]
+            var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+            environment.advance = 1
+            var player = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: [60, 30, 60])
+            _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+            var frame = player.render(.init(position: 0.1, playing: true), delta: 0)
+            var time = 0.1
+            while frame.rows[0].retirement == nil, time < 2.9 {
+                time += 1.0 / 120
+                frame = player.render(.init(position: time, playing: true), delta: 1.0 / 120)
+            }
+            XCTAssertNotNil(frame.rows[0].retirement)
+            let background = frame.rows[1]
+            XCTAssertTrue(background.active)
+            XCTAssertFalse(background.fillComplete)
+            XCTAssertTrue(background.wordClock.enabled)
+            if backgroundEnd == 3 {
+                XCTAssertNotNil(background.retirement)
+                XCTAssertGreaterThan(background.blur, 0)
+            } else {
+                XCTAssertNil(background.retirement, "Overlapping background voice keeps its own appearance")
+                XCTAssertEqual(background.blur, 0)
+            }
+        }
+    }
+
+    func testScrollAheadStillDimsAndBlursWhenScaleAndPositionSpringAreDisabled() {
+        let lines = [(0.0, 3.0), (3.0, 5.0)].enumerated().map { index, span in
+            LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
+                      words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
+        }
+        var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+        environment.advance = 1
+        environment.enableSpring = false
+        environment.enableScale = false
+        var player = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: [60, 60])
+        _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+        var frame = player.render(.init(position: 0.1, playing: true), delta: 0)
+        for index in 1 ... 312 {
+            frame = player.render(.init(position: 0.1 + Double(index) / 120, playing: true), delta: 1.0 / 120)
+        }
+        XCTAssertNotNil(frame.rows[0].retirement)
+        XCTAssertTrue(frame.rows[0].active)
+        XCTAssertFalse(frame.rows[0].fillComplete)
+        XCTAssertEqual(frame.rows[0].scale, 1)
+        XCTAssertEqual(frame.rows[0].brightAlpha, 0.2, accuracy: 0.001)
+        XCTAssertGreaterThan(frame.rows[0].blur, 0)
+    }
 }

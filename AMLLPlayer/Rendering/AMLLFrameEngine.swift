@@ -798,7 +798,7 @@ struct AMLLFrameEngine {
     private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double) {
         for index in motions.indices {
             let preparesBackground = document.groups[index].background != nil && visualFocus == index
-                && !browsing && !motions[index].backgroundCompleted
+                && !browsing && !motions[index].backgroundCompleted && motions[index].backgroundRetirement == nil
             motions[index].backgroundVisualActive = (motions[index].backgroundSinging && motions[index].backgroundRetirement == nil)
                 || motions[index].backgroundFocusRetained || preparesBackground
         }
@@ -837,7 +837,7 @@ struct AMLLFrameEngine {
             }
             let group = document.groups[index]
             let focused = (motions[index].mainSinging && motions[index].mainRetirement == nil) || motions[index].mainFocusRetained
-                || (visualFocus == index && !browsing && !motions[index].mainCompleted)
+                || (visualFocus == index && !browsing && !motions[index].mainCompleted && motions[index].mainRetirement == nil)
             let appearanceFocus = motions[index].mainCompleted && !motions[index].mainFocusRetained
                 ? max(visualFocus ?? singingTimeline.focus, timeline.focus) : visualFocus ?? singingTimeline.focus
             motions[index].visualActive = focused

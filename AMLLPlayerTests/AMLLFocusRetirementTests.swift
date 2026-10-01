@@ -229,8 +229,8 @@ final class AMLLFocusRetirementTests: XCTestCase {
             let lines = [
                 LyricLine(id: "main", text: "Main", start: 0, end: 3,
                           words: [.init(text: "Main", start: 0, end: 3)], precision: .word),
-                LyricLine(id: "background", text: "Echo", start: 0.5, end: backgroundEnd, isBackground: true,
-                          words: [.init(text: "Echo", start: 0.5, end: backgroundEnd)], precision: .word),
+                LyricLine(id: "background", text: "Echo", start: 0.5, end: backgroundEnd,
+                          words: [.init(text: "Echo", start: 0.5, end: backgroundEnd)], isBackground: true, precision: .word),
                 LyricLine(id: "next", text: "Next", start: 3, end: 5,
                           words: [.init(text: "Next", start: 3, end: 5)], precision: .word),
             ]

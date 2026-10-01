@@ -690,6 +690,30 @@ final class AMLLCoreTextLayout {
         size = CGSize(width: availableWidth, height: max(1, y + (configuration.paragraphSpacing ?? 0)))
     }
 
+    #if DEBUG
+        struct GlyphFontRun: Codable {
+            var role: String
+            var name: String
+            var family: String
+            var pointSize: Double
+        }
+
+        /// The font resolved by the typesetter, not the requested UIFont name.
+        var glyphFontRuns: [GlyphFontRun] {
+            rows.flatMap { row in
+                (CTLineGetGlyphRuns(row.line) as! [CTRun]).compactMap { run in
+                    let attributes = CTRunGetAttributes(run) as NSDictionary
+                    guard let value = attributes[kCTFontAttributeName] else { return nil }
+                    let font = value as! CTFont
+                    return GlyphFontRun(role: row.romanization ? "romanization" : row.ruby ? "ruby" : row.auxiliary ? "auxiliary" : "body",
+                                        name: CTFontCopyPostScriptName(font) as String,
+                                        family: CTFontCopyFamilyName(font) as String,
+                                        pointSize: Double(CTFontGetSize(font)))
+                }
+            }
+        }
+    #endif
+
     func rasterSnapshot() -> AMLLCoreTextRasterSnapshot { .init(size: size, rows: rows) }
 
     /// nil draws both layers for inspection; the renderer composites auxiliary text separately.

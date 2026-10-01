@@ -59,3 +59,5 @@
 用户报告离开 AMLL 到官方 App 扫码后返回，出现“网络连接中断”并无法登录。原轮询将任何 URLSession 网络错误直接终止并移除二维码；未响应页面的前后台状态。现在后台暂停轮询，保留原 key 与原到期时间，返回前台继续检查；临时断网、请求挂起或超时在原 180 秒期限内重试。已确认授权的 Cookie 在账号验证中断时仍保留在请求任务内，验证成功才写入 Keychain。关闭页面、取消或刷新仍使旧任务失效。
 
 新增后台网络中断恢复、账号验证中断及后台取消后禁止恢复三项注入回归；Windows 缺少 Apple Swift 环境，旧版这三项用例未执行红灯，修复后由同一提交 Xcode27 CI 执行。原 eab735b8 回归为 387 单元中的 Cookie CRLF 校验一项失败、5 UI 通过，未交付测试版；CRLF 已改为字节级控制字符检查，并扩展实际失败用例。用户实际同机扫码流程仍需安装修复版复核。
+
+前后台信号改为 App 层读取的 scenePhase 聚合值，避免一个 iPad 窗口进入后台时暂停另一活动窗口的扫码。依据 [Apple ScenePhase 文档](https://developer.apple.com/documentation/swiftui/scenephase?changes=_4)；多窗口设备流程待验证。

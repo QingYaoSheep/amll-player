@@ -442,7 +442,7 @@ final class AppModel {
         await perform { try await currentPlayback.enqueue(item, next: next) }
     }
 
-    func mutateAppleLibrary(_ action: (any MusicLibraryMutating) async throws -> Void) async throws {
+    func mutateAppleLibrary(_ action: @MainActor (any MusicLibraryMutating) async throws -> Void) async throws {
         guard selectedMusicService == .appleMusic, currentServiceConnected else { throw MusicCatalogError.signInRequired }
         let epoch = sourceGeneration
         do { try await action(appleLibrary) } catch {

@@ -1,6 +1,9 @@
 import Combine
 import Foundation
-import MusicKit
+
+// MusicKit's system player async methods lack Swift 6 actor annotations.
+// All app access stays inside this MainActor adapter; do not export the player.
+@preconcurrency import MusicKit
 
 enum AppleMusicSongMapping {
     static func catalog(_ song: Song, scope: MusicResourceScope) -> MusicCatalogItem {

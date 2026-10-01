@@ -49,7 +49,7 @@ struct AppleMusicItemActions: View {
         } message: { Text(failure ?? "") }
     }
 
-    private func mutate(_ action: @escaping (any MusicLibraryMutating) async throws -> Void) {
+    private func mutate(_ action: @escaping @MainActor (any MusicLibraryMutating) async throws -> Void) {
         Task {
             do { try await model.mutateAppleLibrary(action) }
             catch is CancellationError {}

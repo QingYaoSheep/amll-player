@@ -161,4 +161,66 @@ final class AMLLFocusRetirementTests: XCTestCase {
             }
         }
     }
+
+    func testScrollAheadRetiresAStillSingingSequentialRowAtItsUpwardStart() throws {
+        for advance in [0.3, 1.0] {
+            for step in [1.0 / 60, 1.0 / 120, 0.037] {
+                let lines = [(0.0, 3.0), (3.0, 5.0)].enumerated().map { index, span in
+                    LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
+                              words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
+                }
+                var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+                environment.advance = advance
+                environment.alignPosition = 0.28
+                var player = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: [60, 60])
+                let initial = player.render(.init(position: 0.1, playing: true), delta: 0).rows[0]
+                var time = 0.1
+                var moved = false
+                while time < 3 - step {
+                    time += step
+                    let frame = player.render(.init(position: time, playing: true), delta: step)
+                    let old = frame.rows[0]
+                    guard old.y < initial.y else { continue }
+                    let exit = try XCTUnwrap(old.retirement, "Scroll-ahead must retire before the actual word end")
+                    XCTAssertEqual(exit.startedAt, try XCTUnwrap(old.positionMotion?.startedAt), accuracy: 0.001)
+                    XCTAssertLessThan(old.scale, 1)
+                    XCTAssertLessThan(old.brightAlpha * old.opacity, initial.brightAlpha * initial.opacity)
+                    XCTAssertGreaterThan(old.blur, 0)
+                    XCTAssertTrue(old.active, "Only appearance exits; real singing time stays unchanged")
+                    XCTAssertFalse(old.fillComplete)
+                    XCTAssertEqual(old.wordClock.time, time, accuracy: 0.001)
+                    XCTAssertFalse(frame.rows[1].active)
+                    let paused = player.render(.init(position: time, playing: false), delta: 0.5).rows[0]
+                    XCTAssertEqual(try XCTUnwrap(paused.retirement).startedAt, exit.startedAt)
+                    XCTAssertEqual(paused.brightAlpha, 0.2, accuracy: 0.001)
+                    XCTAssertGreaterThan(paused.blur, 0)
+                    let rewound = player.render(.init(position: 0.1, playing: true, seekRevision: 1), delta: 0).rows[0]
+                    XCTAssertNil(rewound.retirement)
+                    XCTAssertEqual(rewound.scale, 1, accuracy: 0.001)
+                    XCTAssertEqual(rewound.blur, 0)
+                    moved = true
+                    break
+                }
+                XCTAssertTrue(moved)
+            }
+        }
+    }
+
+    func testScrollAheadKeepsGenuinelyOverlappingSingingRowsFocused() {
+        let lines = [(0.0, 4.0), (3.0, 5.0)].enumerated().map { index, span in
+            LyricLine(id: String(index), text: "Voice \(index)", start: span.0, end: span.1,
+                      words: [.init(text: "Voice \(index)", start: span.0, end: span.1)], precision: .word)
+        }
+        var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+        environment.advance = 1
+        var player = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: [60, 60])
+        _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+        for index in 1 ... 390 {
+            let frame = player.render(.init(position: 0.1 + Double(index) / 120, playing: true), delta: 1.0 / 120)
+            XCTAssertTrue(frame.rows[0].active)
+            XCTAssertNil(frame.rows[0].retirement)
+            XCTAssertEqual(frame.rows[0].scale, 1, accuracy: 0.001)
+            XCTAssertEqual(frame.rows[0].blur, 0)
+        }
+    }
 }

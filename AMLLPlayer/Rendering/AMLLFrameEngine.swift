@@ -843,12 +843,13 @@ struct AMLLFrameEngine {
                 }
             }
             let retiredBlur = environment.enableBlur && !environment.reduceMotion && !browsing
-                ? Double(index < appearanceFocus ? 2 + appearanceFocus - index : index - appearanceFocus)
+                ? Double(index <= appearanceFocus ? 2 + appearanceFocus - index : index - appearanceFocus)
                     * (environment.screenWidth <= 1024 ? 0.8 : 1) : 0
             motions[index].mainRetirement?.setBlur(retiredBlur, immediately: browsing || environment.reduceMotion)
             motions[index].backgroundRetirement?.setBlur(retiredBlur, immediately: browsing || environment.reduceMotion)
-            motions[index].mainRetirement?.targetOpacity = motions[index].opacity
-            motions[index].backgroundRetirement?.targetOpacity = motions[index].opacity
+            let targetOpacity = motions[index].opacity
+            motions[index].mainRetirement?.targetOpacity = targetOpacity
+            motions[index].backgroundRetirement?.targetOpacity = targetOpacity
             motions[index].blur = blur
             let hiddenSlide = group.backgroundFirst && !environment.alwaysPostpositionBackground ? 80.0 : -80.0
             let slide = active[index] || !playing ? 0 : hiddenSlide

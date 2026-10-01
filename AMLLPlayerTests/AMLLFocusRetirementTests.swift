@@ -102,6 +102,39 @@ final class AMLLFocusRetirementTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(browsed.retirement).progress, try XCTUnwrap(moving.retirement).progress)
     }
 
+    func testScrollAheadUsesTheOutgoingDeadlineAndNeverAdvancesWordTime() throws {
+        for advance in [0.0, 0.3, 1.0] {
+            for step in [1.0 / 60, 1.0 / 120, 0.037] {
+                let lines = [(0.0, 0.2), (2.0, 3.0)].enumerated().map { index, span in
+                    LyricLine(id: String(index), text: "Line \(index)", start: span.0, end: span.1,
+                              words: [.init(text: "Line \(index)", start: span.0, end: span.1)], precision: .word)
+                }
+                var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+                environment.alignPosition = 0.28
+                environment.advance = advance
+                var player = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: [60, 60])
+                _ = player.render(.init(position: 0.1, playing: true), delta: 0)
+                var time = 0.1
+                var seen = false
+                while time < 1.9 {
+                    time += step
+                    let frame = player.render(.init(position: time, playing: true), delta: step)
+                    XCTAssertEqual(frame.lyricTime, time, accuracy: 0.001)
+                    if let retirement = frame.rows[0].retirement {
+                        XCTAssertEqual(retirement.startedAt, try XCTUnwrap(frame.rows[0].positionMotion?.startedAt), accuracy: 0.001)
+                        XCTAssertTrue(frame.rows[0].fillComplete)
+                        XCTAssertFalse(frame.rows[1].active)
+                        XCTAssertFalse(frame.rows[1].fillComplete)
+                        XCTAssertEqual(frame.rows[1].wordClock.time, 0)
+                        seen = true
+                        break
+                    }
+                }
+                XCTAssertTrue(seen, "Retirement must start for advance \(advance), frame interval \(step)")
+            }
+        }
+    }
+
     func testRetirementFinishesInFourTenthsAcrossFrameRatesAndFallbacks() throws {
         for step in [1.0 / 60, 1.0 / 120, 0.037] {
             for spring in [true, false] {

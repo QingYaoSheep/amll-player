@@ -260,6 +260,16 @@ import XCTest
         XCTAssertEqual(Array(after.dropFirst(2)), Array(prior.dropFirst()))
         playback.deselect()
     }
+
+    func testExpiredStoredCookieReturningEmptyProfileDisconnectsAndRemovesCredential() async throws {
+        let api = NetEaseFixtureAPI(), store = NetEaseMemoryStore()
+        let session = NetEaseSession(api: api, store: store)
+        try await session.importCookie("MUSIC_U=x")
+        api.invalidAccount = true
+        await session.refresh()
+        XCTAssertFalse(session.currentState.connected)
+        XCTAssertNil(session.profile); XCTAssertNil(try store.load())
+    }
 }
 @MainActor private final class NetEaseFixtureAPI: NetEaseRequesting {
     var userID = 1

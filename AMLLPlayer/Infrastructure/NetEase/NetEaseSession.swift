@@ -38,8 +38,9 @@ struct NetEaseProfile: Equatable {
             install(profile: try Self.decodeProfile(response.object))
         } catch {
             guard epoch == generation, !Task.isCancelled else { return }
-            if error as? NetEaseError == .expired { disconnect() }
-            currentState.error = .musicFailure(error.localizedDescription); publish()
+            let expired = error as? NetEaseError == .expired || error as? NetEaseError == .invalidCookie
+            if expired { disconnect() }
+            currentState.error = .musicFailure(expired ? NetEaseError.expired.localizedDescription : error.localizedDescription); publish()
         }
     }
     func importCookie(_ raw: String) async throws {

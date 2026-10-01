@@ -367,7 +367,9 @@ struct NetEaseQueueState: Codable {
     func suspendForInterruption() {
         guard selected else { return }
         generation = UUID(); intentPlaying = false; player.pause()
-        queue.position = position; save(); publish()
+        queue.position = position
+        // Stop republishing our metadata over another app after a system interruption.
+        removeCommands(); MusicAudioSession.releasePlayback(); save(); publish()
     }
     private func resetAudioServices() {
         guard selected else { return }

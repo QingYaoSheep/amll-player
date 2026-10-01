@@ -147,8 +147,14 @@ struct NetEaseQueueView: View {
 struct NetEaseCurrentFavorite: View {
     @Bindable var model: AppModel
     @State private var item: MusicCatalogItem?
+    @State private var choosingPlaylist: MusicCatalogItem?
+    @State private var failure: String?
     var body: some View {
-        Group { if let item { Menu { NetEaseItemActions(model: model, item: item) } label: { Image(systemName: "heart").frame(width: 44, height: 44) } } }
+        Group { if let item { Menu { NetEaseItemActions(model: model, item: item, onChoosePlaylist: { choosingPlaylist = $0 }, onFailure: { failure = $0 }) } label: { Image(systemName: "heart").frame(width: 44, height: 44) } } }
+            .sheet(item: $choosingPlaylist) { NetEasePlaylistChooser(model: model, item: $0) }
+            .alert("操作未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+                Button("好", role: .cancel) { failure = nil }
+            } message: { Text(failure ?? "") }
             .task(id: model.playbackSnapshot?.item?.id) {
                 item = nil
                 guard let track = model.playbackSnapshot?.item, track.service == .netease, let id = track.id else { return }

@@ -5,7 +5,8 @@
 - 新增系统 MusicKit 授权、订阅/地区状态和签名环境验证入口。Spotify 与 Apple Music 可同时连接；默认来源保留 Spotify，切源不自动播放、暂停或改队列。
 - 共享主页、资料库、双范围搜索、详情和上下文位置播放；Apple 提供个人歌单、最近播放/添加、推荐、排行榜、下载过滤、名称排序、搜索建议与历史。新增官方收藏/加入资料库、创建/追加歌单及应用创建歌单编辑入口。
 - 使用 SystemMusicPlayer 同步系统曲目、真实进度与外部 seek，并接入原歌词、独立音译、静音动态封面与系统 AirPlay/音量。Spotify 原缓存和逐曲 offset 保持兼容。
-- 新增重复条目、资料库/目录隔离、切源无播放命令、seek 同步、无效时间和安全分页测试。当前 Xcode 27 编译/测试与两路 IPA 待运行，真实重签授权及设备验证仍待执行。详见 [接入台账](Apple-Music-Integration.md)。
+- 新增重复条目、资料库/目录隔离、切源无播放命令、seek 同步、无效时间、安全分页、授权竞态、订阅恢复、完整歌单加载和迟到写入失败测试。UI 验证未配置 Spotify 时可进入 Apple Music 授权页，并保留原 Spotify 登录流程。
+- **自动验证通过：**提交 `01e55d22` 的 [Xcode 27 CI 36801350703](https://github.com/QingYaoSheep/amll-player/actions/runs/36801350703) 通过 324 项单元及 5 项 UI 测试，iPad/通用模拟器构建、设备归档与 IPA 检查均通过。直接 IPA 产物 `11135498100`、测试后 IPA `11136424847` 对应同一提交，均已下载至 `E:/AMLL-Swift/Builds/AppleMusic-01e55d22`。本地 15 项 Node 回归、固定词典与 diff 检查通过。真实重签授权、账号写入及设备音频/视觉/性能仍待验证；用户暂不确定签名服务是否支持 MusicKit App Service。详见 [接入台账](Apple-Music-Integration.md)。
 
 ## 2026-10-01 沉浸倒影衔接与过渡扩宽
 

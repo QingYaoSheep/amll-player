@@ -204,18 +204,21 @@ final class AppModel {
     func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .active:
+            netEaseSession.setForeground(true)
             isForeground = true
             lyrics.setForeground(true)
             currentPlayback.enterForeground()
             Task { await appleSession.refresh(); await netEaseSession.refresh() }
         case .background:
+            netEaseSession.setForeground(false)
             isForeground = false
             lyricsMetadataTask?.cancel()
             lyrics.setForeground(false)
             currentPlayback.enterBackground()
         case .inactive:
-            break
+            netEaseSession.setForeground(false)
         @unknown default:
+            netEaseSession.setForeground(false)
             isForeground = false
             lyrics.setForeground(false)
             lyricsMetadataTask?.cancel()

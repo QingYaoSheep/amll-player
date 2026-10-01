@@ -20,6 +20,8 @@ struct NetEaseProfile: Equatable {
     @ObservationIgnored private var cookie: String?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var polling: Task<Void, Never>?
+    @ObservationIgnored private var foreground = true
+    @ObservationIgnored private var qrWake: CheckedContinuation<Void, Never>?
     init(api: any NetEaseRequesting = NetEaseAPI(),
          store: any SpotifySessionDataStoring = KeychainSpotifySessionStore(service: "net.stevexmh.amllplayer.netease")) {
         self.api = api; self.store = store
@@ -82,8 +84,18 @@ struct NetEaseProfile: Equatable {
             qrURL = url.url; qrExpires = Date().addingTimeInterval(180); qrStatus = "等待扫码"
             polling = Task { [weak self] in
                 guard let self else { return }
-                do {
-                    while !Task.isCancelled, epoch == generation, Date() < (qrExpires ?? .distantPast) {
+                var confirmedCookie: String?
+                while !Task.isCancelled, epoch == generation, Date() < (qrExpires ?? .distantPast) {
+                    guard await waitForQRForeground(epoch) else { return }
+                    guard Date() < (qrExpires ?? .distantPast) else { break }
+                    do {
+                        if let value = confirmedCookie {
+                            let account = try await api.send("/w/nuser/account/get", [:], cookie: value)
+                            guard epoch == generation, !Task.isCancelled else { return }
+                            let p = try Self.decodeProfile(account.object)
+                            try store.save(Data(value.utf8)); cookie = value; currentState.contextID = UUID()
+                            qrStatus = "登录成功"; install(profile: p); finishQR(); return
+                        }
                         let check = try await api.send("/login/qrcode/client/login", ["key": key, "type": 1], cookie: nil)
                         guard epoch == generation, !Task.isCancelled else { return }
                         switch check.object["code"] as? Int {
@@ -91,30 +103,51 @@ struct NetEaseProfile: Equatable {
                         case 802: qrStatus = "已扫码，等待确认"
                         case 803:
                             guard let raw = check.cookie else { throw NetEaseError.invalidCookie }
-                            let value = try NetEaseCookie.normalized(raw)
-                            let account = try await api.send("/w/nuser/account/get", [:], cookie: value)
-                            guard epoch == generation, !Task.isCancelled else { return }
-                            let p = try Self.decodeProfile(account.object)
-                            try store.save(Data(value.utf8)); cookie = value; currentState.contextID = UUID()
-                            qrStatus = "登录成功"; install(profile: p); finishQR(); return
+                            confirmedCookie = try NetEaseCookie.normalized(raw)
+                            continue
                         default: qrStatus = "等待扫码"
                         }
-                        try await Task.sleep(for: .seconds(2))
+                    } catch {
+                        guard epoch == generation, !Task.isCancelled else { return }
+                        guard Self.canRetryQRNetwork(error) else {
+                            currentState.error = .musicFailure(error.localizedDescription); finishQR(); return
+                        }
+                        // A suspended URLSession request is not a rejected login.
+                        // The original QR expiry bounds retries; do not create a new key.
+                        qrStatus = foreground ? "网络暂时中断，二维码仍有效，正在等待恢复" : "请完成扫码后返回 AMLL"
+                        currentState.error = nil; publish()
                     }
-                    guard epoch == generation, !Task.isCancelled else { return }
-                    qrStatus = "二维码已过期，请刷新"; finishQR()
-                } catch is CancellationError {} catch {
-                    guard epoch == generation else { return }
-                    currentState.error = .musicFailure(error.localizedDescription); finishQR()
+                    if !foreground { continue }
+                    do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 }
+                guard epoch == generation, !Task.isCancelled else { return }
+                qrStatus = "二维码已过期，请刷新"; finishQR()
             }
         } catch {
             guard epoch == generation else { return }
             currentState.error = .musicFailure(error.localizedDescription); finishQR()
         }
     }
+    func setForeground(_ active: Bool) {
+        foreground = active
+        if active {
+            let wake = qrWake; qrWake = nil; wake?.resume()
+        }
+    }
+    private func waitForQRForeground(_ epoch: UUID) async -> Bool {
+        while !foreground, epoch == generation, !Task.isCancelled {
+            await withCheckedContinuation { qrWake = $0 }
+        }
+        return epoch == generation && !Task.isCancelled
+    }
+    static func canRetryQRNetwork(_ error: Error) -> Bool {
+        guard let network = error as? URLError else { return false }
+        return [.networkConnectionLost, .notConnectedToInternet, .timedOut, .cancelled,
+                .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .dataNotAllowed].contains(network.code)
+    }
     func cancelQR() {
         generation = UUID(); polling?.cancel(); polling = nil; qrURL = nil; qrExpires = nil
+        let wake = qrWake; qrWake = nil; wake?.resume()
         currentState.requesting = false; publish()
     }
     private func finishQR() { qrURL = nil; qrExpires = nil; currentState.requesting = false; publish() }

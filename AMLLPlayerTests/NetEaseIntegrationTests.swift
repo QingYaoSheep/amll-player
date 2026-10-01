@@ -265,6 +265,69 @@ import XCTest
         playback.deselect()
     }
 
+
+    func testQRNetworkLossInBackgroundResumesSameKeyAndCompletesLogin() async throws {
+        let api = NetEaseFixtureAPI(); api.deferQRCheck = true
+        let store = NetEaseMemoryStore(), session = NetEaseSession(api: api, store: store)
+        await session.beginQR()
+        for _ in 0..<200 where api.qrCheckContinuation == nil { await Task.yield() }
+        let originalURL = try XCTUnwrap(session.qrURL)
+        let originalExpiry = session.qrExpires
+        session.setForeground(false)
+        api.qrCheckContinuation?.resume(throwing: URLError(.networkConnectionLost))
+        api.qrCheckContinuation = nil
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertEqual(session.qrURL, originalURL)
+        XCTAssertEqual(session.qrExpires, originalExpiry)
+        XCTAssertTrue(session.currentState.requesting)
+        XCTAssertNil(session.currentState.error)
+        XCTAssertEqual(api.paths.filter { $0 == "/login/qrcode/client/login" }.count, 1)
+        api.deferQRCheck = false; api.qrCode = 803
+        session.setForeground(true)
+        for _ in 0..<200 where !session.currentState.connected { await Task.yield() }
+        XCTAssertTrue(session.currentState.connected)
+        XCTAssertEqual(String(data: try XCTUnwrap(store.load()), encoding: .utf8), "MUSIC_U=qr")
+        XCTAssertEqual(api.paths.filter { $0 == "/login/qrcode/unikey" }.count, 1)
+        XCTAssertEqual(api.paths.filter { $0 == "/login/qrcode/client/login" }.count, 2)
+    }
+
+    func testConfirmedQRRetainsCookieWhenAccountValidationIsInterrupted() async throws {
+        let api = NetEaseFixtureAPI(); api.qrCode = 803; api.deferQRAccount = true
+        let store = NetEaseMemoryStore(), session = NetEaseSession(api: api, store: store)
+        await session.beginQR()
+        for _ in 0..<200 where api.qrAccountContinuation == nil { await Task.yield() }
+        session.setForeground(false)
+        api.qrAccountContinuation?.resume(throwing: URLError(.notConnectedToInternet))
+        api.qrAccountContinuation = nil
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertTrue(session.currentState.requesting); XCTAssertNil(try store.load())
+        api.deferQRAccount = false
+        session.setForeground(true)
+        for _ in 0..<200 where !session.currentState.connected { await Task.yield() }
+        XCTAssertTrue(session.currentState.connected)
+        XCTAssertEqual(String(data: try XCTUnwrap(store.load()), encoding: .utf8), "MUSIC_U=qr")
+        XCTAssertEqual(api.paths.filter { $0 == "/login/qrcode/client/login" }.count, 1)
+        XCTAssertEqual(api.paths.filter { $0 == "/w/nuser/account/get" }.count, 2)
+    }
+
+    func testClosingQRPageWhileBackgroundedCannotResumeLogin() async throws {
+        let api = NetEaseFixtureAPI(); api.deferQRCheck = true
+        let store = NetEaseMemoryStore(), session = NetEaseSession(api: api, store: store)
+        await session.beginQR()
+        for _ in 0..<200 where api.qrCheckContinuation == nil { await Task.yield() }
+        session.setForeground(false)
+        api.qrCheckContinuation?.resume(throwing: URLError(.networkConnectionLost))
+        api.qrCheckContinuation = nil
+        for _ in 0..<100 { await Task.yield() }
+        session.cancelQR()
+        api.deferQRCheck = false; api.qrCode = 803
+        session.setForeground(true)
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertNil(session.qrURL); XCTAssertFalse(session.currentState.connected)
+        XCTAssertNil(try store.load())
+        XCTAssertEqual(api.paths.filter { $0 == "/login/qrcode/client/login" }.count, 1)
+    }
+
     func testExpiredStoredCookieReturningEmptyProfileDisconnectsAndRemovesCredential() async throws {
         let api = NetEaseFixtureAPI(), store = NetEaseMemoryStore()
         let session = NetEaseSession(api: api, store: store)
@@ -279,6 +342,10 @@ import XCTest
     var userID = 1
     var invalidAccount = false
     var deferQR = false
+    var deferQRAccount = false
+    var qrAccountContinuation: CheckedContinuation<NetEaseResponse, Error>?
+    var deferQRCheck = false
+    var qrCheckContinuation: CheckedContinuation<NetEaseResponse, Error>?
     var deferAudio = false
     var qrCode = 800
     var audioContinuation: CheckedContinuation<NetEaseResponse, Never>?
@@ -288,11 +355,13 @@ import XCTest
         paths.append(path)
         switch path {
         case "/w/nuser/account/get":
+            if deferQRAccount { return try await withCheckedThrowingContinuation { qrAccountContinuation = $0 } }
             return .init(object: invalidAccount ? ["code": 200] : ["code": 200, "profile": ["userId": userID, "nickname": "Fixture"]], cookie: nil)
         case "/login/qrcode/unikey":
             if deferQR { return await withCheckedContinuation { qrContinuation = $0 } }
             return .init(object: ["code": 200, "unikey": "key"], cookie: nil)
         case "/login/qrcode/client/login":
+            if deferQRCheck { return try await withCheckedThrowingContinuation { qrCheckContinuation = $0 } }
             return .init(object: ["code": qrCode], cookie: qrCode == 803 ? "MUSIC_U=qr" : nil)
         case "/fixture/expired": throw NetEaseError.expired
         case "/song/enhance/player/url/v1":

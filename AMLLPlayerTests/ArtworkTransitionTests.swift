@@ -147,6 +147,53 @@ final class ArtworkTransitionTests: XCTestCase {
         add(attachment)
     }
 
+    func testReflectionUnderTransitionHasNoStepOnWhiteOrDarkBackground() throws {
+        let videoSize = CGSize(width: 128, height: 400)
+        let viewport = CGSize(width: 128, height: 650)
+        let video = CGRect(origin: .zero, size: videoSize)
+        let tail = AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: viewport.height)
+        let reflection = ArtworkReflectionGeometry.frame(cover: video, viewportHeight: viewport.height)
+        let reflectionSurface = ArtworkReflection.Surface(frame: CGRect(origin: .zero, size: reflection.size))
+        reflectionSurface.layoutSubviews()
+        let reflectionMask = try maskImage(XCTUnwrap(reflectionSurface.layer.mask as? CAGradientLayer), size: reflection.size)
+        let tailSurface = ArtworkVideoTransition.Surface(frame: CGRect(origin: .zero, size: tail.size))
+        tailSurface.layoutSubviews()
+        let tailMask = try maskImage(XCTUnwrap(tailSurface.layer.mask as? CAGradientLayer), size: tail.size)
+        let source = CIImage(color: .blue).cropped(to: video)
+        let transition = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
+                                                                         videoSize: videoSize, surfaceSize: tail.size, outputSize: tail.size))
+        let reflected = CIImage(color: CIColor(red: 0, green: 0, blue: 1, alpha: CGFloat(reflectionSurface.layer.opacity)))
+            .cropped(to: CGRect(origin: .zero, size: reflection.size))
+            .applyingFilter("CIBlendWithAlphaMask", parameters: [
+                kCIInputBackgroundImageKey: CIImage(color: .clear), kCIInputMaskImageKey: reflectionMask,
+            ])
+            .transformed(by: CGAffineTransform(translationX: reflection.minX, y: viewport.height - reflection.maxY))
+        let softened = transition.applyingFilter("CIBlendWithAlphaMask", parameters: [
+            kCIInputBackgroundImageKey: CIImage(color: .clear), kCIInputMaskImageKey: tailMask,
+        ]).transformed(by: CGAffineTransform(translationX: tail.minX, y: viewport.height - tail.maxY))
+        for (name, background) in [("white", CIColor.white), ("dark", CIColor.black)] {
+            let result = softened.composited(over: reflected)
+                .composited(over: CIImage(color: background))
+                .cropped(to: CGRect(origin: .zero, size: viewport))
+            let boundary = Int(viewport.height - video.maxY)
+            for y in (boundary - 3) ... (boundary + 3) {
+                let above = pixel(result, x: 64, y: y)
+                let below = pixel(result, x: 64, y: y - 1)
+                for channel in 0 ..< 3 {
+                    XCTAssertLessThanOrEqual(abs(above[channel] - below[channel]), 3,
+                                             "Enabling reflection must not add a rectangular seam")
+                }
+            }
+            let image = try XCTUnwrap(context.createCGImage(result, from: result.extent))
+            let attachment = XCTAttachment(image: UIImage(cgImage: image))
+            attachment.name = "Reflection below transition on \(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        XCTAssertGreaterThan(reflectionSurface.layer.opacity, 0.24)
+        XCTAssertEqual(reflection.minY, video.maxY)
+    }
+
     func testPausedTransitionRebuildsOnResizeAndClearDiscardsItsOldFrame() async throws {
         let surface = ArtworkVideoTransition.Surface(frame: CGRect(x: 0, y: 0, width: 128, height: 229))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))

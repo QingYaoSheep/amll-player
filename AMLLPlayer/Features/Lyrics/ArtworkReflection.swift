@@ -95,8 +95,10 @@ struct ArtworkReflection: UIViewRepresentable {
             isUserInteractionEnabled = false
             isAccessibilityElement = false
             layer.opacity = 0.32
-            fade.colors = [0.78, 0.58, 0.34, 0.15, 0.045, 0].map { UIColor(white: 1, alpha: $0).cgColor }
-            fade.locations = [0, 0.22, 0.50, 0.72, 0.88, 1]
+            // Enter from zero at the video edge; the softening layer above
+            // cannot hide a reflection that starts with a nonzero alpha step.
+            fade.colors = [0, 0.20, 0.78, 0.58, 0.34, 0.15, 0.045, 0].map { UIColor(white: 1, alpha: $0).cgColor }
+            fade.locations = [0, 0.04, 0.12, 0.22, 0.50, 0.72, 0.88, 1]
             layer.mask = fade
         }
 
@@ -193,7 +195,7 @@ enum ArtworkVideoTransitionImage {
 }
 
 /// Uses the same silent player's frame output as the optional reflection.
-/// Sits underneath the fading full video, so neither layer has a visible cut edge.
+/// Sits above the fading video and reflection, softening their shared boundary.
 struct ArtworkVideoTransition: UIViewRepresentable {
     let frames: ArtworkReflectionFrames
     let videoSize: CGSize

@@ -42,14 +42,6 @@ struct AMLLLyricsPlayer: View {
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                     let videoFrame = AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size,
                                                                         video: artworkLoader.videoSize ?? .zero)
-                    if artworkLoader.hasPresentedFrame, !reduceTransparency {
-                        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame,
-                                                                                      viewportHeight: geometry.size.height)
-                        ArtworkVideoTransition(frames: artworkReflectionFrames, videoSize: videoFrame.size)
-                            .frame(width: transition.width, height: transition.height)
-                            .position(x: transition.midX, y: transition.midY)
-                            .accessibilityHidden(true)
-                    }
                     immersiveArtwork(item, frame: videoFrame, size: geometry.size)
                     if configuration.animatedArtwork?.reflection == true, !reduceMotion,
                        artworkLoader.hasPresentedFrame
@@ -59,6 +51,14 @@ struct AMLLLyricsPlayer: View {
                             .frame(width: reflection.width, height: reflection.height)
                             .clipped()
                             .position(x: reflection.midX, y: reflection.midY)
+                            .accessibilityHidden(true)
+                    }
+                    if artworkLoader.hasPresentedFrame, !reduceTransparency {
+                        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame,
+                                                                                      viewportHeight: geometry.size.height)
+                        ArtworkVideoTransition(frames: artworkReflectionFrames, videoSize: videoFrame.size)
+                            .frame(width: transition.width, height: transition.height)
+                            .position(x: transition.midX, y: transition.midY)
                             .accessibilityHidden(true)
                     }
                 }

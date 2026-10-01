@@ -13,6 +13,13 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("spotifyLoginLink")
 
+                NavigationLink { AppleMusicLoginView(model: model) } label: {
+                    Label("登录到 Apple Music", systemImage: "music.note")
+                }
+                .accessibilityIdentifier("appleMusicLoginLink")
+
+                MusicSourcePicker(model: model)
+
                 LabeledContent("settings.account") {
                     Text(model.sessionState.isAuthenticated
                         ? "settings.connected" : "settings.disconnected")
@@ -20,8 +27,8 @@ struct SettingsView: View {
             }
 
             Section("settings.playback") {
-                Label("settings.spotifyOnly", systemImage: "dot.radiowaves.left.and.right")
-                Text("settings.noLocalPlayback")
+                Label("Spotify 与 Apple Music", systemImage: "dot.radiowaves.left.and.right")
+                Text("Spotify 控制已连接设备，Apple Music 跟随系统音乐 App。切换来源不会自动播放、暂停或重建队列。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

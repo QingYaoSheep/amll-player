@@ -29,7 +29,7 @@ struct TrackIdentity: Codable, Equatable, Sendable {
 
     init?(_ item: PlaybackItem?) {
         guard let item, !item.isEpisode, !item.isAdvertisement, !item.uri.isEmpty else { return nil }
-        self.init(spotifyID: item.id ?? item.uri, title: item.title, artists: item.artists,
+        self.init(spotifyID: MusicTrackIdentity.key(service: item.service, scope: item.resourceScope, id: item.id ?? item.uri), title: item.title, artists: item.artists,
                   album: item.albumTitle ?? "", duration: item.duration, isrc: item.isrc)
     }
 }

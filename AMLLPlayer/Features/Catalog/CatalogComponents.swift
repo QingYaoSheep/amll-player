@@ -3,6 +3,7 @@ import SwiftUI
 enum CatalogRoute: Hashable {
     case collection(SpotifyLibrarySection)
     case detail(SpotifyCatalogKind, String)
+    case resource(MusicResourceID)
 }
 
 struct CatalogArtwork: View {
@@ -26,7 +27,9 @@ struct CatalogArtwork: View {
             image = nil
             guard let url else { return }
             let loaded = await CatalogImageCache.shared.image(url)
-            if !Task.isCancelled { image = loaded }
+            if !Task.isCancelled {
+                image = loaded
+            }
         }
     }
 }
@@ -38,11 +41,15 @@ private final class CatalogImageCache {
     private var tasks: [URL: Task<Data?, Never>] = [:]
     private var subscribers: [URL: Set<UUID>] = [:]
 
-    private init() { cache.totalCostLimit = 32 * 1_024 * 1_024 }
+    private init() {
+        cache.totalCostLimit = 32 * 1024 * 1024
+    }
 
     func image(_ url: URL) async -> UIImage? {
         guard url.scheme == "https" else { return nil }
-        if let image = cache.object(forKey: url as NSURL) { return image }
+        if let image = cache.object(forKey: url as NSURL) {
+            return image
+        }
         let id = UUID()
         subscribers[url, default: []].insert(id)
         let task: Task<Data?, Never>
@@ -54,8 +61,8 @@ private final class CatalogImageCache {
                 request.timeoutInterval = 15
                 do {
                     let (data, response) = try await URLSession.shared.data(for: request)
-                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                          data.count <= 5 * 1_024 * 1_024 else { return nil }
+                    guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+                          data.count <= 5 * 1024 * 1024 else { return nil }
                     return data
                 } catch { return nil }
             }
@@ -88,15 +95,17 @@ struct CatalogExternalLink: View {
     var body: some View {
         if let webURL = item.externalURL {
             Button {
-                guard let uri = item.uri, let nativeURL = URL(string: uri) else {
+                guard item.service == .spotify, let uri = item.uri, let nativeURL = URL(string: uri) else {
                     UIApplication.shared.open(webURL)
                     return
                 }
                 UIApplication.shared.open(nativeURL) { opened in
-                    if !opened { Task { @MainActor in UIApplication.shared.open(webURL) } }
+                    if !opened {
+                        Task { @MainActor in UIApplication.shared.open(webURL) }
+                    }
                 }
             } label: {
-                Label("catalog.openSpotify", systemImage: "arrow.up.right.square")
+                Label(item.service == .appleMusic ? "在 Apple Music 打开" : String(localized: "catalog.openSpotify"), systemImage: "arrow.up.right.square")
             }
         }
     }
@@ -124,8 +133,8 @@ struct CatalogErrorView: View {
 struct CatalogPlayButton: View {
     @Bindable var model: AppModel
     let item: SpotifyCatalogItem
-    var contextURI: String? = nil
-    var position: Int? = nil
+    var contextURI: String?
+    var position: Int?
     var compact = true
     @State private var failure: String?
 
@@ -133,7 +142,7 @@ struct CatalogPlayButton: View {
         Button {
             Task {
                 do { try await model.playCatalog(item, contextURI: contextURI, position: position) }
-                catch is CancellationError { }
+                catch is CancellationError {}
                 catch { failure = error.localizedDescription }
             }
         } label: {
@@ -147,9 +156,13 @@ struct CatalogPlayButton: View {
         .disabled(!item.canPlay || model.isPerformingAction)
         .accessibilityLabel(Text("player.play") + Text(" " + item.name))
         .accessibilityIdentifier("catalogPlay-\(item.id)")
-        .alert("error.title", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+        .alert("error.title", isPresented: Binding(get: { failure != nil }, set: {
+            if !$0 {
+                failure = nil
+            }
+        })) {
             if let url = item.externalURL {
-                Button("catalog.openSpotify") { UIApplication.shared.open(url) }
+                Button(item.service == .appleMusic ? "在 Apple Music 打开" : String(localized: "catalog.openSpotify")) { UIApplication.shared.open(url) }
             }
             Button("common.ok", role: .cancel) { failure = nil }
         } message: { Text(failure ?? "") }
@@ -160,12 +173,13 @@ struct CatalogPlayButton: View {
 struct CatalogRowView: View {
     @Bindable var model: AppModel
     let row: SpotifyCatalogRow
-    var contextURI: String? = nil
+    var contextURI: String?
 
     var body: some View {
         HStack(spacing: 8) {
             if let kind = row.item.kind, row.item.availability != .unsupported {
-                NavigationLink(value: CatalogRoute.detail(kind, row.item.spotifyID)) { label }
+                NavigationLink(value: row.item.service == .appleMusic
+                    ? CatalogRoute.resource(row.item.resource!) : CatalogRoute.detail(kind, row.item.spotifyID)) { label }
                     .buttonStyle(.plain)
             } else {
                 label
@@ -174,7 +188,12 @@ struct CatalogRowView: View {
                 CatalogPlayButton(model: model, item: row.item, contextURI: contextURI, position: row.position)
             }
         }
-        .contextMenu { CatalogExternalLink(item: row.item) }
+        .contextMenu {
+            CatalogExternalLink(item: row.item)
+            if row.item.service == .appleMusic {
+                AppleMusicItemActions(model: model, item: row.item)
+            }
+        }
     }
 
     private var label: some View {

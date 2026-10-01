@@ -8,7 +8,13 @@ struct SpotifyPlayerView: View {
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if !model.environment.configuration.isSpotifyConfigured {
+                if model.selectedMusicService == .appleMusic {
+                    if model.appleMusicState.connected {
+                        playerContent
+                    } else {
+                        AppleMusicLoginView(model: model)
+                    }
+                } else if !model.environment.configuration.isSpotifyConfigured {
                     ContentUnavailableView(
                         "player.configurationRequired",
                         systemImage: "key.slash",
@@ -24,7 +30,7 @@ struct SpotifyPlayerView: View {
                     if model.playbackSnapshot?.item != nil {
                         LyricsQuickMenu(coordinator: model.lyrics) { isShowingLyricsSearch = true }
                     }
-                    if model.sessionState.isAuthenticated {
+                    if model.currentServiceConnected {
                         Button("player.devices", systemImage: "airplayaudio") {
                             isShowingDevices = true
                             Task { await model.loadDevices() }
@@ -97,14 +103,18 @@ struct SpotifyPlayerView: View {
 
                     ProgressControl(model: model, snapshot: snapshot)
                     PlaybackControls(model: model, snapshot: snapshot)
+                    if model.selectedMusicService == .appleMusic {
+                        AppleMusicPlaybackOptions(model: model, snapshot: snapshot)
+                        SystemMusicVolumeView().frame(height: 44)
+                    }
 
                     if let device = snapshot.device {
                         DeviceSummaryView(model: model, device: device)
                     }
 
                     Label(
-                        snapshot.source == .appRemote
-                            ? "player.source.appRemote" : "player.source.webAPI",
+                        snapshot.source == .musicKit ? "Apple Music" : (snapshot.source == .appRemote
+                            ? "player.source.appRemote" : "player.source.webAPI"),
                         systemImage: snapshot.source == .appRemote
                             ? "bolt.horizontal.circle" : "network"
                     )
@@ -216,7 +226,7 @@ private struct ProgressControl: View {
                         get: { isSeeking ? draftPosition : livePosition },
                         set: { draftPosition = $0 }
                     ),
-                    in: 0...max(snapshot.duration, 1),
+                    in: 0 ... max(snapshot.duration, 1),
                     onEditingChanged: { editing in
                         if editing {
                             isSeeking = true
@@ -265,7 +275,7 @@ private struct DeviceSummaryView: View {
                             get: { isEditingVolume ? draftVolume : Double(volume) },
                             set: { draftVolume = $0 }
                         ),
-                        in: 0...100,
+                        in: 0 ... 100,
                         onEditingChanged: { editing in
                             if editing {
                                 isEditingVolume = true
@@ -303,54 +313,58 @@ struct DevicePickerView: View {
     var body: some View {
         NavigationStack {
             Group {
-                switch model.devicesState {
-                case .idle, .loading:
-                    ProgressView("player.loadingDevices")
-                case let .loaded(devices):
-                    if devices.isEmpty {
-                        ContentUnavailableView(
-                            "player.noDevices",
-                            systemImage: "airplayaudio",
-                            description: Text("player.noDevicesDescription")
-                        )
-                    } else {
-                        List(devices) { device in
-                            Button {
-                                Task {
-                                    await model.transferPlayback(to: device.id)
-                                    dismiss()
+                if model.selectedMusicService == .appleMusic {
+                    SystemMusicRoutesView()
+                } else {
+                    switch model.devicesState {
+                    case .idle, .loading:
+                        ProgressView("player.loadingDevices")
+                    case let .loaded(devices):
+                        if devices.isEmpty {
+                            ContentUnavailableView(
+                                "player.noDevices",
+                                systemImage: "airplayaudio",
+                                description: Text("player.noDevicesDescription")
+                            )
+                        } else {
+                            List(devices) { device in
+                                Button {
+                                    Task {
+                                        await model.transferPlayback(to: device.id)
+                                        dismiss()
+                                    }
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading) {
+                                            Text(device.name)
+                                            Text(device.type)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        if device.isActive {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.green)
+                                        }
+                                        if device.isRestricted {
+                                            Image(systemName: "lock.fill")
+                                                .foregroundStyle(.orange)
+                                        }
+                                    }
                                 }
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(device.name)
-                                        Text(device.type)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if device.isActive {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
-                                    }
-                                    if device.isRestricted {
-                                        Image(systemName: "lock.fill")
-                                            .foregroundStyle(.orange)
-                                    }
-                                }
+                                .disabled(device.isRestricted || model.isPerformingAction)
                             }
-                            .disabled(device.isRestricted || model.isPerformingAction)
+                            .refreshable { await model.loadDevices() }
                         }
-                        .refreshable { await model.loadDevices() }
-                    }
-                case let .failed(error):
-                    ContentUnavailableView {
-                        Label("player.deviceLoadFailed", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(error.localizedDescription)
-                    } actions: {
-                        Button("player.tryAgain") {
-                            Task { await model.loadDevices() }
+                    case let .failed(error):
+                        ContentUnavailableView {
+                            Label("player.deviceLoadFailed", systemImage: "exclamationmark.triangle")
+                        } description: {
+                            Text(error.localizedDescription)
+                        } actions: {
+                            Button("player.tryAgain") {
+                                Task { await model.loadDevices() }
+                            }
                         }
                     }
                 }

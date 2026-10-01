@@ -12,7 +12,10 @@ struct PlayerClock: Equatable, Sendable {
             return 0
         }
 
-        let elapsed = anchor.isPlaying ? max(0, uptime - anchor.sampledAtUptime) : 0
+        guard anchor.position.isFinite, anchor.duration.isFinite, anchor.sampledAtUptime.isFinite,
+              uptime.isFinite, anchor.playbackRate.isFinite else { return 0 }
+
+        let elapsed = anchor.isPlaying ? max(0, uptime - anchor.sampledAtUptime) * max(0, anchor.playbackRate) : 0
         return min(max(0, anchor.position + elapsed), max(0, anchor.duration))
     }
 
@@ -37,7 +40,9 @@ struct PlayerClock: Equatable, Sendable {
                 device: snapshot.device ?? anchor.device,
                 restrictions: snapshot.restrictions,
                 source: snapshot.source,
-                sampledAtUptime: snapshot.sampledAtUptime
+                sampledAtUptime: snapshot.sampledAtUptime,
+                playbackRate: snapshot.playbackRate, positionRevision: snapshot.positionRevision,
+                shuffleEnabled: snapshot.shuffleEnabled, repeatMode: snapshot.repeatMode
             )
         }
 

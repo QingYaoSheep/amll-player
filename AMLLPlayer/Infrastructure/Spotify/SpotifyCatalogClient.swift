@@ -21,7 +21,9 @@ actor SpotifyCatalogHTTPClient {
 
     func get(endpoint: String, token: String) async throws -> (Data, URL) {
         try Task.checkCancellation()
-        if quotaExceeded { throw SpotifyCatalogError.quotaExceeded }
+        if quotaExceeded {
+            throw SpotifyCatalogError.quotaExceeded
+        }
         if let retryNotBefore, Date() < retryNotBefore {
             throw SpotifyCatalogError.rateLimited(until: retryNotBefore)
         }
@@ -36,26 +38,35 @@ actor SpotifyCatalogHTTPClient {
             try Task.checkCancellation()
             guard let response = response as? HTTPURLResponse else { throw SpotifyCatalogError.invalidResponse }
             if let error = Self.error(status: response.statusCode, data: data,
-                                      retryAfter: response.value(forHTTPHeaderField: "Retry-After")) {
-                if case .quotaExceeded = error { quotaExceeded = true }
-                if case let .rateLimited(until) = error { retryNotBefore = until }
+                                      retryAfter: response.value(forHTTPHeaderField: "Retry-After"))
+            {
+                if case .quotaExceeded = error {
+                    quotaExceeded = true
+                }
+                if case let .rateLimited(until) = error {
+                    retryNotBefore = until
+                }
                 throw error
             }
-            guard data.count <= 8 * 1_024 * 1_024 else { throw SpotifyCatalogError.invalidResponse }
+            guard data.count <= 8 * 1024 * 1024 else { throw SpotifyCatalogError.invalidResponse }
             return (data, url)
         } catch let error as URLError {
-            if error.code == .cancelled { throw CancellationError() }
+            if error.code == .cancelled {
+                throw CancellationError()
+            }
             throw SpotifyCatalogError.offline
         }
     }
 
     static func error(status: Int, data: Data, retryAfter: String?, now: Date = Date()) -> SpotifyCatalogError? {
-        guard !(200..<300).contains(status) else { return nil }
+        guard !(200 ..< 300).contains(status) else { return nil }
         let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         let error = root?["error"] as? [String: Any]
         let reason = [error?["reason"], error?["code"], error?["message"], root?["error"]]
             .compactMap { $0 as? String }.joined(separator: " ").uppercased()
-        if reason.contains("QUOTA_EXCEEDED") { return .quotaExceeded }
+        if reason.contains("QUOTA_EXCEEDED") {
+            return .quotaExceeded
+        }
         switch status {
         case 401: return .signInRequired
         case 403: return .forbidden
@@ -76,8 +87,8 @@ actor SpotifyCatalogHTTPClient {
 
 final class CatalogRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(
-        _ session: URLSession, task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+        _: URLSession, task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse, newRequest _: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
         // Catalog pagination is validated separately. Never redirect a bearer-authenticated request.
@@ -107,6 +118,7 @@ final class SpotifyCatalogClient: SpotifyCatalogProviding {
     }
 
     func page(_ query: SpotifyCatalogQuery, next: URL?) async throws -> SpotifyPage<SpotifyCatalogRow> {
+        guard !query.endpoint.isEmpty else { throw SpotifyCatalogError.unavailable }
         let (data, url) = try await request(next?.absoluteString ?? query.endpoint)
         return try SpotifyCatalogDecoder.page(data, query: query, requestedURL: url)
     }
@@ -129,7 +141,9 @@ final class SpotifyCatalogClient: SpotifyCatalogProviding {
             } catch SpotifyCatalogError.signInRequired {
                 try check(epoch)
                 let currentToken = try await session.validAccessToken()
-                if currentToken == token { try await session.refreshAfterUnauthorized() }
+                if currentToken == token {
+                    try await session.refreshAfterUnauthorized()
+                }
                 try check(epoch)
                 let refreshed = try await session.validAccessToken()
                 try check(epoch)

@@ -39,10 +39,10 @@ struct AMLLLyricsPlayer: View {
                                gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault)
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                     let videoFrame = AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size,
-                                                                         video: artworkLoader.videoSize ?? .zero)
+                                                                        video: artworkLoader.videoSize ?? .zero)
                     if artworkLoader.hasPresentedFrame, !reduceTransparency {
                         let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame,
-                                                                                       viewportHeight: geometry.size.height)
+                                                                                      viewportHeight: geometry.size.height)
                         ArtworkVideoTransition(frames: artworkReflectionFrames, videoSize: videoFrame.size)
                             .frame(width: transition.width, height: transition.height)
                             .position(x: transition.midX, y: transition.midY)
@@ -144,6 +144,9 @@ struct AMLLLyricsPlayer: View {
                         .padding(.horizontal, 8)
                         .padding(.top, metrics.volumeTopGap)
                 }
+                if configuration.showVolume, model.selectedMusicService == .appleMusic {
+                    SystemMusicVolumeView().frame(height: 44).padding(.top, metrics.volumeTopGap)
+                }
                 bottomActions
                     .padding(.top, metrics.bottomActionsTopGap)
             }
@@ -164,6 +167,9 @@ struct AMLLLyricsPlayer: View {
                        let volume = device.volumePercent
                     {
                         LyricsVolumeControl(model: model, device: device, volume: volume).padding(.top, 42)
+                    }
+                    if configuration.showVolume, model.selectedMusicService == .appleMusic {
+                        SystemMusicVolumeView().frame(height: 44).padding(.top, 42)
                     }
                     bottomActions.padding(.top, 26)
                 }
@@ -282,11 +288,13 @@ struct AMLLLyricsPlayer: View {
             staticLyricsCover: phoneLyricsUsesStaticArtwork,
             selectedImmersive: configuration.animatedArtwork?.presentation == .immersive,
             portraitViewport: size.height > size.width, kind: artworkLoader.kind,
-            currentTrack: artworkLoader.trackID == item.uri, hasURL: artworkLoader.playbackURL != nil)
+            currentTrack: artworkLoader.trackID == item.uri, hasURL: artworkLoader.playbackURL != nil
+        )
     }
 
     private func artwork(_ item: PlaybackItem, side: CGFloat, radius: CGFloat,
-                         hideStatic: Bool = false) -> some View {
+                         hideStatic: Bool = false) -> some View
+    {
         AsyncImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
             placeholder: { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
             .frame(width: side, height: side)
@@ -294,8 +302,9 @@ struct AMLLLyricsPlayer: View {
                 if AMLLArtworkDisplayPolicy.mountsSquare(
                     enabled: configuration.animatedArtwork?.enabled == true, reduceMotion: reduceMotion,
                     staticLyricsCover: phoneLyricsUsesStaticArtwork, kind: artworkLoader.kind,
-                    currentTrack: artworkLoader.trackID == item.uri, hasURL: artworkLoader.playbackURL != nil),
-                   let url = artworkLoader.playbackURL
+                    currentTrack: artworkLoader.trackID == item.uri, hasURL: artworkLoader.playbackURL != nil
+                ),
+                    let url = artworkLoader.playbackURL
                 {
                     let token = artworkLoader.requestToken
                     AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices && model.playbackSnapshot?.isPlaying == true, allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
@@ -351,19 +360,19 @@ struct AMLLLyricsPlayer: View {
         await artworkLoader.load(trackID: item.uri, kind: kind,
                                  fallbackKind: prefersPortrait ? .squareVideo : nil,
                                  streamWhileDownloading: true, assets: {
-            let songID: String
-            if let candidate, candidate.source == .apple {
-                songID = candidate.sourceID
-            } else {
-                let candidates = try await provider.search(track: track, query: "", settings: lyricsSettings)
-                guard let match = candidates.first(where: { $0.score >= 70 }) else { return [] }
-                songID = match.sourceID
-            }
-            try Task.checkCancellation()
-            return try await provider.animatedArtwork(songID: songID, settings: lyricsSettings)
-        }, download: { url in
-            try await ArtworkMediaDownload.download(url, allowCellular: settings.allowCellular)
-        })
+                                     let songID: String
+                                     if let candidate, candidate.source == .apple {
+                                         songID = candidate.sourceID
+                                     } else {
+                                         let candidates = try await provider.search(track: track, query: "", settings: lyricsSettings)
+                                         guard let match = candidates.first(where: { $0.score >= 70 }) else { return [] }
+                                         songID = match.sourceID
+                                     }
+                                     try Task.checkCancellation()
+                                     return try await provider.animatedArtwork(songID: songID, settings: lyricsSettings)
+                                 }, download: { url in
+                                     try await ArtworkMediaDownload.download(url, allowCellular: settings.allowCellular)
+                                 })
     }
 
     private func transport(_ snapshot: PlaybackSnapshot) -> some View {
@@ -432,6 +441,16 @@ struct AMLLLyricsPlayer: View {
             }
             Button("player.devices", systemImage: "airplayaudio") { devices = true; Task { await model.loadDevices() } }
             Button("lyrics.find", systemImage: "magnifyingglass") { search = true }
+            if model.selectedMusicService == .appleMusic, let snapshot = model.playbackSnapshot {
+                Section("Apple Music 播放") {
+                    Button(snapshot.shuffleEnabled ? "关闭随机" : "随机播放", systemImage: "shuffle") {
+                        Task { await model.setShuffle(!snapshot.shuffleEnabled) }
+                    }
+                    ForEach(MusicRepeatMode.allCases, id: \.self) { mode in
+                        Button(mode.title) { Task { await model.setRepeat(mode) } }
+                    }
+                }
+            }
             if let document = model.lyrics.document, let credit = configuration.credits.content(in: document) {
                 Section {
                     Text(credit.names.joined(separator: " · "))

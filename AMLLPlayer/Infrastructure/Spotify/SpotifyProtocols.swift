@@ -16,11 +16,13 @@ protocol SpotifySessionProviding: AnyObject {
 }
 
 extension SpotifySessionProviding {
-    func refreshAfterUnauthorized() async throws { try await refreshIfNeeded() }
+    func refreshAfterUnauthorized() async throws {
+        try await refreshIfNeeded()
+    }
 }
 
 @MainActor
-protocol SpotifyPlaybackProviding: AnyObject {
+protocol SpotifyPlaybackProviding: MusicPlaybackProviding {
     var playbackSnapshots: AsyncStream<PlaybackSnapshot> { get }
     var appRemoteState: SpotifyAppRemoteState { get }
 
@@ -42,7 +44,16 @@ protocol SpotifyPlaybackProviding: AnyObject {
 }
 
 extension SpotifyPlaybackProviding {
-    func play(contextURI: String, position: Int, on deviceID: String?) async throws {
+    func play(item: MusicCatalogItem, context: MusicResourceID?, position: Int?) async throws {
+        guard item.service == .spotify, let uri = item.uri else { throw MusicServiceError.unsupportedOperation }
+        if let context, let position {
+            try await play(contextURI: "spotify:\(context.kind.rawValue):\(context.rawValue)", position: position, on: nil)
+        } else {
+            try await play(uri: uri, on: nil)
+        }
+    }
+
+    func play(contextURI _: String, position _: Int, on _: String?) async throws {
         throw SpotifyServiceError.transport
     }
 }
@@ -90,7 +101,7 @@ protocol SpotifyWebAPIProviding: Sendable {
 }
 
 extension SpotifyWebAPIProviding {
-    func play(accessToken: String, contextURI: String, position: Int, deviceID: String?) async throws {
+    func play(accessToken _: String, contextURI _: String, position _: Int, deviceID _: String?) async throws {
         throw SpotifyServiceError.transport
     }
 }

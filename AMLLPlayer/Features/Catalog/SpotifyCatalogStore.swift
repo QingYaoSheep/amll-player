@@ -3,7 +3,7 @@ import Observation
 
 @MainActor
 @Observable
-final class SpotifyCatalogPageState {
+final class MusicCatalogPageState {
     var scrollAnchor: String?
     private(set) var rows: [SpotifyCatalogRow] = []
     private(set) var next: URL?
@@ -26,11 +26,19 @@ final class SpotifyCatalogPageState {
         query: SpotifyCatalogQuery, provider: any SpotifyCatalogProviding,
         more: Bool = false, force: Bool = false
     ) async {
-        if force { cancel() }
+        if force {
+            cancel()
+        }
         guard !isLoading else { return }
-        if !force, !more, let loadedAt, Date().timeIntervalSince(loadedAt) < 60 { return }
-        if more, next == nil { return }
-        if let error, !error.allowsRetry, !force { return }
+        if !force, !more, let loadedAt, Date().timeIntervalSince(loadedAt) < 60 {
+            return
+        }
+        if more, next == nil {
+            return
+        }
+        if let error, !error.allowsRetry, !force {
+            return
+        }
         let epoch = UUID()
         generation = epoch
         let cursor = more ? next : nil
@@ -40,26 +48,30 @@ final class SpotifyCatalogPageState {
             do {
                 let page = try await provider.page(query, next: cursor)
                 try Task.checkCancellation()
-                guard let self, self.generation == epoch else { return }
-                if !more { self.visited.removeAll() }
-                if let cursor { self.visited.insert(cursor) }
-                var seen = Set(more ? self.rows.map(\.id) : [])
-                let unique = page.items.filter { seen.insert($0.id).inserted }
-                self.rows = more ? self.rows + unique : unique
-                if let anchor = self.scrollAnchor, !self.rows.contains(where: { $0.id == anchor }) {
-                    self.scrollAnchor = nil
+                guard let self, generation == epoch else { return }
+                if !more {
+                    visited.removeAll()
                 }
-                self.total = page.total
-                self.next = page.next.flatMap { self.visited.contains($0) ? nil : $0 }
-                self.loadedAt = Date()
+                if let cursor {
+                    visited.insert(cursor)
+                }
+                var seen = Set(more ? rows.map(\.id) : [])
+                let unique = page.items.filter { seen.insert($0.id).inserted }
+                rows = more ? rows + unique : unique
+                if let anchor = scrollAnchor, !self.rows.contains(where: { $0.id == anchor }) {
+                    scrollAnchor = nil
+                }
+                total = page.total
+                next = page.next.flatMap { self.visited.contains($0) ? nil : $0 }
+                loadedAt = Date()
             } catch is CancellationError {
                 // Cancellation is not a user-visible network failure.
             } catch {
-                guard let self, self.generation == epoch else { return }
+                guard let self, generation == epoch else { return }
                 self.error = error as? SpotifyCatalogError ?? .invalidResponse
             }
-            guard let self, self.generation == epoch else { return }
-            self.isLoading = false
+            guard let self, generation == epoch else { return }
+            isLoading = false
         }
         task = work
         await withTaskCancellationHandler {
@@ -72,7 +84,7 @@ final class SpotifyCatalogPageState {
 
 @MainActor
 @Observable
-final class SpotifyCatalogDetailState {
+final class MusicCatalogDetailState {
     private(set) var value: SpotifyCatalogDetail?
     private(set) var error: SpotifyCatalogError?
     private(set) var isLoading = false
@@ -85,8 +97,10 @@ final class SpotifyCatalogDetailState {
         isLoading = false
     }
 
-    func load(kind: SpotifyCatalogKind, id: String, provider: any SpotifyCatalogProviding, force: Bool = false) async {
-        if force { cancel() }
+    func load(kind: SpotifyCatalogKind, id: String, scope: MusicResourceScope = .catalog, provider: any SpotifyCatalogProviding, force: Bool = false) async {
+        if force {
+            cancel()
+        }
         guard !isLoading, force || value == nil else { return }
         let epoch = UUID()
         generation = epoch
@@ -94,17 +108,17 @@ final class SpotifyCatalogDetailState {
         error = nil
         let work = Task { [weak self] in
             do {
-                let detail = try await provider.detail(kind: kind, id: id)
+                let detail = try await provider.detail(resource: .init(service: provider.service, kind: kind, scope: scope, rawValue: id))
                 try Task.checkCancellation()
-                guard let self, self.generation == epoch else { return }
-                self.value = detail
+                guard let self, generation == epoch else { return }
+                value = detail
             } catch is CancellationError {
             } catch {
-                guard let self, self.generation == epoch else { return }
+                guard let self, generation == epoch else { return }
                 self.error = error as? SpotifyCatalogError ?? .invalidResponse
             }
-            guard let self, self.generation == epoch else { return }
-            self.isLoading = false
+            guard let self, generation == epoch else { return }
+            isLoading = false
         }
         task = work
         await withTaskCancellationHandler {
@@ -115,21 +129,36 @@ final class SpotifyCatalogDetailState {
 
 @MainActor
 @Observable
-final class SpotifyCatalogStore {
+final class MusicCatalogStore {
     private(set) var identity = UUID()
     private(set) var active = false
     private(set) var profile: SpotifyProfile?
     private(set) var profileError: SpotifyCatalogError?
+    var searchLibrary = false
+    var suggestions: [String] = []
+    var searchHistory: [String] = []
     var searchText = ""
     var searchKind: SpotifyCatalogKind = .track
     @ObservationIgnored let provider: any SpotifyCatalogProviding
-    @ObservationIgnored private var pages: [SpotifyCatalogQuery: SpotifyCatalogPageState] = [:]
-    @ObservationIgnored private var details: [String: SpotifyCatalogDetailState] = [:]
+    @ObservationIgnored private var pages: [SpotifyCatalogQuery: MusicCatalogPageState] = [:]
+    @ObservationIgnored private var details: [String: MusicCatalogDetailState] = [:]
+    @ObservationIgnored private var detailResources: [String: MusicResourceID] = [:]
     @ObservationIgnored private var profileTask: Task<Void, Never>?
 
-    init(provider: any SpotifyCatalogProviding) { self.provider = provider }
+    init(provider: any SpotifyCatalogProviding) {
+        self.provider = provider
+        searchHistory = UserDefaults.standard.stringArray(forKey: "music.search.history." + provider.service.rawValue) ?? []
+    }
 
-    func activate() { active = true }
+    func rememberSearch(_ term: String) {
+        guard !term.isEmpty else { return }
+        searchHistory = Array(([term] + searchHistory.filter { $0 != term }).prefix(20))
+        UserDefaults.standard.set(searchHistory, forKey: "music.search.history." + provider.service.rawValue)
+    }
+
+    func activate() {
+        active = true
+    }
 
     func reset() {
         active = false
@@ -140,6 +169,7 @@ final class SpotifyCatalogStore {
         details.values.forEach { $0.cancel() }
         pages.removeAll()
         details.removeAll()
+        detailResources.removeAll()
         profile = nil
         profileError = nil
         searchText = ""
@@ -147,51 +177,79 @@ final class SpotifyCatalogStore {
         provider.invalidate()
     }
 
-    func page(_ query: SpotifyCatalogQuery) -> SpotifyCatalogPageState {
-        if let existing = pages[query] { return existing }
-        let state = SpotifyCatalogPageState()
+    func page(_ query: SpotifyCatalogQuery) -> MusicCatalogPageState {
+        if let existing = pages[query] {
+            return existing
+        }
+        let state = MusicCatalogPageState()
         pages[query] = state
         return state
     }
 
-    func detail(kind: SpotifyCatalogKind, id: String) -> SpotifyCatalogDetailState {
-        let key = "\(kind.rawValue):\(id)"
-        if let state = details[key] { return state }
-        let state = SpotifyCatalogDetailState()
+    func detail(kind: SpotifyCatalogKind, id: String, scope: MusicResourceScope = .catalog) -> MusicCatalogDetailState {
+        let key = "\(provider.service.rawValue):\(scope.rawValue):\(kind.rawValue):\(id)"
+        if let state = details[key] {
+            return state
+        }
+        let state = MusicCatalogDetailState()
         details[key] = state
+        detailResources[key] = .init(service: provider.service, kind: kind, scope: scope, rawValue: id)
         return state
     }
 
+    func refreshContent() async {
+        let epoch = identity
+        let requestedPages = pages
+        let requestedDetails = details
+        for (query, state) in requestedPages {
+            guard epoch == identity else { return }
+            await state.load(query: query, provider: provider, force: true)
+        }
+        for (key, state) in requestedDetails {
+            guard epoch == identity, let resource = detailResources[key] else { return }
+            await state.load(kind: resource.kind, id: resource.rawValue, scope: resource.scope, provider: provider, force: true)
+        }
+    }
+
     func discardSearch(_ query: SpotifyCatalogQuery) {
-        guard case .search = query else { return }
+        switch query { case .search, .librarySearch: break; default: return }
         pages.removeValue(forKey: query)?.cancel()
     }
 
     func loadProfile(force: Bool = false) async {
         guard active, force || profile == nil else { return }
-        if let profileTask, !force { await profileTask.value; return }
+        if let profileTask, !force {
+            await profileTask.value; return
+        }
         profileTask?.cancel()
         let epoch = identity
         let work = Task { [weak self] in
             guard let self else { return }
             do {
-                let value = try await self.provider.profile()
+                let value = try await provider.profile()
                 try Task.checkCancellation()
-                guard self.identity == epoch else { return }
-                if let old = self.profile, old.accountID != value.accountID {
-                    self.reset()
-                    self.activate()
+                guard identity == epoch else { return }
+                if let old = profile, old.accountID != value.accountID {
+                    reset()
+                    activate()
                 }
-                self.profile = value
-                self.profileError = nil
+                profile = value
+                profileError = nil
             } catch is CancellationError {
             } catch {
-                guard self.identity == epoch else { return }
-                self.profileError = error as? SpotifyCatalogError ?? .invalidResponse
+                guard identity == epoch else { return }
+                profileError = error as? SpotifyCatalogError ?? .invalidResponse
             }
         }
         profileTask = work
         await work.value
-        if identity == epoch { profileTask = nil }
+        if identity == epoch {
+            profileTask = nil
+        }
     }
 }
+
+// Existing Spotify call sites retain their source-compatible names.
+typealias SpotifyCatalogStore = MusicCatalogStore
+typealias SpotifyCatalogPageState = MusicCatalogPageState
+typealias SpotifyCatalogDetailState = MusicCatalogDetailState

@@ -1,7 +1,7 @@
 import Foundation
 
-enum SpotifyCatalogKind: String, CaseIterable, Hashable, Sendable {
-    case track, album, artist, playlist
+enum MusicCatalogKind: String, CaseIterable, Hashable, Codable, Sendable {
+    case track, album, artist, playlist, station, musicVideo
 
     var title: String {
         switch self {
@@ -9,85 +9,108 @@ enum SpotifyCatalogKind: String, CaseIterable, Hashable, Sendable {
         case .album: String(localized: "catalog.albums")
         case .artist: String(localized: "catalog.artists")
         case .playlist: String(localized: "catalog.playlists")
+        case .station: "电台"
+        case .musicVideo: "音乐视频"
         }
     }
 }
 
-enum SpotifyContentAvailability: Hashable, Sendable {
+enum MusicContentAvailability: Hashable, Sendable {
     case available, restricted, unsupported, metadataOnly
 }
 
-struct SpotifyArtist: Hashable, Sendable {
+struct MusicArtist: Hashable, Sendable {
     let id: String
     let name: String
 }
 
-struct SpotifyAlbum: Hashable, Sendable {
+struct MusicAlbum: Hashable, Sendable {
     let id: String
     let name: String
 }
 
-struct SpotifyTrack: Hashable, Sendable {
+struct MusicTrack: Hashable, Sendable {
     let durationMS: Int
-    let artists: [SpotifyArtist]
-    let album: SpotifyAlbum?
+    let artists: [MusicArtist]
+    let album: MusicAlbum?
     let isrc: String?
 }
 
-struct SpotifyPlaylist: Hashable, Sendable {
+struct MusicPlaylist: Hashable, Sendable {
     let ownerName: String?
     let description: String?
     let total: Int?
 }
 
 /// Shared identity/presentation plus type-specific metadata. No playable audio URLs.
-struct SpotifyCatalogItem: Identifiable, Hashable, Sendable {
+struct MusicCatalogItem: Identifiable, Hashable, Sendable {
     let spotifyID: String
-    let kind: SpotifyCatalogKind?
+    let kind: MusicCatalogKind?
     let name: String
     let subtitle: String
     let artworkURL: URL?
-    let availability: SpotifyContentAvailability
-    var track: SpotifyTrack? = nil
-    var artists: [SpotifyArtist] = []
-    var playlist: SpotifyPlaylist? = nil
-    var releaseDate: String? = nil
+    let availability: MusicContentAvailability
+    var track: MusicTrack?
+    var artists: [MusicArtist] = []
+    var playlist: MusicPlaylist?
+    var releaseDate: String?
 
-    var id: String { "\(kind?.rawValue ?? "unsupported"):\(spotifyID)" }
+    var service: MusicServiceID = .spotify
+    var scope: MusicResourceScope = .catalog
+    var publicURL: URL?
+    var catalogID: String?
+    var inFavorites: Bool?
+    var editablePlaylist = false
+    var libraryWritable = false
+    var isExplicit = false
+    var resource: MusicResourceID? {
+        kind.map { MusicResourceID(service: service, kind: $0, scope: scope, rawValue: spotifyID) }
+    }
+
+    var id: String {
+        service == .spotify ? "\(kind?.rawValue ?? "unsupported"):\(spotifyID)"
+            : resource?.key ?? "appleMusic:unsupported:\(spotifyID)"
+    }
+
     var uri: String? {
         guard let kind, !spotifyID.isEmpty, availability != .unsupported else { return nil }
-        return "spotify:\(kind.rawValue):\(spotifyID)"
+        return service == .spotify ? "spotify:\(kind.rawValue):\(spotifyID)" : "applemusic:\(scope.rawValue):\(kind.rawValue):\(spotifyID)"
     }
+
     var externalURL: URL? {
+        if service == .appleMusic {
+            return publicURL
+        }
         guard let kind, !spotifyID.isEmpty, availability != .unsupported else { return nil }
         return URL(string: "https://open.spotify.com/\(kind.rawValue)/\(spotifyID)")
     }
+
     var canPlay: Bool {
         guard let kind else { return false }
-        return availability == .available && [SpotifyCatalogKind.track, .album, .playlist].contains(kind)
+        return availability == .available && [MusicCatalogKind.track, .album, .playlist, .station].contains(kind)
     }
 }
 
 /// Row identity preserves repeated playlist tracks and their *original* context position.
-struct SpotifyCatalogRow: Identifiable, Hashable, Sendable {
+struct MusicCatalogRow: Identifiable, Hashable, Sendable {
     let id: String
-    let item: SpotifyCatalogItem
+    let item: MusicCatalogItem
     let position: Int?
 }
 
-struct SpotifyPage<Item: Sendable>: Sendable {
+struct MusicPage<Item: Sendable>: Sendable {
     let items: [Item]
     let next: URL?
     let total: Int?
 }
 
-struct SpotifyProfile: Equatable, Sendable {
+struct MusicProfile: Equatable, Sendable {
     let accountID: String
     let displayName: String
 }
 
-enum SpotifyLibrarySection: String, CaseIterable, Hashable, Sendable {
-    case playlists, savedTracks, savedAlbums, followedArtists, recent, topTracks
+enum MusicLibrarySection: String, CaseIterable, Hashable, Sendable {
+    case playlists, savedTracks, savedAlbums, followedArtists, recent, topTracks, recentlyAdded, recommendations, charts, downloaded
 
     static let library: [Self] = [.savedTracks, .savedAlbums, .followedArtists, .playlists]
 
@@ -99,6 +122,10 @@ enum SpotifyLibrarySection: String, CaseIterable, Hashable, Sendable {
         case .followedArtists: String(localized: "catalog.followedArtists")
         case .recent: String(localized: "catalog.recent")
         case .topTracks: String(localized: "catalog.topTracks")
+        case .recentlyAdded: "最近添加"
+        case .recommendations: "为你推荐"
+        case .charts: "排行榜"
+        case .downloaded: "已下载歌曲"
         }
     }
 
@@ -110,16 +137,23 @@ enum SpotifyLibrarySection: String, CaseIterable, Hashable, Sendable {
         case .followedArtists: "person.2"
         case .recent: "clock"
         case .topTracks: "chart.line.uptrend.xyaxis"
+        case .recentlyAdded: "plus.circle"
+        case .recommendations: "sparkles"
+        case .charts: "chart.bar"
+        case .downloaded: "arrow.down.circle"
         }
     }
 }
 
-enum SpotifyCatalogQuery: Hashable, Sendable {
-    case collection(SpotifyLibrarySection)
-    case search(String, SpotifyCatalogKind)
+enum MusicCatalogQuery: Hashable, Sendable {
+    case collection(MusicLibrarySection)
+    case search(String, MusicCatalogKind)
     case albumTracks(String)
     case artistAlbums(String)
     case playlistItems(String)
+    case librarySearch(String, MusicCatalogKind)
+    case resourceChildren(MusicResourceID)
+    case libraryItems(MusicLibrarySection, ascending: Bool)
 
     var endpoint: String {
         switch self {
@@ -129,6 +163,7 @@ enum SpotifyCatalogQuery: Hashable, Sendable {
         case .collection(.followedArtists): "me/following?type=artist&limit=20"
         case .collection(.recent): "me/player/recently-played?limit=20"
         case .collection(.topTracks): "me/top/tracks?time_range=short_term&limit=20"
+        case .collection(.recentlyAdded), .collection(.recommendations), .collection(.charts), .collection(.downloaded), .librarySearch, .resourceChildren, .libraryItems: ""
         case let .search(term, kind):
             Self.searchEndpoint(term, kind: kind)
         case let .albumTracks(id): "albums/\(id)/tracks?limit=20"
@@ -140,11 +175,12 @@ enum SpotifyCatalogQuery: Hashable, Sendable {
     var preservesPositions: Bool {
         switch self {
         case .albumTracks, .playlistItems: true
+        case let .resourceChildren(resource): resource.kind == .album || resource.kind == .playlist
         default: false
         }
     }
 
-    private static func searchEndpoint(_ term: String, kind: SpotifyCatalogKind) -> String {
+    private static func searchEndpoint(_ term: String, kind: MusicCatalogKind) -> String {
         var components = URLComponents()
         components.path = "search"
         components.queryItems = [
@@ -156,13 +192,13 @@ enum SpotifyCatalogQuery: Hashable, Sendable {
     }
 }
 
-struct SpotifyCatalogDetail: Sendable {
-    let item: SpotifyCatalogItem
-    let children: SpotifyCatalogQuery?
-    let availability: SpotifyContentAvailability
+struct MusicCatalogDetail: Sendable {
+    let item: MusicCatalogItem
+    let children: MusicCatalogQuery?
+    let availability: MusicContentAvailability
 }
 
-enum SpotifyCatalogError: Error, Equatable, LocalizedError, Sendable {
+enum MusicCatalogError: Error, Equatable, LocalizedError, Sendable {
     case signInRequired, forbidden, unavailable, quotaExceeded, invalidResponse, offline
     case rateLimited(until: Date)
 
@@ -189,9 +225,59 @@ enum SpotifyCatalogError: Error, Equatable, LocalizedError, Sendable {
 }
 
 @MainActor
-protocol SpotifyCatalogProviding: AnyObject {
-    func profile() async throws -> SpotifyProfile
-    func page(_ query: SpotifyCatalogQuery, next: URL?) async throws -> SpotifyPage<SpotifyCatalogRow>
-    func detail(kind: SpotifyCatalogKind, id: String) async throws -> SpotifyCatalogDetail
+protocol MusicCatalogProviding: AnyObject {
+    func profile() async throws -> MusicProfile
+    func page(_ query: MusicCatalogQuery, next: URL?) async throws -> MusicPage<MusicCatalogRow>
+    func detail(kind: MusicCatalogKind, id: String) async throws -> MusicCatalogDetail
     func invalidate()
+    var service: MusicServiceID { get }
+    var homeSections: [MusicLibrarySection] { get }
+    var librarySections: [MusicLibrarySection] { get }
+    var searchKinds: [MusicCatalogKind] { get }
+    func detail(resource: MusicResourceID) async throws -> MusicCatalogDetail
+    func suggestions(_ term: String) async throws -> [String]
 }
+
+extension MusicCatalogProviding {
+    var service: MusicServiceID {
+        .spotify
+    }
+
+    var homeSections: [MusicLibrarySection] {
+        [.playlists, .savedTracks, .savedAlbums, .followedArtists, .recent, .topTracks]
+    }
+
+    var librarySections: [MusicLibrarySection] {
+        MusicLibrarySection.library
+    }
+
+    var searchKinds: [MusicCatalogKind] {
+        [.track, .album, .artist, .playlist]
+    }
+
+    func detail(resource: MusicResourceID) async throws -> MusicCatalogDetail {
+        guard resource.service == service else { throw MusicCatalogError.unavailable }
+        return try await detail(kind: resource.kind, id: resource.rawValue)
+    }
+
+    func suggestions(_: String) async throws -> [String] {
+        []
+    }
+}
+
+// Source-compatible adapters for the existing Spotify client and fixtures.
+typealias SpotifyCatalogKind = MusicCatalogKind
+typealias SpotifyContentAvailability = MusicContentAvailability
+typealias SpotifyArtist = MusicArtist
+typealias SpotifyAlbum = MusicAlbum
+typealias SpotifyTrack = MusicTrack
+typealias SpotifyPlaylist = MusicPlaylist
+typealias SpotifyCatalogItem = MusicCatalogItem
+typealias SpotifyCatalogRow = MusicCatalogRow
+typealias SpotifyPage = MusicPage
+typealias SpotifyProfile = MusicProfile
+typealias SpotifyLibrarySection = MusicLibrarySection
+typealias SpotifyCatalogQuery = MusicCatalogQuery
+typealias SpotifyCatalogDetail = MusicCatalogDetail
+typealias SpotifyCatalogError = MusicCatalogError
+typealias SpotifyCatalogProviding = MusicCatalogProviding

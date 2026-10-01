@@ -5,11 +5,12 @@ struct CatalogDetailView: View {
     let store: SpotifyCatalogStore
     let kind: SpotifyCatalogKind
     let spotifyID: String
+    var scope: MusicResourceScope = .catalog
 
     var body: some View {
         CatalogDetailContent(
-            model: model, store: store, kind: kind, spotifyID: spotifyID,
-            state: store.detail(kind: kind, id: spotifyID)
+            model: model, store: store, kind: kind, spotifyID: spotifyID, scope: scope,
+            state: store.detail(kind: kind, id: spotifyID, scope: scope)
         )
     }
 }
@@ -19,6 +20,7 @@ private struct CatalogDetailContent: View {
     let store: SpotifyCatalogStore
     let kind: SpotifyCatalogKind
     let spotifyID: String
+    let scope: MusicResourceScope
     @Bindable var state: SpotifyCatalogDetailState
 
     var body: some View {
@@ -29,7 +31,9 @@ private struct CatalogDetailContent: View {
                         CatalogArtwork(url: detail.item.artworkURL, size: 180)
                         Text(detail.item.name).font(.title2.bold()).textSelection(.enabled)
                         Text(detail.item.subtitle).foregroundStyle(.secondary)
-                        if let date = detail.item.releaseDate { Text(date).font(.caption) }
+                        if let date = detail.item.releaseDate {
+                            Text(date).font(.caption)
+                        }
                         if let track = detail.item.track {
                             Text(duration(track.durationMS)).font(.caption.monospacedDigit())
                         }
@@ -41,6 +45,20 @@ private struct CatalogDetailContent: View {
                             CatalogPlayButton(model: model, item: detail.item, compact: false)
                         }
                         CatalogExternalLink(item: detail.item)
+                        if detail.item.service == .appleMusic {
+                            AppleMusicItemActions(model: model, item: detail.item)
+                            if [.album, .playlist].contains(detail.item.kind), detail.item.canPlay {
+                                Button("随机播放") { Task {
+                                    do {
+                                        try await model.playCatalog(detail.item)
+                                        await model.setShuffle(true)
+                                    } catch { model.presentedError = .musicFailure(error.localizedDescription) }
+                                } }
+                            }
+                            if detail.item.editablePlaylist {
+                                AppleMusicEditPlaylistButton(model: model, playlist: detail.item)
+                            }
+                        }
                         if detail.availability == .metadataOnly {
                             Text("catalog.metadataOnly").font(.callout).foregroundStyle(.secondary)
                         } else if detail.availability == .restricted {
@@ -51,13 +69,13 @@ private struct CatalogDetailContent: View {
                 }
                 if let album = detail.item.track?.album {
                     Section("catalog.albums") {
-                        NavigationLink(album.name, value: CatalogRoute.detail(.album, album.id))
+                        NavigationLink(album.name, value: related(.album, album.id))
                     }
                 }
                 if !detail.item.artists.isEmpty {
                     Section("catalog.artists") {
                         ForEach(detail.item.artists, id: \.id) { artist in
-                            NavigationLink(artist.name, value: CatalogRoute.detail(.artist, artist.id))
+                            NavigationLink(artist.name, value: related(.artist, artist.id))
                         }
                     }
                 }
@@ -66,11 +84,15 @@ private struct CatalogDetailContent: View {
                                           state: store.page(query), parent: detail.item)
                 }
             }
-            if state.isLoading { ProgressView() }
+            if state.isLoading {
+                ProgressView()
+            }
             if let error = state.error {
                 CatalogErrorView(error: error) { await load(force: true) }
                 // Even inaccessible details retain a safe, public Spotify escape route.
-                Link("catalog.openSpotify", destination: URL(string: "https://open.spotify.com/\(kind.rawValue)/\(spotifyID)")!)
+                if store.provider.service == .spotify {
+                    Link("catalog.openSpotify", destination: URL(string: "https://open.spotify.com/\(kind.rawValue)/\(spotifyID)")!)
+                }
             }
         }
         .navigationTitle(state.value?.item.name ?? kind.title)
@@ -85,11 +107,16 @@ private struct CatalogDetailContent: View {
     }
 
     private func load(force: Bool) async {
-        await state.load(kind: kind, id: spotifyID, provider: store.provider, force: force)
+        await state.load(kind: kind, id: spotifyID, scope: scope, provider: store.provider, force: force)
+    }
+
+    private func related(_ kind: MusicCatalogKind, _ id: String) -> CatalogRoute {
+        store.provider.service == .appleMusic
+            ? .resource(.init(service: .appleMusic, kind: kind, scope: scope, rawValue: id)) : .detail(kind, id)
     }
 
     private func duration(_ milliseconds: Int) -> String {
-        let seconds = milliseconds / 1_000
+        let seconds = milliseconds / 1000
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }

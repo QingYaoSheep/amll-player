@@ -10,7 +10,10 @@ struct PlaybackItem: Equatable, Sendable {
     let duration: TimeInterval
     let isEpisode: Bool
     let isAdvertisement: Bool
-    var isrc: String? = nil
+    var isrc: String?
+    var service: MusicServiceID = .spotify
+    var resourceScope: MusicResourceScope = .catalog
+    var catalogID: String?
 
     var artistLine: String {
         artists.joined(separator: ", ")
@@ -46,6 +49,7 @@ struct PlaybackRestrictions: Equatable, Sendable {
 enum PlaybackSnapshotSource: String, Equatable, Sendable {
     case appRemote
     case webAPI
+    case musicKit
 }
 
 struct PlaybackSnapshot: Equatable, Sendable {
@@ -57,6 +61,10 @@ struct PlaybackSnapshot: Equatable, Sendable {
     let restrictions: PlaybackRestrictions
     let source: PlaybackSnapshotSource
     let sampledAtUptime: TimeInterval
+    var playbackRate: Double = 1
+    var positionRevision: UInt64 = 0
+    var shuffleEnabled = false
+    var repeatMode: MusicRepeatMode = .off
 
     static func empty(
         source: PlaybackSnapshotSource,

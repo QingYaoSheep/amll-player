@@ -13,14 +13,13 @@ enum SpotifyCatalogDecoder {
         _ data: Data, query: SpotifyCatalogQuery, requestedURL: URL
     ) throws -> SpotifyPage<SpotifyCatalogRow> {
         let root = try object(data)
-        let container: [String: Any]
-        switch query {
+        let container: [String: Any] = switch query {
         case let .search(_, kind):
-            container = (root[kind.rawValue + "s"] as? [String: Any]) ?? [:]
+            (root[kind.rawValue + "s"] as? [String: Any]) ?? [:]
         case .collection(.followedArtists):
-            container = (root["artists"] as? [String: Any]) ?? [:]
+            (root["artists"] as? [String: Any]) ?? [:]
         default:
-            container = root
+            root
         }
         guard let items = container["items"] as? [Any] else {
             throw SpotifyCatalogError.invalidResponse
@@ -70,7 +69,7 @@ enum SpotifyCatalogDecoder {
         let children: SpotifyCatalogQuery?
         var availability = item.availability
         switch kind {
-        case .track: children = nil
+        case .track, .station, .musicVideo: children = nil
         case .album: children = .albumTracks(id)
         case .artist: children = .artistAlbums(id)
         case .playlist:
@@ -88,7 +87,7 @@ enum SpotifyCatalogDecoder {
 
     static func validID(_ id: String) -> Bool {
         !id.isEmpty && id.utf8.allSatisfy {
-            (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0)
+            (48 ... 57).contains($0) || (65 ... 90).contains($0) || (97 ... 122).contains($0)
         }
     }
 
@@ -104,7 +103,7 @@ enum SpotifyCatalogDecoder {
     ) -> SpotifyCatalogItem {
         let rawID = value["id"] as? String
         let kind = (value["type"] as? String).flatMap(SpotifyCatalogKind.init(rawValue:))
-        let artists = ((value["artists"] as? [[String: Any]]) ?? []).compactMap { (artist) -> SpotifyArtist? in
+        let artists = ((value["artists"] as? [[String: Any]]) ?? []).compactMap { artist -> SpotifyArtist? in
             guard let id = artist["id"] as? String, validID(id) else { return nil }
             return SpotifyArtist(id: id, name: (artist["name"] as? String) ?? String(localized: "catalog.unknown"))
         }
@@ -125,11 +124,10 @@ enum SpotifyCatalogDecoder {
             artists: artists, releaseDate: value["release_date"] as? String
         )
         if kind == .track {
-            let album: SpotifyAlbum?
-            if let albumID = albumObject?["id"] as? String, validID(albumID) {
-                album = SpotifyAlbum(id: albumID, name: (albumObject?["name"] as? String) ?? "")
+            let album: SpotifyAlbum? = if let albumID = albumObject?["id"] as? String, validID(albumID) {
+                SpotifyAlbum(id: albumID, name: (albumObject?["name"] as? String) ?? "")
             } else {
-                album = nil
+                nil
             }
             result.track = SpotifyTrack(
                 durationMS: max(0, (value["duration_ms"] as? Int) ?? 0), artists: artists, album: album,

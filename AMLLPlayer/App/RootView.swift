@@ -26,7 +26,7 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom, spacing: 8) {
             if !usesTabAccessory, let snapshot = model.playbackSnapshot,
                snapshot.item != nil,
-               model.sessionState.isAuthenticated
+               model.currentServiceConnected
             {
                 MiniPlayerBar(model: model, snapshot: snapshot, openPlayer: { showingPlayer = true })
                     .matchedTransitionSource(id: "nowPlaying", in: playerNamespace)

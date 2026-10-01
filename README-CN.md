@@ -1,6 +1,6 @@
 # AMLL Player SwiftUI 原生版
 
-AMLL Player 正在重构为仅面向 iPhone 与 iPad 的 SwiftUI 原生应用。音频始终由 Spotify 播放；本应用负责 Spotify 音乐浏览、远程控制与原生同步歌词。
+AMLL Player 正在重构为仅面向 iPhone 与 iPad 的 SwiftUI 原生应用。支持 Spotify 与 Apple Music：Spotify 控制已连接设备，Apple Music 跟随系统音乐 App；本应用负责音乐浏览、播放控制与原生同步歌词。Apple Music 实际重签授权与验证状态见 [接入台账](Docs/Apple-Music-Integration.md)。
 
 当前仓库已经完成计划 1 的工程基础和计划 2 的 Spotify 纵向切片：PKCE 授权、Keychain 会话、App Remote/Web API 状态同步、实时进度、播放控制与 Connect 设备切换。
 
@@ -47,7 +47,7 @@ AMLLPlayer-Xcode27-unsigned.ipa。该文件用于后续重签名，没有 Apple 
 - 最低 iOS/iPadOS 18。
 - 不包含 WebView、React、Tauri、Rust 或 JavaScript 插件运行时。
 - 不播放本地音频，也不申请后台音频能力。
-- 音乐库保持只读，不增加收藏、关注或歌单写权限；不可访问的内容提供 Spotify 外部入口。
+- Spotify 资料库保持只读；Apple Music 按官方权限提供收藏、加入资料库、创建/追加与应用创建歌单编辑。不可访问内容提供对应官方 App 入口。
 - 搜索每页 10 条；近期播放去重，歌单保留重复曲目和原始播放位置。返回详情前的列表位置和搜索词保留。
 - 目录缓存仅在内存中保留，60 秒内复用，强制刷新可更新；退出、换 Client ID 或检测到账户变化会失效。
 

@@ -5,6 +5,27 @@ import SwiftUI
 @MainActor
 @Observable
 final class AppModel {
+    private(set) var selectedMusicService: MusicServiceID
+    private(set) var appleMusicState = MusicConnectionState()
+    @ObservationIgnored let appleSession: any MusicSessionProviding
+    @ObservationIgnored private let applePlayback: any MusicPlaybackProviding
+    @ObservationIgnored let appleCatalog: any MusicCatalogProviding
+    @ObservationIgnored let appleLibrary: any MusicLibraryMutating
+    @ObservationIgnored private let musicPreferences: MusicSourcePreferences
+    @ObservationIgnored private var spotifyCatalog: SpotifyCatalogStore
+    @ObservationIgnored private var appleStore: SpotifyCatalogStore
+    @ObservationIgnored private var appleSessionTask: Task<Void, Never>?
+    @ObservationIgnored private var applePlaybackTask: Task<Void, Never>?
+    @ObservationIgnored private var sourceGeneration = UUID()
+
+    var currentServiceConnected: Bool {
+        selectedMusicService == .spotify ? sessionState.isAuthenticated : appleMusicState.connected
+    }
+
+    private var currentPlayback: any MusicPlaybackProviding {
+        selectedMusicService == .spotify ? environment.spotifyPlayback : applePlayback
+    }
+
     private(set) var sessionState: SpotifySessionState
     private(set) var playbackSnapshot: PlaybackSnapshot?
     /// Monotonic lyric-time anchor revision. Renderer input uses this instead
@@ -50,25 +71,52 @@ final class AppModel {
         catalogProvider: (any SpotifyCatalogProviding)? = nil,
         lyrics: LyricsCoordinator? = nil,
         renderPreferences: LyricsRenderPreferences? = nil,
+        appleSession: (any MusicSessionProviding)? = nil,
+        applePlayback: (any MusicPlaybackProviding)? = nil,
+        appleCatalog: (any MusicCatalogProviding)? = nil,
+        appleLibrary: (any MusicLibraryMutating)? = nil,
+        musicPreferences: MusicSourcePreferences = MusicSourcePreferences(),
         environmentFactory: @escaping @MainActor (AppConfiguration) -> AppEnvironment = {
             AppEnvironment.make(configuration: $0)
         }
     ) {
+        let nativeSession = AppleMusicSession()
+        let nativePlayback = AppleMusicPlayback(session: nativeSession)
+        let nativeCatalog = AppleMusicCatalog(session: nativeSession)
+        let resolvedSession = appleSession ?? nativeSession
+        let resolvedCatalog = appleCatalog ?? nativeCatalog
+        let selectedService = musicPreferences.selected
+        let spotifyStore = SpotifyCatalogStore(provider: catalogProvider ?? SpotifyCatalogClient(session: environment.spotifySession))
+        let appleStore = SpotifyCatalogStore(provider: resolvedCatalog)
+        self.appleSession = appleSession ?? nativeSession
+        self.applePlayback = applePlayback ?? nativePlayback
+        self.appleCatalog = appleCatalog ?? nativeCatalog
+        self.appleLibrary = appleLibrary ?? AppleMusicLibrary(session: nativeSession, playback: nativePlayback, catalog: nativeCatalog)
+        self.musicPreferences = musicPreferences
+        selectedMusicService = selectedService
+        appleMusicState = resolvedSession.currentState
         self.environment = environment
         self.lyrics = lyrics ?? .live()
         self.renderPreferences = renderPreferences ?? LyricsRenderPreferences()
         self.clientIDStore = clientIDStore
         self.environmentFactory = environmentFactory
-        self.sessionState = environment.spotifySession.currentState
-        self.catalog = SpotifyCatalogStore(
-            provider: catalogProvider ?? SpotifyCatalogClient(session: environment.spotifySession)
-        )
-        if self.sessionState.isAuthenticated { self.catalog.activate() }
+        sessionState = environment.spotifySession.currentState
+        spotifyCatalog = spotifyStore
+        self.appleStore = appleStore
+        catalog = selectedService == .spotify ? spotifyStore : appleStore
+        if sessionState.isAuthenticated {
+            spotifyCatalog.activate()
+        }
+        if appleMusicState.connected {
+            appleStore.activate()
+        }
     }
 
     deinit {
         sessionTask?.cancel()
         playbackTask?.cancel()
+        appleSessionTask?.cancel()
+        applePlaybackTask?.cancel()
         lyricsMetadataTask?.cancel()
     }
 
@@ -79,6 +127,7 @@ final class AppModel {
         prepared = true
         ArtworkMediaDownload.recoverAbandonedTransfers()
         environment.spotifyPlayback.start()
+        prepareAppleMusic()
 
         sessionTask = Task { [weak self] in
             guard let self else {
@@ -90,10 +139,14 @@ final class AppModel {
                 }
                 sessionState = state
                 switch state {
-                case .authenticated: catalog.activate()
+                case .authenticated: spotifyCatalog.activate()
                 case .signedOut, .authorizing, .failed:
-                    if catalog.active { catalog.reset() }
-                    lyrics.update(track: nil)
+                    if spotifyCatalog.active {
+                        spotifyCatalog.reset()
+                    }
+                    if selectedMusicService == .spotify {
+                        lyrics.update(track: nil)
+                    }
                 case .refreshing: break
                 }
                 if case let .failed(error) = state, error != .notConfigured {
@@ -110,12 +163,8 @@ final class AppModel {
                 guard !Task.isCancelled else {
                     return
                 }
-                if playbackSnapshot?.item?.uri != snapshot.item?.uri {
-                    lyricsSeekPosition = nil
-                }
-                playbackSnapshot = snapshot
-                clock = PlayerClock(anchor: snapshot)
-                if sessionState.isAuthenticated { updateLyricsMetadata(snapshot.item) }
+                guard selectedMusicService == .spotify else { continue }
+                receive(snapshot)
             }
         }
     }
@@ -125,19 +174,20 @@ final class AppModel {
         case .active:
             isForeground = true
             lyrics.setForeground(true)
-            environment.spotifyPlayback.enterForeground()
+            currentPlayback.enterForeground()
+            Task { await appleSession.refresh() }
         case .background:
             isForeground = false
             lyricsMetadataTask?.cancel()
             lyrics.setForeground(false)
-            environment.spotifyPlayback.enterBackground()
+            currentPlayback.enterBackground()
         case .inactive:
             break
         @unknown default:
             isForeground = false
             lyrics.setForeground(false)
             lyricsMetadataTask?.cancel()
-            environment.spotifyPlayback.enterBackground()
+            currentPlayback.enterBackground()
         }
     }
 
@@ -173,16 +223,13 @@ final class AppModel {
     }
 
     func logout() {
-        lyricsMetadataTask?.cancel()
-        lyrics.update(track: nil)
-        catalog.reset()
+        spotifyCatalog.reset()
         selectedDeviceID = nil
         environment.spotifySession.logout()
         sessionState = .signedOut
-        playbackSnapshot = nil
-        lyricsSeekRevision = 0
-        devicesState = .idle
-        clock = PlayerClock()
+        if selectedMusicService == .spotify {
+            clearPlayback()
+        }
     }
 
     func configureSpotify(clientID value: String) throws {
@@ -201,48 +248,52 @@ final class AppModel {
         sessionTask?.cancel()
         playbackTask?.cancel()
         lyricsMetadataTask?.cancel()
-        lyrics.update(track: nil)
-        catalog.reset()
+        if selectedMusicService == .spotify {
+            clearPlayback()
+        }
+        spotifyCatalog.reset()
         selectedDeviceID = nil
         environment.spotifyPlayback.stop()
         environment.spotifySession.logout()
         environment = environmentFactory(configuration)
-        catalog = SpotifyCatalogStore(provider: SpotifyCatalogClient(session: environment.spotifySession))
+        spotifyCatalog = SpotifyCatalogStore(provider: SpotifyCatalogClient(session: environment.spotifySession))
+        if selectedMusicService == .spotify {
+            catalog = spotifyCatalog
+        }
         sessionState = environment.spotifySession.currentState
-        playbackSnapshot = nil
-        lyricsSeekRevision = 0
-        devicesState = .idle
-        clock = PlayerClock()
+        if selectedMusicService == .spotify {
+            clearPlayback()
+        }
         presentedError = nil
         prepared = false
         prepare()
-        if isForeground {
+        if isForeground, selectedMusicService == .spotify {
             environment.spotifyPlayback.enterForeground()
         }
     }
 
     func refreshPlayback() async {
         await perform {
-            try await environment.spotifyPlayback.refresh()
+            try await currentPlayback.refresh()
         }
     }
 
     func togglePlayPause() async {
         await perform {
             if playbackSnapshot?.isPlaying == true {
-                try await environment.spotifyPlayback.pause()
+                try await currentPlayback.pause()
             } else {
-                try await environment.spotifyPlayback.play()
+                try await currentPlayback.play()
             }
         }
     }
 
     func skipNext() async {
-        await perform { try await environment.spotifyPlayback.skipNext() }
+        await perform { try await currentPlayback.skipNext() }
     }
 
     func skipPrevious() async {
-        await perform { try await environment.spotifyPlayback.skipPrevious() }
+        await perform { try await currentPlayback.skipPrevious() }
     }
 
     func seek(to position: TimeInterval) async {
@@ -251,7 +302,7 @@ final class AppModel {
         lyricsSeekRevision &+= 1
         await perform {
             do {
-                try await environment.spotifyPlayback.seek(to: position)
+                try await currentPlayback.seek(to: position)
             } catch {
                 lyricsSeekPosition = nil
                 throw error
@@ -261,7 +312,7 @@ final class AppModel {
 
     func setVolume(percent: Int, deviceID: String?) async {
         await perform {
-            try await environment.spotifyPlayback.setVolume(
+            try await currentPlayback.setVolume(
                 percent: percent,
                 on: deviceID
             )
@@ -271,7 +322,7 @@ final class AppModel {
     func loadDevices() async {
         devicesState = .loading
         do {
-            devicesState = .loaded(try await environment.spotifyPlayback.devices())
+            devicesState = try await .loaded(currentPlayback.devices())
         } catch {
             let appError = mapped(error)
             devicesState = .failed(.unavailable(appError.localizedDescription))
@@ -281,7 +332,7 @@ final class AppModel {
 
     func transferPlayback(to deviceID: String) async {
         await perform {
-            try await environment.spotifyPlayback.transferPlayback(to: deviceID)
+            try await currentPlayback.transferPlayback(to: deviceID)
             selectedDeviceID = deviceID
             await loadDevices()
         }
@@ -293,6 +344,15 @@ final class AppModel {
         isPerformingAction = true
         defer { isPerformingAction = false }
         let epoch = catalog.identity
+        if selectedMusicService == .appleMusic {
+            guard item.service == .appleMusic else { throw MusicCatalogError.unavailable }
+            let context = contextURI.flatMap(MusicResourceID.init(appleURI:))
+            try await applePlayback.play(item: item, context: context, position: position)
+            guard catalog.identity == epoch else { throw CancellationError() }
+            try? await applePlayback.refresh()
+            return
+        }
+        guard item.service == .spotify else { throw MusicCatalogError.unavailable }
         let playback = environment.spotifyPlayback
         let deviceID = selectedDeviceID ?? playbackSnapshot?.device?.id
         if let contextURI, let position {
@@ -309,20 +369,153 @@ final class AppModel {
         clock.position(at: uptime)
     }
 
+    func selectMusicService(_ service: MusicServiceID) {
+        guard service != selectedMusicService else { return }
+        sourceGeneration = UUID()
+        currentPlayback.enterBackground()
+        if selectedMusicService == .appleMusic {
+            applePlayback.stop()
+        }
+        catalog.reset()
+        clearPlayback()
+        selectedMusicService = service
+        musicPreferences.selected = service
+        catalog = service == .spotify ? spotifyCatalog : appleStore
+        if currentServiceConnected {
+            catalog.activate()
+        }
+        if service == .appleMusic {
+            applePlayback.start()
+        }
+        if isForeground {
+            currentPlayback.enterForeground()
+        }
+        Task { [weak self] in
+            guard let self, currentServiceConnected else { return }
+            try? await currentPlayback.refresh()
+        }
+    }
+
+    func connectAppleMusic() async {
+        await appleSession.connect()
+    }
+
+    func refreshAppleMusic() async {
+        await appleSession.refresh()
+    }
+
+    func disconnectAppleMusic() {
+        applePlayback.stop()
+        appleSession.disconnect()
+        appleMusicState = appleSession.currentState
+        appleStore.reset()
+        if selectedMusicService == .appleMusic {
+            clearPlayback()
+        }
+    }
+
+    func setShuffle(_ enabled: Bool) async {
+        await perform { try await currentPlayback.setShuffle(enabled) }
+    }
+
+    func setRepeat(_ mode: MusicRepeatMode) async {
+        await perform { try await currentPlayback.setRepeat(mode) }
+    }
+
+    func enqueue(_ item: MusicCatalogItem, next: Bool) async {
+        await perform { try await currentPlayback.enqueue(item, next: next) }
+    }
+
+    func mutateAppleLibrary(_ action: (any MusicLibraryMutating) async throws -> Void) async throws {
+        guard selectedMusicService == .appleMusic, currentServiceConnected else { throw MusicCatalogError.signInRequired }
+        let epoch = sourceGeneration
+        try await action(appleLibrary)
+        try Task.checkCancellation()
+        guard epoch == sourceGeneration else { throw CancellationError() }
+        // Force all private pages to reload from the service; never guess favorites.
+        await appleStore.refreshContent()
+    }
+
+    private func clearPlayback() {
+        lyricsMetadataTask?.cancel()
+        lyrics.update(track: nil)
+        playbackSnapshot = nil
+        lyricsSeekPosition = nil
+        lyricsSeekRevision &+= 1
+        devicesState = .idle
+        clock = PlayerClock()
+    }
+
+    private func receive(_ snapshot: PlaybackSnapshot) {
+        guard currentServiceConnected else { return }
+        if playbackSnapshot?.item?.uri != snapshot.item?.uri {
+            lyricsSeekPosition = nil
+        } else if let previous = playbackSnapshot, snapshot.positionRevision != previous.positionRevision {
+            lyricsSeekPosition = snapshot.position
+            lyricsSeekRevision &+= 1
+        }
+        playbackSnapshot = snapshot
+        clock = PlayerClock(anchor: snapshot)
+        updateLyricsMetadata(snapshot.item)
+    }
+
+    private func prepareAppleMusic() {
+        guard appleSessionTask == nil else { return }
+        appleSessionTask = Task { [weak self] in
+            guard let self else { return }
+            for await state in appleSession.connectionStates {
+                guard !Task.isCancelled else { return }
+                let changed = appleMusicState.storefront != state.storefront
+                    || appleMusicState.contextID != state.contextID
+                    || appleMusicState.capabilities.canModifyLibrary != state.capabilities.canModifyLibrary
+                    || appleMusicState.connected != state.connected
+                appleMusicState = state
+                if changed {
+                    appleStore.reset()
+                }
+                if state.connected {
+                    appleStore.activate()
+                    if selectedMusicService == .appleMusic {
+                        applePlayback.start()
+                        if isForeground {
+                            applePlayback.enterForeground()
+                        }
+                    }
+                } else {
+                    applePlayback.stop()
+                    if selectedMusicService == .appleMusic {
+                        clearPlayback()
+                    }
+                }
+            }
+        }
+        applePlaybackTask = Task { [weak self] in
+            guard let self else { return }
+            for await snapshot in applePlayback.playbackSnapshots {
+                guard !Task.isCancelled else { return }
+                guard selectedMusicService == .appleMusic else { continue }
+                receive(snapshot)
+            }
+        }
+        Task { await appleSession.refresh() }
+    }
+
     private func updateLyricsMetadata(_ item: PlaybackItem?) {
         let identity = TrackIdentity(item)
         let changed = lyrics.track?.spotifyID != identity?.spotifyID
         lyrics.update(track: identity)
         guard changed else { return }
         lyricsMetadataTask?.cancel()
-        guard var identity, identity.isrc == nil, SpotifyCatalogDecoder.validID(identity.spotifyID) else { return }
+        guard item?.service == .spotify, var identity, identity.isrc == nil, SpotifyCatalogDecoder.validID(identity.spotifyID) else { return }
         let client = SpotifyCatalogClient(session: environment.spotifySession)
         lyricsMetadataTask = Task { [weak self] in
             guard let detail = try? await client.detail(kind: .track, id: identity.spotifyID),
                   !Task.isCancelled, let self, sessionState.isAuthenticated,
                   lyrics.track?.spotifyID == identity.spotifyID else { return }
             identity.isrc = detail.item.track?.isrc
-            if identity.isrc != nil { lyrics.update(track: identity) }
+            if identity.isrc != nil {
+                lyrics.update(track: identity)
+            }
         }
     }
 
@@ -335,6 +528,7 @@ final class AppModel {
 
         do {
             try await operation()
+        } catch is CancellationError {
         } catch {
             present(error)
         }
@@ -345,6 +539,6 @@ final class AppModel {
     }
 
     private func mapped(_ error: Error) -> SpotifyServiceError {
-        error as? SpotifyServiceError ?? .transport
+        error as? SpotifyServiceError ?? (selectedMusicService == .appleMusic ? .musicFailure(error.localizedDescription) : .transport)
     }
 }

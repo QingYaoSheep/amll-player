@@ -12,7 +12,7 @@ struct SpotifyBrowserView: View {
                 tabs
                     .tabBarMinimizeBehavior(.onScrollDown)
                     .tabViewBottomAccessory {
-                        if let snapshot = model.playbackSnapshot, snapshot.item != nil, model.sessionState.isAuthenticated {
+                        if let snapshot = model.playbackSnapshot, snapshot.item != nil, model.currentServiceConnected {
                             TabMusicAccessory(model: model, snapshot: snapshot, namespace: playerNamespace, openPlayer: openPlayer)
                         }
                     }
@@ -37,9 +37,14 @@ struct SpotifyBrowserView: View {
             }
             Tab("catalog.library", systemImage: "square.stack") {
                 navigation {
-                    List(SpotifyLibrarySection.library, id: \.self) { section in
+                    List(model.catalog.provider.librarySections, id: \.self) { section in
                         NavigationLink(value: CatalogRoute.collection(section)) {
                             Label(section.title, systemImage: section.symbol)
+                        }
+                    }
+                    .safeAreaInset(edge: .bottom) {
+                        if model.selectedMusicService == .appleMusic {
+                            AppleMusicCreatePlaylistButton(model: model).padding()
                         }
                     }
                     .navigationTitle("catalog.library")
@@ -49,7 +54,7 @@ struct SpotifyBrowserView: View {
         }
     }
 
-    private func navigation<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func navigation(@ViewBuilder content: () -> some View) -> some View {
         NavigationStack {
             content()
                 .navigationDestination(for: CatalogRoute.self) { route in
@@ -58,6 +63,8 @@ struct SpotifyBrowserView: View {
                         CatalogCollectionView(model: model, store: model.catalog, section: section)
                     case let .detail(kind, id):
                         CatalogDetailView(model: model, store: model.catalog, kind: kind, spotifyID: id)
+                    case let .resource(resource):
+                        CatalogDetailView(model: model, store: model.catalog, kind: resource.kind, spotifyID: resource.rawValue, scope: resource.scope)
                     }
                 }
                 .toolbar {
@@ -83,6 +90,7 @@ private struct CatalogHomeView: View {
     var body: some View {
         List {
             Section {
+                MusicSourcePicker(model: model)
                 if let profile = store.profile {
                     Label(profile.displayName, systemImage: "person.crop.circle")
                         .font(.title2.bold())
@@ -92,7 +100,7 @@ private struct CatalogHomeView: View {
                     ProgressView()
                 }
             }
-            ForEach(SpotifyLibrarySection.allCases, id: \.self) { section in
+            ForEach(store.provider.homeSections, id: \.self) { section in
                 CatalogHomeSection(model: model, store: store, section: section, state: store.page(.collection(section)))
             }
         }
@@ -101,7 +109,7 @@ private struct CatalogHomeView: View {
         .task { await store.loadProfile() }
         .refreshable {
             await store.loadProfile(force: true)
-            for section in SpotifyLibrarySection.allCases {
+            for section in store.provider.homeSections {
                 await store.page(.collection(section)).load(query: .collection(section), provider: store.provider, force: true)
             }
         }
@@ -144,10 +152,25 @@ private struct CatalogCollectionView: View {
     @Bindable var model: AppModel
     let store: SpotifyCatalogStore
     let section: SpotifyLibrarySection
+    @State private var alphabetical = true
+
+    private var usesLibrarySort: Bool {
+        store.provider.service == .appleMusic && MusicLibrarySection.library.contains(section)
+    }
+
+    private var query: MusicCatalogQuery {
+        usesLibrarySort ? .libraryItems(section, ascending: alphabetical) : .collection(section)
+    }
 
     var body: some View {
-        CatalogPagedList(model: model, store: store, query: .collection(section), state: store.page(.collection(section)))
+        CatalogPagedList(model: model, store: store, query: query, state: store.page(query))
             .navigationTitle(section.title)
+            .safeAreaInset(edge: .top) {
+                if usesLibrarySort {
+                    Picker("名称排序", selection: $alphabetical) { Text("名称 A–Z").tag(true); Text("名称 Z–A").tag(false) }
+                        .pickerStyle(.segmented).padding()
+                }
+            }
     }
 }
 
@@ -174,26 +197,54 @@ private struct CatalogSearchView: View {
     @State private var displayedQuery: SpotifyCatalogQuery?
 
     private var query: SpotifyCatalogQuery {
-        .search(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines), store.searchKind)
+        store.searchLibrary ? .librarySearch(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines), store.searchKind)
+            : .search(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines), store.searchKind)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             Picker("catalog.searchType", selection: $store.searchKind) {
-                ForEach(SpotifyCatalogKind.allCases, id: \.self) { kind in Text(kind.title).tag(kind) }
+                ForEach(store.searchLibrary ? [MusicCatalogKind.track, .album, .artist, .playlist] : store.provider.searchKinds, id: \.self) { kind in Text(kind.title).tag(kind) }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .padding()
+            if store.provider.service == .appleMusic {
+                Picker("搜索范围", selection: $store.searchLibrary) {
+                    Text("Apple Music 全库").tag(false)
+                    Text("我的资料库").tag(true)
+                }.pickerStyle(.segmented).padding(.horizontal)
+                    .onChange(of: store.searchLibrary) { _, library in
+                        if library, [.station, .musicVideo].contains(store.searchKind) {
+                            store.searchKind = .track
+                        }
+                    }
+            }
             if let displayedQuery, displayedQuery == query {
                 CatalogSearchResults(model: model, store: store, query: displayedQuery, state: store.page(displayedQuery))
             } else if store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                ContentUnavailableView("catalog.searchPrompt", systemImage: "magnifyingglass")
+                List(store.searchHistory, id: \.self) { term in
+                    Button(term) { store.searchText = term }
+                }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .navigationTitle("catalog.search")
         .searchable(text: $store.searchText, prompt: "catalog.searchPrompt")
+        .searchSuggestions {
+            ForEach(store.suggestions, id: \.self) { term in Text(term).searchCompletion(term) }
+        }
+        .task(id: store.searchText) {
+            store.suggestions = []
+            let term = store.searchText
+            guard !term.isEmpty, !store.searchLibrary else { return }
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+                let values = try await store.provider.suggestions(term)
+                guard !Task.isCancelled, term == store.searchText else { return }
+                store.suggestions = values
+            } catch {}
+        }
         .task(id: query) {
             let current = query
             if displayedQuery == current, store.page(current).loadedAt != nil {
@@ -204,8 +255,9 @@ private struct CatalogSearchView: View {
             }
             displayedQuery = nil
             guard !store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
             guard !Task.isCancelled else { return }
+            store.rememberSearch(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines))
             displayedQuery = current
             await store.page(current).load(query: current, provider: store.provider)
         }

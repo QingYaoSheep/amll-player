@@ -17,14 +17,15 @@ jobs:
         run: bash Scripts/generate-project.sh
       - name: Resolve packages
         run: xcodebuild -resolvePackageDependencies -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
-      - name: Prepare iOS 18 simulator
+      - name: Prepare legacy layout simulator
         run: |
           xcrun simctl list runtimes --json > /tmp/legacy-runtimes.json
           if ! node -e 'const r=require("/tmp/legacy-runtimes.json").runtimes; if (!r.some(x=>x.isAvailable && x.version.startsWith("18."))) process.exit(1)'; then
-            xcodebuild -downloadPlatform iOS -buildVersion 18.0
+            xcodebuild -downloadPlatform iOS -buildVersion 18.5 || true
           fi
           xcrun simctl list runtimes --json > /tmp/legacy-runtimes.json
-          RUNTIME=$(node -e 'const r=require("/tmp/legacy-runtimes.json").runtimes.filter(x=>x.isAvailable && x.version.startsWith("18.")); if(!r.length)process.exit(1);console.log(r[r.length-1].identifier)')
+          cat /tmp/legacy-runtimes.json
+          RUNTIME=$(node -e 'const r=require("/tmp/legacy-runtimes.json").runtimes.filter(x=>x.isAvailable && x.version.startsWith("18.")); if(!r.length){console.error("iOS 18 runtime unavailable; testing the forced legacy code path on installed iOS runtime");const all=require("/tmp/legacy-runtimes.json").runtimes.filter(x=>x.isAvailable&&x.identifier.includes("iOS"));console.log(all[all.length-1].identifier)}else console.log(r[r.length-1].identifier)')
           DEVICE_ID=$(xcrun simctl create 'AMLL legacy mini player' com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro "$RUNTIME")
           echo "LEGACY_IPHONE_UDID=$DEVICE_ID" >> "$GITHUB_ENV"
       - name: Test legacy mini player above tabs

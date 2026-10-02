@@ -18,7 +18,7 @@ struct MusicBrowserView: View {
             if #available(iOS 26.1, *), !usesLegacyPlayerForTesting {
                 tabs.tabBarMinimizeBehavior(.onScrollDown)
                     .tabViewBottomAccessory(isEnabled: model.playbackSnapshot?.item != nil && model.currentServiceConnected) { accessory }
-            } else if #available(iOS 26.0, *) {
+            } else if #available(iOS 26.0, *), !usesLegacyPlayerForTesting {
                 tabs.tabBarMinimizeBehavior(.onScrollDown)
             } else { tabs }
         }

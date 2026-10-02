@@ -29,6 +29,7 @@ struct NetEaseQueueState: Codable {
     @ObservationIgnored private let catalog: NetEaseCatalog
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var player: AVPlayer
+    @ObservationIgnored private let makeItem: (URL) -> AVPlayerItem
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var itemObservation: NSKeyValueObservation?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
@@ -52,8 +53,10 @@ struct NetEaseQueueState: Codable {
         let entries = Dictionary(uniqueKeysWithValues: queue.entries.map { ($0.id, $0) })
         return order.compactMap { entries[$0] }
     }
-    init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer()) {
+    init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer(),
+         makeItem: @escaping (URL) -> AVPlayerItem = { AVPlayerItem(url: $0) }) {
         self.session = session; self.catalog = catalog; self.defaults = defaults; self.player = player
+        self.makeItem = makeItem
         quality = defaults.string(forKey: "netease.quality.v1").flatMap(NetEaseQuality.init(rawValue:)) ?? .exhigh
         let s = AsyncStream<PlaybackSnapshot>.makeStream(bufferingPolicy: .bufferingNewest(1))
         playbackSnapshots = s.stream; continuation = s.continuation
@@ -236,7 +239,7 @@ struct NetEaseQueueState: Codable {
             guard selected, generation == epoch, context == session.currentState.contextID else { throw CancellationError() }
             try activate()
             // No account cookie is attached to the independently returned CDN URL.
-            let item = AVPlayerItem(url: source.url)
+            let item = makeItem(source.url)
             itemObservation?.invalidate()
             player.replaceCurrentItem(with: item)
             itemObservation = item.observe(\.status, options: [.new]) { @Sendable [weak self, weak item] _, _ in

@@ -92,6 +92,7 @@ final class AppModel {
         appleCatalog: (any MusicCatalogProviding)? = nil,
         appleLibrary: (any MusicLibraryMutating)? = nil,
         netEaseSession: NetEaseSession? = nil,
+        netEasePlayback: NetEasePlayback? = nil,
         musicPreferences: MusicSourcePreferences = MusicSourcePreferences(),
         environmentFactory: @escaping @MainActor (AppConfiguration) -> AppEnvironment = {
             AppEnvironment.make(configuration: $0)
@@ -107,7 +108,7 @@ final class AppModel {
         self.netEaseSession = nSession
         self.netEaseCatalog = nCatalog
         self.netEaseLibrary = NetEaseLibrary(session: nSession, catalog: nCatalog)
-        self.netEasePlayback = NetEasePlayback(session: nSession, catalog: nCatalog)
+        self.netEasePlayback = netEasePlayback ?? NetEasePlayback(session: nSession, catalog: nCatalog)
         self.netEaseStore = SpotifyCatalogStore(provider: nCatalog)
         self.netEaseState = nSession.currentState
         let selectedService = musicPreferences.selected

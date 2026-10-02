@@ -128,6 +128,9 @@ final class AMLLNativeCanvas: UIView {
         private var controlledReplay = false
     #endif
     private(set) var frameState: AMLLFrameState?
+    #if DEBUG
+        var frameObserver: ((AMLLFrameState) -> Void)?
+    #endif
     private(set) var measuredFPS = 0.0
     private(set) var frameMilliseconds = 0.0
     var visibleRowCount: Int {
@@ -476,6 +479,9 @@ final class AMLLNativeCanvas: UIView {
             #endif
         }
         frameState = state
+        #if DEBUG
+            frameObserver?(state)
+        #endif
         needsFrame = false
         if hdrTime == nil || input.playing || hdrWasPlaying || input.seeking || hdrSeekRevision != engine!.timeAnchorRevision || hdrOffset != input.offset {
             hdrTime = state.lyricTime

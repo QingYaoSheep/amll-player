@@ -324,7 +324,7 @@ struct NetEaseQueueState: Codable {
             guard let (data, _) = try? await download.data(from: trusted), data.count <= 8 * 1024 * 1024,
                   !Task.isCancelled, let image = UIImage(data: data), let self,
                   selected, queue.currentID == entry, artworkURL == url else { return }
-            nowArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            nowArtwork = NetEaseNowPlayingArtwork.make(image)
             publish()
         }
     }

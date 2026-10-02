@@ -1,171 +1,47 @@
-name: SwiftUI CI
-
+name: NetEase playback callback reproduction
 on:
   push:
-  pull_request:
+    branches: [codex/netease-playback-crash-repro]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  xcode-27:
-    name: ${{ matrix.name }}
+  reproduce:
     runs-on: xcode-27
-    timeout-minutes: 90
-    concurrency:
-      group: swiftui-ci-${{ github.ref }}-${{ matrix.variant }}
-      # Keep an active test run long enough to produce evidence. Direct IPA
-      # still follows the newest commit without waiting for simulator tests.
-      cancel-in-progress: ${{ matrix.variant == 'direct' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: iOS 27 / Tests then IPA
-            variant: tested
-            run-tests: true
-          - name: iOS 27 / Direct IPA
-            variant: direct
-            run-tests: false
-
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify replay comparison regressions
-        run: node --test Scripts/compare-amll-traces.test.cjs Scripts/compare-amll-performance.test.cjs Scripts/controlled-clock.test.mjs Scripts/replay-scenario.test.mjs Scripts/visual-diff.test.mjs
-
-      - name: Verify pinned offline romanization resources
-        run: node Scripts/verify-mineradio-romanization.cjs
-
-      - name: Verify Xcode and SDK
-        run: |
-          XCODE_VERSION="$(xcodebuild -version)"
-          echo "$XCODE_VERSION"
-          [[ "$XCODE_VERSION" == Xcode\ 27.* ]]
-          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
-          echo "iOS SDK: $SDK_VERSION"
-          [[ "$SDK_VERSION" == 27.* ]]
-
-      - name: Install Metal toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
-
       - name: Generate project
         run: bash Scripts/generate-project.sh
-
-      - name: Resolve Swift packages
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+      - name: Prepare simulator
+        run: node Scripts/prepare-ci-simulators.cjs
+      - name: Reproduce off-main Now Playing artwork callback
         run: >-
-          xcodebuild -resolvePackageDependencies
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-
-      - name: Lint Swift
-        run: >-
-          xcrun swift-format lint --recursive
-          AMLLPlayer AMLLPlayerTests AMLLPlayerUITests
-
-      - name: Prepare iOS 27 reference simulators
-        if: matrix.run-tests
-        run: |
-          node --test Scripts/prepare-ci-simulators.test.cjs
-          if ! xcrun simctl list runtimes --json | node -e 'const fs = require("node:fs"); const { selectRuntime } = require("./Scripts/prepare-ci-simulators.cjs"); selectRuntime(JSON.parse(fs.readFileSync(0, "utf8")).runtimes)'; then
-            xcodebuild -downloadPlatform iOS
-          fi
-          node Scripts/prepare-ci-simulators.cjs
-
-      - name: Test on iPhone with Xcode 27
-        if: matrix.run-tests
-        run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
+          xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -resultBundlePath build/Xcode27-tests.xcresult
+          -only-testing:AMLLPlayerTests/NetEasePlaybackCallbackTests
+          -resultBundlePath build/NetEase-callback.xcresult
           CODE_SIGNING_ALLOWED=NO
-
-      - name: Upload Xcode 27 test results
-        if: always() && matrix.run-tests
-        uses: actions/upload-artifact@v4
-        with:
-          name: AMLLPlayer-Xcode27-test-results
-          path: build/Xcode27-tests.xcresult
-          if-no-files-found: ignore
-
-      - name: Export visual review attachments
-        if: always() && matrix.run-tests
+      - name: Export reproduction evidence
+        if: always()
         run: |
-          if [[ -d build/Xcode27-tests.xcresult ]]; then
-            xcrun xcresulttool export attachments \
-              --path build/Xcode27-tests.xcresult \
-              --output-path build/Plan5-images
+          mkdir -p build/CrashReports
+          cp ~/Library/Logs/DiagnosticReports/*AMLL* build/CrashReports/ 2>/dev/null || true
+          if [[ -d build/NetEase-callback.xcresult ]]; then
+            xcrun xcresulttool get test-results summary --path build/NetEase-callback.xcresult > build/summary.json || true
           fi
-
-      - name: Upload visual review attachments
-        if: always() && matrix.run-tests
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: AMLLPlayer-visual-review
-          path: build/Plan5-images
-          if-no-files-found: ignore
-
-      - name: Build for iPad with Xcode 27
-        if: matrix.run-tests
-        run: >-
-          xcodebuild build
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
-          CODE_SIGNING_ALLOWED=NO
-
-      - name: Build with iOS 27 SDK
-        if: matrix.run-tests
+          name: NetEase-playback-crash-reproduction
+          path: |
+            build/NetEase-callback.xcresult
+            build/CrashReports
+            build/summary.json
+      - name: Remove simulator
+        if: always()
         run: |
-          xcodebuild build \
-            -project AMLLPlayer.xcodeproj \
-            -scheme AMLLPlayer \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/Xcode27DerivedData \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Create unsigned device archive and IPA
-        run: |
-          xcodebuild archive \
-            -project AMLLPlayer.xcodeproj \
-            -scheme AMLLPlayer \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath build/AMLLPlayer-Xcode27.xcarchive \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
-
-          PACKAGE_ROOT="$(mktemp -d "$RUNNER_TEMP/amll-unsigned-ipa.XXXXXX")"
-          trap 'rm -rf "$PACKAGE_ROOT"' EXIT
-          mkdir -p "$PACKAGE_ROOT/Payload"
-          cp -R \
-            build/AMLLPlayer-Xcode27.xcarchive/Products/Applications/AMLLPlayer.app \
-            "$PACKAGE_ROOT/Payload/"
-          ditto -c -k --sequesterRsrc --keepParent \
-            "$PACKAGE_ROOT/Payload" \
-            build/AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned.ipa
-
-      - name: Verify Xcode 27 application bundle
-        run: >-
-          bash Scripts/verify-ios-app-bundle.sh
-          build/AMLLPlayer-Xcode27.xcarchive/Products/Applications/AMLLPlayer.app
-
-      - name: Upload Xcode 27 IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned-ipa
-          path: build/AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned.ipa
-          if-no-files-found: error
-
-      - name: Remove reference simulators
-        if: always() && matrix.run-tests
-        run: |
-          for DEVICE_ID in "${CI_IPHONE_UDID:-}" "${CI_IPAD_UDID:-}"; do
-            if [[ -n "$DEVICE_ID" ]]; then
-              xcrun simctl shutdown "$DEVICE_ID" || true
-              xcrun simctl delete "$DEVICE_ID"
-            fi
-          done
+          xcrun simctl shutdown "$CI_IPHONE_UDID" || true
+          xcrun simctl delete "$CI_IPHONE_UDID" || true

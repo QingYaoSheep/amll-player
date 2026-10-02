@@ -376,6 +376,7 @@ final class AppModel {
             pendingLyricsSeek = nil; frozenSeekPosition = nil; lyricsSeekPosition = nil
             try? await netEasePlayback.refresh()
             if let actual = netEasePlayback.latestSnapshot { receive(actual) }
+            lyricsSeekRevision &+= 1 // Re-anchor recovery even without a success receipt.
             if error is CancellationError { present(PlaybackSeekError.interrupted) } else { present(error) }
         }
     }

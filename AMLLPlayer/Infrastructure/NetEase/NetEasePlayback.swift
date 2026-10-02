@@ -314,7 +314,7 @@ struct NetEaseQueueState: Codable {
             guard selected, generation == epoch else { throw CancellationError() }
             revision &+= 1; intentPlaying = true; player.play(); save(); publish()
         } catch is CancellationError { throw CancellationError() }
-        catch { guard generation == epoch else { throw CancellationError() }; fail(error); throw error }
+        catch { guard generation == epoch else { throw CancellationError() }; cancelSeek(); fail(error); throw error }
     }
     private func advance(forward: Bool, automatic: Bool) async throws {
         guard selected, let index = queue.entries.firstIndex(where: { $0.id == queue.currentID }) else { throw MusicServiceError.noPlayback }
@@ -456,6 +456,7 @@ struct NetEaseQueueState: Codable {
     /// Invalidates pending source/seek work as well as pausing ready audio.
     func suspendForInterruption() {
         guard selected else { return }
+        PlaybackSeekDiagnostics.shared.record("media-interrupted")
         generation = UUID(); cancelSeek(); intentPlaying = false; player.pause()
         queue.position = position
         // Stop republishing our metadata over another app after a system interruption.

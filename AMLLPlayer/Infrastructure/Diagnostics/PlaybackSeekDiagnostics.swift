@@ -55,7 +55,7 @@ import Foundation
     }
     func frame(canvas: UUID, state: AMLLFrameState, confirmation: PlaybackSeekConfirmation?) {
         let now = ProcessInfo.processInfo.systemUptime
-        guard now <= frameDeadline, now - lastFrame >= 1 / 120 else { return }
+        guard now <= frameDeadline, now - lastFrame >= 1 / 60 else { return }
         lastFrame = now
         let rows = state.rows.filter { !$0.hidden }.prefix(14).map {
             Row(index: $0.lineIndex, y: $0.y, scale: $0.scale, opacity: $0.opacity, wordTime: $0.wordClock.time,

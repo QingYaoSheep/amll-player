@@ -11,9 +11,7 @@ import XCTest
         let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
-        model.prepare(); model.handleScenePhase(.active)
-        try await Task.sleep(for: .milliseconds(300))
-        try await model.playCatalog(song)
+        try await start(model, song)
         try await wait("document and snapshot") { model.lyrics.document != nil && model.playbackSnapshot != nil }
         await model.seek(to: 4.25)
         try await wait("initial seek") { abs(model.progress() - 4.25) < 1 }
@@ -51,13 +49,11 @@ import XCTest
         let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
-        model.prepare(); model.handleScenePhase(.active)
-        try await Task.sleep(for: .milliseconds(300))
-        try await model.playCatalog(song)
+        try await start(model, song)
         let old = try await waitForCanvas(host.view)
         model.renderPreferences.configuration.showLyrics = false
         try await wait { findCanvas(host.view) == nil }
-        await model.seek(to: 20.25)
+        await model.seek(to: 20.25, entry: .progress, trackURI: song.uri)
         XCTAssertEqual(player.currentTime().seconds, 20.25, accuracy: 0.1)
         model.renderPreferences.configuration.showLyrics = true
         let current = try await waitForCanvas(host.view)

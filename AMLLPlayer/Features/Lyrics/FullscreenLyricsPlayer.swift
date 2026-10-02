@@ -270,16 +270,20 @@ struct LyricsProgressControl: View {
     let snapshot: PlaybackSnapshot
     @State private var draft = 0.0
     @State private var editing = false
+    @State private var editingTrackURI: String?
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.25, paused: !snapshot.isPlaying || scenePhase != .active)) { _ in
             VStack(spacing: 0) {
                 LyricsCapsuleSlider(value: Binding(get: { editing ? draft : model.progress() }, set: { draft = $0 }), maximum: max(1, snapshot.duration)) { value in
                     if value {
-                        draft = model.progress(); editing = true
+                        draft = model.progress(); editingTrackURI = snapshot.item?.uri; editing = true
                     } else {
-                        let target = draft, track = snapshot.item?.uri
-                        editing = false
+                        guard editing, let track = editingTrackURI, track == snapshot.item?.uri else {
+                            editing = false; editingTrackURI = nil; return
+                        }
+                        let target = draft
+                        editing = false; editingTrackURI = nil
                         Task { await model.seek(to: target, entry: .progress, trackURI: track) }
                     }
                 }.disabled(!snapshot.restrictions.canSeek || model.isPerformingAction).accessibilityLabel(Text("render.progress"))
@@ -299,7 +303,7 @@ struct LyricsProgressControl: View {
                 .font(.caption.monospacedDigit()).opacity(0.7)
             }
         }
-        .onChange(of: snapshot.item?.uri) { editing = false; draft = 0 }
+        .onChange(of: snapshot.item?.uri) { editing = false; editingTrackURI = nil; draft = 0 }
     }
 
     private func time(_ seconds: Double) -> String {

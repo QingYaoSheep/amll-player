@@ -33,19 +33,11 @@ struct MusicBrowserView: View {
             Tab("catalog.library", systemImage: "square.stack") {
                 navigation { MusicLibraryView(model: model, store: model.catalog) }
             }
-            Tab("catalog.search", systemImage: "magnifyingglass", role: .search) {
+            Tab("catalog.search", systemImage: "magnifyingglass") {
                 navigation { CatalogSearchView(model: model, store: model.catalog) }
             }
         }
         .tabViewStyle(.sidebarAdaptable)
-        .searchable(text: Binding(get: { model.catalog.searchText }, set: { model.catalog.searchText = $0 }), prompt: "catalog.searchPrompt")
-        .onSubmit(of: .search) { model.catalog.rememberSearch(model.catalog.searchText) }
-        .searchSuggestions {
-            ForEach(model.catalog.suggestions, id: \.self) { term in
-                Button { model.catalog.searchText = term; model.catalog.rememberSearch(term) } label: { Label(term, systemImage: "magnifyingglass") }
-                    .searchCompletion(term)
-            }
-        }
     }
     private func navigation(@ViewBuilder content: () -> some View) -> some View {
         NavigationStack {
@@ -301,6 +293,15 @@ struct CatalogSearchView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("catalog.search")
+        // Keep the input visible on the landing page without relying on search-tab activation.
+        .searchable(text: $store.searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "catalog.searchPrompt")
+        .onSubmit(of: .search) { store.rememberSearch(request.term) }
+        .searchSuggestions {
+            ForEach(store.suggestions, id: \.self) { term in
+                Button { store.searchText = term; store.rememberSearch(term) } label: { Label(term, systemImage: "magnifyingglass") }
+                    .searchCompletion(term)
+            }
+        }
         .task(id: request) {
             store.suggestions = []
             guard model.canBrowseCurrentService, !request.term.isEmpty else {

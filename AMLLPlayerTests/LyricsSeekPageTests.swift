@@ -7,9 +7,12 @@ import XCTest
 @MainActor final class LyricsSeekPageTests: XCTestCase {
     func testProductionLyricClickKeepsTheReturnSpringAndStagger() async throws {
         let (model, player, song) = try await makeModel()
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
         let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
         window.rootViewController = host; window.makeKeyAndVisible()
+        host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
         try await start(model, song)
         try await wait("document and snapshot") { model.lyrics.document != nil && model.playbackSnapshot != nil }
@@ -45,9 +48,12 @@ import XCTest
 
     func testHiddenCanvasStartsAtTheLatestConfirmedAudioTime() async throws {
         let (model, player, song) = try await makeModel()
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
         let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
         window.rootViewController = host; window.makeKeyAndVisible()
+        host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
         try await start(model, song)
         let old = try await waitForCanvas(host.view)
@@ -99,7 +105,9 @@ import XCTest
         XCTFail("Production page state timed out: \(label)"); throw CancellationError()
     }
     private func waitForCanvas(_ root: UIView) async throws -> AMLLNativeCanvas {
-        try await wait("mounted production canvas") { findCanvas(root) != nil }
+        try await wait("mounted production canvas") {
+            root.setNeedsLayout(); root.layoutIfNeeded(); return findCanvas(root) != nil
+        }
         return try XCTUnwrap(findCanvas(root))
     }
     private func findCanvas(_ root: UIView) -> AMLLNativeCanvas? { descendants(root).compactMap { $0 as? AMLLNativeCanvas }.first }

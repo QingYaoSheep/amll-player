@@ -34,3 +34,21 @@ for _ in 0..<20 {
 }
 if failures > 0 { exit(1) }
 print("PASS: lyric seek motion regression")
+
+for step in [1.0/60, 1.0/120, 0.037] {
+ var sought = engine(), returned = engine()
+ _ = sought.render(.init(position: 1, playing: true), delta: 0)
+ sought.handle(.beginBrowsing); sought.handle(.browseBy(200))
+ let before = sought.render(.init(position: 1, playing: true), delta: 0)
+ let origin = returned.render(.init(position: 16, playing: true), delta: 0)
+ returned.handle(.beginBrowsing); returned.handle(.browseBy(origin.rows[4].y - before.rows[4].y))
+ _ = returned.render(.init(position: 16, playing: true), delta: 0)
+ returned.handle(.resumeFollowing)
+ for _ in 0..<Int(1/step) {
+  let a = sought.render(.init(position: 16, playing: true, seekRevision: 1, seekPosition: 16), delta: step)
+  let b = returned.render(.init(position: 16, playing: true), delta: step)
+  check(abs(a.rows[4].y-b.rows[4].y)<0.001, "seek and return spring must share row scheduling")
+ }
+}
+if failures > 0 { exit(1) }
+print("PASS: seek and return row scheduling")

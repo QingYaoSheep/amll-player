@@ -16,7 +16,8 @@ struct LyricsRenderConfiguration: Sendable { var backgroundBlur = 0.0; var showC
 SWIFT
 
 node Scripts/debug-lyrics-seek/generate.cjs
-xcrun swiftc -o build/seek-loop/check \
+XCTEST_FRAMEWORKS="$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks"
+xcrun swiftc -F "$XCTEST_FRAMEWORKS" -Xlinker -rpath -Xlinker "$XCTEST_FRAMEWORKS" -o build/seek-loop/check \
  build/seek-loop/Models.swift build/seek-loop/Stubs.swift AMLLPlayer/Domain/PlaybackModels.swift \
  AMLLPlayer/Rendering/{AMLLFrameEngine,AMLLDisplayDocument,AMLLMotionModel,AMLLSourceTimeline,AMLLSourceSpring,AMLLScheduledSpring,AMLLSourceTransition,AMLLWordAnimationClock,AMLLFocusRetirement,AMLLMaskAlpha}.swift \
  build/seek-loop/Tests.swift build/seek-loop/main.swift

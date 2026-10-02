@@ -15,10 +15,8 @@ enum MusicTrackIdentity { static func key(service: MusicServiceID, scope: MusicR
 struct LyricsRenderConfiguration: Sendable { var backgroundBlur = 0.0; var showControls = false }
 SWIFT
 
-node Scripts/debug-lyrics-seek/generate.cjs
-XCTEST_FRAMEWORKS="$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks"
-xcrun swiftc -I "$(xcode-select -p)/Platforms/MacOSX.platform/Developer/usr/lib" -F "$XCTEST_FRAMEWORKS" -Xlinker -rpath -Xlinker "$XCTEST_FRAMEWORKS" -o build/seek-loop/check \
+xcrun swiftc -o build/seek-loop/check \
  build/seek-loop/Models.swift build/seek-loop/Stubs.swift AMLLPlayer/Domain/PlaybackModels.swift \
  AMLLPlayer/Rendering/{AMLLFrameEngine,AMLLDisplayDocument,AMLLMotionModel,AMLLSourceTimeline,AMLLSourceSpring,AMLLScheduledSpring,AMLLSourceTransition,AMLLWordAnimationClock,AMLLFocusRetirement,AMLLMaskAlpha}.swift \
- build/seek-loop/Tests.swift build/seek-loop/main.swift
+ Scripts/debug-lyrics-seek/main.swift
 time build/seek-loop/check

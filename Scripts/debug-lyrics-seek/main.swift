@@ -24,5 +24,13 @@ for step in [1.0/60, 1.0/120, 0.037] {
  check(abs(after.rows[4].y - before.rows[4].y) < abs(destination.rows[4].y - before.rows[4].y), "seek must start from browsed presentation")
  check(after.rows[4].active && !after.rows[4].fillComplete, "seek singing state must use actual target")
 }
+var delayed = engine()
+_ = delayed.render(.init(position: 1, playing: true), delta: 0)
+delayed.handle(.beginBrowsing); delayed.handle(.browseBy(-200))
+let beforePending = delayed.render(.init(position: 1, playing: true), delta: 0)
+for _ in 0..<20 {
+ let waiting = delayed.render(.init(position: 1, playing: true, seekRevision: 1, seekPosition: 16), delta: 1.0/120)
+ check(abs(waiting.rows[4].y - beforePending.rows[4].y) < 0.001, "unconfirmed seek must not return to old scroll position")
+}
 if failures > 0 { exit(1) }
 print("PASS: lyric seek motion regression")

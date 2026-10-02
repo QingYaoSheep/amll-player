@@ -196,8 +196,18 @@ final class AMLLFocusRetirementTests: XCTestCase {
                     XCTAssertGreaterThan(paused.blur, 0)
                     let rewound = player.render(.init(position: 0.1, playing: true, seekRevision: 1), delta: 0).rows[0]
                     XCTAssertNil(rewound.retirement)
-                    XCTAssertEqual(rewound.scale, 1, accuracy: 0.001)
-                    XCTAssertEqual(rewound.blur, 0)
+                    XCTAssertEqual(rewound.scale, paused.scale, accuracy: 0.001, "Seek reanchors timing without snapping appearance")
+                    XCTAssertEqual(rewound.blur, paused.blur, accuracy: 0.001)
+                    XCTAssertTrue(rewound.active)
+                    XCTAssertFalse(rewound.fillComplete)
+                    XCTAssertEqual(rewound.wordClock.time, 0.1, accuracy: 0.001)
+                    var settled = rewound
+                    for _ in 0..<Int(3 / step) {
+                        settled = player.render(.init(position: 0.1, playing: false, seekRevision: 1), delta: step).rows[0]
+                    }
+                    XCTAssertNil(settled.retirement)
+                    XCTAssertEqual(settled.scale, 1, accuracy: 0.001)
+                    XCTAssertEqual(settled.blur, 0, accuracy: 0.001)
                     moved = true
                     break
                 }

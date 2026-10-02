@@ -962,7 +962,9 @@ struct AMLLFrameEngine {
                     ? (motions[index].y.schedule.scheduledAt ?? frameStart) : frameStart)
             }
             y += groupHeights[index]
-            if y >= 0, !seeking {
+            // Animated seeks use the same row stagger as Return to Current.
+            // Immediate initial/accessibility layouts ignore these deadlines.
+            if y >= 0 {
                 delay += baseDelay
                 if index >= timeline.focus {
                     baseDelay /= 1.05

@@ -19,8 +19,15 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests
           -parallel-testing-enabled NO
           -resultBundlePath build/seek-v2.xcresult CODE_SIGNING_ALLOWED=NO
+          -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: seek-v2-reproduction
           path: build/seek-v2.xcresult
+  audio-cli:
+    runs-on: xcode-27
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcrun swift Scripts/debug-lyrics-seek-v2/Audio.swift AMLLPlayerTests/Fixtures

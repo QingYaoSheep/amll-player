@@ -137,21 +137,33 @@ struct CatalogExternalLink: View {
 }
 
 struct CatalogErrorView: View {
-    let error: SpotifyCatalogError
+    let error: MusicCatalogError
     let retry: () async -> Void
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(error.localizedDescription, systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                if error.allowsRetry {
-                    Button("player.tryAgain") { Task { await retry() } }
-                }
-            }
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.subheadline).foregroundStyle(.secondary)
+            if case .rateLimited = error {
+                TimelineView(.periodic(from: .now, by: 1)) { _ in retryButton }
+            } else { retryButton }
+            DisclosureGroup("查看技术详情") {
+                Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }.font(.caption)
+        }.accessibilityIdentifier("catalogError")
+    }
+    @ViewBuilder private var retryButton: some View {
+        if error.allowsRetry { Button("player.tryAgain") { Task { await retry() } }.frame(minHeight: 44) }
+    }
+    private var message: String {
+        switch error {
+        case .offline: "网络暂时不可用。检查网络后重试，已加载的内容会保留。"
+        case .signInRequired: "请先连接当前音乐服务，再查看个人内容。"
+        case .forbidden: "当前账号暂时无法查看此内容，请检查服务权限。"
+        case .unavailable: "此内容暂不可用，可以返回浏览其他音乐。"
+        case .quotaExceeded, .rateLimited: "请求较频繁，请稍后重试。"
+        case let .service(_, retry): retry ? "内容暂时未能加载，请检查连接后重试。" : "当前服务权限或配置未就绪，请前往音乐来源检查连接。"
+        case .invalidResponse: "服务返回异常，请稍后重试。"
         }
-        .accessibilityIdentifier("catalogError")
     }
 }
 
@@ -162,9 +174,11 @@ struct CatalogPlayButton: View {
     var position: Int?
     var compact = true
     @State private var failure: String?
+    @State private var showingLogin = false
 
     var body: some View {
         Button {
+            guard model.isConnected(to: item.service) else { showingLogin = true; return }
             Task {
                 do { try await model.playCatalog(item, contextURI: contextURI, position: position) }
                 catch is CancellationError {}
@@ -191,6 +205,7 @@ struct CatalogPlayButton: View {
             }
             Button("common.ok", role: .cancel) { failure = nil }
         } message: { Text(failure ?? "") }
+        .sheet(isPresented: $showingLogin) { MusicLoginSheet(model: model, service: item.service) }
         .contextMenu { CatalogExternalLink(item: item) }
     }
 }
@@ -202,6 +217,7 @@ struct CatalogRowView: View {
     var tapToPlay = false
     var onSelect: (() -> Void)? = nil
     var parentPlaylist: MusicCatalogItem?
+    @State private var showingLogin = false
     @State private var netEasePlaylistItem: MusicCatalogItem?
     @State private var playlistItem: MusicCatalogItem?
     @State private var failure: String?
@@ -211,6 +227,7 @@ struct CatalogRowView: View {
             if tapToPlay, row.item.kind == .track, row.item.canPlay {
                 Button {
                     onSelect?()
+                    guard model.isConnected(to: row.item.service) else { showingLogin = true; return }
                     Task {
                         do { try await model.playCatalog(row.item, contextURI: contextURI, position: row.position) }
                         catch is CancellationError {} catch { failure = error.localizedDescription }
@@ -244,6 +261,7 @@ struct CatalogRowView: View {
                                       onChoosePlaylist: { playlistItem = $0 }, onFailure: { failure = $0 })
             }
         }
+        .sheet(isPresented: $showingLogin) { MusicLoginSheet(model: model, service: row.item.service) }
         .sheet(item: $netEasePlaylistItem) { NetEasePlaylistChooser(model: model, item: $0) }
         .sheet(item: $playlistItem) { AppleMusicPlaylistChooser(model: model, item: $0) }
         .alert("操作未完成", isPresented: Binding(get: { failure != nil }, set: {

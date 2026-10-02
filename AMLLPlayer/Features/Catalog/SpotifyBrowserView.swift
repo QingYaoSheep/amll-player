@@ -17,6 +17,7 @@ struct MusicBrowserView: View {
             } else { tabs }
         }
         .tint(MusicProductStyle.accent)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in CatalogImageCache.shared.clear() }
         .sheet(isPresented: $showingDevices) { DevicePickerView(model: model) }
     }
     private var tabs: some View {

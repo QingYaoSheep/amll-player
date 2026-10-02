@@ -45,6 +45,20 @@ struct MusicLoginDestination: View {
     }
 }
 
+struct MusicLoginSheet: View {
+    @Bindable var model: AppModel
+    let service: MusicServiceID
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            MusicLoginDestination(model: model, service: service)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+        }
+        .tint(MusicProductStyle.accent)
+        .onChange(of: model.isConnected(to: service)) { _, connected in if connected { dismiss() } }
+    }
+}
+
 struct MusicConnectionCard: View {
     @Bindable var model: AppModel
     var body: some View {
@@ -100,11 +114,13 @@ struct MusicCatalogCard: View {
     let width: CGFloat
     var onSelect: (() -> Void)? = nil
     @State private var failure: String?
+    @State private var showingLogin = false
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if row.item.kind == .track, row.item.canPlay {
                 Button {
                     onSelect?()
+                    guard model.isConnected(to: row.item.service) else { showingLogin = true; return }
                     Task {
                         do { try await model.playCatalog(row.item) }
                         catch is CancellationError {} catch { failure = error.localizedDescription }
@@ -125,6 +141,7 @@ struct MusicCatalogCard: View {
             }
         }
         .frame(width: width, alignment: .topLeading)
+        .sheet(isPresented: $showingLogin) { MusicLoginSheet(model: model, service: row.item.service) }
         .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("好", role: .cancel) { failure = nil }
         } message: { Text(failure ?? "") }

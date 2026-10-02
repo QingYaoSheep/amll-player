@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - run: xcodebuild -downloadComponent MetalToolchain
       - run: bash Scripts/generate-project.sh
       - run: node Scripts/prepare-ci-simulators.cjs
       - name: Test actual NetEase playback seek transaction

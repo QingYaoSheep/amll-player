@@ -215,7 +215,7 @@ struct NetEaseQueueState: Codable {
             let item = AVPlayerItem(url: source.url)
             itemObservation?.invalidate()
             player.replaceCurrentItem(with: item)
-            itemObservation = item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
+            itemObservation = item.observe(\.status, options: [.new]) { @Sendable [weak self, weak item] _, _ in
                 Task { @MainActor in
                     guard let self, let item, self.selected, self.intentPlaying, self.player.currentItem === item else { return }
                     if item.status == .failed {
@@ -324,7 +324,7 @@ struct NetEaseQueueState: Codable {
             guard let (data, _) = try? await download.data(from: trusted), data.count <= 8 * 1024 * 1024,
                   !Task.isCancelled, let image = UIImage(data: data), let self,
                   selected, queue.currentID == entry, artworkURL == url else { return }
-            nowArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            nowArtwork = NetEaseNowPlayingArtwork.make(image)
             publish()
         }
     }
@@ -332,7 +332,7 @@ struct NetEaseQueueState: Codable {
         guard commands.isEmpty else { return }
         let center = MPRemoteCommandCenter.shared()
         func command(_ c: MPRemoteCommand, _ action: @escaping @MainActor () async throws -> Void) {
-            let target = c.addTarget { [weak self] _ in
+            let target = c.addTarget { @Sendable [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.selected else { return }
                     do { try await action() } catch is CancellationError {} catch { self.fail(error) }
@@ -348,7 +348,7 @@ struct NetEaseQueueState: Codable {
         command(center.togglePlayPauseCommand) { [weak self] in
             guard let self else { return }; if intentPlaying { try await pause() } else { try await play() }
         }
-        let target = center.changePlaybackPositionCommand.addTarget { [weak self] event in
+        let target = center.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let time = event.positionTime
             Task { @MainActor in

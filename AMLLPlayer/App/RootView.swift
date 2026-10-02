@@ -9,7 +9,7 @@ struct RootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var usesTabAccessory: Bool {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.1, *) {
             return true
         }
         return false

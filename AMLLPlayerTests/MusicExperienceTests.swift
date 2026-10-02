@@ -11,6 +11,10 @@ final class MusicExperienceTests: XCTestCase {
         XCTAssertEqual(MusicHomePresentation.sections(supported: supported, connected: false), [.recommendations, .charts])
         XCTAssertTrue(MusicHomePresentation.sections(supported: [.recent], connected: false).isEmpty)
     }
+    func testLibraryStartsWithTheDefaultPlaylistCategoryAndKeepsProviderCapabilities() {
+        XCTAssertEqual(MusicHomePresentation.librarySections(supported: [.savedTracks, .savedAlbums, .playlists, .downloaded]),
+                       [.playlists, .savedTracks, .savedAlbums, .downloaded])
+    }
     func testMixedHomeSectionsUseItemKindsForSongColumns() {
         XCTAssertTrue(MusicHomePresentation.usesSongColumns(.charts, kinds: [.track, .track]))
         XCTAssertTrue(MusicHomePresentation.usesSongColumns(.recentlyAdded, kinds: [.track]))

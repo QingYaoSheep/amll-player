@@ -11,8 +11,8 @@ struct MusicBrowserView: View {
             if #available(iOS 26.1, *) {
                 tabs.tabBarMinimizeBehavior(.onScrollDown)
                     .tabViewBottomAccessory(isEnabled: model.playbackSnapshot?.item != nil && model.currentServiceConnected) { accessory }
-            } else if #available(iOS 26.0, *), model.playbackSnapshot?.item != nil, model.currentServiceConnected {
-                tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory { accessory }
+            } else if #available(iOS 26.0, *) {
+                tabs.tabBarMinimizeBehavior(.onScrollDown)
             } else { tabs }
         }
         .tint(MusicProductStyle.accent)
@@ -173,7 +173,7 @@ struct MusicLibraryView: View {
     @Bindable var model: AppModel
     @Bindable var store: MusicCatalogStore
     @State private var selection: MusicLibrarySection = .playlists
-    private var sections: [MusicLibrarySection] { store.provider.librarySections }
+    private var sections: [MusicLibrarySection] { MusicHomePresentation.librarySections(supported: store.provider.librarySections) }
     private var current: MusicLibrarySection { sections.contains(selection) ? selection : sections.first ?? .playlists }
     var body: some View {
         Group {

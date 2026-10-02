@@ -6,6 +6,10 @@ enum MusicHomePresentation {
     static func sections(supported: [MusicLibrarySection], connected: Bool) -> [MusicLibrarySection] {
         order.filter { supported.contains($0) && (connected || [.recommendations, .charts].contains($0)) }
     }
+    static func librarySections(supported: [MusicLibrarySection]) -> [MusicLibrarySection] {
+        let order: [MusicLibrarySection] = [.playlists, .savedTracks, .savedAlbums, .followedArtists, .downloaded]
+        return order.filter { supported.contains($0) } + supported.filter { !order.contains($0) }
+    }
     static func usesSongColumns(_ section: MusicLibrarySection, kinds: [MusicCatalogKind?] = []) -> Bool {
         if !kinds.isEmpty { return kinds.allSatisfy { $0 == .track } }
         return [.recent, .dailySongs, .topTracks, .savedTracks].contains(section)

@@ -124,6 +124,29 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 3))
     }
 
+    @MainActor func testBeforeProductScreenshots() {
+        let app = catalogApp()
+        XCTAssertTrue(app.staticTexts["Test Listener"].waitForExistence(timeout: 5))
+        beforeCapture(app, name: "Before-home")
+        app.tabBars.buttons["Library"].tap()
+        beforeCapture(app, name: "Before-library")
+        app.tabBars.buttons["Search"].tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.tap(); field.typeText("Music")
+        XCTAssertTrue(app.staticTexts["Music Result"].waitForExistence(timeout: 5))
+        beforeCapture(app, name: "Before-search")
+        app.tabBars.buttons["Home"].tap()
+        app.buttons["openSettings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        beforeCapture(app, name: "Before-settings")
+    }
+
+    @MainActor private func beforeCapture(_ app: XCUIApplication, name: String) {
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = name; image.lifetime = .keepAlways; add(image)
+    }
+
     @MainActor private func catalogApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["--catalog-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]

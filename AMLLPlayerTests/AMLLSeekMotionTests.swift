@@ -18,7 +18,7 @@ final class AMLLSeekMotionTests: XCTestCase {
             for advance in [0.0, 0.3, 1.0] {
                 var live = engine(advance: advance)
                 _ = live.render(.init(position: 1, playing: true), delta: 0)
-                live.handle(.beginBrowsing); live.handle(.browseBy(-200))
+                live.handle(.beginBrowsing); live.handle(.browseBy(200))
                 let before = live.render(.init(position: 1, playing: true), delta: 0)
                 let input = AMLLPlayerInput(position: 16, playing: true, seekRevision: 1, seekPosition: 16)
                 let first = live.render(input, delta: step)
@@ -38,7 +38,7 @@ final class AMLLSeekMotionTests: XCTestCase {
     func testPendingSeekPreservesBrowsePositionUntilPlayerAcknowledgesIt() {
         var live = engine()
         _ = live.render(.init(position: 1, playing: true), delta: 0)
-        live.handle(.beginBrowsing); live.handle(.browseBy(-200))
+        live.handle(.beginBrowsing); live.handle(.browseBy(200))
         let before = live.render(.init(position: 1, playing: true), delta: 0)
         for _ in 0..<20 {
             let pending = live.render(.init(position: 1, playing: true, seekRevision: 1, seekPosition: 16), delta: 1 / 120)
@@ -53,7 +53,7 @@ final class AMLLSeekMotionTests: XCTestCase {
         for step in [1.0 / 60, 1.0 / 120, 0.037] {
             var sought = engine(), returned = engine()
             _ = sought.render(.init(position: 1, playing: true), delta: 0)
-            sought.handle(.beginBrowsing); sought.handle(.browseBy(-200))
+            sought.handle(.beginBrowsing); sought.handle(.browseBy(200))
             let before = sought.render(.init(position: 1, playing: true), delta: 0)
             let origin = returned.render(.init(position: 16, playing: true), delta: 0)
             returned.handle(.beginBrowsing); returned.handle(.browseBy(origin.rows[4].y - before.rows[4].y))
@@ -79,7 +79,7 @@ final class AMLLSeekMotionTests: XCTestCase {
     func testReduceMotionStillPositionsSeekImmediately() {
         var live = engine(reduceMotion: true), fresh = engine(reduceMotion: true)
         _ = live.render(.init(position: 1, playing: true), delta: 0)
-        live.handle(.beginBrowsing); live.handle(.browseBy(-200))
+        live.handle(.beginBrowsing); live.handle(.browseBy(200))
         _ = live.render(.init(position: 1, playing: true), delta: 0)
         let result = live.render(.init(position: 16, playing: true, seekRevision: 1, seekPosition: 16), delta: 1 / 120)
         let target = fresh.render(.init(position: 16, playing: true), delta: 0)
@@ -88,7 +88,7 @@ final class AMLLSeekMotionTests: XCTestCase {
     func testDisabledSpringKeepsExistingEaseOutInsteadOfSnapping() {
         var live = engine(spring: false), fresh = engine(spring: false)
         _ = live.render(.init(position: 1, playing: true), delta: 0)
-        live.handle(.beginBrowsing); live.handle(.browseBy(-200))
+        live.handle(.beginBrowsing); live.handle(.browseBy(200))
         let before = live.render(.init(position: 1, playing: true), delta: 0)
         let result = live.render(.init(position: 16, playing: true, seekRevision: 1, seekPosition: 16), delta: 1 / 120)
         let target = fresh.render(.init(position: 16, playing: true), delta: 0)

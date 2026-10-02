@@ -15,7 +15,7 @@ func check(_ condition: Bool, _ message: String) { if !condition { failures += 1
 for step in [1.0/60, 1.0/120, 0.037] {
  var live = engine()
  _ = live.render(.init(position: 1, playing: true), delta: 0)
- live.handle(.beginBrowsing); live.handle(.browseBy(-200))
+ live.handle(.beginBrowsing); live.handle(.browseBy(200))
  let before = live.render(.init(position: 1, playing: true), delta: 0)
  let after = live.render(.init(position: 16, playing: true, seekRevision: 1, seekPosition: 16), delta: step)
  var fresh = engine(); let destination = fresh.render(.init(position: 16, playing: true), delta: 0)
@@ -26,7 +26,7 @@ for step in [1.0/60, 1.0/120, 0.037] {
 }
 var delayed = engine()
 _ = delayed.render(.init(position: 1, playing: true), delta: 0)
-delayed.handle(.beginBrowsing); delayed.handle(.browseBy(-200))
+delayed.handle(.beginBrowsing); delayed.handle(.browseBy(200))
 let beforePending = delayed.render(.init(position: 1, playing: true), delta: 0)
 for _ in 0..<20 {
  let waiting = delayed.render(.init(position: 1, playing: true, seekRevision: 1, seekPosition: 16), delta: 1.0/120)

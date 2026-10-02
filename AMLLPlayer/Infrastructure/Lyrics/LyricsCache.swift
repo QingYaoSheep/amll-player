@@ -24,9 +24,12 @@ protocol LyricsCacheProviding {
     func save(_ entry: LyricsCacheEntry, settings: LyricsSettings) throws
     func selection(for trackID: String) throws -> LyricsSelection
     func saveSelection(_ value: LyricsSelection, for trackID: String) throws
+    var cachedByteCount: Int64? { get }
     func clearLyrics() throws
     func resetSelections() throws
 }
+
+extension LyricsCacheProviding { var cachedByteCount: Int64? { nil } }
 
 @Model
 final class StoredLyrics {
@@ -112,6 +115,11 @@ final class SwiftDataLyricsCache: LyricsCacheProviding {
             }
             try context.save()
         } catch { context.rollback(); throw LyricsError.cache }
+    }
+
+    var cachedByteCount: Int64? {
+        guard let values = try? context.fetch(FetchDescriptor<StoredLyrics>()) else { return nil }
+        return values.reduce(0) { $0 + Int64($1.data.count) }
     }
 
     func clearLyrics() throws {

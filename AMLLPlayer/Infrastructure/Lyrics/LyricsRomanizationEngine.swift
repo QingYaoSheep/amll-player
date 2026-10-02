@@ -126,6 +126,16 @@ actor LyricsRomanizationEngine {
         overrides = [:]
     }
 
+    func generatedCacheByteCount() throws -> Int64 {
+        let folder = try directory("RomanizationCache")
+        let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+        return files.reduce(0) { total, file in
+            guard let values = try? file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { return total }
+            return total + Int64(values.fileSize ?? 0)
+        }
+    }
+
     func clearGeneratedCache() throws {
         let folder = try directory("RomanizationCache")
         for url in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {

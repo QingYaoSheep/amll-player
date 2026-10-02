@@ -59,7 +59,8 @@ struct TabMusicAccessory: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 52)
+        .frame(minHeight: 52)
+        .accessibilityValue(snapshot.isPlaying ? String(localized: "player.play") : String(localized: "player.pause"))
         .matchedTransitionSource(id: "nowPlaying", in: namespace)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("miniPlayerBar")

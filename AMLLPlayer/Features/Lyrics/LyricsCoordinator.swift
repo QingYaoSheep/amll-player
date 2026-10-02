@@ -318,6 +318,8 @@ final class LyricsCoordinator {
         catch { cacheWarning = LyricsError.cache.localizedDescription }
     }
 
+    var cachedByteCount: Int64? { cache.cachedByteCount }
+
     func clearCache() {
         cancelLoad()
         do { try cache.clearLyrics(); savedAt = nil }

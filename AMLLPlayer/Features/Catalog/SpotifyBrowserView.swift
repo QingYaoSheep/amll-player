@@ -1,60 +1,38 @@
 import SwiftUI
 
-struct SpotifyBrowserView: View {
+/// Shared shell for all three music providers.
+struct MusicBrowserView: View {
     @Bindable var model: AppModel
     @State private var showingDevices = false
     let playerNamespace: Namespace.ID
     var openPlayer: () -> Void
-
     var body: some View {
         Group {
             if #available(iOS 26.0, *) {
-                tabs
-                    .tabBarMinimizeBehavior(.onScrollDown)
-                    .tabViewBottomAccessory {
-                        if let snapshot = model.playbackSnapshot, snapshot.item != nil, model.currentServiceConnected {
-                            TabMusicAccessory(model: model, snapshot: snapshot, namespace: playerNamespace, openPlayer: openPlayer)
-                        }
+                tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory {
+                    if let snapshot = model.playbackSnapshot, snapshot.item != nil, model.currentServiceConnected {
+                        TabMusicAccessory(model: model, snapshot: snapshot, namespace: playerNamespace, openPlayer: openPlayer)
                     }
-            } else {
-                tabs
-            }
+                }
+            } else { tabs }
         }
+        .tint(MusicProductStyle.accent)
         .sheet(isPresented: $showingDevices) { DevicePickerView(model: model) }
     }
-
     private var tabs: some View {
         TabView {
             Tab("catalog.home", systemImage: "house") {
-                navigation {
-                    CatalogHomeView(model: model, store: model.catalog)
-                }
-            }
-            Tab("catalog.search", systemImage: "magnifyingglass", role: .search) {
-                navigation {
-                    CatalogSearchView(model: model, store: model.catalog)
-                }
+                navigation { CatalogHomeView(model: model, store: model.catalog, openPlayer: openPlayer) }
             }
             Tab("catalog.library", systemImage: "square.stack") {
-                navigation {
-                    List(model.catalog.provider.librarySections, id: \.self) { section in
-                        NavigationLink(value: CatalogRoute.collection(section)) {
-                            Label(section.title, systemImage: section.symbol)
-                        }
-                    }
-                    .safeAreaInset(edge: .bottom) {
-                        if model.selectedMusicService == .netease, model.currentServiceConnected { NetEasePlaylistEditorButton(model: model).padding() }
-                        if model.selectedMusicService == .appleMusic {
-                            AppleMusicCreatePlaylistButton(model: model).padding()
-                        }
-                    }
-                    .navigationTitle("catalog.library")
-                    .accessibilityIdentifier("catalogLibrary")
-                }
+                navigation { MusicLibraryView(model: model, store: model.catalog) }
+            }
+            Tab("catalog.search", systemImage: "magnifyingglass", role: .search) {
+                navigation { CatalogSearchView(model: model, store: model.catalog) }
             }
         }
+        .tabViewStyle(.sidebarAdaptable)
     }
-
     private func navigation(@ViewBuilder content: () -> some View) -> some View {
         NavigationStack {
             content()
@@ -69,92 +47,165 @@ struct SpotifyBrowserView: View {
                     }
                 }
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { MusicSourceMenu(model: model) }
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button("player.devices", systemImage: "airplayaudio") {
-                            showingDevices = true
-                            Task { await model.loadDevices() }
+                        if model.currentServiceConnected {
+                            Button("player.devices", systemImage: "airplayaudio") {
+                                showingDevices = true
+                                Task { await model.loadDevices() }
+                            }
                         }
-                        NavigationLink { SettingsView(model: model) } label: {
-                            Label("settings.open", systemImage: "gearshape")
-                        }
-                        .accessibilityIdentifier("openSettings")
+                        NavigationLink { SettingsView(model: model) } label: { Label("settings.open", systemImage: "gearshape") }
+                            .accessibilityIdentifier("openSettings")
                     }
                 }
         }
     }
 }
 
-private struct CatalogHomeView: View {
+struct CatalogHomeView: View {
     @Bindable var model: AppModel
-    @Bindable var store: SpotifyCatalogStore
-
+    @Bindable var store: MusicCatalogStore
+    var openPlayer: () -> Void
+    private var sections: [MusicLibrarySection] {
+        model.canBrowseCurrentService ? MusicHomePresentation.sections(
+            supported: store.provider.homeSections, connected: model.currentServiceConnected) : []
+    }
     var body: some View {
-        List {
-            Section {
-                MusicSourcePicker(model: model)
-                if model.selectedMusicService == .netease, !model.currentServiceConnected {
-                    NavigationLink("登录到网易云音乐") { NetEaseLoginView(model: model) }
-                } else if let profile = store.profile {
-                    Label(profile.displayName, systemImage: "person.crop.circle")
-                        .font(.title2.bold())
-                } else if let error = store.profileError {
-                    CatalogErrorView(error: error) { await store.loadProfile(force: true) }
-                } else {
-                    ProgressView()
+        GeometryReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: MusicProductStyle.sectionSpacing) {
+                    if !model.currentServiceConnected || !model.canBrowseCurrentService {
+                        MusicConnectionCard(model: model)
+                    }
+                    if let profile = store.profile {
+                        Text("为 " + profile.displayName + " 精选")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if model.selectedMusicService == .appleMusic, model.currentServiceConnected, !model.canBrowseCurrentService,
+                       let item = model.playbackSnapshot?.item {
+                        Button(action: openPlayer) {
+                            Label("打开 " + item.title + " 的歌词", systemImage: "quote.bubble")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }.buttonStyle(.bordered)
+                    }
+                    ForEach(sections, id: \.self) { section in
+                        MusicHomeSection(model: model, store: store, section: section,
+                            state: store.page(.collection(section)),
+                            width: min(220, max(145, (proxy.size.width - 40) * 0.45)))
+                    }
                 }
+                .padding(.horizontal, MusicProductStyle.pageInset)
+                .padding(.top, 12).padding(.bottom, 28)
             }
-            ForEach(store.provider.homeSections, id: \.self) { section in
-                CatalogHomeSection(model: model, store: store, section: section, state: store.page(.collection(section)))
+            .background(Color(uiColor: .systemGroupedBackground))
+            .refreshable {
+                if model.currentServiceConnected { await store.loadProfile(force: true) }
+                let tasks = sections.map { section in Task { @MainActor in
+                    await store.page(.collection(section)).load(query: .collection(section), provider: store.provider, force: true)
+                } }
+                await withTaskCancellationHandler {
+                    for task in tasks { await task.value }
+                } onCancel: { tasks.forEach { $0.cancel() } }
             }
         }
         .navigationTitle("catalog.home")
         .accessibilityIdentifier("catalogHome")
-        .task { await store.loadProfile() }
-        .refreshable {
-            await store.loadProfile(force: true)
-            for section in store.provider.homeSections {
-                await store.page(.collection(section)).load(query: .collection(section), provider: store.provider, force: true)
-            }
-        }
+        .task { if model.currentServiceConnected && model.canBrowseCurrentService { await store.loadProfile() } }
     }
 }
 
-private struct CatalogHomeSection: View {
+private struct MusicHomeSection: View {
     @Bindable var model: AppModel
-    let store: SpotifyCatalogStore
-    let section: SpotifyLibrarySection
-    @Bindable var state: SpotifyCatalogPageState
-
+    let store: MusicCatalogStore
+    let section: MusicLibrarySection
+    @Bindable var state: MusicCatalogPageState
+    let width: CGFloat
+    @ScaledMetric(relativeTo: .body) private var songColumnHeight: CGFloat = 230
     var body: some View {
-        Section {
-            ForEach(Array(state.rows.prefix(4))) { row in CatalogRowView(model: model, row: row) }
-            if state.isLoading {
-                ProgressView()
-            } else if let error = state.error {
-                CatalogErrorView(error: error) { await load(force: true) }
-            } else if state.loadedAt != nil, state.rows.isEmpty {
-                Text("catalog.empty").foregroundStyle(.secondary)
+        if state.loadedAt == nil || !state.rows.isEmpty || state.error != nil {
+            VStack(alignment: .leading, spacing: 12) {
+                MusicSectionHeading(title: section.title, route: .collection(section))
+                if !state.rows.isEmpty {
+                    ScrollView(.horizontal) {
+                        if MusicHomePresentation.usesSongColumns(section) {
+                            LazyHGrid(rows: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 20) {
+                                ForEach(Array(state.rows.prefix(12))) { row in
+                                    CatalogRowView(model: model, row: row, tapToPlay: true)
+                                        .frame(width: max(280, width * 1.9))
+                                }
+                            }.frame(height: songColumnHeight).padding(.vertical, 2)
+                        } else {
+                            LazyHStack(alignment: .top, spacing: 12) {
+                                ForEach(Array(state.rows.prefix(12))) { row in
+                                    MusicCatalogCard(model: model, row: row, width: width)
+                                }
+                            }
+                        }
+                    }.scrollIndicators(.hidden)
+                } else if state.error == nil { MusicSkeleton() }
+                if let error = state.error {
+                    CatalogErrorView(error: error) { await load(force: true) }
+                }
             }
-            NavigationLink("catalog.seeAll", value: CatalogRoute.collection(section))
-        } header: {
-            Label(section.title, systemImage: section.symbol)
-        } footer: {
-            if section == .topTracks {
-                Text("catalog.topRange")
-            }
+            .task { await load(force: false) }
         }
-        .task { await load(force: false) }
     }
-
     private func load(force: Bool) async {
         await state.load(query: .collection(section), provider: store.provider, force: force)
     }
 }
 
-private struct CatalogCollectionView: View {
+struct MusicLibraryView: View {
+    @Bindable var model: AppModel
+    @Bindable var store: MusicCatalogStore
+    @State private var selection: MusicLibrarySection = .playlists
+    private var sections: [MusicLibrarySection] { store.provider.librarySections }
+    private var current: MusicLibrarySection { sections.contains(selection) ? selection : sections.first ?? .playlists }
+    var body: some View {
+        Group {
+            if !model.currentServiceConnected || !model.canBrowseCurrentService {
+                ScrollView { MusicConnectionCard(model: model).padding(20) }
+            } else {
+                VStack(spacing: 0) {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(sections, id: \.self) { section in
+                                Button { selection = section } label: {
+                                    Label(section.title, systemImage: section.symbol)
+                                        .font(.subheadline.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 44)
+                                }.buttonStyle(.plain)
+                                    .foregroundStyle(current == section ? MusicProductStyle.accent : .primary)
+                                    .background(current == section ? MusicProductStyle.accent.opacity(0.12) : Color.clear, in: Capsule())
+                                    .accessibilityAddTraits(current == section ? .isSelected : [])
+                            }
+                        }.padding(.horizontal, 20)
+                    }.scrollIndicators(.hidden).padding(.vertical, 8)
+                    CatalogCollectionView(model: model, store: store, section: current, showsTitle: false)
+                        .id(current)
+                }
+            }
+        }
+        .navigationTitle("catalog.library")
+        .accessibilityIdentifier("catalogLibrary")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if model.currentServiceConnected {
+                    if model.selectedMusicService == .netease { NetEasePlaylistEditorButton(model: model) }
+                    if model.selectedMusicService == .appleMusic, model.appleMusicState.capabilities.canModifyLibrary {
+                        AppleMusicCreatePlaylistButton(model: model)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct CatalogCollectionView: View {
     @Bindable var model: AppModel
     let store: SpotifyCatalogStore
     let section: SpotifyLibrarySection
+    var showsTitle = true
     @State private var alphabetical = true
 
     private var usesLibrarySort: Bool {
@@ -167,7 +218,7 @@ private struct CatalogCollectionView: View {
 
     var body: some View {
         CatalogPagedList(model: model, store: store, query: query, state: store.page(query))
-            .navigationTitle(section.title)
+            .navigationTitle(showsTitle ? section.title : String(localized: "catalog.library"))
             .safeAreaInset(edge: .top) {
                 if usesLibrarySort {
                     Picker("名称排序", selection: $alphabetical) { Text("名称 A–Z").tag(true); Text("名称 Z–A").tag(false) }
@@ -177,7 +228,7 @@ private struct CatalogCollectionView: View {
     }
 }
 
-private struct CatalogPagedList: View {
+struct CatalogPagedList: View {
     @Bindable var model: AppModel
     let store: SpotifyCatalogStore
     let query: SpotifyCatalogQuery
@@ -194,107 +245,191 @@ private struct CatalogPagedList: View {
     }
 }
 
-private struct CatalogSearchView: View {
+
+struct CatalogSearchView: View {
     @Bindable var model: AppModel
-    @Bindable var store: SpotifyCatalogStore
-    @State private var displayedQuery: SpotifyCatalogQuery?
-
-    private var query: SpotifyCatalogQuery {
-        store.searchLibrary ? .librarySearch(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines), store.searchKind)
-            : .search(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines), store.searchKind)
+    @Bindable var store: MusicCatalogStore
+    @State private var displayedRequest: MusicSearchRequest?
+    private var request: MusicSearchRequest {
+        .init(term: store.searchText.trimmingCharacters(in: .whitespacesAndNewlines),
+              library: store.searchLibrary, kind: store.searchFilter)
     }
-
     var body: some View {
         VStack(spacing: 0) {
-            Picker("catalog.searchType", selection: $store.searchKind) {
-                ForEach(store.searchLibrary ? [MusicCatalogKind.track, .album, .artist, .playlist] : store.provider.searchKinds, id: \.self) { kind in Text(kind.title).tag(kind) }
-            }
-            .pickerStyle(.menu)
-            .padding()
-            if store.provider.service == .appleMusic {
-                Picker("搜索范围", selection: $store.searchLibrary) {
-                    Text("Apple Music 全库").tag(false)
-                    Text("我的资料库").tag(true)
-                }.pickerStyle(.segmented).padding(.horizontal)
-                    .onChange(of: store.searchLibrary) { _, library in
-                        if library, [.station, .musicVideo].contains(store.searchKind) {
-                            store.searchKind = .track
+            if model.canBrowseCurrentService {
+                if store.provider.service == .appleMusic {
+                    Picker("搜索范围", selection: $store.searchLibrary) {
+                        Text("Apple Music 全库").tag(false); Text("我的资料库").tag(true)
+                    }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 8)
+                        .onChange(of: store.searchLibrary) { _, library in
+                            if library, store.searchFilter == .station || store.searchFilter == .musicVideo { store.searchFilter = nil }
                         }
-                    }
-            }
-            if let displayedQuery, displayedQuery == query {
-                CatalogSearchResults(model: model, store: store, query: displayedQuery, state: store.page(displayedQuery))
-            } else if store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                List(store.searchHistory, id: \.self) { term in
-                    Button(term) { store.searchText = term }
+                }
+                if request.term.isEmpty { history }
+                else {
+                    filters
+                    if displayedRequest == request {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 28) {
+                                ForEach(request.queries(supported: store.provider.searchKinds), id: \.self) { query in
+                                    MusicSearchGroup(model: model, store: store, query: query,
+                                        state: store.page(query), preview: store.searchFilter == nil,
+                                        onSelect: { store.rememberSearch(request.term) },
+                                        seeAll: { kind in store.rememberSearch(request.term); store.searchFilter = kind })
+                                }
+                            }.padding(20)
+                        }
+                    } else { MusicSkeleton().padding(20); Spacer() }
                 }
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                ScrollView { MusicConnectionCard(model: model).padding(20) }
             }
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("catalog.search")
         .searchable(text: $store.searchText, prompt: "catalog.searchPrompt")
+        .onSubmit(of: .search) { store.rememberSearch(request.term) }
         .searchSuggestions {
-            ForEach(store.suggestions, id: \.self) { term in Text(term).searchCompletion(term) }
+            ForEach(store.suggestions, id: \.self) { term in
+                Button { store.searchText = term; store.rememberSearch(term) } label: { Label(term, systemImage: "magnifyingglass") }
+                    .searchCompletion(term)
+            }
         }
-        .task(id: store.searchText) {
+        .task(id: request) {
             store.suggestions = []
-            let term = store.searchText
-            guard !term.isEmpty, !store.searchLibrary else { return }
+            guard model.canBrowseCurrentService, !request.term.isEmpty else {
+                store.cancelSearch(); displayedRequest = nil; return
+            }
+            let current = request
+            if displayedRequest != current {
+                store.cancelSearch()
+                displayedRequest = nil
+                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+            }
+            guard !Task.isCancelled else { return }
+            displayedRequest = current
+            await store.loadSearch(current)
+        }
+        .task(id: MusicSearchRequest(term: request.term, library: request.library, kind: nil)) {
+            let term = request.term
+            guard model.canBrowseCurrentService, !term.isEmpty, !store.searchLibrary else { return }
             do {
                 try await Task.sleep(for: .milliseconds(300))
-                let values = try await store.provider.suggestions(term)
-                guard !Task.isCancelled, term == store.searchText else { return }
-                store.suggestions = values
+                let suggestions = try await store.provider.suggestions(term)
+                guard !Task.isCancelled, term == request.term, !store.searchLibrary else { return }
+                store.suggestions = suggestions
             } catch {}
         }
-        .task(id: query) {
-            let current = query
-            if displayedQuery == current, store.page(current).loadedAt != nil {
-                return
-            }
-            if let old = displayedQuery, old != current {
-                store.discardSearch(old)
-            }
-            displayedQuery = nil
-            guard !store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
-            guard !Task.isCancelled else { return }
-            store.rememberSearch(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines))
-            displayedQuery = current
-            await store.page(current).load(query: current, provider: store.provider)
+    }
+    private var filters: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                filter("综合", kind: nil)
+                ForEach(store.searchLibrary ? [.track, .album, .artist, .playlist] : store.provider.searchKinds, id: \.self) { kind in
+                    filter(kind.title, kind: kind)
+                }
+            }.padding(.horizontal, 20)
+        }.scrollIndicators(.hidden).padding(.vertical, 8)
+    }
+    private func filter(_ title: String, kind: MusicCatalogKind?) -> some View {
+        Button { store.searchFilter = kind } label: {
+            Text(title).font(.subheadline.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 44)
+        }.buttonStyle(.plain)
+            .foregroundStyle(store.searchFilter == kind ? MusicProductStyle.accent : .primary)
+            .background(store.searchFilter == kind ? MusicProductStyle.accent.opacity(0.12) : Color.clear, in: Capsule())
+            .accessibilityAddTraits(store.searchFilter == kind ? .isSelected : [])
+    }
+    private var history: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("最近搜索").font(.title2.bold())
+                    Spacer()
+                    if !store.searchHistory.isEmpty {
+                        Button("清除") { store.clearSearchHistory() }.frame(minHeight: 44)
+                            .accessibilityIdentifier("clearMusicSearchHistory")
+                    }
+                }
+                if store.searchHistory.isEmpty {
+                    ContentUnavailableView("寻找喜欢的音乐", systemImage: "magnifyingglass",
+                        description: Text("搜索歌曲、艺人、专辑或歌单。"))
+                }
+                ForEach(store.searchHistory, id: \.self) { term in
+                    HStack {
+                        Button { store.searchText = term; store.rememberSearch(term) } label: {
+                            Label(term, systemImage: "clock").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }.buttonStyle(.plain)
+                        Button { store.removeSearch(term) } label: {
+                            Image(systemName: "xmark").frame(width: 44, height: 44)
+                        }.accessibilityLabel("删除搜索记录 " + term).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                }
+            }.padding(20)
         }
     }
 }
 
-private struct CatalogSearchResults: View {
+private struct MusicSearchGroup: View {
     @Bindable var model: AppModel
-    let store: SpotifyCatalogStore
-    let query: SpotifyCatalogQuery
-    @Bindable var state: SpotifyCatalogPageState
-
+    let store: MusicCatalogStore
+    let query: MusicCatalogQuery
+    @Bindable var state: MusicCatalogPageState
+    let preview: Bool
+    var onSelect: () -> Void
+    var seeAll: (MusicCatalogKind) -> Void
+    private var kind: MusicCatalogKind {
+        switch query { case let .search(_, kind), let .librarySearch(_, kind): kind; default: .track }
+    }
     var body: some View {
-        CatalogRowsScrollView(model: model, state: state) { more, force in
-            await state.load(query: query, provider: store.provider, more: more, force: force)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(kind.title).font(.title2.bold())
+                Spacer()
+                if preview, !state.rows.isEmpty {
+                    Button("查看全部") { seeAll(kind) }.frame(minHeight: 44)
+                }
+            }
+            ForEach(Array(state.rows.prefix(preview ? 4 : state.rows.count))) { row in
+                CatalogRowView(model: model, row: row, tapToPlay: true, onSelect: onSelect)
+                Divider()
+            }
+            if let error = state.error {
+                CatalogErrorView(error: error) { await state.load(query: query, provider: store.provider, force: true) }
+            } else if state.isLoading || state.loadedAt == nil {
+                MusicSkeleton()
+            } else if state.rows.isEmpty {
+                Text("没有找到相关" + kind.title + "，试试其他关键词。").font(.subheadline).foregroundStyle(.secondary)
+            } else if !preview, state.next != nil {
+                CatalogPageFooter(state: state) { more, force in
+                    await state.load(query: query, provider: store.provider, more: more, force: force)
+                }
+            }
         }
-        .refreshable { await state.load(query: query, provider: store.provider, force: true) }
     }
 }
 
-private struct CatalogRowsScrollView: View {
+struct CatalogRowsScrollView: View {
     @Bindable var model: AppModel
     @Bindable var state: SpotifyCatalogPageState
     let load: (Bool, Bool) async -> Void
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(state.rows) { row in
-                    VStack(spacing: 0) {
-                        CatalogRowView(model: model, row: row)
-                        Divider()
+            if !state.rows.isEmpty, state.rows.allSatisfy({ [.album, .playlist, .artist].contains($0.item.kind) }) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145, maximum: 220), spacing: 12)], alignment: .leading, spacing: 24) {
+                    ForEach(state.rows) { row in
+                        MusicCatalogCard(model: model, row: row, width: 145).id(row.id)
                     }
-                    .id(row.id)
+                }.padding(20)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(state.rows) { row in
+                        VStack(spacing: 0) {
+                            CatalogRowView(model: model, row: row, tapToPlay: true)
+                            Divider()
+                        }.id(row.id)
+                    }
                 }
             }
             .scrollTargetLayout()

@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 enum CatalogRoute: Hashable {
     case collection(SpotifyLibrarySection)
@@ -9,24 +10,26 @@ enum CatalogRoute: Hashable {
 struct CatalogArtwork: View {
     let url: URL?
     var size: CGFloat = 52
+    var isArtist = false
+    @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8).fill(.quaternary)
             if let image {
-                Image(uiImage: image).resizable().scaledToFit()
+                Image(uiImage: image).resizable().scaledToFill()
             } else {
                 Image(systemName: "music.note").foregroundStyle(.secondary)
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: isArtist ? size / 2 : min(16, size / 6)))
         .accessibilityHidden(true)
-        .task(id: url) {
+        .task(id: "\(url?.absoluteString ?? ""):\(Int(size * displayScale))") {
             image = nil
             guard let url else { return }
-            let loaded = await CatalogImageCache.shared.image(url)
+            let loaded = await CatalogImageCache.shared.image(url, pixels: Int(size * displayScale))
             if !Task.isCancelled {
                 image = loaded
             }
@@ -35,19 +38,24 @@ struct CatalogArtwork: View {
 }
 
 @MainActor
-private final class CatalogImageCache {
+final class CatalogImageCache {
     static let shared = CatalogImageCache()
-    private let cache = NSCache<NSURL, UIImage>()
+    private var cache: [String: UIImage] = [:]
+    private var costs: [String: Int] = [:]
+    private var order: [String] = []
     private var tasks: [URL: Task<Data?, Never>] = [:]
     private var subscribers: [URL: Set<UUID>] = [:]
 
-    private init() {
-        cache.totalCostLimit = 32 * 1024 * 1024
-    }
+    private init() {}
 
-    func image(_ url: URL) async -> UIImage? {
+    private(set) var byteCount = 0
+    func clear() { cache.removeAll(); costs.removeAll(); order.removeAll(); byteCount = 0 }
+    func image(_ url: URL, pixels: Int = 600) async -> UIImage? {
         guard url.scheme == "https" else { return nil }
-        if let image = cache.object(forKey: url as NSURL) {
+        let edge = min(1400, max(64, ((pixels + 63) / 64) * 64))
+        let key = url.absoluteString + ":" + String(edge)
+        if let image = cache[key] {
+            order.removeAll { $0 == key }; order.append(key)
             return image
         }
         let id = UUID()
@@ -74,9 +82,26 @@ private final class CatalogImageCache {
             Task { @MainActor in self.release(url, id: id) }
         }
         defer { release(url, id: id) }
-        guard !Task.isCancelled, let data, let image = UIImage(data: data) else { return nil }
-        let thumbnail = image.preparingThumbnail(of: CGSize(width: 600, height: 600)) ?? image
-        cache.setObject(thumbnail, forKey: url as NSURL, cost: Int(thumbnail.size.width * thumbnail.size.height * 4))
+        guard !Task.isCancelled, let data else { return nil }
+        let thumbnail = await Task.detached(priority: .utility) { () -> UIImage? in
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: edge,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                  ] as CFDictionary) else { return nil }
+            return UIImage(cgImage: cg)
+        }.value
+        guard !Task.isCancelled, let thumbnail else { return nil }
+        let cost = Int(thumbnail.size.width * thumbnail.size.height * 4)
+        byteCount -= costs[key] ?? 0
+        cache[key] = thumbnail; costs[key] = cost; byteCount += cost
+        order.removeAll { $0 == key }; order.append(key)
+        while byteCount > 32 * 1024 * 1024, let oldest = order.first {
+            order.removeFirst(); cache.removeValue(forKey: oldest)
+            byteCount -= costs.removeValue(forKey: oldest) ?? 0
+        }
         return thumbnail
     }
 
@@ -174,6 +199,8 @@ struct CatalogRowView: View {
     @Bindable var model: AppModel
     let row: SpotifyCatalogRow
     var contextURI: String?
+    var tapToPlay = false
+    var onSelect: (() -> Void)? = nil
     var parentPlaylist: MusicCatalogItem?
     @State private var netEasePlaylistItem: MusicCatalogItem?
     @State private var playlistItem: MusicCatalogItem?
@@ -181,10 +208,19 @@ struct CatalogRowView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let kind = row.item.kind, row.item.availability != .unsupported {
+            if tapToPlay, row.item.kind == .track, row.item.canPlay {
+                Button {
+                    onSelect?()
+                    Task {
+                        do { try await model.playCatalog(row.item, contextURI: contextURI, position: row.position) }
+                        catch is CancellationError {} catch { failure = error.localizedDescription }
+                    }
+                } label: { label }.buttonStyle(.plain)
+            } else if let kind = row.item.kind, row.item.availability != .unsupported {
                 NavigationLink(value: row.item.service != .spotify
                     ? CatalogRoute.resource(row.item.resource!) : CatalogRoute.detail(kind, row.item.spotifyID)) { label }
                     .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded { onSelect?() })
             } else {
                 label
             }

@@ -113,7 +113,9 @@ struct LyricsAppearanceView: View {
                 Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords)
                 Toggle("render.spring", isOn: $preferences.configuration.enableSpring)
                 Toggle("render.scale", isOn: $preferences.configuration.enableScale)
-                DisclosureGroup("appearance.motionDetails") {
+                NavigationLink("高级调整") {
+                    Form {
+                Section("精细调整动画") {
                     Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines)
                     Toggle("render.marquee", isOn: $preferences.configuration.marquee)
                     LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
@@ -124,6 +126,8 @@ struct LyricsAppearanceView: View {
                     LabeledContent("render.anchor", value: String(format: "%.0f%%", preferences.configuration.anchor * 100))
                     Slider(value: $preferences.configuration.anchor, in: 0.2 ... 0.7, step: 0.05).accessibilityLabel(Text("render.anchor"))
                     Text("render.advanceHelp").font(.footnote).foregroundStyle(.secondary)
+                }
+                    }.navigationTitle("高级调整")
                 }
             }
             Section("render.layout") {

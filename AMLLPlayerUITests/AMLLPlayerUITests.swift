@@ -7,48 +7,68 @@ final class AMLLPlayerUITests: XCTestCase {
 
     @MainActor func testPlayerAndSettingsAreReachable() {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["--skip-welcome-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-
-        XCTAssertTrue(app.navigationBars["Spotify Player"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Spotify configuration required"].exists)
-
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["connectCurrentMusic"].exists)
         app.buttons["openSettings"].tap()
-        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 2))
-        XCTAssertEqual(app.sheets.count, 0)
-        XCTAssertTrue(app.buttons["spotifyLoginLink"].exists)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        app.buttons["musicAccountsLink"].tap()
+        XCTAssertTrue(app.buttons["spotifyLoginLink"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["appleMusicLoginLink"].exists)
-
-        // Apple Music authorization must be reachable without configuring Spotify.
         app.buttons["appleMusicLoginLink"].tap()
-        XCTAssertTrue(app.navigationBars["登录到 Apple Music"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.buttons["appleMusicAuthorize"].exists)
-        XCTAssertEqual(app.sheets.count, 0)
-        app.navigationBars["登录到 Apple Music"].buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.navigationBars["Settings"].exists)
-
+        XCTAssertTrue(app.buttons["appleMusicAuthorize"].waitForExistence(timeout: 3))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["spotifyLoginLink"].tap()
-        XCTAssertTrue(app.navigationBars["Sign in to Spotify"].waitForExistence(timeout: 2))
-        XCTAssertEqual(app.sheets.count, 0)
+        XCTAssertTrue(app.buttons["spotifyAuthorize"].waitForExistence(timeout: 3))
+        app.buttons["spotifyAdvancedConfiguration"].tap()
         let clientID = app.textFields["spotifyClientID"]
-        let authorize = app.buttons["spotifyAuthorize"]
-        XCTAssertTrue(clientID.exists)
-        XCTAssertFalse(authorize.isEnabled)
-        clientID.tap()
-        clientID.typeText("test-client\n")
-        XCTAssertTrue(authorize.isEnabled)
+        XCTAssertTrue(clientID.waitForExistence(timeout: 3))
+        clientID.tap(); clientID.typeText("test-client\n")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["spotifyAuthorize"].isEnabled)
+    }
 
-        app.navigationBars["Sign in to Spotify"].buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.navigationBars["Settings"].exists)
-        app.navigationBars["Settings"].buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.navigationBars["Spotify Player"].exists)
+    @MainActor func testWelcomeCanBeSkippedIntoStableNavigation() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--welcome-ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.buttons["skipMusicWelcome"].waitForExistence(timeout: 5))
+        capture(app, name: "Product-welcome")
+        app.buttons["skipMusicWelcome"].tap()
+        XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.tabBars.buttons.count >= 3)
+    }
+
+    @MainActor func testProductPagesAndSearchHistory() {
+        let app = catalogApp()
+        XCTAssertTrue(app.staticTexts["为 Test Listener 精选"].waitForExistence(timeout: 5))
+        capture(app, name: "Product-home")
+        app.buttons["openSettings"].tap()
+        XCTAssertTrue(app.buttons["musicAccountsLink"].waitForExistence(timeout: 3))
+        capture(app, name: "Product-settings")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.tabBars.buttons["Library"].tap()
+        XCTAssertTrue(app.staticTexts["Test Playlist"].waitForExistence(timeout: 3))
+        capture(app, name: "Product-library")
+        app.tabBars.buttons["Search"].tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.tap(); field.typeText("Music")
+        XCTAssertTrue(app.staticTexts["Music Result"].firstMatch.waitForExistence(timeout: 5))
+        capture(app, name: "Product-search")
+        field.typeText("\n")
+        let clear = field.buttons.firstMatch
+        if clear.exists { clear.tap() } else { field.tap(); field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 5)) }
+        XCTAssertTrue(app.buttons["clearMusicSearchHistory"].waitForExistence(timeout: 5))
+        app.buttons["clearMusicSearchHistory"].tap()
+        XCTAssertFalse(app.buttons["clearMusicSearchHistory"].exists)
     }
 
     @MainActor func testCatalogNavigationAndMetadataOnlyPlaylist() {
         let app = catalogApp()
-        XCTAssertTrue(app.staticTexts["Test Listener"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["为 Test Listener 精选"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Library"].tap()
-        app.buttons["My playlists"].tap()
         XCTAssertTrue(app.staticTexts["Test Playlist"].waitForExistence(timeout: 3))
         app.staticTexts["Test Playlist"].firstMatch.tap()
         XCTAssertTrue(app.buttons["Open in Spotify"].waitForExistence(timeout: 3))
@@ -62,10 +82,11 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         field.tap()
         field.typeText("Test")
-        let result = app.staticTexts["Test Result"]
+        app.buttons["Albums"].firstMatch.tap()
+        let result = app.staticTexts["Test Result"].firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 4))
         result.tap()
-        XCTAssertTrue(app.navigationBars["Test Song"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Test Album"].waitForExistence(timeout: 3))
         app.navigationBars["Test Song"].buttons.element(boundBy: 0).tap()
         XCTAssertTrue(result.waitForExistence(timeout: 3))
         XCTAssertEqual(field.value as? String, "Test")
@@ -73,7 +94,7 @@ final class AMLLPlayerUITests: XCTestCase {
 
     @MainActor func testLyricsSearchPreviewApplyAndManualLock() {
         let app = XCUIApplication()
-        app.launchArguments += ["--lyrics-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["--lyrics-ui-testing", "--skip-welcome-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         waitForLyricsEntry(app)
         app.buttons["openNowPlaying"].tap()
@@ -124,9 +145,14 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 3))
     }
 
+    @MainActor private func capture(_ app: XCUIApplication, name: String) {
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = name; image.lifetime = .keepAlways; add(image)
+    }
+
     @MainActor private func catalogApp() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["--catalog-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["--catalog-ui-testing", "--skip-welcome-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         return app
     }

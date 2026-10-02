@@ -4,24 +4,21 @@ struct RootView: View {
     @Bindable var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingPlayer = false
+    @State private var showingWelcome = false
     @Namespace private var playerNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var usesTabAccessory: Bool {
         if #available(iOS 26.0, *) {
-            return model.catalog.active
+            return true
         }
         return false
     }
 
     var body: some View {
         Group {
-            if model.catalog.active {
-                SpotifyBrowserView(model: model, playerNamespace: playerNamespace, openPlayer: { showingPlayer = true })
-                    .id(model.catalog.identity)
-            } else {
-                NavigationStack { SpotifyPlayerView(model: model) }
-            }
+            MusicBrowserView(model: model, playerNamespace: playerNamespace, openPlayer: { showingPlayer = true })
+                .id(model.catalog.identity)
         }
         .safeAreaInset(edge: .bottom, spacing: 8) {
             if !usesTabAccessory, let snapshot = model.playbackSnapshot,
@@ -34,12 +31,31 @@ struct RootView: View {
                     .padding(.bottom, 4)
             }
         }
+        .sheet(isPresented: $showingWelcome) {
+            MusicWelcomeView(model: model) {
+                MusicWelcomePreferences().complete()
+                showingWelcome = false
+            }
+        }
         .fullScreenCover(isPresented: $showingPlayer) {
             player
                 .modifier(PlayerZoomTransition(namespace: playerNamespace, enabled: !reduceMotion))
         }
         .onChange(of: model.catalog.identity) { showingPlayer = false }
         .task {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--welcome-ui-testing") { showingWelcome = true }
+            else if ProcessInfo.processInfo.arguments.contains("--skip-welcome-ui-testing") { showingWelcome = false }
+            else {
+                showingWelcome = MusicWelcomePreferences().needsWelcome(
+                    existingConnection: MusicServiceID.allCases.contains { model.isConnected(to: $0) },
+                    configuredSpotify: model.environment.configuration.spotifyClientID != nil)
+            }
+            #else
+            showingWelcome = MusicWelcomePreferences().needsWelcome(
+                existingConnection: MusicServiceID.allCases.contains { model.isConnected(to: $0) },
+                configuredSpotify: model.environment.configuration.spotifyClientID != nil)
+            #endif
             model.prepare()
             model.handleScenePhase(scenePhase)
         }

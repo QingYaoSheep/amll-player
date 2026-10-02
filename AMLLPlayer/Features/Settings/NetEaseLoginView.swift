@@ -3,8 +3,6 @@ import SwiftUI
 
 struct NetEaseLoginView: View {
     @Bindable var model: AppModel
-    @State private var cookie = ""
-    @State private var importing = false
     @State private var failure: String?
     @State private var qrImage: UIImage?
     @State private var qrFile: URL?
@@ -43,22 +41,14 @@ struct NetEaseLoginView: View {
                 Text("默认高品质；修改后从下一首生效。当前歌曲需重新起播才能更换。实际音质取决于账号权限和设备解码能力。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            Section("高级：Cookie 导入") {
-                SecureField("粘贴网易云 Cookie", text: $cookie).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("验证并导入") {
-                    Task {
-                        importing = true; defer { importing = false; cookie = "" }
-                        do { try await session.importCookie(cookie) } catch is CancellationError {} catch { failure = error.localizedDescription }
-                    }
-                }.disabled(importing || cookie.isEmpty)
-                Text("仅在你主动粘贴后验证，成功后保存在本机 Keychain；失败保留原有效登录。")
-                    .font(.footnote).foregroundStyle(.secondary)
+            Section {
+                NavigationLink("高级登录方式") { NetEaseCookieImportView(session: session) }
             }
         }
         .navigationTitle("登录到网易云音乐")
         .task { await session.refresh() }
         .task(id: session.qrURL) { makeQR() }
-        .onDisappear { session.cancelQR(); cookie = ""; clearQRFile() }
+        .onDisappear { session.cancelQR(); clearQRFile() }
         .alert("登录未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("好", role: .cancel) { failure = nil }
         } message: { Text(failure ?? "") }
@@ -75,4 +65,30 @@ struct NetEaseLoginView: View {
         if let png = image.pngData(), (try? png.write(to: file)) != nil { qrFile = file }
     }
     private func clearQRFile() { if let qrFile { try? FileManager.default.removeItem(at: qrFile) }; qrFile = nil }
+}
+
+private struct NetEaseCookieImportView: View {
+    let session: NetEaseSession
+    @State private var cookie = ""
+    @State private var importing = false
+    @State private var failure: String?
+    var body: some View {
+        Form {
+            Section("高级：Cookie 导入") {
+                SecureField("粘贴网易云 Cookie", text: $cookie).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Button("验证并导入") {
+                    Task {
+                        importing = true; defer { importing = false; cookie = "" }
+                        do { try await session.importCookie(cookie) } catch is CancellationError {} catch { failure = error.localizedDescription }
+                    }
+                }.disabled(importing || cookie.isEmpty)
+                Text("仅在你主动粘贴后验证，成功后保存在本机 Keychain；失败保留原有效登录。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }.navigationTitle("高级登录方式")
+        .onDisappear { cookie = "" }
+        .alert("登录未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("好", role: .cancel) { failure = nil }
+        } message: { Text(failure ?? "") }
+    }
 }

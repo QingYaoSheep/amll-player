@@ -135,6 +135,7 @@ final class MusicCatalogStore {
     private(set) var profile: SpotifyProfile?
     private(set) var profileError: SpotifyCatalogError?
     var searchLibrary = false
+    var searchFilter: MusicCatalogKind? = nil
     var suggestions: [String] = []
     var searchHistory: [String] = []
     var searchText = ""
@@ -143,17 +144,52 @@ final class MusicCatalogStore {
     @ObservationIgnored private var pages: [SpotifyCatalogQuery: MusicCatalogPageState] = [:]
     @ObservationIgnored private var details: [String: MusicCatalogDetailState] = [:]
     @ObservationIgnored private var detailResources: [String: MusicResourceID] = [:]
+    @ObservationIgnored private let historyDefaults: UserDefaults
+    @ObservationIgnored private var searchRequests = Set<MusicCatalogQuery>()
     @ObservationIgnored private var profileTask: Task<Void, Never>?
 
-    init(provider: any SpotifyCatalogProviding) {
+    init(provider: any SpotifyCatalogProviding, defaults: UserDefaults = .standard) {
         self.provider = provider
-        searchHistory = UserDefaults.standard.stringArray(forKey: "music.search.history." + provider.service.rawValue) ?? []
+        historyDefaults = defaults
+        searchHistory = defaults.stringArray(forKey: "music.search.history." + provider.service.rawValue) ?? []
     }
 
     func rememberSearch(_ term: String) {
+        let term = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return }
         searchHistory = Array(([term] + searchHistory.filter { $0 != term }).prefix(20))
-        UserDefaults.standard.set(searchHistory, forKey: "music.search.history." + provider.service.rawValue)
+        historyDefaults.set(searchHistory, forKey: "music.search.history." + provider.service.rawValue)
+    }
+
+    func removeSearch(_ term: String) {
+        searchHistory.removeAll { $0 == term }
+        historyDefaults.set(searchHistory, forKey: "music.search.history." + provider.service.rawValue)
+    }
+
+    func clearSearchHistory() {
+        searchHistory.removeAll()
+        historyDefaults.removeObject(forKey: "music.search.history." + provider.service.rawValue)
+    }
+
+    /// Each group owns a page state: one failure never erases sibling results.
+    func loadSearch(_ request: MusicSearchRequest) async {
+        let queries = Set(request.queries(supported: provider.searchKinds))
+        for old in searchRequests.subtracting(queries) { discardSearch(old) }
+        searchRequests = queries
+        let tasks = queries.map { query in
+            Task { @MainActor in await self.page(query).load(query: query, provider: self.provider) }
+        }
+        await withTaskCancellationHandler {
+            for task in tasks { await task.value }
+        } onCancel: {
+            tasks.forEach { $0.cancel() }
+        }
+    }
+
+    func cancelSearch() {
+        searchRequests.forEach { discardSearch($0) }
+        searchRequests.removeAll()
+        suggestions = []
     }
 
     func activate() {
@@ -174,6 +210,10 @@ final class MusicCatalogStore {
         profileError = nil
         searchText = ""
         searchKind = .track
+        searchFilter = nil
+        searchLibrary = false
+        suggestions = []
+        searchRequests.removeAll()
         provider.invalidate()
     }
 

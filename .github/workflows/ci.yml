@@ -19,6 +19,18 @@ jobs:
         run: xcodebuild -resolvePackageDependencies -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
       - name: Prepare simulator
         run: node Scripts/prepare-ci-simulators.cjs
+      - name: Run minimal background artwork callback reproduction
+        run: |
+          mkdir -p build
+          xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 6 -strict-concurrency=complete \
+            -target "$(uname -m)-apple-ios18.0-simulator" \
+            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+            AMLLPlayer/Infrastructure/NetEase/NetEaseNowPlayingArtwork.swift \
+            Scripts/netease-artwork-callback-repro.swift -o build/NetEaseArtworkRepro
+          codesign --force --sign - build/NetEaseArtworkRepro
+          xcrun simctl boot "$CI_IPHONE_UDID"
+          xcrun simctl bootstatus "$CI_IPHONE_UDID" -b
+          xcrun simctl spawn "$CI_IPHONE_UDID" "$PWD/build/NetEaseArtworkRepro"
       - name: Reproduce off-main Now Playing artwork callback
         run: >-
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
@@ -30,7 +42,7 @@ jobs:
         if: always()
         run: |
           mkdir -p build/CrashReports
-          cp ~/Library/Logs/DiagnosticReports/*AMLL* build/CrashReports/ 2>/dev/null || true
+          cp ~/Library/Logs/DiagnosticReports/*AMLL* ~/Library/Logs/DiagnosticReports/*NetEaseArtworkRepro* build/CrashReports/ 2>/dev/null || true
           if [[ -d build/NetEase-callback.xcresult ]]; then
             xcrun xcresulttool get test-results summary --path build/NetEase-callback.xcresult > build/summary.json || true
           fi

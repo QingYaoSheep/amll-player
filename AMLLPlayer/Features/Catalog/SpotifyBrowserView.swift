@@ -6,12 +6,23 @@ struct MusicBrowserView: View {
     @State private var showingDevices = false
     let playerNamespace: Namespace.ID
     var openPlayer: () -> Void
+    private var usesLegacyPlayerForTesting: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--legacy-mini-player-ui-testing")
+        #else
+        return false
+        #endif
+    }
+    private var usesTabAccessory: Bool {
+        if #available(iOS 26.1, *) { return !usesLegacyPlayerForTesting }
+        return false
+    }
     var body: some View {
         Group {
-            if #available(iOS 26.1, *) {
+            if #available(iOS 26.1, *), !usesLegacyPlayerForTesting {
                 tabs.tabBarMinimizeBehavior(.onScrollDown)
                     .tabViewBottomAccessory(isEnabled: model.playbackSnapshot?.item != nil && model.currentServiceConnected) { accessory }
-            } else if #available(iOS 26.0, *) {
+            } else if #available(iOS 26.0, *), !usesLegacyPlayerForTesting {
                 tabs.tabBarMinimizeBehavior(.onScrollDown)
             } else { tabs }
         }
@@ -65,6 +76,17 @@ struct MusicBrowserView: View {
                             .accessibilityIdentifier("openSettings")
                     }
                 }
+        }
+        // Reserve space within the selected tab, above the system tab bar.
+        // An inset around TabView itself does not protect its native controls.
+        .safeAreaInset(edge: .bottom, spacing: usesTabAccessory ? 0 : 8) {
+            if !usesTabAccessory, let snapshot = model.playbackSnapshot,
+               snapshot.item != nil, model.currentServiceConnected {
+                MiniPlayerBar(model: model, snapshot: snapshot, openPlayer: openPlayer)
+                    .matchedTransitionSource(id: "nowPlaying", in: playerNamespace)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
         }
     }
 }

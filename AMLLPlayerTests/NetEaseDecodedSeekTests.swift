@@ -21,6 +21,7 @@ import XCTest
             let song = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Markers", "dt": 48000], kind: .track))
             try await playback.enqueue(song, next: false)
             defer { player.pause(); player.replaceCurrentItem(with: nil) }
+            try MusicAudioSession.acquirePlayback()
             player.play()
             for _ in 0..<200 where item.status != .readyToPlay { try await Task.sleep(for: .milliseconds(25)) }
             XCTAssertEqual(item.status, .readyToPlay)
@@ -29,16 +30,17 @@ import XCTest
                 try await playback.seek(to: target)
                 XCTAssertEqual(player.currentTime().seconds, target, accuracy: 0.1, ext)
                 probe.clear(); player.play()
-                for _ in 0..<200 where probe.samples.count < 3 { try await Task.sleep(for: .milliseconds(10)) }
+                for _ in 0..<200 where probe.samples.filter { $0.time >= target - 0.05 && $0.frequency > 100 }.count < 3 { try await Task.sleep(for: .milliseconds(10)) }
                 player.pause()
                 let samples = probe.samples
                 XCTAssertFalse(samples.isEmpty, "Decoded audio tap must receive real PCM: " + ext)
                 let expected = 320 + floor(target / 2) * 80
-                let audible = samples.prefix(3).map(\.frequency).sorted()
+                let audible = samples.filter { $0.time >= target - 0.05 && $0.time < target + 0.5 && $0.frequency > 100 }.map(\.frequency).sorted()
+                XCTAssertFalse(audible.isEmpty, "Decoded non-silent target samples required: " + ext)
                 if let median = audible.dropFirst(audible.count / 2).first {
                     XCTAssertEqual(median, expected, accuracy: 45, "The audible marker must agree with the seek, not just currentTime: " + ext + " target " + String(target))
                 }
-                print("[SEEK-V2] codec=\(ext) target=\(target) media=\(player.currentTime().seconds) decoded=\(audible)")
+                print("[SEEK-V2] codec=\(ext) target=\(target) media=\(player.currentTime().seconds) decoded=\(samples.map { "\($0.time):\($0.frequency)" })")
             }
         }
     }

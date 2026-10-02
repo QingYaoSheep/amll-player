@@ -11,7 +11,9 @@ import XCTest
         let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
-        model.prepare(); try await model.playCatalog(song)
+        model.prepare(); model.handleScenePhase(.active)
+        try await Task.sleep(for: .milliseconds(300))
+        try await model.playCatalog(song)
         try await wait { model.lyrics.document != nil && model.playbackSnapshot != nil }
         await model.seek(to: 4.25)
         try await wait { abs(model.progress() - 4.25) < 1 }
@@ -49,7 +51,9 @@ import XCTest
         let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
-        model.prepare(); try await model.playCatalog(song)
+        model.prepare(); model.handleScenePhase(.active)
+        try await Task.sleep(for: .milliseconds(300))
+        try await model.playCatalog(song)
         let old = try await waitForCanvas(host.view)
         model.renderPreferences.configuration.showLyrics = false
         try await wait { findCanvas(host.view) == nil }

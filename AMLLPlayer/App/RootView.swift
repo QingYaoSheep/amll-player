@@ -8,31 +8,10 @@ struct RootView: View {
     @Namespace private var playerNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var usesTabAccessory: Bool {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--legacy-mini-player-ui-testing") { return false }
-        #endif
-        if #available(iOS 26.1, *) {
-            return true
-        }
-        return false
-    }
-
     var body: some View {
         Group {
             MusicBrowserView(model: model, playerNamespace: playerNamespace, openPlayer: { showingPlayer = true })
                 .id(model.catalog.identity)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 8) {
-            if !usesTabAccessory, let snapshot = model.playbackSnapshot,
-               snapshot.item != nil,
-               model.currentServiceConnected
-            {
-                MiniPlayerBar(model: model, snapshot: snapshot, openPlayer: { showingPlayer = true })
-                    .matchedTransitionSource(id: "nowPlaying", in: playerNamespace)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 4)
-            }
         }
         .sheet(isPresented: $showingWelcome) {
             MusicWelcomeView(model: model) {

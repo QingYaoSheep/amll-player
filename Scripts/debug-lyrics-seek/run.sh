@@ -14,8 +14,10 @@ enum MusicRepeatMode: Sendable { case off, all, one }
 enum MusicTrackIdentity { static func key(service: MusicServiceID, scope: MusicResourceScope, id: String) -> String { id } }
 struct LyricsRenderConfiguration: Sendable { var backgroundBlur = 0.0; var showControls = false }
 SWIFT
+
+node Scripts/debug-lyrics-seek/generate.cjs
 xcrun swiftc -o build/seek-loop/check \
  build/seek-loop/Models.swift build/seek-loop/Stubs.swift AMLLPlayer/Domain/PlaybackModels.swift \
  AMLLPlayer/Rendering/{AMLLFrameEngine,AMLLDisplayDocument,AMLLMotionModel,AMLLSourceTimeline,AMLLSourceSpring,AMLLScheduledSpring,AMLLSourceTransition,AMLLWordAnimationClock,AMLLFocusRetirement,AMLLMaskAlpha}.swift \
- Scripts/debug-lyrics-seek/main.swift
+ build/seek-loop/Tests.swift build/seek-loop/main.swift
 time build/seek-loop/check

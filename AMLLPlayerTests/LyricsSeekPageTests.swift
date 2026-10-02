@@ -16,16 +16,14 @@ import XCTest
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
         try await start(model, song)
         try await wait("document and snapshot") { model.lyrics.document != nil && model.playbackSnapshot != nil }
-        await model.togglePlayPause()
-        try await wait("paused fixture") { model.playbackSnapshot?.isPlaying == false }
+        try await pauseFixture(model, player)
         await model.seek(to: 4.25)
         try await wait("initial seek") { abs(model.progress() - 4.25) < 1 }
         let canvas = try await waitForCanvas(host.view)
         try await wait("confirmed canvas settled") {
             canvas.frameState?.settled == true && abs((canvas.frameState?.lyricTime ?? 0) - 4.25) < 0.01
         }
-        // Use the same interaction dispatch as the real pan recognizer;
-        // overriding UIKit's gesture state produces an invalid state machine.
+        // Dispatch the same interactions as the production pan handler.
         canvas.handleInteraction(.beginBrowsing)
         canvas.handleInteraction(.browseBy(80))
         try await wait("dragged presentation") { canvas.frameState?.browsing == true }
@@ -65,8 +63,7 @@ import XCTest
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
         try await start(model, song)
         let old = try await waitForCanvas(host.view)
-        await model.togglePlayPause()
-        try await wait("paused fixture") { model.playbackSnapshot?.isPlaying == false }
+        try await pauseFixture(model, player)
         model.renderPreferences.configuration.showLyrics = false
         try await wait { findCanvas(host.view) == nil }
         await model.seek(to: 20.25, entry: .progress, trackURI: song.uri)
@@ -80,6 +77,17 @@ import XCTest
         let displayStart = AMLLDisplayDocument(lines: try XCTUnwrap(model.lyrics.document).lines).lines[5].start
         XCTAssertEqual(frame.rows[5].wordClock.time + displayStart, frame.lyricTime, accuracy: 0.1)
         XCTAssertFalse(frame.rows[5].fillComplete)
+    }
+
+    private func pauseFixture(_ model: AppModel, _ player: AVPlayer) async throws {
+        // A buffering player's snapshot can say not playing even though play
+        // is pending. Toggle would start it again rather than pause it.
+        try await model.netEasePlayback.pause()
+        try await wait("paused media and clock") {
+            player.rate == 0 && model.playbackSnapshot?.isPlaying == false
+                && abs(model.progress() - player.currentTime().seconds) < 0.01
+        }
+        print("[SEEK-V2] fixture paused media=\(player.currentTime().seconds) clock=\(model.progress())")
     }
 
     private func start(_ model: AppModel, _ song: MusicCatalogItem) async throws {

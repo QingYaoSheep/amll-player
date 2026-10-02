@@ -29,6 +29,7 @@ struct NetEaseQueueState: Codable {
     @ObservationIgnored private let catalog: NetEaseCatalog
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var player = AVPlayer()
+    @ObservationIgnored private let seekPlayer: @MainActor (AVPlayer, Double) async -> Bool
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var itemObservation: NSKeyValueObservation?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
@@ -51,8 +52,11 @@ struct NetEaseQueueState: Codable {
         let entries = Dictionary(uniqueKeysWithValues: queue.entries.map { ($0.id, $0) })
         return order.compactMap { entries[$0] }
     }
-    init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer()) {
-        self.session = session; self.catalog = catalog; self.defaults = defaults; self.player = player
+    init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer(),
+         seekPlayer: @escaping @MainActor (AVPlayer, Double) async -> Bool = { player, value in
+             await player.seek(to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+         }) {
+        self.session = session; self.catalog = catalog; self.defaults = defaults; self.player = player; self.seekPlayer = seekPlayer
         quality = defaults.string(forKey: "netease.quality.v1").flatMap(NetEaseQuality.init(rawValue:)) ?? .exhigh
         let s = AsyncStream<PlaybackSnapshot>.makeStream(bufferingPolicy: .bufferingNewest(1))
         playbackSnapshots = s.stream; continuation = s.continuation
@@ -114,7 +118,7 @@ struct NetEaseQueueState: Codable {
         if player.currentItem == nil { generation = UUID() }
         let epoch = generation
         let value = duration > 0 ? min(target, duration) : target
-        if player.currentItem != nil { await player.seek(to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
+        if player.currentItem != nil { await seekPlayer(player, value) }
         guard epoch == generation else { throw CancellationError() }
         queue.position = value; revision &+= 1; stallSeconds = 0; save(); publish()
     }

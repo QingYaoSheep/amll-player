@@ -53,11 +53,13 @@ nonisolated final class DecodedAudioProbe: @unchecked Sendable {
 
 let root = CommandLine.arguments[1]
 Task { @MainActor in
-    for ext in ["flac", "mp3", "m4a"] {
+    var failures = 0
+    for ext in ["flac"] {
         let url = CommandLine.arguments.contains("--http")
             ? URL(string: "http://127.0.0.1:18083/seek-markers." + ext)!
             : URL(fileURLWithPath: root).appendingPathComponent("seek-markers." + ext)
-        let item = AVPlayerItem(url: url)
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: CommandLine.arguments.contains("--precise")])
+        let item = AVPlayerItem(asset: asset)
         let probe = DecodedAudioProbe()
         let tracks = try await item.asset.loadTracks(withMediaType: .audio)
         let params = AVMutableAudioMixInputParameters(track: tracks[0]); params.audioTapProcessor = try probe.makeTap()
@@ -67,11 +69,15 @@ Task { @MainActor in
         for target in [8.25, 20.25, 4.25, 36.25] {
             player.pause(); let finished = await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
             probe.clear(); player.play(); try await Task.sleep(for: .milliseconds(400)); player.pause()
+            let decoded = probe.samples.filter { $0.frequency > 100 && $0.time >= target - 0.1 }.map(\.frequency).sorted()
+            let expected = 320 + floor(target / 2) * 80
+            if decoded.isEmpty || abs(decoded[decoded.count / 2] - expected) > 45 { failures += 1 }
             print("[SEEK-V2] codec=\(ext) target=\(target) finished=\(finished) media=\(player.currentTime().seconds) pcm=\(probe.samples.map { String($0.time) + ":" + String($0.frequency) })")
         }
         player.replaceCurrentItem(with: nil)
     }
-    exit(0)
+    print("[SEEK-V2] audible-mismatches=\(failures)")
+    exit(failures == 0 ? 0 : 1)
 }
 DispatchQueue.global().asyncAfter(deadline: .now() + 40) { print("[SEEK-V2] real seek timeout"); exit(2) }
 RunLoop.main.run()

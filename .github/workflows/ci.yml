@@ -35,4 +35,9 @@ jobs:
           node Scripts/debug-lyrics-seek-v2/server.cjs AMLLPlayerTests/Fixtures &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID"' EXIT
+          set +e
           xcrun swift Scripts/debug-lyrics-seek-v2/Audio.swift AMLLPlayerTests/Fixtures --http
+          BASELINE_RESULT=$?
+          set -e
+          [[ "$BASELINE_RESULT" == 1 ]]
+          xcrun swift Scripts/debug-lyrics-seek-v2/Audio.swift AMLLPlayerTests/Fixtures --http --precise

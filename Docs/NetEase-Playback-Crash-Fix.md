@@ -11,7 +11,7 @@
 3. closure #1 in static NetEaseNowPlayingArtwork.make(_:)
 4. NetEasePlaybackCallbackTests 的后台图片请求
 
-不访问网易云、不使用账号、不播放音源的 [最小复现](https://github.com/QingYaoSheep/amll-player/actions/runs/36974880255) 同样退出。只将工厂改为 nonisolated、保持图片与请求不变后，[同一最小复现](https://github.com/QingYaoSheep/amll-player/actions/runs/36975430412) 已通过。完整应用修复后回归和两路交付另行记录。
+不访问网易云、不使用账号、不播放音源的 [最小复现](https://github.com/QingYaoSheep/amll-player/actions/runs/36974880255) 同样退出。只将工厂改为 nonisolated、保持图片与请求不变后，[同一最小复现](https://github.com/QingYaoSheep/amll-player/actions/runs/36975430412) 已通过。同一完整应用回归亦通过：1 项测试零失败，后台封面请求耗时 0.019 秒。生产修复提交为 f435e3ec。
 
 ## 改动
 
@@ -21,8 +21,10 @@
 
 ## 验证与边界
 
-原版后台封面回调已在 iOS27 模拟器的完整 AMLL 应用内复现进程退出，不是网络错误或图片测试断言。修复后的相同离线最小复现已通过。GitHub Actions 两路仍按原规则产出直接 IPA 和测试通过后 IPA。
+原版后台封面回调已在 iOS27 模拟器的完整 AMLL 应用内复现进程退出，不是网络错误或图片测试断言。修复后的相同离线最小复现已通过。[生产构建 36976114290](https://github.com/QingYaoSheep/amll-player/actions/runs/36976114290) 两路均通过：404 项单元测试、7 项 UI 测试零失败，直接与测试后归档及 IPA 包检查均通过；两份安装包都对应 f435e3ecbec7d897ebf9c534b9201c5846bca294。
 
-未收到本次用户设备的原始 ips；用户设备上持续播放、切歌、前后台及锁屏控制的同症消除仍须安装修复包复核。模拟器结果不等同于账号权限或设备后台音频验收。
+直接包 SHA-256：2f5eaf7d44448201c4f2918854e2e1a99a3fee587f2e3a235c7101d20937d003。测试后包 SHA-256：3393c19e517395b7cf2d04b06428f32f8abd3d0297cbfba0596416982e009945。
+
+用户已安装 f435e3ec 直接修复包，并确认“已连续播放，未再闪退”，本次持续播放退出问题得到设备复测。设备型号、iOS 版本及播放时长未记录；切歌、前后台与锁屏控制的专项验收仍单独保留。未收到用户原始 ips，模拟器结果不等同于账号权限或设备后台音频验收。
 
 原始日志、完整 xcresult 和崩溃报告保存在 E:/AMLL-Swift/Builds/NetEasePlaybackCrash。独立诊断分支 codex/netease-playback-crash-repro 不改动生产工作流。保留工作区已有歌词与回放修改。

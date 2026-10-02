@@ -14,23 +14,23 @@ import XCTest
         model.prepare(); model.handleScenePhase(.active)
         try await Task.sleep(for: .milliseconds(300))
         try await model.playCatalog(song)
-        try await wait { model.lyrics.document != nil && model.playbackSnapshot != nil }
+        try await wait("document and snapshot") { model.lyrics.document != nil && model.playbackSnapshot != nil }
         await model.seek(to: 4.25)
-        try await wait { abs(model.progress() - 4.25) < 1 }
+        try await wait("initial seek") { abs(model.progress() - 4.25) < 1 }
         let canvas = try await waitForCanvas(host.view)
-        try await wait { canvas.frameState != nil }
+        try await wait("canvas frame") { canvas.frameState != nil }
         let pan = SeekFixturePan()
         pan.phase = .began; _ = canvas.perform(NSSelectorFromString("pan:"), with: pan)
         pan.phase = .changed; pan.movement = CGPoint(x: 0, y: -200)
         _ = canvas.perform(NSSelectorFromString("pan:"), with: pan)
         pan.phase = .ended; _ = canvas.perform(NSSelectorFromString("pan:"), with: pan)
-        try await wait { canvas.frameState?.browsing == true }
+        try await wait("browsed presentation") { canvas.frameState?.browsing == true }
         let before = try XCTUnwrap(canvas.frameState).rows
         let targetRow = try XCTUnwrap(descendants(canvas).first { $0.isAccessibilityElement && $0.accessibilityLabel?.contains("Marker 4") == true })
         var frames: [AMLLFrameState] = []
         canvas.frameObserver = { frames.append($0) }
         XCTAssertTrue(targetRow.accessibilityActivate(), "Activate the real production row callback")
-        try await wait { model.progress() >= 16 && model.progress() < 17 && !model.isPerformingAction }
+        try await wait("clicked lyric confirmation") { model.progress() >= 16 && model.progress() < 17 && !model.isPerformingAction }
         try await Task.sleep(for: .milliseconds(1400))
         canvas.frameObserver = nil
         XCTAssertTrue(findCanvas(host.view) === canvas, "A seek must not replace the visible canvas")
@@ -69,6 +69,19 @@ import XCTest
         XCTAssertFalse(frame.rows[5].fillComplete)
     }
 
+    private func start(_ model: AppModel, _ song: MusicCatalogItem) async throws {
+        model.prepare(); model.handleScenePhase(.active)
+        // Let the real session stream install the account before starting media.
+        try await Task.sleep(for: .seconds(1))
+        print("[SEEK-V2] start connected=\(model.netEaseState.connected) active=\(model.catalog.active)")
+        do { try await model.playCatalog(song) }
+        catch {
+            print("[SEEK-V2] start failed \(error) phases=\(PlaybackSeekDiagnostics.shared.events.map(\.phase))")
+            throw error
+        }
+        try await wait("lyrics ready") { model.lyrics.document != nil && model.playbackSnapshot?.item != nil }
+    }
+
     private func makeModel() async throws -> (AppModel, AVPlayer, MusicCatalogItem) {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "seek-markers", withExtension: "flac"))
         let session = NetEaseSession(api: SeekFixtureAPI(), store: SeekFixtureStore())
@@ -77,7 +90,7 @@ import XCTest
         let preferences = MusicSourcePreferences(defaults: defaults); preferences.selected = .netease
         let player = AVPlayer()
         let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: defaults,
-                                       player: player, makeItem: { _ in AVPlayerItem(url: url) })
+                                       player: player, makeItem: { _ in NetEasePlayback.makeAudioItem(url) })
         let lyrics = LyricsCoordinator(providers: [SeekFixtureLyrics()], cache: MemoryLyricsCache(), settingsStore: LyricsSettingsStore(defaults: defaults))
         let model = AppModel(environment: .make(configuration: .preview), lyrics: lyrics,
                              renderPreferences: LyricsRenderPreferences(defaults: defaults), netEaseSession: session,
@@ -85,12 +98,12 @@ import XCTest
         let song = try XCTUnwrap(NetEaseDecoder.item(SeekFixtureAPI.song, kind: .track))
         return (model, player, song)
     }
-    private func wait(_ condition: () -> Bool) async throws {
+    private func wait(_ label: String = #function, _ condition: () -> Bool) async throws {
         for _ in 0..<500 { if condition() { return }; try await Task.sleep(for: .milliseconds(10)) }
-        XCTFail("Production page state timed out"); throw CancellationError()
+        XCTFail("Production page state timed out: \(label)"); throw CancellationError()
     }
     private func waitForCanvas(_ root: UIView) async throws -> AMLLNativeCanvas {
-        try await wait { findCanvas(root) != nil }
+        try await wait("mounted production canvas") { findCanvas(root) != nil }
         return try XCTUnwrap(findCanvas(root))
     }
     private func findCanvas(_ root: UIView) -> AMLLNativeCanvas? { descendants(root).compactMap { $0 as? AMLLNativeCanvas }.first }

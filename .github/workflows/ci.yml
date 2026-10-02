@@ -16,6 +16,7 @@ jobs:
         run: >-
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
+          -only-testing:AMLLPlayerTests/NetEaseSeekTests
           -only-testing:AMLLPlayerTests/NetEaseDecodedSeekTests
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests
           -parallel-testing-enabled NO

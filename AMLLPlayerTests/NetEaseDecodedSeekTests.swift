@@ -8,7 +8,7 @@ import XCTest
     func testRealDecoderLandsOnTheRequestedAudioMarker() async throws {
         for ext in ["mp3", "m4a", "flac"] {
             let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "seek-markers", withExtension: ext))
-            let item = AVPlayerItem(url: url)
+            let item = NetEasePlayback.makeAudioItem(url)
             let tracks = try await item.asset.loadTracks(withMediaType: .audio)
             let probe = DecodedAudioProbe()
             let parameters = AVMutableAudioMixInputParameters(track: try XCTUnwrap(tracks.first))

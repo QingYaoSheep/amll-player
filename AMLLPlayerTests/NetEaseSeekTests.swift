@@ -3,10 +3,10 @@ import AVFoundation
 import XCTest
 
 @MainActor final class NetEaseSeekTests: XCTestCase {
-    private func playback(_ player: ControlledSeekPlayer) async throws -> NetEasePlayback {
+    private func playback(_ player: ControlledSeekPlayer, timeout: Double = 10) async throws -> NetEasePlayback {
         let session = NetEaseSession(store: SeekMemoryStore())
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "Seek-\(UUID())"))
-        let result = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: defaults, player: player)
+        let result = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: defaults, player: player, seekTimeout: timeout)
         let song = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Seek", "dt": 32000], kind: .track))
         try await result.enqueue(song, next: false)
         return result
@@ -87,6 +87,53 @@ import XCTest
         for _ in 0..<20 { await Task.yield() }
         XCTAssertGreaterThan(snapshots.count, count, "Cancellation must release the snapshot gate")
     }
+
+    func testConfirmationSurvivesAnImmediateOrdinarySnapshot() async throws {
+        let player = ControlledSeekPlayer(), playback = try await playback(player)
+        let request = PlaybackSeekRequest(id: UUID(), service: .netease, sourceGeneration: UUID(),
+            trackURI: "netease:track:42", target: 4, entry: .lyric, requestedAt: ProcessInfo.processInfo.systemUptime)
+        let work = Task { try await playback.seek(request) }
+        for _ in 0..<100 where !player.pending { try await Task.sleep(for: .milliseconds(10)) }
+        player.complete(at: 4, finished: true)
+        let result = try await work.value
+        try await playback.refresh() // bufferingNewest(1) can replace the notification.
+        let ordinary = try XCTUnwrap(playback.latestSnapshot)
+        XCTAssertEqual(ordinary.seekConfirmation, result.confirmation)
+        XCTAssertEqual(result.snapshot.position, result.confirmation.position)
+        XCTAssertEqual(result.snapshot.sampledAtUptime, result.confirmation.sampledAt)
+        XCTAssertNil(ordinary.seekRequest)
+    }
+    func testTimeoutReleasesSamplingAndRejectsTheLateCallback() async throws {
+        let player = ControlledSeekPlayer(), playback = try await playback(player, timeout: 0.03)
+        let work = Task { try await playback.seek(to: 4) }
+        do { try await work.value; XCTFail("Missing completion must time out") }
+        catch PlaybackSeekError.timedOut {} catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertNil(playback.latestSnapshot?.seekRequest)
+        XCTAssertEqual(playback.latestSnapshot?.position, 12)
+        player.complete(at: 4, finished: true)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(playback.latestSnapshot?.positionRevision, 0)
+        XCTAssertNil(playback.latestSnapshot?.seekConfirmation)
+        try await playback.refresh()
+        XCTAssertEqual(playback.latestSnapshot?.position, 4)
+    }
+    func testNewRequestRejectsOldCompletionEvenOnTheSameTrack() async throws {
+        let player = ControlledSeekPlayer(), playback = try await playback(player)
+        let first = Task { try await playback.seek(to: 4) }
+        for _ in 0..<100 where !player.pending { try await Task.sleep(for: .milliseconds(10)) }
+        let old = player.takeCompletion()
+        let second = Task { try await playback.seek(to: 8) }
+        for _ in 0..<100 where !player.pending { try await Task.sleep(for: .milliseconds(10)) }
+        old?(true)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(playback.latestSnapshot?.positionRevision, 0)
+        player.complete(at: 8, finished: true)
+        try await second.value
+        do { try await first.value; XCTFail("Replaced request cannot confirm") }
+        catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertEqual(playback.latestSnapshot?.positionRevision, 1)
+        XCTAssertEqual(playback.latestSnapshot?.position, 8)
+    }
 }
 
 private final class SeekMemoryStore: SpotifySessionDataStoring, @unchecked Sendable {
@@ -106,6 +153,10 @@ nonisolated private final class ControlledSeekPlayer: AVPlayer, @unchecked Senda
     func setTime(_ value: Double) { lock.lock(); time = value; lock.unlock() }
     override func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime, completionHandler: @escaping @Sendable (Bool) -> Void) {
         lock.lock(); completion = completionHandler; lock.unlock()
+    }
+    func takeCompletion() -> (@Sendable (Bool) -> Void)? {
+        lock.lock(); defer { lock.unlock() }
+        let result = completion; completion = nil; return result
     }
     func complete(at value: Double, finished: Bool) {
         lock.lock(); time = value; let handler = completion; completion = nil; lock.unlock()

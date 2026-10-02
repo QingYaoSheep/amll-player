@@ -278,7 +278,9 @@ struct LyricsProgressControl: View {
                     if value {
                         draft = model.progress(); editing = true
                     } else {
-                        editing = false; Task { await model.seek(to: draft) }
+                        let target = draft, track = snapshot.item?.uri
+                        editing = false
+                        Task { await model.seek(to: target, entry: .progress, trackURI: track) }
                     }
                 }.disabled(!snapshot.restrictions.canSeek || model.isPerformingAction).accessibilityLabel(Text("render.progress"))
                 HStack {

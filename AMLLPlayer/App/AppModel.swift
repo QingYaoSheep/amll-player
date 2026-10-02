@@ -49,6 +49,10 @@ final class AppModel {
     private(set) var lyricsSeekRevision = 0
     /// Requested Spotify position, kept separate from the asynchronously reported progress.
     private(set) var lyricsSeekPosition: TimeInterval?
+    private(set) var pendingLyricsSeek: PlaybackSeekRequest?
+    @ObservationIgnored private var frozenSeekPosition: Double?
+    @ObservationIgnored private var seekActionID: UUID?
+    @ObservationIgnored private var lastLyricsSeekConfirmation: PlaybackSeekConfirmation?
     private(set) var devicesState: LoadableState<[PlaybackDevice]> = .idle
     private(set) var isPerformingAction = false
     var presentedError: SpotifyServiceError?
@@ -312,6 +316,11 @@ final class AppModel {
     }
 
     func togglePlayPause() async {
+        if pendingLyricsSeek != nil, selectedMusicService == .netease {
+            seekActionID = nil; pendingLyricsSeek = nil; frozenSeekPosition = nil; isPerformingAction = false
+            await perform { try await netEasePlayback.pause() }
+            return
+        }
         await perform {
             if playbackSnapshot?.isPlaying == true {
                 try await currentPlayback.pause()
@@ -329,24 +338,47 @@ final class AppModel {
         await perform { try await currentPlayback.skipPrevious() }
     }
 
-    func seek(to position: TimeInterval) async {
-        guard !isPerformingAction else { return }
+    func seek(to position: TimeInterval, entry: PlaybackSeekEntry = .unspecified, trackURI: String? = nil,
+              lyricTime: Double? = nil, offset: Double? = nil) async {
+        guard position.isFinite, position >= 0, !isPerformingAction || seekActionID != nil,
+              let uri = playbackSnapshot?.item?.uri, trackURI == nil || trackURI == uri else { return }
         let epoch = sourceGeneration
-        let playback = currentPlayback
-        lyricsSeekPosition = position
-        lyricsSeekRevision &+= 1
-        await perform {
-            do {
-                try await playback.seek(to: position)
-            } catch {
-                if epoch == sourceGeneration {
-                    lyricsSeekPosition = nil
-                }
-                throw error
+        let request = PlaybackSeekRequest(id: UUID(), service: selectedMusicService, sourceGeneration: epoch,
+                                          trackURI: uri, target: position, entry: entry,
+                                          requestedAt: ProcessInfo.processInfo.systemUptime, lyricTime: lyricTime, offset: offset)
+        PlaybackSeekDiagnostics.shared.begin(request)
+        if selectedMusicService != .netease {
+            lyricsSeekPosition = position; lyricsSeekRevision &+= 1
+            await perform {
+                do { try await currentPlayback.seek(to: position) }
+                catch { if epoch == sourceGeneration { lyricsSeekPosition = nil }; throw error }
+            }
+            return
+        }
+        // Freeze the last trustworthy clock immediately, before any actor suspension.
+        frozenSeekPosition = progress(); pendingLyricsSeek = request; seekActionID = request.id
+        isPerformingAction = true
+        defer {
+            if seekActionID == request.id {
+                seekActionID = nil; pendingLyricsSeek = nil; frozenSeekPosition = nil
+                lyricsSeekPosition = nil; isPerformingAction = false
             }
         }
+        do {
+            let result = try await netEasePlayback.seek(request)
+            guard epoch == sourceGeneration, seekActionID == request.id,
+                  playbackSnapshot?.item?.uri == uri, result.confirmation.requestID == request.id else { return }
+            // Commit directly as well as through the stream. The durable receipt
+            // makes either ordering idempotent, including while the canvas is absent.
+            receive(result.snapshot)
+        } catch {
+            guard epoch == sourceGeneration, seekActionID == request.id else { return }
+            pendingLyricsSeek = nil; frozenSeekPosition = nil; lyricsSeekPosition = nil
+            try? await netEasePlayback.refresh()
+            if let actual = netEasePlayback.latestSnapshot { receive(actual) }
+            if error is CancellationError { present(PlaybackSeekError.interrupted) } else { present(error) }
+        }
     }
-
     func setVolume(percent: Int, deviceID: String?) async {
         await perform {
             try await currentPlayback.setVolume(
@@ -428,7 +460,14 @@ final class AppModel {
     }
 
     func progress(at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval {
-        clock.position(at: uptime)
+        frozenSeekPosition ?? clock.position(at: uptime)
+    }
+
+    func lyricsPlaybackFrame(at uptime: Double = ProcessInfo.processInfo.systemUptime) -> LyricsPlaybackFrame {
+        LyricsPlaybackFrame(snapshot: playbackSnapshot, position: progress(at: uptime),
+                            playing: pendingLyricsSeek == nil && playbackSnapshot?.isPlaying == true,
+                            seekRevision: lyricsSeekRevision, pending: pendingLyricsSeek ?? playbackSnapshot?.seekRequest,
+                            confirmation: pendingLyricsSeek == nil ? lastLyricsSeekConfirmation : nil, legacySeekPosition: lyricsSeekPosition)
     }
 
     func selectMusicService(_ service: MusicServiceID) {
@@ -562,6 +601,8 @@ final class AppModel {
         lyrics.update(track: nil)
         playbackSnapshot = nil
         lyricsSeekPosition = nil
+        pendingLyricsSeek = nil; frozenSeekPosition = nil; lastLyricsSeekConfirmation = nil
+        if seekActionID != nil { seekActionID = nil; isPerformingAction = false }
         lyricsSeekRevision &+= 1
         devicesState = .idle
         clock = PlayerClock()
@@ -569,10 +610,23 @@ final class AppModel {
 
     private func receive(_ snapshot: PlaybackSnapshot) {
         guard currentServiceConnected else { return }
+        if let previous = playbackSnapshot, previous.item?.uri == snapshot.item?.uri,
+           snapshot.sampledAtUptime < previous.sampledAtUptime { return }
         if playbackSnapshot?.item?.uri != snapshot.item?.uri {
-            lyricsSeekPosition = nil
+            lyricsSeekPosition = nil; lastLyricsSeekConfirmation = nil
+            if pendingLyricsSeek?.trackURI != snapshot.item?.uri { pendingLyricsSeek = nil; frozenSeekPosition = nil }
+        } else if let confirmation = snapshot.seekConfirmation {
+            if let pending = pendingLyricsSeek,
+               confirmation.requestID != pending.id || confirmation.sourceGeneration != sourceGeneration { return }
+            if confirmation.requestID != lastLyricsSeekConfirmation?.requestID {
+                lastLyricsSeekConfirmation = confirmation
+                lyricsSeekPosition = nil; lyricsSeekRevision &+= 1
+                pendingLyricsSeek = nil; frozenSeekPosition = nil
+                PlaybackSeekDiagnostics.shared.record("model-confirmed", actual: snapshot.position,
+                                                      resource: confirmation.resourceGeneration, revision: snapshot.positionRevision)
+            }
         } else if let previous = playbackSnapshot, snapshot.positionRevision != previous.positionRevision {
-            lyricsSeekPosition = snapshot.position
+            lyricsSeekPosition = selectedMusicService == .netease ? nil : snapshot.position
             lyricsSeekRevision &+= 1
         }
         playbackSnapshot = snapshot

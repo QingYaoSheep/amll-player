@@ -175,6 +175,7 @@ struct MusicHelpView: View {
                 NavigationLink("Apple Music 连接诊断") { AppleMusicDiagnosticsView(model: model) }
                 NavigationLink("Spotify 配置帮助") { SpotifyLoginView(model: model) }
                 NavigationLink("歌词获取与匹配") { LyricsSettingsView(coordinator: model.lyrics) }
+                NavigationLink("播放跳转诊断") { PlaybackSeekDiagnosticsView() }
                 Text("连接失败时先检查网络，再返回服务页面重新检查。技术详情可展开查看；诊断不要包含 Cookie、令牌或临时播放地址。")
                     .font(.footnote).foregroundStyle(.secondary)
             }

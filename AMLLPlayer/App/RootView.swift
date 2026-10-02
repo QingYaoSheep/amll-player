@@ -9,6 +9,9 @@ struct RootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var usesTabAccessory: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--legacy-mini-player-ui-testing") { return false }
+        #endif
         if #available(iOS 26.1, *) {
             return true
         }

@@ -1,171 +1,57 @@
-name: SwiftUI CI
-
+name: Legacy mini player layout reproduction
 on:
   push:
-  pull_request:
+    branches: [codex/legacy-mini-player-repro]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  xcode-27:
-    name: ${{ matrix.name }}
+  reproduce:
     runs-on: xcode-27
-    timeout-minutes: 90
-    concurrency:
-      group: swiftui-ci-${{ github.ref }}-${{ matrix.variant }}
-      # Keep an active test run long enough to produce evidence. Direct IPA
-      # still follows the newest commit without waiting for simulator tests.
-      cancel-in-progress: ${{ matrix.variant == 'direct' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: iOS 27 / Tests then IPA
-            variant: tested
-            run-tests: true
-          - name: iOS 27 / Direct IPA
-            variant: direct
-            run-tests: false
-
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify replay comparison regressions
-        run: node --test Scripts/compare-amll-traces.test.cjs Scripts/compare-amll-performance.test.cjs Scripts/controlled-clock.test.mjs Scripts/replay-scenario.test.mjs Scripts/visual-diff.test.mjs
-
-      - name: Verify pinned offline romanization resources
-        run: node Scripts/verify-mineradio-romanization.cjs
-
-      - name: Verify Xcode and SDK
-        run: |
-          XCODE_VERSION="$(xcodebuild -version)"
-          echo "$XCODE_VERSION"
-          [[ "$XCODE_VERSION" == Xcode\ 27.* ]]
-          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
-          echo "iOS SDK: $SDK_VERSION"
-          [[ "$SDK_VERSION" == 27.* ]]
-
       - name: Install Metal toolchain
         run: xcodebuild -downloadComponent MetalToolchain
-
       - name: Generate project
         run: bash Scripts/generate-project.sh
-
-      - name: Resolve Swift packages
-        run: >-
-          xcodebuild -resolvePackageDependencies
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-
-      - name: Lint Swift
-        run: >-
-          xcrun swift-format lint --recursive
-          AMLLPlayer AMLLPlayerTests AMLLPlayerUITests
-
-      - name: Prepare iOS 27 reference simulators
-        if: matrix.run-tests
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+      - name: Prepare iOS 18 simulator
         run: |
-          node --test Scripts/prepare-ci-simulators.test.cjs
-          if ! xcrun simctl list runtimes --json | node -e 'const fs = require("node:fs"); const { selectRuntime } = require("./Scripts/prepare-ci-simulators.cjs"); selectRuntime(JSON.parse(fs.readFileSync(0, "utf8")).runtimes)'; then
-            xcodebuild -downloadPlatform iOS
+          xcrun simctl list runtimes --json > /tmp/legacy-runtimes.json
+          if ! node -e 'const r=require("/tmp/legacy-runtimes.json").runtimes; if (!r.some(x=>x.isAvailable && x.version.startsWith("18."))) process.exit(1)'; then
+            xcodebuild -downloadPlatform iOS -buildVersion 18.0
           fi
-          node Scripts/prepare-ci-simulators.cjs
-
-      - name: Test on iPhone with Xcode 27
-        if: matrix.run-tests
+          xcrun simctl list runtimes --json > /tmp/legacy-runtimes.json
+          RUNTIME=$(node -e 'const r=require("/tmp/legacy-runtimes.json").runtimes.filter(x=>x.isAvailable && x.version.startsWith("18.")); if(!r.length)process.exit(1);console.log(r[r.length-1].identifier)')
+          DEVICE_ID=$(xcrun simctl create 'AMLL legacy mini player' com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro "$RUNTIME")
+          echo "LEGACY_IPHONE_UDID=$DEVICE_ID" >> "$GITHUB_ENV"
+      - name: Test legacy mini player above tabs
         run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -resultBundlePath build/Xcode27-tests.xcresult
-          CODE_SIGNING_ALLOWED=NO
-
-      - name: Upload Xcode 27 test results
-        if: always() && matrix.run-tests
-        uses: actions/upload-artifact@v4
-        with:
-          name: AMLLPlayer-Xcode27-test-results
-          path: build/Xcode27-tests.xcresult
-          if-no-files-found: ignore
-
-      - name: Export visual review attachments
-        if: always() && matrix.run-tests
+          xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+          -destination "platform=iOS Simulator,id=$LEGACY_IPHONE_UDID"
+          -only-testing:AMLLPlayerUITests/LegacyMiniPlayerUITests
+          -resultBundlePath build/Legacy-mini-player.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Export evidence
+        if: always()
         run: |
-          if [[ -d build/Xcode27-tests.xcresult ]]; then
-            xcrun xcresulttool export attachments \
-              --path build/Xcode27-tests.xcresult \
-              --output-path build/Plan5-images
+          if [[ -d build/Legacy-mini-player.xcresult ]]; then
+            xcrun xcresulttool get test-results summary --path build/Legacy-mini-player.xcresult > build/summary.json || true
+            xcrun xcresulttool export attachments --path build/Legacy-mini-player.xcresult --output-path build/Images || true
           fi
-
-      - name: Upload visual review attachments
-        if: always() && matrix.run-tests
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: AMLLPlayer-visual-review
-          path: build/Plan5-images
-          if-no-files-found: ignore
-
-      - name: Build for iPad with Xcode 27
-        if: matrix.run-tests
-        run: >-
-          xcodebuild build
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
-          CODE_SIGNING_ALLOWED=NO
-
-      - name: Build with iOS 27 SDK
-        if: matrix.run-tests
+          name: Legacy-mini-player-evidence
+          path: |
+            build/Legacy-mini-player.xcresult
+            build/Images
+            build/summary.json
+      - name: Remove simulator
+        if: always()
         run: |
-          xcodebuild build \
-            -project AMLLPlayer.xcodeproj \
-            -scheme AMLLPlayer \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/Xcode27DerivedData \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Create unsigned device archive and IPA
-        run: |
-          xcodebuild archive \
-            -project AMLLPlayer.xcodeproj \
-            -scheme AMLLPlayer \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath build/AMLLPlayer-Xcode27.xcarchive \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
-
-          PACKAGE_ROOT="$(mktemp -d "$RUNNER_TEMP/amll-unsigned-ipa.XXXXXX")"
-          trap 'rm -rf "$PACKAGE_ROOT"' EXIT
-          mkdir -p "$PACKAGE_ROOT/Payload"
-          cp -R \
-            build/AMLLPlayer-Xcode27.xcarchive/Products/Applications/AMLLPlayer.app \
-            "$PACKAGE_ROOT/Payload/"
-          ditto -c -k --sequesterRsrc --keepParent \
-            "$PACKAGE_ROOT/Payload" \
-            build/AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned.ipa
-
-      - name: Verify Xcode 27 application bundle
-        run: >-
-          bash Scripts/verify-ios-app-bundle.sh
-          build/AMLLPlayer-Xcode27.xcarchive/Products/Applications/AMLLPlayer.app
-
-      - name: Upload Xcode 27 IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned-ipa
-          path: build/AMLLPlayer-Xcode27-${{ matrix.variant }}-unsigned.ipa
-          if-no-files-found: error
-
-      - name: Remove reference simulators
-        if: always() && matrix.run-tests
-        run: |
-          for DEVICE_ID in "${CI_IPHONE_UDID:-}" "${CI_IPAD_UDID:-}"; do
-            if [[ -n "$DEVICE_ID" ]]; then
-              xcrun simctl shutdown "$DEVICE_ID" || true
-              xcrun simctl delete "$DEVICE_ID"
-            fi
-          done
+          if [[ -n "$LEGACY_IPHONE_UDID" ]]; then
+            xcrun simctl shutdown "$LEGACY_IPHONE_UDID" || true
+            xcrun simctl delete "$LEGACY_IPHONE_UDID" || true
+          fi

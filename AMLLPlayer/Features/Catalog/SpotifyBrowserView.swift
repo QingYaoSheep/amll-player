@@ -6,9 +6,16 @@ struct MusicBrowserView: View {
     @State private var showingDevices = false
     let playerNamespace: Namespace.ID
     var openPlayer: () -> Void
+    private var usesLegacyPlayerForTesting: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--legacy-mini-player-ui-testing")
+        #else
+        return false
+        #endif
+    }
     var body: some View {
         Group {
-            if #available(iOS 26.1, *) {
+            if #available(iOS 26.1, *), !usesLegacyPlayerForTesting {
                 tabs.tabBarMinimizeBehavior(.onScrollDown)
                     .tabViewBottomAccessory(isEnabled: model.playbackSnapshot?.item != nil && model.currentServiceConnected) { accessory }
             } else if #available(iOS 26.0, *) {

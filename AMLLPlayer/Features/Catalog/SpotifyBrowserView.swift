@@ -19,6 +19,7 @@ struct MusicBrowserView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in CatalogImageCache.shared.clear() }
         .sheet(isPresented: $showingDevices) { DevicePickerView(model: model) }
     }
+    @available(iOS 26.0, *)
     @ViewBuilder private var accessory: some View {
         if let snapshot = model.playbackSnapshot, snapshot.item != nil, model.currentServiceConnected {
             TabMusicAccessory(model: model, snapshot: snapshot, namespace: playerNamespace, openPlayer: openPlayer)

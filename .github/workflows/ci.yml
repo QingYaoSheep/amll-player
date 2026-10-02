@@ -135,6 +135,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath build/AMLLPlayer-Xcode27.xcarchive \
+            AMLL_BUILD_COMMIT="$GITHUB_SHA" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 

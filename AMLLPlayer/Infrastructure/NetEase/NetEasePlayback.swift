@@ -19,6 +19,7 @@ struct NetEaseQueueState: Codable {
 @MainActor @Observable final class NetEasePlayback: MusicPlaybackProviding {
     private(set) var queue = NetEaseQueueState()
     private(set) var actualQuality = ""
+    @ObservationIgnored private(set) var latestSnapshot: PlaybackSnapshot?
     private(set) var failure: String?
     var quality: NetEaseQuality {
         didSet { defaults.set(quality.rawValue, forKey: "netease.quality.v1") }
@@ -29,12 +30,18 @@ struct NetEaseQueueState: Codable {
     @ObservationIgnored private let catalog: NetEaseCatalog
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var player: AVPlayer
+    @ObservationIgnored private let makeItem: (URL) -> AVPlayerItem
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var itemObservation: NSKeyValueObservation?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var commands: [(MPRemoteCommand, Any)] = []
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var seekOperation: UUID?
+    @ObservationIgnored private var seekWaiter: NativeSeekAwaiter?
+    @ObservationIgnored private var pendingSeekRequest: PlaybackSeekRequest?
+    @ObservationIgnored private var lastSeekConfirmation: PlaybackSeekConfirmation?
+    @ObservationIgnored private var resourceGeneration = UUID()
+    @ObservationIgnored private let seekTimeout: Double
     @ObservationIgnored private var selected = false
     @ObservationIgnored private var intentPlaying = false
     @ObservationIgnored private var revision: UInt64 = 0
@@ -52,8 +59,10 @@ struct NetEaseQueueState: Codable {
         let entries = Dictionary(uniqueKeysWithValues: queue.entries.map { ($0.id, $0) })
         return order.compactMap { entries[$0] }
     }
-    init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer()) {
+    init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer(),
+         makeItem: @escaping (URL) -> AVPlayerItem = { NetEasePlayback.makeAudioItem($0) }, seekTimeout: Double = 10) {
         self.session = session; self.catalog = catalog; self.defaults = defaults; self.player = player
+        self.makeItem = makeItem; self.seekTimeout = seekTimeout
         quality = defaults.string(forKey: "netease.quality.v1").flatMap(NetEaseQuality.init(rawValue:)) ?? .exhigh
         let s = AsyncStream<PlaybackSnapshot>.makeStream(bufferingPolicy: .bufferingNewest(1))
         playbackSnapshots = s.stream; continuation = s.continuation
@@ -93,11 +102,12 @@ struct NetEaseQueueState: Codable {
     }
     func stop() { deselect() }
     func deselect() {
+        PlaybackSeekDiagnostics.shared.record("media-deselected")
         generation = UUID(); cancelSeek(); queue.position = position; intentPlaying = false; selected = false
         player.pause(); save(); removeCommands(); MusicAudioSession.releasePlayback()
         timer?.cancel(); timer = nil; itemObservation?.invalidate(); itemObservation = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }; observers.removeAll()
-        player.replaceCurrentItem(with: nil)
+        player.replaceCurrentItem(with: nil); lastSeekConfirmation = nil; resourceGeneration = UUID()
         artworkTask?.cancel(); artworkTask = nil; artworkURL = nil; nowArtwork = nil
         publish()
     }
@@ -110,36 +120,69 @@ struct NetEaseQueueState: Codable {
         else { try activate(); intentPlaying = true; player.play(); publish() }
     }
     func pause() async throws { generation = UUID(); cancelSeek(); intentPlaying = false; player.pause(); queue.position = position; save(); publish() }
+    static func makeAudioItem(_ url: URL) -> AVPlayerItem {
+        // FLAC may otherwise estimate byte offsets while reporting the requested time.
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        return AVPlayerItem(asset: asset)
+    }
     func seek(to target: TimeInterval) async throws {
-        guard target.isFinite, target >= 0, currentEntry != nil else { throw MusicServiceError.noPlayback }
-        if player.currentItem == nil { generation = UUID() }
-        let epoch = generation, operation = UUID()
-        let value = duration > 0 ? min(target, duration) : target
-        let anchor = position
-        seekOperation = operation
-        // Freeze lyric interpolation while the player resolves this seek.
-        // Otherwise a short forward target can be reached by the old clock.
-        publish(seekAnchor: anchor)
-        defer { if seekOperation == operation { seekOperation = nil } }
-        if player.currentItem != nil {
-            let finished = await player.seek(to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-            guard epoch == generation, seekOperation == operation else { throw CancellationError() }
-            guard finished else {
-                seekOperation = nil
-                publish()
-                throw CancellationError()
+        let request = PlaybackSeekRequest(id: UUID(), service: .netease, sourceGeneration: generation,
+                                          trackURI: currentEntry?.item.uri ?? "", target: target, entry: .remote,
+                                          requestedAt: ProcessInfo.processInfo.systemUptime)
+        _ = try await seek(request)
+    }
+    func seek(_ request: PlaybackSeekRequest) async throws -> PlaybackSeekResult {
+        guard request.target.isFinite, request.target >= 0, let entry = currentEntry,
+              entry.item.uri == request.trackURI, let item = player.currentItem else { throw MusicServiceError.noPlayback }
+        cancelSeek()
+        let epoch = generation, resource = resourceGeneration
+        let value = duration > 0 ? min(request.target, duration) : request.target
+        let waiter = NativeSeekAwaiter()
+        seekOperation = request.id; seekWaiter = waiter; pendingSeekRequest = request; lastSeekConfirmation = nil
+        publish(seekAnchor: position)
+        PlaybackSeekDiagnostics.shared.record("media-seek", request: request, actual: position, resource: resource,
+                                              duration: item.duration.seconds.isFinite ? item.duration.seconds : nil,
+                                              seekableStart: item.seekableTimeRanges.first?.timeRangeValue.start.seconds,
+                                              seekableEnd: item.seekableTimeRanges.last.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds })
+        do {
+            let finished = try await waiter.wait(seconds: seekTimeout) {
+                player.seek(to: CMTime(seconds: value, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+                    Task { @MainActor [weak self, weak item] in
+                        guard let self, let item, self.generation == epoch, self.seekOperation == request.id,
+                              self.player.currentItem === item, self.currentEntry?.id == entry.id else {
+                            waiter.finish(.failure(CancellationError())); return
+                        }
+                        waiter.finish(.success(finished))
+                    }
+                }
             }
+            guard epoch == generation, seekOperation == request.id, player.currentItem === item,
+                  currentEntry?.id == entry.id else { throw CancellationError() }
+            guard finished else { throw CancellationError() }
+            let actual = position, sampledAt = ProcessInfo.processInfo.systemUptime
+            guard abs(actual - value) <= 0.25 else { throw PlaybackSeekError.inaccurate }
+            let confirmation = PlaybackSeekConfirmation(requestID: request.id, sourceGeneration: request.sourceGeneration,
+                                                        resourceGeneration: resource, trackURI: request.trackURI,
+                                                        target: value, position: actual, sampledAt: sampledAt)
+            seekOperation = nil; seekWaiter = nil; pendingSeekRequest = nil
+            lastSeekConfirmation = confirmation
+            queue.position = actual; revision &+= 1; stallSeconds = 0; save()
+            let snapshot = publish(confirmation: confirmation)!
+            PlaybackSeekDiagnostics.shared.record("media-confirmed", request: request, actual: actual, resource: resource, revision: revision)
+            return PlaybackSeekResult(confirmation: confirmation, snapshot: snapshot)
+        } catch {
+            if epoch == generation, seekOperation == request.id {
+                cancelSeek(); publish()
+                PlaybackSeekDiagnostics.shared.record(error is CancellationError ? "media-cancelled" : "media-failed",
+                                                      request: request, actual: position, resource: resource)
+            }
+            throw error
         }
-        guard epoch == generation, seekOperation == operation else { throw CancellationError() }
-        seekOperation = nil
-        // Commit the authoritative time with its revision, not a requested or
-        // intermediate decoder time. AppModel uses this event to reset masks.
-        queue.position = player.currentItem == nil ? value : position
-        revision &+= 1; stallSeconds = 0; save(); publish()
     }
     private func cancelSeek() {
-        guard seekOperation != nil else { return }
-        seekOperation = nil
+        guard seekOperation != nil || seekWaiter != nil else { return }
+        seekOperation = nil; pendingSeekRequest = nil
+        seekWaiter?.finish(.failure(CancellationError())); seekWaiter = nil
         player.currentItem?.cancelPendingSeeks()
     }
     func skipNext() async throws { try await advance(forward: true, automatic: false) }
@@ -192,6 +235,7 @@ struct NetEaseQueueState: Codable {
         if removesCurrent {
             generation = UUID(); cancelSeek(); intentPlaying = false; player.pause(); player.replaceCurrentItem(with: nil)
             itemObservation?.invalidate(); itemObservation = nil; queue.position = 0
+            lastSeekConfirmation = nil; resourceGeneration = UUID()
             removeCommands(); MusicAudioSession.releasePlayback()
         }
         for i in removing.sorted(by: >) { queue.entries.remove(at: i) }
@@ -236,7 +280,11 @@ struct NetEaseQueueState: Codable {
             guard selected, generation == epoch, context == session.currentState.contextID else { throw CancellationError() }
             try activate()
             // No account cookie is attached to the independently returned CDN URL.
-            let item = AVPlayerItem(url: source.url)
+            let item = makeItem(source.url)
+            resourceGeneration = UUID(); lastSeekConfirmation = nil
+            PlaybackSeekDiagnostics.shared.record("media-installed", resource: resourceGeneration,
+                                                  codec: ["flac", "mp3", "m4a", "aac"].contains(source.url.pathExtension.lowercased())
+                                                    ? source.url.pathExtension.lowercased() : "unknown")
             itemObservation?.invalidate()
             player.replaceCurrentItem(with: item)
             itemObservation = item.observe(\.status, options: [.new]) { @Sendable [weak self, weak item] _, _ in
@@ -253,11 +301,20 @@ struct NetEaseQueueState: Codable {
             }
             actualQuality = source.level.isEmpty ? "音质未知" : (NetEaseQuality(rawValue: source.level)?.title ?? source.level)
             if !source.level.isEmpty, source.level != quality.rawValue { actualQuality += "（请求\(quality.title)，服务返回较低或不同音质）" }
-            if requested > 0 { await player.seek(to: CMTime(seconds: requested, preferredTimescale: 600)) }
+            if requested > 0 {
+                let waiter = NativeSeekAwaiter(); seekWaiter = waiter
+                let finished = try await waiter.wait(seconds: seekTimeout) {
+                    player.seek(to: CMTime(seconds: requested, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+                        Task { @MainActor in waiter.finish(.success(finished)) }
+                    }
+                }
+                seekWaiter = nil
+                guard finished else { throw CancellationError() }
+            }
             guard selected, generation == epoch else { throw CancellationError() }
             revision &+= 1; intentPlaying = true; player.play(); save(); publish()
         } catch is CancellationError { throw CancellationError() }
-        catch { guard generation == epoch else { throw CancellationError() }; fail(error); throw error }
+        catch { guard generation == epoch else { throw CancellationError() }; cancelSeek(); fail(error); throw error }
     }
     private func advance(forward: Bool, automatic: Bool) async throws {
         guard selected, let index = queue.entries.firstIndex(where: { $0.id == queue.currentID }) else { throw MusicServiceError.noPlayback }
@@ -311,21 +368,25 @@ struct NetEaseQueueState: Codable {
         var state = queue; state.position = position
         if let data = try? JSONEncoder().encode(state) { defaults.set(data, forKey: "netease.queue.v1." + account) }
     }
-    private func publish(seekAnchor: Double? = nil) {
+    @discardableResult
+    private func publish(seekAnchor: Double? = nil, confirmation: PlaybackSeekConfirmation? = nil) -> PlaybackSnapshot? {
         // The 250ms sampler can run while AVFoundation is still seeking.
         // Never expose its temporary times as ordinary playback corrections.
-        guard seekOperation == nil || seekAnchor != nil else { return }
-        let position = seekAnchor ?? self.position
+        guard seekOperation == nil || seekAnchor != nil else { return nil }
+        let position = confirmation?.position ?? seekAnchor ?? self.position
         let e = currentEntry?.item
         let item = e.map { v in PlaybackItem(id: v.spotifyID, uri: v.uri ?? "", title: v.name,
                                             artists: v.track?.artists.map(\.name) ?? [], albumTitle: v.track?.album?.name,
                                             artworkURL: v.artworkURL, duration: duration, isEpisode: false, isAdvertisement: false,
                                             service: .netease, catalogID: v.spotifyID) }
         let playing = seekOperation == nil && intentPlaying && player.timeControlStatus == .playing
-        let snapshot = PlaybackSnapshot(item: item, isPlaying: playing, position: position, duration: duration,
+        var snapshot = PlaybackSnapshot(item: item, isPlaying: playing, position: position, duration: duration,
                                         device: nil, restrictions: .unrestricted, source: .nativeAudio,
-                                        sampledAtUptime: ProcessInfo.processInfo.systemUptime, playbackRate: playing ? 1 : 0,
+                                        sampledAtUptime: confirmation?.sampledAt ?? ProcessInfo.processInfo.systemUptime, playbackRate: playing ? 1 : 0,
                                         positionRevision: revision, shuffleEnabled: queue.shuffle, repeatMode: queue.repeatMode)
+        snapshot.seekConfirmation = lastSeekConfirmation
+        snapshot.seekRequest = pendingSeekRequest
+        latestSnapshot = snapshot
         continuation.yield(snapshot)
         if selected, MusicAudioSession.ownsPlayback, let item {
             updateArtwork(item.artworkURL)
@@ -337,6 +398,7 @@ struct NetEaseQueueState: Codable {
             if let nowArtwork { info[MPMediaItemPropertyArtwork] = nowArtwork }
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
+        return snapshot
     }
     private func updateArtwork(_ url: URL?) {
         guard artworkURL != url else { return }
@@ -394,6 +456,7 @@ struct NetEaseQueueState: Codable {
     /// Invalidates pending source/seek work as well as pausing ready audio.
     func suspendForInterruption() {
         guard selected else { return }
+        PlaybackSeekDiagnostics.shared.record("media-interrupted")
         generation = UUID(); cancelSeek(); intentPlaying = false; player.pause()
         queue.position = position
         // Stop republishing our metadata over another app after a system interruption.
@@ -403,6 +466,7 @@ struct NetEaseQueueState: Codable {
         guard selected else { return }
         suspendForInterruption()
         player = AVPlayer(); itemObservation?.invalidate(); itemObservation = nil
+        lastSeekConfirmation = nil; resourceGeneration = UUID()
         removeCommands(); MusicAudioSession.releasePlayback(); publish()
     }
     private func installNotifications() {

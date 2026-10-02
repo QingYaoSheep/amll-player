@@ -42,7 +42,8 @@ struct PlayerClock: Equatable, Sendable {
                 source: snapshot.source,
                 sampledAtUptime: snapshot.sampledAtUptime,
                 playbackRate: snapshot.playbackRate, positionRevision: snapshot.positionRevision,
-                shuffleEnabled: snapshot.shuffleEnabled, repeatMode: snapshot.repeatMode
+                shuffleEnabled: snapshot.shuffleEnabled, repeatMode: snapshot.repeatMode,
+                seekConfirmation: snapshot.seekConfirmation, seekRequest: snapshot.seekRequest
             )
         }
 

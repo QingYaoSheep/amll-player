@@ -51,6 +51,7 @@ struct AMLLPlayerInput: Sendable {
     /// The requested position can precede the authoritative Spotify clock update.
     var seekPosition: Double?
     var seeking = false
+    var awaitingSeekConfirmation = false
     var document: LyricsDocument?
     var playbackSnapshot: PlaybackSnapshot?
     var artworkURL: URL?
@@ -58,7 +59,7 @@ struct AMLLPlayerInput: Sendable {
     var event: AMLLPlaybackEvent?
 
     init(position: Double, offset: Double = 0, playing: Bool, seekRevision: Int = 0, seekPosition: Double? = nil,
-         seeking: Bool = false, document: LyricsDocument? = nil,
+         seeking: Bool = false, awaitingSeekConfirmation: Bool = false, document: LyricsDocument? = nil,
          playbackSnapshot: PlaybackSnapshot? = nil, artworkURL: URL? = nil,
          configuration: LyricsRenderConfiguration? = nil, event: AMLLPlaybackEvent? = nil)
     {
@@ -67,7 +68,7 @@ struct AMLLPlayerInput: Sendable {
         self.playing = playing
         self.seekRevision = seekRevision
         self.seekPosition = seekPosition
-        self.seeking = seeking
+        self.seeking = seeking; self.awaitingSeekConfirmation = awaitingSeekConfirmation
         self.document = document
         self.playbackSnapshot = playbackSnapshot
         self.artworkURL = artworkURL
@@ -421,10 +422,10 @@ struct AMLLFrameEngine {
         // A request can precede the player's new clock. Preserve the browsed
         // presentation until confirmation, then reset time once and animate
         // the position independently. Never first return to the old focus.
-        let seeking = firstFrame || (seekRequested && pendingSeek == nil) || seekArrived
+        let seeking = firstFrame || (!input.awaitingSeekConfirmation && ((seekRequested && pendingSeek == nil) || seekArrived))
         if seeking {
             timeAnchorRevision &+= 1
-            scrollOffset = 0; scrollVelocity = 0; touching = false; browsing = false
+            handle(.resumeFollowing)
             resumeAtLineStart = nil
             pendingVisualFocus = nil
             visualFocus = nil
@@ -445,7 +446,7 @@ struct AMLLFrameEngine {
             scrollOffset = nextOffset
             dirty = true
         }
-        if browsing, !touching, input.playing, pendingSeek == nil, let start = resumeAtLineStart, time / 1000 >= start {
+        if browsing, !touching, input.playing, pendingSeek == nil, !input.awaitingSeekConfirmation, let start = resumeAtLineStart, time / 1000 >= start {
             handle(.resumeFollowing)
         }
         let oldFocus = timeline.focus

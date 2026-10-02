@@ -27,6 +27,7 @@ struct AMLLLyricsDisplay: View {
                 configuration: configuration,
                 input: input(for: document),
                 position: { model.progress() },
+                playbackFrame: { model.lyricsPlaybackFrame() },
                 interaction: { interaction in handle(interaction, document: document) },
                 canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
                 active: active,
@@ -66,7 +67,8 @@ struct AMLLLyricsDisplay: View {
                   let line = document.lines.first(where: { $0.id == lineID }) else { return }
             let target = LyricsTimeline.seekTarget(line: line, offset: model.lyrics.selection.offset,
                                                    duration: snapshot.duration)
-            Task { await model.seek(to: target) }
+            let track = snapshot.item?.uri, offset = model.lyrics.selection.offset
+            Task { await model.seek(to: target, entry: .lyric, trackURI: track, lyricTime: line.start, offset: offset) }
         case .resumeFollowing:
             browsing(false)
         default:

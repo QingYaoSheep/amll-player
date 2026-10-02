@@ -11,6 +11,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
     var configuration: LyricsRenderConfiguration
     var input: AMLLPlayerInput
     var position: () -> Double
+    var playbackFrame: (() -> LyricsPlaybackFrame)? = nil
     var interaction: (AMLLInteraction) -> Void
     var canSeek = true
     var active = true
@@ -30,6 +31,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
 
     func updateUIView(_ view: AMLLNativeCanvas, context _: Context) {
         view.position = position
+        view.playbackFrame = playbackFrame
         view.onInteraction = interaction
         view.onBrowsing = browsing
         view.fadeTop = fadeTop
@@ -63,6 +65,10 @@ final class AMLLNativeCanvas: UIView {
     }
 
     var position: () -> Double = { 0 }
+    var playbackFrame: (() -> LyricsPlaybackFrame)?
+    private let canvasID = UUID()
+    private var playbackReanchorRequired = false
+    private var sampledConfirmation: PlaybackSeekConfirmation?
     var onInteraction: (AMLLInteraction) -> Void = { _ in }
     var onBrowsing: (Bool) -> Void = { _ in }
     private var source: LyricsDocument?
@@ -128,6 +134,9 @@ final class AMLLNativeCanvas: UIView {
         private var controlledReplay = false
     #endif
     private(set) var frameState: AMLLFrameState?
+    #if DEBUG
+        var frameObserver: ((AMLLFrameState) -> Void)?
+    #endif
     private(set) var measuredFPS = 0.0
     private(set) var frameMilliseconds = 0.0
     var visibleRowCount: Int {
@@ -293,6 +302,7 @@ final class AMLLNativeCanvas: UIView {
             let environment = renderEnvironment()
             if engine == nil {
                 engine = AMLLFrameEngine(document: display, environment: environment, heights: heights)
+                PlaybackSeekDiagnostics.shared.record("canvas-engine-created", actual: input.position, canvas: canvasID)
             } else {
                 engine?.resize(environment: environment, heights: heights)
             }
@@ -458,13 +468,29 @@ final class AMLLNativeCanvas: UIView {
         return result
     }
 
-    private func draw(delta: Double) {
+    private func applyPlaybackFrame(_ frame: LyricsPlaybackFrame) {
+        if input.playing != frame.playing || input.seekRevision != frame.seekRevision
+            || input.awaitingSeekConfirmation != (frame.pending != nil) { needsFrame = true }
+        input.position = frame.position; input.playing = frame.playing
+        input.seekRevision = frame.seekRevision; input.seekPosition = frame.legacySeekPosition
+        input.awaitingSeekConfirmation = frame.pending != nil; input.playbackSnapshot = frame.snapshot
+        sampledConfirmation = frame.confirmation
+    }
+
+    private func draw(delta: Double, playbackSample: LyricsPlaybackFrame? = nil) {
         guard !dirty, engine != nil, let display else { return }
         let frameStarted = performanceRecordingEnabled ? CACurrentMediaTime() : 0
-        input.position = position()
+        if let sample = playbackSample ?? playbackFrame?() { applyPlaybackFrame(sample) }
+        else { input.position = position() }
+        if playbackReanchorRequired, active {
+            input.seeking = true; playbackReanchorRequired = false
+            PlaybackSeekDiagnostics.shared.record("canvas-resumed", actual: input.position, canvas: canvasID)
+        }
         // Mutate the unique stored engine. Copying the struct here makes its
         // group-motion array copy on write once per display refresh.
         let state = engine!.render(input, delta: delta)
+        input.seeking = false
+        PlaybackSeekDiagnostics.shared.frame(canvas: canvasID, state: state, confirmation: sampledConfirmation)
         let engineFinished = performanceRecordingEnabled ? CACurrentMediaTime() : 0
         if frameState?.browsing != state.browsing {
             #if DEBUG
@@ -476,6 +502,9 @@ final class AMLLNativeCanvas: UIView {
             #endif
         }
         frameState = state
+        #if DEBUG
+            frameObserver?(state)
+        #endif
         needsFrame = false
         if hdrTime == nil || input.playing || hdrWasPlaying || input.seeking || hdrSeekRevision != engine!.timeAnchorRevision || hdrOffset != input.offset {
             hdrTime = state.lyricTime
@@ -749,6 +778,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     func stop() {
+        if link != nil { playbackReanchorRequired = true }
         link?.invalidate(); link = nil; linkTarget = nil; lastTick = 0
         #if DEBUG
             installedAt.removeAll(); firstSubmittedAt.removeAll()
@@ -832,6 +862,10 @@ final class AMLLNativeCanvas: UIView {
             layoutIfNeeded()
         }
         let delta = lastTick == 0 ? 0 : link.timestamp - lastTick
+        // Read the complete clock/revision/playing transaction exactly once.
+        let sample = playbackFrame?()
+        if let sample { applyPlaybackFrame(sample) }
+        if playbackReanchorRequired { needsFrame = true }
         if !input.playing, !needsFrame, frameState?.settled == true, frameState?.browsing == false {
             let wantsEDR = configuration.hdr?.enabled == true && !reduceTransparency
             if !wantsEDR || start - lastHeadroomCheck < 0.25 {
@@ -844,7 +878,7 @@ final class AMLLNativeCanvas: UIView {
                 return
             }
         }
-        lastTick = link.timestamp; draw(delta: delta)
+        lastTick = link.timestamp; draw(delta: delta, playbackSample: sample)
         framesInSample += 1; sampleDuration += delta; sampleWork += CACurrentMediaTime() - start
         if sampleDuration >= 1 {
             measuredFPS = Double(framesInSample) / sampleDuration

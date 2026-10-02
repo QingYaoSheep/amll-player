@@ -19,6 +19,7 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     TARGETED_DEVICE_FAMILY: "1,2"
+    AMLL_BUILD_COMMIT: "local"
   configs:
     Debug:
       ENABLE_TESTABILITY: YES
@@ -66,6 +67,7 @@ targets:
           - audio
         NSAppleMusicUsageDescription: 允许 AMLL 访问 Apple Music 资料库并同步系统音乐播放与歌词。
         CFBundleDisplayName: AMLL Player
+        AMLLBuildCommit: $(AMLL_BUILD_COMMIT)
         CADisableMinimumFrameDurationOnPhone: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

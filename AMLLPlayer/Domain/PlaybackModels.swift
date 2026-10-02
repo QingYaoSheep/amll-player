@@ -66,6 +66,9 @@ struct PlaybackSnapshot: Equatable, Sendable {
     var positionRevision: UInt64 = 0
     var shuffleEnabled = false
     var repeatMode: MusicRepeatMode = .off
+    /// Retained on subsequent samples so bufferingNewest cannot erase a confirmation.
+    var seekConfirmation: PlaybackSeekConfirmation?
+    var seekRequest: PlaybackSeekRequest?
 
     static func empty(
         source: PlaybackSnapshotSource,

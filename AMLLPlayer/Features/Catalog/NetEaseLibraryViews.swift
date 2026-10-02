@@ -78,7 +78,7 @@ struct NetEasePlaylistEditorButton: View {
             .sheet(isPresented: $showing) { NetEasePlaylistEditor(model: model, playlist: playlist) }
     }
 }
-private struct NetEasePlaylistEditor: View {
+struct NetEasePlaylistEditor: View {
     @Bindable var model: AppModel
     let playlist: MusicCatalogItem?
     @Environment(\.dismiss) private var dismiss

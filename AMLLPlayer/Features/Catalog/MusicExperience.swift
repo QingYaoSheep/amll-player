@@ -6,8 +6,9 @@ enum MusicHomePresentation {
     static func sections(supported: [MusicLibrarySection], connected: Bool) -> [MusicLibrarySection] {
         order.filter { supported.contains($0) && (connected || [.recommendations, .charts].contains($0)) }
     }
-    static func usesSongColumns(_ section: MusicLibrarySection) -> Bool {
-        [.recent, .dailySongs, .topTracks, .savedTracks].contains(section)
+    static func usesSongColumns(_ section: MusicLibrarySection, kinds: [MusicCatalogKind?] = []) -> Bool {
+        if !kinds.isEmpty { return kinds.allSatisfy { $0 == .track } }
+        return [.recent, .dailySongs, .topTracks, .savedTracks].contains(section)
     }
 }
 
@@ -26,11 +27,11 @@ final class MusicWelcomePreferences {
     static let key = "music.welcome.completed.v1"
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
-    func needsWelcome(existingConnection: Bool, configuredSpotify: Bool) -> Bool {
+    func needsWelcome(existingConnection: Bool, savedSpotifyConfiguration: Bool) -> Bool {
         if defaults.object(forKey: Self.key) != nil { return !defaults.bool(forKey: Self.key) }
         let legacy = ["music.source.v1", "lyrics.settings.v1", "lyrics.render.v2", "lyrics.render.v1"]
             .contains { defaults.object(forKey: $0) != nil }
-        if legacy || existingConnection || configuredSpotify { complete(); return false }
+        if legacy || existingConnection || savedSpotifyConfiguration { complete(); return false }
         return true
     }
     func complete() { defaults.set(true, forKey: Self.key) }

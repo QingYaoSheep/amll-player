@@ -99,25 +99,42 @@ struct MusicCatalogCard: View {
     let row: MusicCatalogRow
     let width: CGFloat
     var onSelect: (() -> Void)? = nil
+    @State private var failure: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            NavigationLink(value: CatalogRoute.resource(row.item.resource ?? .init(
-                service: row.item.service, kind: row.item.kind ?? .album, scope: row.item.scope, rawValue: row.item.spotifyID))) {
-                VStack(alignment: .leading, spacing: 8) {
-                    CatalogArtwork(url: row.item.artworkURL, size: width, isArtist: row.item.kind == .artist)
-                    Text(row.item.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
-                    Text(row.item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }.buttonStyle(.plain).simultaneousGesture(TapGesture().onEnded { onSelect?() })
+            if row.item.kind == .track, row.item.canPlay {
+                Button {
+                    onSelect?()
+                    Task {
+                        do { try await model.playCatalog(row.item) }
+                        catch is CancellationError {} catch { failure = error.localizedDescription }
+                    }
+                } label: { label }.buttonStyle(.plain)
+            } else if let resource = row.item.resource {
+                NavigationLink(value: CatalogRoute.resource(resource)) { label }
+                    .buttonStyle(.plain).simultaneousGesture(TapGesture().onEnded { onSelect?() })
+            } else { label }
             if row.item.canPlay {
                 CatalogPlayButton(model: model, item: row.item)
                     .accessibilityLabel("播放 " + row.item.name)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if row.item.availability == .restricted {
                 Text("catalog.restricted").font(.caption).foregroundStyle(.secondary)
+            } else if row.item.availability == .unsupported {
+                Text("catalog.unsupported").font(.caption).foregroundStyle(.secondary)
             }
         }
         .frame(width: width, alignment: .topLeading)
+        .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("好", role: .cancel) { failure = nil }
+        } message: { Text(failure ?? "") }
+    }
+    private var label: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CatalogArtwork(url: row.item.artworkURL, size: width, isArtist: row.item.kind == .artist)
+            Text(row.item.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
+            Text(row.item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
     }
 }
 

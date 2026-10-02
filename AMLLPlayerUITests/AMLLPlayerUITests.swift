@@ -87,7 +87,7 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 4))
         result.tap()
         XCTAssertTrue(app.navigationBars["Test Album"].waitForExistence(timeout: 3))
-        app.navigationBars["Test Song"].buttons.element(boundBy: 0).tap()
+        app.navigationBars["Test Album"].buttons.element(boundBy: 0).tap()
         XCTAssertTrue(result.waitForExistence(timeout: 3))
         XCTAssertEqual(field.value as? String, "Test")
     }

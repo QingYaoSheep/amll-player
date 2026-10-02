@@ -20,6 +20,7 @@ private struct CatalogDetailContent: View {
     let scope: MusicResourceScope
     @Bindable var state: MusicCatalogDetailState
     @State private var playlistChoice: MusicCatalogItem?
+    @State private var editingPlaylist: MusicCatalogItem?
     @State private var failure: String?
     var body: some View {
         ScrollView {
@@ -61,16 +62,20 @@ private struct CatalogDetailContent: View {
                         if detail.item.service == .netease {
                             NetEaseItemActions(model: model, item: detail.item,
                                 onChoosePlaylist: { playlistChoice = $0 }, onFailure: { failure = $0 })
-                            if detail.item.editablePlaylist { NetEasePlaylistEditorButton(model: model, playlist: detail.item) }
+                            if detail.item.editablePlaylist { Button("编辑歌单", systemImage: "pencil") { editingPlaylist = detail.item } }
                         }
                         if detail.item.service == .appleMusic {
                             AppleMusicItemActions(model: model, item: detail.item,
                                 onChoosePlaylist: { playlistChoice = $0 }, onFailure: { failure = $0 })
-                            if detail.item.editablePlaylist { AppleMusicEditPlaylistButton(model: model, playlist: detail.item) }
+                            if detail.item.editablePlaylist { Button("编辑歌单", systemImage: "pencil") { editingPlaylist = detail.item } }
                         }
                     } label: { Label("更多操作", systemImage: "ellipsis") }.accessibilityIdentifier("catalogDetailActions")
                 }
             }
+        }
+        .sheet(item: $editingPlaylist) { item in
+            if item.service == .netease { NetEasePlaylistEditor(model: model, playlist: item) }
+            else { AppleMusicPlaylistEditor(model: model, playlist: item) }
         }
         .sheet(item: $playlistChoice) { item in
             if item.service == .netease { NetEasePlaylistChooser(model: model, item: item) }

@@ -49,12 +49,12 @@ struct RootView: View {
             else {
                 showingWelcome = MusicWelcomePreferences().needsWelcome(
                     existingConnection: MusicServiceID.allCases.contains { model.isConnected(to: $0) },
-                    configuredSpotify: model.environment.configuration.spotifyClientID != nil)
+                    savedSpotifyConfiguration: (try? SpotifyClientIDStore().load()) != nil)
             }
             #else
             showingWelcome = MusicWelcomePreferences().needsWelcome(
                 existingConnection: MusicServiceID.allCases.contains { model.isConnected(to: $0) },
-                configuredSpotify: model.environment.configuration.spotifyClientID != nil)
+                savedSpotifyConfiguration: (try? SpotifyClientIDStore().load()) != nil)
             #endif
             model.prepare()
             model.handleScenePhase(scenePhase)

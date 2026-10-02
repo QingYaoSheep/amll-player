@@ -120,7 +120,7 @@ struct AppleMusicEditPlaylistButton: View {
     }
 }
 
-private struct AppleMusicPlaylistEditor: View {
+struct AppleMusicPlaylistEditor: View {
     @Bindable var model: AppModel
     let playlist: MusicCatalogItem?
     @Environment(\.dismiss) private var dismiss

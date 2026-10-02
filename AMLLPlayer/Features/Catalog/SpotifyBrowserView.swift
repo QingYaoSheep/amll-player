@@ -128,7 +128,7 @@ private struct MusicHomeSection: View {
                 MusicSectionHeading(title: section.title, route: .collection(section))
                 if !state.rows.isEmpty {
                     ScrollView(.horizontal) {
-                        if MusicHomePresentation.usesSongColumns(section) {
+                        if MusicHomePresentation.usesSongColumns(section, kinds: state.rows.map { $0.item.kind }) {
                             LazyHGrid(rows: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 20) {
                                 ForEach(Array(state.rows.prefix(12))) { row in
                                     CatalogRowView(model: model, row: row, tapToPlay: true)
@@ -411,31 +411,39 @@ private struct MusicSearchGroup: View {
 
 struct CatalogRowsScrollView: View {
     @Bindable var model: AppModel
-    @Bindable var state: SpotifyCatalogPageState
+    @Bindable var state: MusicCatalogPageState
     let load: (Bool, Bool) async -> Void
-
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
-        ScrollView {
-            if !state.rows.isEmpty, state.rows.allSatisfy({ [.album, .playlist, .artist].contains($0.item.kind) }) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145, maximum: 220), spacing: 12)], alignment: .leading, spacing: 24) {
-                    ForEach(state.rows) { row in
-                        MusicCatalogCard(model: model, row: row, width: 145).id(row.id)
-                    }
-                }.padding(20)
-            } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(state.rows) { row in
-                        VStack(spacing: 0) {
-                            CatalogRowView(model: model, row: row, tapToPlay: true)
-                            Divider()
-                        }.id(row.id)
+        GeometryReader { proxy in
+            let available = max(1, proxy.size.width - 40)
+            let minimum: CGFloat = dynamicTypeSize.isAccessibilitySize ? 250 : 145
+            let count = max(1, Int((available + 12) / (minimum + 12)))
+            let width = (available - CGFloat(count - 1) * 12) / CGFloat(count)
+            ScrollView {
+                Group {
+                    if !state.rows.isEmpty, state.rows.allSatisfy({ [.album, .playlist, .artist].contains($0.item.kind) }) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: count),
+                                  alignment: .leading, spacing: 24) {
+                            ForEach(state.rows) { row in
+                                MusicCatalogCard(model: model, row: row, width: width).id(row.id)
+                            }
+                        }
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(state.rows) { row in
+                                VStack(spacing: 0) {
+                                    CatalogRowView(model: model, row: row, tapToPlay: true)
+                                    Divider()
+                                }.id(row.id)
+                            }
+                        }
                     }
                 }
-            }
-            .scrollTargetLayout()
-            .padding(.horizontal)
-            CatalogPageFooter(state: state, load: load).padding()
+                .scrollTargetLayout()
+                .padding(.horizontal, 20).padding(.top, 12)
+                CatalogPageFooter(state: state, load: load).padding(20)
+            }.scrollPosition(id: $state.scrollAnchor, anchor: .top)
         }
-        .scrollPosition(id: $state.scrollAnchor, anchor: .top)
     }
 }

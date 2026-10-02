@@ -11,6 +11,11 @@ final class MusicExperienceTests: XCTestCase {
         XCTAssertEqual(MusicHomePresentation.sections(supported: supported, connected: false), [.recommendations, .charts])
         XCTAssertTrue(MusicHomePresentation.sections(supported: [.recent], connected: false).isEmpty)
     }
+    func testMixedHomeSectionsUseItemKindsForSongColumns() {
+        XCTAssertTrue(MusicHomePresentation.usesSongColumns(.charts, kinds: [.track, .track]))
+        XCTAssertTrue(MusicHomePresentation.usesSongColumns(.recentlyAdded, kinds: [.track]))
+        XCTAssertFalse(MusicHomePresentation.usesSongColumns(.recommendations, kinds: [.track, .album]))
+    }
     func testSearchRequestRespectsKindsAndLibraryScope() {
         let all = MusicSearchRequest(term: "曲", library: false, kind: nil)
         XCTAssertEqual(all.queries(supported: [.track, .album, .station]), [.search("曲", .track), .search("曲", .album)])
@@ -19,23 +24,23 @@ final class MusicExperienceTests: XCTestCase {
     }
     func testNewInstallCanSkipWelcomeAndSkipPersists() {
         let preferences = MusicWelcomePreferences(defaults: defaults())
-        XCTAssertTrue(preferences.needsWelcome(existingConnection: false, configuredSpotify: false))
+        XCTAssertTrue(preferences.needsWelcome(existingConnection: false, savedSpotifyConfiguration: false))
         preferences.complete()
-        XCTAssertFalse(preferences.needsWelcome(existingConnection: false, configuredSpotify: false))
+        XCTAssertFalse(preferences.needsWelcome(existingConnection: false, savedSpotifyConfiguration: false))
     }
     func testUpgradeKeepsExistingSourceAndDoesNotForceWelcome() {
         let storage = defaults()
         storage.set("appleMusic", forKey: "music.source.v1")
         let preferences = MusicWelcomePreferences(defaults: storage)
-        XCTAssertFalse(preferences.needsWelcome(existingConnection: false, configuredSpotify: false))
+        XCTAssertFalse(preferences.needsWelcome(existingConnection: false, savedSpotifyConfiguration: false))
         XCTAssertEqual(storage.string(forKey: "music.source.v1"), "appleMusic")
     }
     func testLegacyVisualSettingsAndConnectionsSkipWelcome() {
         let storage = defaults()
         storage.set(Data([1]), forKey: "lyrics.render.v2")
-        XCTAssertFalse(MusicWelcomePreferences(defaults: storage).needsWelcome(existingConnection: false, configuredSpotify: false))
-        XCTAssertFalse(MusicWelcomePreferences(defaults: defaults()).needsWelcome(existingConnection: true, configuredSpotify: false))
-        XCTAssertFalse(MusicWelcomePreferences(defaults: defaults()).needsWelcome(existingConnection: false, configuredSpotify: true))
+        XCTAssertFalse(MusicWelcomePreferences(defaults: storage).needsWelcome(existingConnection: false, savedSpotifyConfiguration: false))
+        XCTAssertFalse(MusicWelcomePreferences(defaults: defaults()).needsWelcome(existingConnection: true, savedSpotifyConfiguration: false))
+        XCTAssertFalse(MusicWelcomePreferences(defaults: defaults()).needsWelcome(existingConnection: false, savedSpotifyConfiguration: true))
     }
     func testSearchHistoryOnlyChangesOnExplicitRememberAndIsServiceScoped() async {
         let storage = defaults()

@@ -34,7 +34,7 @@ import XCTest
                 let samples = probe.samples
                 XCTAssertFalse(samples.isEmpty, "Decoded audio tap must receive real PCM: " + ext)
                 let expected = 320 + floor(target / 2) * 80
-                let audible = samples.prefix(3).map(.frequency).sorted()
+                let audible = samples.prefix(3).map(\.frequency).sorted()
                 if let median = audible.dropFirst(audible.count / 2).first {
                     XCTAssertEqual(median, expected, accuracy: 45, "The audible marker must agree with the seek, not just currentTime: " + ext + " target " + String(target))
                 }

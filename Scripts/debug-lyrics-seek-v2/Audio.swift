@@ -62,7 +62,7 @@ Task { @MainActor in
         for target in [8.25, 20.25, 4.25, 36.25] {
             player.pause(); let finished = await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
             probe.clear(); player.play(); try await Task.sleep(for: .milliseconds(400)); player.pause()
-            print("[SEEK-V2] codec=\(ext) target=\(target) finished=\(finished) media=\(player.currentTime().seconds) pcm=\(probe.samples.map { String($0.time) + \":\" + String($0.frequency) })")
+            print("[SEEK-V2] codec=\(ext) target=\(target) finished=\(finished) media=\(player.currentTime().seconds) pcm=\(probe.samples.map { String($0.time) + ":" + String($0.frequency) })")
         }
         player.replaceCurrentItem(with: nil)
     }

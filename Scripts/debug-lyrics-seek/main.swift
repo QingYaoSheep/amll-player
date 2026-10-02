@@ -1,6 +1,11 @@
 import Foundation
 func engine() -> AMLLFrameEngine {
- let lines = (0..<8).map { i in LyricLine(id: String(i), text: "Line \(i)", start: Double(i*4), end: Double(i*4+3), words: [.init(text: "Line", start: Double(i*4), end: Double(i*4+3))], precision: .word) }
+ var lines: [LyricLine] = []
+ for i in 0..<8 {
+  let start = Double(i) * 4
+  let word = LyricWord(text: "Line", start: start, end: start + 3)
+  lines.append(LyricLine(id: String(i), text: "Line", start: start, end: start + 3, words: [word], precision: .word))
+ }
  var env = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
  env.alignPosition = 0.28; env.advance = 0.3
  return AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines), environment: env, heights: Array(repeating: 60, count: lines.count))

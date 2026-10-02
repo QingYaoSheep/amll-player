@@ -10,3 +10,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run actual production engine seek regression
         run: bash Scripts/debug-lyrics-seek/run.sh
+  native-seek-loop:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash Scripts/generate-project.sh
+      - run: node Scripts/prepare-ci-simulators.cjs
+      - name: Test actual NetEase playback seek transaction
+        run: >-
+          xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
+          -only-testing:AMLLPlayerTests/NetEaseSeekTests
+          -resultBundlePath build/NetEaseSeek-tests.xcresult
+          CODE_SIGNING_ALLOWED=NO
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seek-diagnostic-results
+          path: build/NetEaseSeek-tests.xcresult

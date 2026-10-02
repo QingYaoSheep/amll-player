@@ -51,8 +51,8 @@ struct NetEaseQueueState: Codable {
         let entries = Dictionary(uniqueKeysWithValues: queue.entries.map { ($0.id, $0) })
         return order.compactMap { entries[$0] }
     }
-    init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard) {
-        self.session = session; self.catalog = catalog; self.defaults = defaults
+    init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer()) {
+        self.session = session; self.catalog = catalog; self.defaults = defaults; self.player = player
         quality = defaults.string(forKey: "netease.quality.v1").flatMap(NetEaseQuality.init(rawValue:)) ?? .exhigh
         let s = AsyncStream<PlaybackSnapshot>.makeStream(bufferingPolicy: .bufferingNewest(1))
         playbackSnapshots = s.stream; continuation = s.continuation

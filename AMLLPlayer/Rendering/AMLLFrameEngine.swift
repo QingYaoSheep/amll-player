@@ -871,7 +871,7 @@ struct AMLLFrameEngine {
             // Reduce Motion is a source-defined accessibility variant: it
             // keeps the AMLL geometry but resolves every transition in the
             // same frame instead of leaving opacity/blur on a stale value.
-            let immediate = seeking || firstFrame || environment.reduceMotion
+            let immediate = firstFrame || environment.reduceMotion
             let immediatePosition = immediate || browsing || positionReset
             let positionTargetChanged = motions[index].y.target != y
             let presentedY = environment.enableSpring && !environment.reduceMotion

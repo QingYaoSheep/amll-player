@@ -24,5 +24,6 @@
 - 原生引擎最小复现红→绿：位置动画与等待确认场景均已运行。临时脚本、逐帧接触表和日志保存在工作区外 Builds/LyricsSeekHandoff。
 - 第一轮完整回归发现 seek 缺少返回跟随路径的逐行错峰，以及旧测试要求回播瞬间恢复最终缩放/模糊；修正调度并将测试改为检查同帧计时清理、外观连续和最终恢复。真实引擎逐帧对照已通过：[启动时序回归](https://github.com/QingYaoSheep/amll-player/actions/runs/36991512475)。
 - 永久回归覆盖 60/120Hz 与不规则帧间隔、提前滚动 0/0.3/1 秒、正反 seek、真实画布、回播遮罩、offset、弹簧关闭、减少动态效果、实际落点、失败及迟到结果。
-- 当前提交的 Xcode 27 两路构建、全部单元/UI 回归及 IPA 包检查：待本次 CI 结果。
+- 实现提交 `22672be1`，调度收尾提交 `1def3336`；最终提交的 [Xcode 27 两路 CI](https://github.com/QingYaoSheep/amll-player/actions/runs/36991743831) 全部成功。415 项单元测试、8 项 UI 测试零失败；iPad、iOS 27 SDK 构建、设备归档及两路 IPA 包检查通过。轨迹/性能/时钟/场景/图像比较的 Node 回归亦通过。
+- 同一提交的直接版与测试后版 IPA 已下载到 `E:/AMLL-Swift/Builds/LyricsSeekHandoff/1def3336-direct` 和 `1def3336-tested`；提交、产物 ID、SHA-256、回归日志及最小复现记录保存在该目录的 `manifest.json`。两份安装包均供重新签名后安装。
 - 真实 Apple Music/网易云账户下的交接观感与弱网重复 seek：待设备验收；模拟测试不替代真机反馈。

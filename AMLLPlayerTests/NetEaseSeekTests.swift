@@ -6,7 +6,7 @@ import XCTest
     private func playback(_ player: ControlledSeekPlayer) async throws -> NetEasePlayback {
         let session = NetEaseSession(store: SeekMemoryStore())
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "Seek-\(UUID())"))
-        let result = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: defaults, player: player, seekPlayer: { _, _ in await player.performSeek() })
+        let result = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: defaults, player: player)
         let song = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Seek", "dt": 32000], kind: .track))
         try await result.enqueue(song, next: false)
         return result
@@ -59,19 +59,17 @@ private final class SeekMemoryStore: SpotifySessionDataStoring, @unchecked Senda
 nonisolated private final class ControlledSeekPlayer: AVPlayer, @unchecked Sendable {
     private let lock = NSLock()
     private var time = 12.0
-    private var completion: CheckedContinuation<Bool, Never>?
+    private var completion: (@Sendable (Bool) -> Void)?
     private let item = AVPlayerItem(url: URL(fileURLWithPath: "/unneeded-audio-fixture"))
     override var currentItem: AVPlayerItem? { item }
     override func currentTime() -> CMTime { lock.lock(); defer { lock.unlock() }; return CMTime(seconds: time, preferredTimescale: 600) }
     var pending: Bool { lock.lock(); defer { lock.unlock() }; return completion != nil }
     func setTime(_ value: Double) { lock.lock(); time = value; lock.unlock() }
-    func performSeek() async -> Bool {
-        await withCheckedContinuation { continuation in
-            lock.lock(); completion = continuation; lock.unlock()
-        }
+    override func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime, completionHandler: @escaping @Sendable (Bool) -> Void) {
+        lock.lock(); completion = completionHandler; lock.unlock()
     }
     func complete(at value: Double, finished: Bool) {
         lock.lock(); time = value; let handler = completion; completion = nil; lock.unlock()
-        handler?.resume(returning: finished)
+        handler?(finished)
     }
 }

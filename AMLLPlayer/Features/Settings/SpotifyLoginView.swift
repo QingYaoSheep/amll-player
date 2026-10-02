@@ -91,7 +91,7 @@ struct SpotifyLoginView: View {
                     .disabled(model.isSpotifyLoginBusy || model.isPerformingAction)
                 }
             } header: {
-                Text("settings.clientID")
+                Text("音乐账号")
             } footer: {
                 Text("登录后控制 Spotify 设备上的播放。AMLL 不在本机播放 Spotify 音频。")
                     .font(.footnote).foregroundStyle(.secondary)

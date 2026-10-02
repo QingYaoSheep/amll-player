@@ -134,7 +134,10 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["toggleLyricsVisibility"].waitForExistence(timeout: 3))
         app.buttons["toggleLyricsVisibility"].tap()
         XCTAssertTrue(lyrics.waitForExistence(timeout: 3))
+        capture(app, name: "Product-lyrics-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
+        let landscape = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.frame.width > app.frame.height }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [landscape], timeout: 5), .completed)
         defer { XCUIDevice.shared.orientation = .portrait }
         XCTAssertTrue(app.buttons["closeLyricsPlayer"].waitForExistence(timeout: 3))
         let attachment = XCTAttachment(screenshot: app.screenshot())

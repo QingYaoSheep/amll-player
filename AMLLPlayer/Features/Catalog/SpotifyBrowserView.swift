@@ -8,17 +8,21 @@ struct MusicBrowserView: View {
     var openPlayer: () -> Void
     var body: some View {
         Group {
-            if #available(iOS 26.0, *) {
-                tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory {
-                    if let snapshot = model.playbackSnapshot, snapshot.item != nil, model.currentServiceConnected {
-                        TabMusicAccessory(model: model, snapshot: snapshot, namespace: playerNamespace, openPlayer: openPlayer)
-                    }
-                }
+            if #available(iOS 26.1, *) {
+                tabs.tabBarMinimizeBehavior(.onScrollDown)
+                    .tabViewBottomAccessory(isEnabled: model.playbackSnapshot?.item != nil && model.currentServiceConnected) { accessory }
+            } else if #available(iOS 26.0, *), model.playbackSnapshot?.item != nil, model.currentServiceConnected {
+                tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory { accessory }
             } else { tabs }
         }
         .tint(MusicProductStyle.accent)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in CatalogImageCache.shared.clear() }
         .sheet(isPresented: $showingDevices) { DevicePickerView(model: model) }
+    }
+    @ViewBuilder private var accessory: some View {
+        if let snapshot = model.playbackSnapshot, snapshot.item != nil, model.currentServiceConnected {
+            TabMusicAccessory(model: model, snapshot: snapshot, namespace: playerNamespace, openPlayer: openPlayer)
+        }
     }
     private var tabs: some View {
         TabView {
@@ -33,6 +37,14 @@ struct MusicBrowserView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .searchable(text: Binding(get: { model.catalog.searchText }, set: { model.catalog.searchText = $0 }), prompt: "catalog.searchPrompt")
+        .onSubmit(of: .search) { model.catalog.rememberSearch(model.catalog.searchText) }
+        .searchSuggestions {
+            ForEach(model.catalog.suggestions, id: \.self) { term in
+                Button { model.catalog.searchText = term; model.catalog.rememberSearch(term) } label: { Label(term, systemImage: "magnifyingglass") }
+                    .searchCompletion(term)
+            }
+        }
     }
     private func navigation(@ViewBuilder content: () -> some View) -> some View {
         NavigationStack {
@@ -130,12 +142,12 @@ private struct MusicHomeSection: View {
                 if !state.rows.isEmpty {
                     ScrollView(.horizontal) {
                         if MusicHomePresentation.usesSongColumns(section, kinds: state.rows.map { $0.item.kind }) {
-                            LazyHGrid(rows: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 20) {
+                            LazyHGrid(rows: Array(repeating: GridItem(.flexible(), spacing: 8), count: min(3, state.rows.count)), spacing: 20) {
                                 ForEach(Array(state.rows.prefix(12))) { row in
                                     CatalogRowView(model: model, row: row, tapToPlay: true)
                                         .frame(width: max(280, width * 1.9))
                                 }
-                            }.frame(height: songColumnHeight).padding(.vertical, 2)
+                            }.frame(height: songColumnHeight * CGFloat(min(3, state.rows.count)) / 3).padding(.vertical, 2)
                         } else {
                             LazyHStack(alignment: .top, spacing: 12) {
                                 ForEach(Array(state.rows.prefix(12))) { row in
@@ -288,14 +300,6 @@ struct CatalogSearchView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("catalog.search")
-        .searchable(text: $store.searchText, prompt: "catalog.searchPrompt")
-        .onSubmit(of: .search) { store.rememberSearch(request.term) }
-        .searchSuggestions {
-            ForEach(store.suggestions, id: \.self) { term in
-                Button { store.searchText = term; store.rememberSearch(term) } label: { Label(term, systemImage: "magnifyingglass") }
-                    .searchCompletion(term)
-            }
-        }
         .task(id: request) {
             store.suggestions = []
             guard model.canBrowseCurrentService, !request.term.isEmpty else {

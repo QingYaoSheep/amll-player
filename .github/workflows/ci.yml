@@ -31,4 +31,8 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - run: xcrun swift Scripts/debug-lyrics-seek-v2/Audio.swift AMLLPlayerTests/Fixtures
+      - run: |
+          node Scripts/debug-lyrics-seek-v2/server.cjs AMLLPlayerTests/Fixtures &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID"' EXIT
+          xcrun swift Scripts/debug-lyrics-seek-v2/Audio.swift AMLLPlayerTests/Fixtures --http

@@ -54,7 +54,9 @@ nonisolated final class DecodedAudioProbe: @unchecked Sendable {
 let root = CommandLine.arguments[1]
 Task { @MainActor in
     for ext in ["flac", "mp3", "m4a"] {
-        let url = URL(fileURLWithPath: root).appendingPathComponent("seek-markers." + ext)
+        let url = CommandLine.arguments.contains("--http")
+            ? URL(string: "http://127.0.0.1:18083/seek-markers." + ext)!
+            : URL(fileURLWithPath: root).appendingPathComponent("seek-markers." + ext)
         let item = AVPlayerItem(url: url)
         let probe = DecodedAudioProbe()
         let tracks = try await item.asset.loadTracks(withMediaType: .audio)

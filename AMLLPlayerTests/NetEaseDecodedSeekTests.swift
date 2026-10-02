@@ -62,8 +62,10 @@ nonisolated final class DecodedAudioProbe: @unchecked Sendable {
     func clear() { lock.lock(); values.removeAll(); lock.unlock() }
     func makeTap() throws -> MTAudioProcessingTap {
         var callbacks = MTAudioProcessingTapCallbacks(version: kMTAudioProcessingTapCallbacksVersion_0,
-            clientInfo: Unmanaged.passUnretained(self).toOpaque(),
-            init: { _, info, storage in storage.pointee = info }, finalize: nil,
+            clientInfo: Unmanaged.passRetained(self).toOpaque(),
+            init: { _, info, storage in storage.pointee = info }, finalize: { tap in
+                Unmanaged<DecodedAudioProbe>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).release()
+            },
             prepare: { tap, _, format in
                 let probe = Unmanaged<DecodedAudioProbe>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue()
                 probe.lock.lock(); probe.sampleRate = format.pointee.mSampleRate
@@ -83,16 +85,17 @@ nonisolated final class DecodedAudioProbe: @unchecked Sendable {
     private func record(_ buffers: UnsafeMutablePointer<AudioBufferList>, count: Int, at time: Double) {
         guard count >= 256, let data = buffers.pointee.mBuffers.mData else { return }
         lock.lock(); defer { lock.unlock() }
-        guard values.count < 32 else { return }
+        guard values.count < 64 else { return }
         let stride = Int(buffers.pointee.mBuffers.mNumberChannels)
+        let available = min(count, Int(buffers.pointee.mBuffers.mDataByteSize) / (stride * (isFloat ? 4 : 2)))
+        guard available > 256 else { return }
+        let sample: (Int) -> Double = isFloat
+            ? { Double(data.assumingMemoryBound(to: Float.self)[$0 * stride]) }
+            : { Double(data.assumingMemoryBound(to: Int16.self)[$0 * stride]) / 32768 }
+        guard let first = (0..<available).first(where: { abs(sample($0)) > 0.0001 }),
+              let last = (0..<available).reversed().first(where: { abs(sample($0)) > 0.0001 }), last - first > 256 else { return }
         var crossings = 0
-        if isFloat {
-            let samples = data.assumingMemoryBound(to: Float.self)
-            for i in 1..<count where samples[(i - 1) * stride] <= 0 && samples[i * stride] > 0 { crossings += 1 }
-        } else {
-            let samples = data.assumingMemoryBound(to: Int16.self)
-            for i in 1..<count where samples[(i - 1) * stride] <= 0 && samples[i * stride] > 0 { crossings += 1 }
-        }
-        values.append(.init(time: time, frequency: Double(crossings) * sampleRate / Double(count)))
+        for i in (first + 1)...last where sample(i - 1) <= 0 && sample(i) > 0 { crossings += 1 }
+        values.append(.init(time: time, frequency: Double(crossings) * sampleRate / Double(last - first)))
     }
 }

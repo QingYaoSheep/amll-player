@@ -128,6 +128,10 @@ final class AMLLPlayerUITests: XCTestCase {
         let app = catalogApp()
         XCTAssertTrue(app.staticTexts["Test Listener"].waitForExistence(timeout: 5))
         beforeCapture(app, name: "Before-home")
+        app.buttons["openSettings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        beforeCapture(app, name: "Before-settings")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.tabBars.buttons["Library"].tap()
         beforeCapture(app, name: "Before-library")
         app.tabBars.buttons["Search"].tap()
@@ -136,10 +140,6 @@ final class AMLLPlayerUITests: XCTestCase {
         field.tap(); field.typeText("Music")
         XCTAssertTrue(app.staticTexts["Music Result"].waitForExistence(timeout: 5))
         beforeCapture(app, name: "Before-search")
-        app.tabBars.buttons["Home"].tap()
-        app.buttons["openSettings"].tap()
-        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
-        beforeCapture(app, name: "Before-settings")
     }
 
     @MainActor private func beforeCapture(_ app: XCUIApplication, name: String) {

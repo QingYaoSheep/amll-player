@@ -1,4 +1,5 @@
 @testable import AMLLPlayer
+import AVFoundation
 import XCTest
 
 @MainActor final class NetEaseIntegrationTests: XCTestCase {
@@ -111,11 +112,17 @@ import XCTest
         try await session.importCookie("MUSIC_U=x")
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "NetEaseTests-\(UUID())"))
         let catalog = NetEaseCatalog(session: session)
-        let playback = NetEasePlayback(session: session, catalog: catalog, defaults: defaults)
+        let player = AVPlayer()
+        let playback = NetEasePlayback(session: session, catalog: catalog, defaults: defaults, player: player)
         playback.start()
         let item = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "Song", "dt": 10000], kind: .track))
         try await playback.enqueue(item, next: false); try await playback.enqueue(item, next: false)
         XCTAssertNotEqual(playback.queue.entries[0].id, playback.queue.entries[1].id)
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "seek-markers", withExtension: "m4a"))
+        let media = NetEasePlayback.makeAudioItem(url)
+        player.replaceCurrentItem(with: media)
+        for _ in 0..<200 where media.status != .readyToPlay { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(media.status, .readyToPlay)
         try await playback.seek(to: 5); try await playback.setShuffle(true); try await playback.setRepeat(.all)
         playback.deselect()
         let restored = NetEasePlayback(session: session, catalog: catalog, defaults: defaults)

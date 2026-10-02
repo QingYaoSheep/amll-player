@@ -887,25 +887,27 @@ final class AMLLNativeCanvas: UIView {
         }
     }
 
+    func handleInteraction(_ interaction: AMLLInteraction) {
+        needsFrame = true
+        onInteraction(interaction)
+        engine?.handle(interaction)
+    }
+
     @objc private func pan(_ gesture: UIPanGestureRecognizer) {
         needsFrame = true
         switch gesture.state {
         case .began:
             lastTranslation = 0
-            onInteraction(.beginBrowsing)
-            engine?.handle(.beginBrowsing)
+            handleInteraction(.beginBrowsing)
         case .changed:
             let value = gesture.translation(in: self).y
             let delta = lastTranslation - value
-            onInteraction(.browseBy(delta))
-            engine?.handle(.browseBy(delta)); lastTranslation = value
+            handleInteraction(.browseBy(delta)); lastTranslation = value
         case .ended:
             let velocity = gesture.velocity(in: self).y
-            onInteraction(.endBrowsing(velocity: velocity))
-            engine?.handle(.endBrowsing(velocity: velocity))
+            handleInteraction(.endBrowsing(velocity: velocity))
         case .cancelled, .failed:
-            onInteraction(.endBrowsing(velocity: 0))
-            engine?.handle(.endBrowsing(velocity: 0))
+            handleInteraction(.endBrowsing(velocity: 0))
         default: break
         }
         // The display link consumes gesture state once per frame. Drawing

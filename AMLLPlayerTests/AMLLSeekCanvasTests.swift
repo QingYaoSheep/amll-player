@@ -48,6 +48,7 @@ import XCTest
         }
         let document = LyricsDocument(candidate: .init(source: .qq, sourceID: "atomic-seek", title: "Seek", artists: []),
                                       lines: lines, language: "en", selectionReason: "Frame regression")
+        let displayStart = AMLLDisplayDocument(lines: lines).lines[1].start
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         let window = UIWindow(frame: canvas.frame); window.addSubview(canvas)
         defer { canvas.stop(); canvas.removeFromSuperview() }
@@ -56,20 +57,20 @@ import XCTest
         canvas.playbackFrame = { samples += 1; return sample }
         canvas.position = { XCTFail("Production must not read a second independent clock"); return -100 }
         canvas.configure(document: document, configuration: .init(), input: .init(position: 25, playing: true),
-                         active: false, reduceMotion: false)
+                         active: true, reduceMotion: false)
         canvas.advanceFrame(delta: 0)
         let layouts = canvas.resourceCounts.layouts
         for step in [1.0 / 60, 1.0 / 120, 0.037] {
             sample.position = 4.25; sample.playing = true; sample.seekRevision += 1
             // SwiftUI can still be delivering the previous snapshot at this instant.
             canvas.configure(document: document, configuration: .init(), input: .init(position: 25, playing: false),
-                             active: false, reduceMotion: false)
+                             active: true, reduceMotion: false)
             samples = 0
             canvas.advanceFrame(delta: step)
             let frame = try XCTUnwrap(canvas.frameState)
             XCTAssertEqual(samples, 1)
             XCTAssertEqual(frame.lyricTime, 4.25, accuracy: 0.001)
-            XCTAssertEqual(frame.rows[1].wordClock.time, 0.25, accuracy: 0.001)
+            XCTAssertEqual(frame.rows[1].wordClock.time + displayStart, 4.25, accuracy: 0.001)
             XCTAssertFalse(frame.rows[1].fillComplete)
             XCTAssertEqual(canvas.resourceCounts.layouts, layouts)
         }

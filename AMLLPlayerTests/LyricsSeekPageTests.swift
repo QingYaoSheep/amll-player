@@ -16,15 +16,20 @@ import XCTest
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
         try await start(model, song)
         try await wait("document and snapshot") { model.lyrics.document != nil && model.playbackSnapshot != nil }
+        await model.togglePlayPause()
+        try await wait("paused fixture") { model.playbackSnapshot?.isPlaying == false }
         await model.seek(to: 4.25)
         try await wait("initial seek") { abs(model.progress() - 4.25) < 1 }
         let canvas = try await waitForCanvas(host.view)
-        try await wait("canvas frame") { canvas.frameState != nil }
-        let pan = SeekFixturePan()
-        pan.phase = .began; _ = canvas.perform(NSSelectorFromString("pan:"), with: pan)
-        pan.phase = .changed; pan.movement = CGPoint(x: 0, y: -200)
-        _ = canvas.perform(NSSelectorFromString("pan:"), with: pan)
-        pan.phase = .ended; _ = canvas.perform(NSSelectorFromString("pan:"), with: pan)
+        try await wait("confirmed canvas settled") {
+            canvas.frameState?.settled == true && abs((canvas.frameState?.lyricTime ?? 0) - 4.25) < 0.01
+        }
+        // Use the same interaction dispatch as the real pan recognizer;
+        // overriding UIKit's gesture state produces an invalid state machine.
+        canvas.handleInteraction(.beginBrowsing)
+        canvas.handleInteraction(.browseBy(80))
+        try await wait("dragged presentation") { canvas.frameState?.browsing == true }
+        canvas.handleInteraction(.endBrowsing(velocity: 0))
         try await wait("browsed presentation") { canvas.frameState?.browsing == true }
         let before = try XCTUnwrap(canvas.frameState).rows
         let targetRow = try XCTUnwrap(descendants(canvas).first { $0.isAccessibilityElement && $0.accessibilityLabel?.contains("Marker 4") == true })
@@ -43,6 +48,9 @@ import XCTest
         XCTAssertLessThan(abs(first.rows[4].y - initialY), abs(finalY - initialY) * 0.25, "First confirmed frame must retain the browsed presentation")
         XCTAssertGreaterThan(abs(first.rows[4].y - finalY), 30, "The click must not snap straight to the target")
         XCTAssertTrue(confirmed.contains { abs($0.rows[4].y - initialY) > 8 && abs($0.rows[4].y - finalY) > 8 })
+        let focusStart = try XCTUnwrap(first.rows[4].positionMotion?.scheduledAt)
+        let followingStart = try XCTUnwrap(first.rows[5].positionMotion?.scheduledAt)
+        XCTAssertGreaterThan(followingStart, focusStart, "Following rows must retain the return action's stagger")
         print("[SEEK-V2] page frames=\(frames.count) first=\(first.rows[4].y) before=\(initialY) final=\(finalY)")
     }
 
@@ -57,6 +65,8 @@ import XCTest
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
         try await start(model, song)
         let old = try await waitForCanvas(host.view)
+        await model.togglePlayPause()
+        try await wait("paused fixture") { model.playbackSnapshot?.isPlaying == false }
         model.renderPreferences.configuration.showLyrics = false
         try await wait { findCanvas(host.view) == nil }
         await model.seek(to: 20.25, entry: .progress, trackURI: song.uri)
@@ -67,7 +77,8 @@ import XCTest
         try await wait { current.frameState != nil }
         let frame = try XCTUnwrap(current.frameState)
         XCTAssertEqual(frame.lyricTime, model.progress(), accuracy: 0.15)
-        XCTAssertEqual(frame.rows[5].wordClock.time + 20, frame.lyricTime, accuracy: 0.1)
+        let displayStart = AMLLDisplayDocument(lines: try XCTUnwrap(model.lyrics.document).lines).lines[5].start
+        XCTAssertEqual(frame.rows[5].wordClock.time + displayStart, frame.lyricTime, accuracy: 0.1)
         XCTAssertFalse(frame.rows[5].fillComplete)
     }
 
@@ -114,13 +125,6 @@ import XCTest
     private func descendants(_ root: UIView) -> [UIView] { [root] + root.subviews.flatMap(descendants) }
 }
 
-@MainActor private final class SeekFixturePan: UIPanGestureRecognizer {
-    var phase = UIGestureRecognizer.State.possible
-    var movement = CGPoint.zero
-    override var state: UIGestureRecognizer.State { get { phase } set { phase = newValue } }
-    override func translation(in _: UIView?) -> CGPoint { movement }
-    override func velocity(in _: UIView?) -> CGPoint { .zero }
-}
 @MainActor private final class SeekFixtureAPI: NetEaseRequesting {
     static let song: [String: Any] = ["id": 42, "name": "Markers", "dt": 48000]
     func send(_ path: String, _ parameters: [String: Any], cookie: String?) async throws -> NetEaseResponse {

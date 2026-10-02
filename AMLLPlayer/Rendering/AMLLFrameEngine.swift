@@ -418,7 +418,10 @@ struct AMLLFrameEngine {
                 pendingSeek = nil
             }
         }
-        let seeking = firstFrame || seekRequested || seekArrived
+        // A request can precede the player's new clock. Preserve the browsed
+        // presentation until confirmation, then reset time once and animate
+        // the position independently. Never first return to the old focus.
+        let seeking = firstFrame || (seekRequested && pendingSeek == nil) || seekArrived
         if seeking {
             timeAnchorRevision &+= 1
             scrollOffset = 0; scrollVelocity = 0; touching = false; browsing = false
@@ -442,7 +445,7 @@ struct AMLLFrameEngine {
             scrollOffset = nextOffset
             dirty = true
         }
-        if browsing, !touching, input.playing, let start = resumeAtLineStart, time / 1000 >= start {
+        if browsing, !touching, input.playing, pendingSeek == nil, let start = resumeAtLineStart, time / 1000 >= start {
             handle(.resumeFollowing)
         }
         let oldFocus = timeline.focus
@@ -871,7 +874,10 @@ struct AMLLFrameEngine {
             // Reduce Motion is a source-defined accessibility variant: it
             // keeps the AMLL geometry but resolves every transition in the
             // same frame instead of leaving opacity/blur on a stale value.
-            let immediate = seeking || firstFrame || environment.reduceMotion
+            // Seeking invalidates lyric clocks and masks, but the spatial handoff
+            // follows the same spring as Return to Current. Only initial layout
+            // and the existing accessibility variant position immediately.
+            let immediate = firstFrame || environment.reduceMotion
             let immediatePosition = immediate || browsing || positionReset
             let positionTargetChanged = motions[index].y.target != y
             let presentedY = environment.enableSpring && !environment.reduceMotion

@@ -187,18 +187,22 @@ final class ArtworkTransitionTests: XCTestCase {
                 kCIInputMaskImageKey: mask,
             ])
         }
+        let baseline = masked(source, mainMask)
+            .transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - frame.maxY))
+            .composited(over: CIImage(color: .blue))
         let result = masked(transition, tailMask)
             .transformed(by: CGAffineTransform(translationX: tail.minX, y: viewport.height - tail.maxY))
-            .composited(over: masked(source, mainMask)
-                .transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - frame.maxY)))
-            .composited(over: CIImage(color: .blue))
+            .composited(over: baseline)
             .cropped(to: CGRect(origin: .zero, size: viewport))
         let boundary = Int(viewport.height - tail.minY)
         for y in (boundary - 3) ... (boundary + 3) {
             let above = pixel(result, x: 64, y: y)
             let below = pixel(result, x: 64, y: y - 1)
+            let baselineAbove = pixel(baseline, x: 64, y: y)
+            let baselineBelow = pixel(baseline, x: 64, y: y - 1)
             for channel in 0 ..< 3 {
-                XCTAssertLessThanOrEqual(abs(above[channel] - below[channel]), 3,
+                XCTAssertLessThanOrEqual(abs((above[channel] - below[channel])
+                    - (baselineAbove[channel] - baselineBelow[channel])), 2,
                                          "The upward fade must not introduce a step at the transition's top")
             }
         }
@@ -241,8 +245,10 @@ final class ArtworkTransitionTests: XCTestCase {
             // The revised overlay remains visible at the video bottom. Capture
             // that boundary for device review instead of asserting the former
             // downward-fading overlay's zero-alpha bottom.
-            XCTAssertLessThanOrEqual(pixel(result, x: 64, y: boundary)[0], 1)
-            XCTAssertGreaterThanOrEqual(pixel(result, x: 64, y: boundary)[2], 254)
+            let overlayWithoutReflection = softened.composited(over: CIImage(color: background))
+            XCTAssertEqual(pixel(result, x: 64, y: boundary),
+                           pixel(overlayWithoutReflection, x: 64, y: boundary),
+                           "The reflection must not draw over the transition at the video bottom")
             XCTAssertEqual(pixel(result, x: 64, y: boundary - 1),
                            pixel(reflected.composited(over: CIImage(color: background)), x: 64, y: boundary - 1))
             let image = try XCTUnwrap(context.createCGImage(result, from: result.extent))

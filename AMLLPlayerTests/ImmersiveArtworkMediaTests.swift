@@ -82,6 +82,43 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertGreaterThan(blue[2], blue[0] + 30, "Live blur must follow the currently visible background")
         XCTAssertTrue(playerLayer.player === player)
         XCTAssertNil(surface.transitionSurface.layer.contents, "The live blur owns no retained video bitmap")
+
+        // Pixel colors alone could pass if the effect were invisible. Verify
+        // visible backdrop detail is actually blurred by the production view.
+        for index in 0 ..< 16 {
+            let stripe = UIView(frame: CGRect(x: index * 8, y: 0, width: 8, height: 650))
+            stripe.backgroundColor = index.isMultiple(of: 2) ? .white : .black
+            surface.backgroundSurface.addSubview(stripe)
+        }
+        tuning[.transition].enabled = false
+        configure(reflects: false)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let sharp = try backdropVariance(window, y: 460)
+        tuning[.transition].enabled = true
+        configure(reflects: false)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let blurred = try backdropVariance(window, y: 460)
+        XCTAssertGreaterThan(sharp, 1000)
+        XCTAssertLessThan(blurred, sharp * 0.5, "The live effect must visibly blur the underlying stripes")
+    }
+
+    private func backdropVariance(_ window: UIWindow, y: Int) throws -> Double {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let cg = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(x: 24, y: y, width: 80, height: 1)))
+        var bytes = [UInt8](repeating: 0, count: 80 * 4)
+        try bytes.withUnsafeMutableBytes { storage in
+            let context = try XCTUnwrap(CGContext(data: storage.baseAddress, width: 80, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 80 * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: 80, height: 1))
+        }
+        let values = (0 ..< 80).map { Double(bytes[$0 * 4]) }
+        let mean = values.reduce(0, +) / Double(values.count)
+        return values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count)
     }
 
     private func backdropPixel(_ window: UIWindow, at point: CGPoint) throws -> [Int] {

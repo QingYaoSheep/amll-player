@@ -37,16 +37,19 @@ struct AMLLLyricsPlayer: View {
             ZStack {
                 Color(white: 0.08)
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
-                    immersiveArtworkLayers(item, size: geometry.size)
+                    immersiveArtworkLayers(item, size: geometry.size, cornerRadius: drag.radius, opacity: drag.opacity)
                 } else {
                     artworkBackground
                     Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
                 }
-                if let snapshot = model.playbackSnapshot, let item = snapshot.item {
-                    player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
-                } else {
-                    ContentUnavailableView("player.noPlayback", systemImage: "music.note")
+                Group {
+                    if let snapshot = model.playbackSnapshot, let item = snapshot.item {
+                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
+                    } else {
+                        ContentUnavailableView("player.noPlayback", systemImage: "music.note")
+                    }
                 }
+                .opacity(immersive ? drag.opacity : 1)
             }
             // Keep text blending inside the same backdrop group at rest and
             // during the system zoom. The transition must not be the operation
@@ -57,10 +60,10 @@ struct AMLLLyricsPlayer: View {
                 artworkPortraitViewport = size.height > size.width
             }
             .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
+            .modifier(LyricsShellClipping(immersive: immersive, radius: drag.radius))
             .scaleEffect(drag.scale)
             .offset(y: drag.offset)
-            .opacity(drag.opacity)
+            .opacity(immersive ? 1 : drag.opacity)
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
             .overlay(alignment: .topTrailing) {
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
@@ -345,7 +348,7 @@ struct AMLLLyricsPlayer: View {
                                fadesBottom: false)
     }
 
-    private func immersiveArtworkLayers(_ item: PlaybackItem, size: CGSize) -> some View {
+    private func immersiveArtworkLayers(_ item: PlaybackItem, size: CGSize, cornerRadius: CGFloat, opacity: Double) -> some View {
         let tuning = artworkDebug.configuration
         let originalVideo = AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
         let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(originalVideo), source: originalVideo.size)
@@ -359,7 +362,8 @@ struct AMLLLyricsPlayer: View {
                 reduceTransparency: reduceTransparency,
                 background: tuning[.background].frame(CGRect(origin: .zero, size: size)),
                 dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: size)),
-                backgroundDimming: configuration.backgroundDimming ?? 0.16),
+                backgroundDimming: configuration.backgroundDimming ?? 0.16,
+                cornerRadius: cornerRadius, pageOpacity: opacity),
             background: artworkBackground)
         .id(artworkLoader.requestToken)
         .frame(width: size.width, height: size.height)
@@ -633,5 +637,15 @@ private struct LyricsBackdropComposition: ViewModifier {
         // A live UIKit backdrop must sample the original layers, not a SwiftUI
         // offscreen copy. The lyric-visible path keeps its existing HDR group.
         if immersive { content } else { content.compositingGroup() }
+    }
+}
+
+private struct LyricsShellClipping: ViewModifier {
+    let immersive: Bool
+    let radius: CGFloat
+    @ViewBuilder func body(content: Content) -> some View {
+        // The immersive native surface clips its own bounds/corner radius. A
+        // SwiftUI ancestor mask would invalidate its live UIVisualEffectView.
+        if immersive { content } else { content.clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous)) }
     }
 }

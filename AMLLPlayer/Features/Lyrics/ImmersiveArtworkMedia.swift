@@ -20,6 +20,8 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         var background: CGRect? = nil
         var dimming: CGRect? = nil
         var backgroundDimming = 0.16
+        var cornerRadius: CGFloat = 0
+        var pageOpacity = 1.0
     }
 
     func makeUIView(context _: Context) -> Surface { Surface(frames: frames) }
@@ -124,25 +126,26 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             appliedBounds = bounds
             CATransaction.begin(); CATransaction.setDisableActions(true)
             let tuning = layout.tuning
+            layer.cornerRadius = layout.cornerRadius
             backgroundSurface.frame = layout.background ?? bounds
             backgroundSurface.isHidden = !tuning[.background].enabled
-            backgroundSurface.alpha = tuning[.background].opacity
+            backgroundSurface.alpha = tuning[.background].opacity * layout.pageOpacity
             backgroundHost?.view.frame = backgroundSurface.bounds
             dimmingSurface.frame = layout.dimming ?? bounds
             dimmingSurface.isHidden = !tuning[.dimming].enabled
             dimmingSurface.backgroundColor = UIColor.black.withAlphaComponent(CGFloat(
-                tuning.layers[ImmersiveArtworkLayer.dimming.rawValue] == nil
-                    ? layout.backgroundDimming : tuning[.dimming].opacity))
+                (tuning.layers[ImmersiveArtworkLayer.dimming.rawValue] == nil
+                    ? layout.backgroundDimming : tuning[.dimming].opacity) * layout.pageOpacity))
 
             videoPlane.frame = layout.video
             videoSurface.frame = videoPlane.bounds
             videoPlane.isHidden = !tuning[.video].enabled
-            videoPlane.alpha = tuning[.video].opacity
+            videoPlane.alpha = tuning[.video].opacity * layout.pageOpacity
             reflectionPlane.frame = layout.reflection
             reflectionSurface.frame = reflectionPlane.bounds
             reflectionPlane.isHidden = !layout.reflectionEnabled || !layout.presentsFrame || !tuning[.reflection].enabled
             reflectionSurface.isHidden = reflectionPlane.isHidden
-            reflectionSurface.configure(opacity: tuning[.reflection].opacity)
+            reflectionSurface.configure(opacity: tuning[.reflection].opacity * layout.pageOpacity)
             transitionSurface.frame = layout.transition
             transitionSurface.isHidden = layout.reduceTransparency || !tuning[.transition].enabled || tuning.validatedBlur == 0
 
@@ -167,7 +170,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             transitionSurface.configure(amount: tuning.validatedBlur / 80,
                 mask: ImmersiveArtworkVisibility.mask(frame: layout.transition,
                     fade: bottomFade(for: .transition), strength: tuning[.bottomFade].opacity,
-                    transitionEnd: layout.video.maxY, opacity: tuning[.transition].opacity))
+                    transitionEnd: layout.video.maxY, opacity: tuning[.transition].opacity * layout.pageOpacity))
             CATransaction.commit()
             reflectionSurface.setNeedsLayout()
             frames.replayLatest()

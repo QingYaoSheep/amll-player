@@ -21,6 +21,8 @@ struct AMLLLyricsPlayer: View {
     @State private var artworkNetwork = ArtworkNetworkPolicy.shared
     @State private var artworkPortraitViewport = false
     @State private var artworkReflectionFrames = ArtworkReflectionFrames()
+    @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
+    @State private var showingArtworkDebug = false
     @GestureState private var dismissalDrag: CGFloat = 0
 
     private var configuration: LyricsRenderConfiguration {
@@ -33,34 +35,30 @@ struct AMLLLyricsPlayer: View {
             let drag = dismissalTransform(height: geometry.size.height)
             ZStack {
                 Color(white: 0.08)
+                let immersive = model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false
+                let tuning = artworkDebug.configuration
+                let background = immersive ? tuning[.background] : .init()
+                let dimming = immersive ? tuning[.dimming] : .init()
+                let backgroundFrame = background.frame(CGRect(origin: .zero, size: geometry.size))
+                let dimmingFrame = dimming.frame(CGRect(origin: .zero, size: geometry.size))
                 AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
                                active: scenePhase == .active && !search && !devices,
                                blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
                                color: configuration.backgroundColor ?? .sourceDefault,
                                gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
                                flowing: configuration.flowingBackground ?? .init(),
-                               dimming: configuration.backgroundDimming ?? 0.16)
+                               dimming: 0)
+                    .frame(width: backgroundFrame.width, height: backgroundFrame.height)
+                    .position(x: backgroundFrame.midX, y: backgroundFrame.midY)
+                    .opacity(background.enabled ? background.opacity : 0)
+                Color.black.opacity(immersive && tuning.layers[ImmersiveArtworkLayer.dimming.rawValue] != nil
+                    ? dimming.opacity : (configuration.backgroundDimming ?? 0.16))
+                    .frame(width: dimmingFrame.width, height: dimmingFrame.height)
+                    .position(x: dimmingFrame.midX, y: dimmingFrame.midY)
+                    .opacity(dimming.enabled ? 1 : 0)
+                    .allowsHitTesting(false)
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
-                    let videoFrame = AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size,
-                                                                        video: artworkLoader.videoSize ?? .zero)
-                    if artworkLoader.hasPresentedFrame, !reduceTransparency {
-                        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame)
-                        ArtworkVideoTransition(frames: artworkReflectionFrames, videoSize: videoFrame.size)
-                            .frame(width: transition.width, height: transition.height)
-                            .position(x: transition.midX, y: transition.midY)
-                            .accessibilityHidden(true)
-                    }
-                    immersiveArtwork(item, frame: videoFrame, size: geometry.size)
-                    if configuration.animatedArtwork?.reflection == true, !reduceMotion,
-                       artworkLoader.hasPresentedFrame
-                    {
-                        let reflection = ArtworkReflectionGeometry.frame(cover: videoFrame, viewportHeight: geometry.size.height)
-                        ArtworkReflection(frames: artworkReflectionFrames)
-                            .frame(width: reflection.width, height: reflection.height)
-                            .clipped()
-                            .position(x: reflection.midX, y: reflection.midY)
-                            .accessibilityHidden(true)
-                    }
+                    immersiveArtworkLayers(item, size: geometry.size)
                 }
                 if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                     player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
@@ -82,6 +80,22 @@ struct AMLLLyricsPlayer: View {
             .offset(y: drag.offset)
             .opacity(drag.opacity)
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
+            .overlay(alignment: .topTrailing) {
+                if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
+                    Button { showingArtworkDebug = true } label: {
+                        Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44)
+                    }
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(.top, geometry.safeAreaInsets.top + 48).padding(.trailing, 16)
+                    .accessibilityLabel("沉浸封面层级调试")
+                }
+            }
+            .sheet(isPresented: $showingArtworkDebug) {
+                ImmersiveArtworkDebugPanel(viewport: geometry.size,
+                    video: AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size, video: artworkLoader.videoSize ?? .zero),
+                    backgroundDimming: configuration.backgroundDimming ?? 0.16)
+                    .presentationDetents([.medium, .large])
+            }
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
@@ -346,15 +360,49 @@ struct AMLLLyricsPlayer: View {
                                onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) },
                                onFirstFrame: { url, videoSize in artworkLoader.firstFramePresented(token: token, url: url, size: videoSize) },
                                gravity: .resizeAspect,
-                               fadesBottom: AMLLArtworkDisplayPolicy.fadesImmersiveBottom(
-                                   reflectionEnabled: configuration.animatedArtwork?.reflection == true,
-                                   reduceTransparency: reduceTransparency))
+                               fadesBottom: false)
             .id(token)
             .frame(width: frame.width, height: frame.height)
             .position(x: frame.midX, y: frame.midY)
             .frame(width: size.width, height: size.height)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+
+    private func immersiveArtworkLayers(_ item: PlaybackItem, size: CGSize) -> some View {
+        let tuning = artworkDebug.configuration
+        let originalVideo = AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
+        let video = tuning[.video].frame(originalVideo)
+        let reflection = tuning[.reflection].frame(ArtworkReflectionGeometry.frame(cover: video, viewportHeight: size.height))
+        let transition = tuning[.transition].frame(AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: size.height))
+        let bottomFade = tuning[.bottomFade].frame(AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: size))
+        let reflects = configuration.animatedArtwork?.reflection == true && !reduceMotion && tuning[.reflection].enabled
+        let composition = ArtworkTransitionComposition(video: video, reflection: reflection, transition: transition,
+            reflectionEnabled: reflects, reflectionOpacity: tuning[.reflection].opacity,
+            blurRadius: tuning.validatedBlur)
+        return ZStack {
+            // One common media plane, with no per-video fade or per-reflection blur.
+            immersiveArtwork(item, frame: video, size: size)
+                .opacity(tuning[.video].enabled ? tuning[.video].opacity : 0)
+            if reflects, artworkLoader.hasPresentedFrame {
+                ArtworkReflection(frames: artworkReflectionFrames, opacity: tuning[.reflection].opacity)
+                    .frame(width: reflection.width, height: reflection.height)
+                    .clipped().position(x: reflection.midX, y: reflection.midY)
+            }
+            if artworkLoader.hasPresentedFrame, !reduceTransparency, tuning[.transition].enabled {
+                ArtworkVideoTransition(frames: artworkReflectionFrames, videoSize: video.size, composition: composition)
+                    .frame(width: transition.width, height: transition.height)
+                    .position(x: transition.midX, y: transition.midY)
+                    .opacity(tuning[.transition].opacity)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .mask {
+            if tuning[.bottomFade].enabled, !reduceTransparency {
+                ImmersiveArtworkBottomFade(frame: bottomFade, strength: tuning[.bottomFade].opacity)
+            } else { Color.white }
+        }
+        .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private var artworkRequestKey: String {

@@ -26,16 +26,19 @@ enum AMLLArtworkDisplayPolicy {
 enum AMLLImmersiveArtworkGeometry {
     static let overlapFraction: CGFloat = 0.34
     static let maximumBlur: CGFloat = 32
-    /// Keep the shortened upper region and extend an equal distance below the video.
+    /// Keep the shortened upper fade; the lower region now extends to the viewport edge.
     static let transitionTopInsetFraction: CGFloat = 0.15
-    static let transitionPeakStart: Double = 0.4375
-    static let transitionPeakEnd: Double = 0.5625
+    static func transitionFadeStops(solidStart: Double) -> [(location: Double, alpha: Double)] {
+        (0 ... 32).map { sample in
+            let t = Double(sample) / 32
+            let ramp = min(1, t / max(0.001, solidStart))
+            return (t, ramp * ramp * (3 - 2 * ramp))
+        }
+    }
 
-    /// A small opaque center covers the video edge; both outer ends fade smoothly.
-    static let transitionFadeStops: [(location: Double, alpha: Double)] = (0 ... 32).map { sample in
+    static let bottomFadeStops: [(location: Double, alpha: Double)] = (0 ... 32).map { sample in
         let t = Double(sample) / 32
-        let ramp = min(1, min(t / transitionPeakStart, (1 - t) / (1 - transitionPeakEnd)))
-        return (t, ramp * ramp * (3 - 2 * ramp))
+        return (t, 1 - t * t * (3 - 2 * t))
     }
 
     /// The original video fade stays independent of the two-sided blur overlay.
@@ -53,9 +56,16 @@ enum AMLLImmersiveArtworkGeometry {
         return CGRect(x: (viewport.width - width) / 2, y: 0, width: width, height: height)
     }
 
-    static func transitionFrame(video: CGRect) -> CGRect {
+    static func transitionFrame(video: CGRect, viewportHeight: CGFloat? = nil) -> CGRect {
         let halfHeight = transitionHalfHeight(videoHeight: video.height)
-        return CGRect(x: video.minX, y: video.maxY - halfHeight, width: video.width, height: halfHeight * 2)
+        let top = video.maxY - halfHeight
+        let bottom = max(video.maxY, viewportHeight ?? (video.maxY + halfHeight))
+        return CGRect(x: video.minX, y: top, width: video.width, height: max(1, bottom - top))
+    }
+
+    static func bottomFadeFrame(video: CGRect, viewport: CGSize) -> CGRect {
+        let top = video.maxY - transitionHalfHeight(videoHeight: video.height)
+        return CGRect(x: 0, y: top, width: viewport.width, height: max(1, viewport.height - top))
     }
 
     static func transitionHalfHeight(videoHeight: CGFloat) -> CGFloat {

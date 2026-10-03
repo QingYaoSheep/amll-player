@@ -71,7 +71,7 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
                              "The blur input must contain reflection pixels, not only a repeated video edge")
     }
 
-    func testFinalFadeMasksTheEntireMediaGroupWithoutDimmingItsTop() throws {
+    func testFinalFadeMasksMediaWithoutMaskingTheLiveBlurParent() throws {
         let size = CGSize(width: 128, height: 650)
         let video = CGRect(x: 0, y: 0, width: 128, height: 400)
         let fade = AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: size)
@@ -83,7 +83,12 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
                 transition: AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: size.height),
                 bottomFade: fade, tuning: .init(), presentsFrame: false, reflectionEnabled: false, reduceTransparency: false))
         surface.layoutIfNeeded()
-        let mask = try nativeMaskImage(XCTUnwrap(surface.layer.mask), size: size)
+        XCTAssertNil(surface.layer.mask, "UIKit live effects must not have a masked parent")
+        XCTAssertNil(surface.backgroundSurface.mask)
+        XCTAssertNil(surface.dimmingSurface.mask)
+        let maskView = try XCTUnwrap(ImmersiveArtworkVisibility.mask(frame: CGRect(origin: .zero, size: size),
+            fade: fade, strength: 1))
+        let mask = try nativeMaskImage(maskView.layer, size: size)
         let rendered = CIImage(color: .red).cropped(to: CGRect(origin: .zero, size: size))
             .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputBackgroundImageKey: CIImage(color: .blue), kCIInputMaskImageKey: mask])
         XCTAssertGreaterThan(pixel(rendered, x: 64, y: 649)[0], 250)
@@ -119,6 +124,21 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         let restored = ImmersiveArtworkDebugConfiguration()
         XCTAssertEqual(restored[.transition].y, 0)
         XCTAssertTrue(restored[.reflection].enabled)
+    }
+
+    func testLayerOrderIsCompatibleCompleteAndMovesLikeLyricsSourcePriority() throws {
+        let old = Data(#"{"layers":{},"blurRadius":32}"#.utf8)
+        var settings = try JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: old)
+        XCTAssertEqual(settings.orderedLayers, Array(ImmersiveArtworkLayer.allCases.reversed()))
+        settings.moveLayers(fromOffsets: IndexSet(integer: 2), toOffset: 1)
+        XCTAssertEqual(settings.orderedLayers[1], .reflection)
+        XCTAssertTrue(settings.isBelow(.transition, .reflection))
+        let decoded = try JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(decoded.orderedLayers, settings.orderedLayers)
+        settings.order = [.video, .video, .transition]
+        XCTAssertEqual(Set(settings.orderedLayers), Set(ImmersiveArtworkLayer.allCases))
+        XCTAssertEqual(settings.orderedLayers.count, ImmersiveArtworkLayer.allCases.count)
+        XCTAssertEqual(settings.orderedLayers.first, .video)
     }
 
     func testIndependentContainerSlidersKeepVideoAndReflectionAlignedWithoutStretching() {

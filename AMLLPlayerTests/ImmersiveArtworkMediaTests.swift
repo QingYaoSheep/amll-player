@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
-    func testActualPlayerAndBlurUseTheSameOrderedNativeHierarchy() async throws {
+    func testActualPlayerAndLiveBlurFollowSavedOrderingAndVisibility() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let frames = ArtworkReflectionFrames()
         let surface = ImmersiveArtworkMedia.Surface(frames: frames)
@@ -29,35 +29,80 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             surface.layoutIfNeeded()
         }
         configure(reflects: false)
-        try await waitUntil { firstFrame && surface.transitionSurface.layer.contents != nil }
+        try await waitUntil { firstFrame }
         let playerLayer = try XCTUnwrap(surface.videoSurface.layer as? AVPlayerLayer)
         XCTAssertTrue(playerLayer.isReadyForDisplay)
         XCTAssertTrue(surface.transitionSurface.superview === surface)
         XCTAssertTrue(surface.videoPlane.superview === surface)
-        XCTAssertTrue(surface.reflectionSurface.superview === surface)
+        XCTAssertTrue(surface.reflectionPlane.superview === surface)
+        XCTAssertTrue(surface.reflectionSurface.superview === surface.reflectionPlane)
         XCTAssertTrue(surface.videoSurface.superview === surface.videoPlane)
         XCTAssertGreaterThan(surface.transitionSurface.layer.zPosition, surface.videoPlane.layer.zPosition)
-        XCTAssertEqual(surface.reflectionSurface.layer.zPosition, surface.videoPlane.layer.zPosition)
-        XCTAssertNotNil(surface.layer.mask)
-        XCTAssertNil(playerLayer.mask, "The final fade must be on the common media parent")
-        XCTAssertFalse(surface.transitionSurface.isHidden)
+        XCTAssertGreaterThan(surface.transitionSurface.layer.zPosition, surface.reflectionPlane.layer.zPosition)
+        XCTAssertNil(surface.layer.mask, "A live backdrop must not be placed under an ancestor mask")
+        XCTAssertNil(playerLayer.mask)
+        XCTAssertNotNil(surface.videoPlane.mask)
+        XCTAssertNotNil(surface.transitionSurface.mask)
+        XCTAssertEqual(surface.transitionSurface.alpha, 1)
         let player = playerLayer.player
         configure(reflects: true)
-        try await waitUntil { surface.reflectionSurface.layer.contents != nil && surface.transitionSurface.layer.contents != nil }
-        XCTAssertTrue(playerLayer.player === player, "Toggling reflection must keep the one existing player")
-        XCTAssertFalse(surface.transitionSurface.isHidden)
+        try await waitUntil { surface.reflectionSurface.layer.contents != nil }
+        XCTAssertTrue(playerLayer.player === player, "Effect toggles must keep the one existing player")
+
+        tuning.order = [.bottomFade, .video, .transition, .reflection, .dimming, .background]
+        configure(reflects: true)
+        XCTAssertGreaterThan(surface.videoPlane.layer.zPosition, surface.transitionSurface.layer.zPosition)
+        XCTAssertTrue(surface.subviews.firstIndex(of: surface.videoPlane)! > surface.subviews.firstIndex(of: surface.transitionSurface)!)
+        tuning.order = [.video, .bottomFade, .transition, .reflection, .dimming, .background]
+        configure(reflects: true)
+        XCTAssertNil(surface.videoPlane.mask, "Moving above the fade removes that layer's fade")
+        XCTAssertNotNil(surface.reflectionPlane.mask)
+
+        // Exercise actual compositor pixels: a hidden video and reflection must
+        // not keep supplying their old colors to the visible blur.
+        tuning.order = nil
         tuning[.video].enabled = false
-        configure(reflects: true)
-        XCTAssertTrue(surface.videoPlane.isHidden)
-        XCTAssertFalse(surface.transitionSurface.isHidden)
-        tuning[.video].enabled = true
-        configure(reflects: true)
-        XCTAssertFalse(surface.videoPlane.isHidden)
-        XCTAssertGreaterThan(surface.transitionSurface.layer.zPosition, surface.videoPlane.layer.zPosition)
+        tuning[.reflection].enabled = false
+        tuning[.dimming].enabled = false
         tuning[.bottomFade].enabled = false
-        configure(reflects: true)
-        XCTAssertNil(surface.layer.mask)
-        XCTAssertNotNil(surface.transitionSurface.layer.contents)
+        tuning.blurRadius = 80
+        surface.backgroundSurface.backgroundColor = .red
+        configure(reflects: false)
+        XCTAssertTrue(surface.videoPlane.isHidden)
+        XCTAssertTrue(surface.reflectionSurface.isHidden)
+        XCTAssertFalse(surface.transitionSurface.isHidden)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let red = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
+        XCTAssertGreaterThan(red[0], red[2] + 30, "Hidden video must not leak into the red backdrop")
+
+        // No new video-frame renderer is invoked when the underlying color changes.
+        surface.backgroundSurface.backgroundColor = .blue
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let blue = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
+        XCTAssertGreaterThan(blue[2], blue[0] + 30, "Live blur must follow the currently visible background")
+        XCTAssertTrue(playerLayer.player === player)
+        XCTAssertNil(surface.transitionSurface.layer.contents, "The live blur owns no retained video bitmap")
+    }
+
+    private func backdropPixel(_ window: UIWindow, at point: CGPoint) throws -> [Int] {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let cg = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(origin: point, size: CGSize(width: 1, height: 1))))
+        var bytes = [UInt8](repeating: 0, count: 4)
+        try bytes.withUnsafeMutableBytes { storage in
+            let context = try XCTUnwrap(CGContext(data: storage.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Live backdrop visibility and color"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        return bytes.map(Int.init)
     }
 
     private func waitUntil(_ predicate: () -> Bool) async throws {
@@ -65,6 +110,6 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             if predicate() { return }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        XCTFail("Actual video playback did not deliver a blur frame within six seconds")
+        XCTFail("Actual video playback did not present its first frame within six seconds")
     }
 }

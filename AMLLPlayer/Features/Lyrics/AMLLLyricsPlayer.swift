@@ -33,32 +33,14 @@ struct AMLLLyricsPlayer: View {
         GeometryReader { geometry in
             let metrics = AppleMusicLyricsLayoutMetrics.responsive(in: geometry.size)
             let drag = dismissalTransform(height: geometry.size.height)
+            let immersive = model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false
             ZStack {
                 Color(white: 0.08)
-                let immersive = model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false
-                let tuning = artworkDebug.configuration
-                let background = immersive ? tuning[.background] : .init()
-                let dimming = immersive ? tuning[.dimming] : .init()
-                let backgroundFrame = background.frame(CGRect(origin: .zero, size: geometry.size))
-                let dimmingFrame = dimming.frame(CGRect(origin: .zero, size: geometry.size))
-                AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
-                               active: scenePhase == .active && !search && !devices,
-                               blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
-                               color: configuration.backgroundColor ?? .sourceDefault,
-                               gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
-                               flowing: configuration.flowingBackground ?? .init(),
-                               dimming: 0)
-                    .frame(width: backgroundFrame.width, height: backgroundFrame.height)
-                    .position(x: backgroundFrame.midX, y: backgroundFrame.midY)
-                    .opacity(background.enabled ? background.opacity : 0)
-                Color.black.opacity(immersive && tuning.layers[ImmersiveArtworkLayer.dimming.rawValue] != nil
-                    ? dimming.opacity : (configuration.backgroundDimming ?? 0.16))
-                    .frame(width: dimmingFrame.width, height: dimmingFrame.height)
-                    .position(x: dimmingFrame.midX, y: dimmingFrame.midY)
-                    .opacity(dimming.enabled ? 1 : 0)
-                    .allowsHitTesting(false)
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                     immersiveArtworkLayers(item, size: geometry.size)
+                } else {
+                    artworkBackground
+                    Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
                 }
                 if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                     player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
@@ -69,7 +51,7 @@ struct AMLLLyricsPlayer: View {
             // Keep text blending inside the same backdrop group at rest and
             // during the system zoom. The transition must not be the operation
             // that first establishes a compositing boundary for this page.
-            .compositingGroup()
+            .modifier(LyricsBackdropComposition(immersive: immersive))
             .modifier(LyricsPageDynamicRange())
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
@@ -374,10 +356,23 @@ struct AMLLLyricsPlayer: View {
         return ImmersiveArtworkMedia(video: immersiveVideo(item), frames: artworkReflectionFrames,
             layout: .init(video: video, reflection: reflection, transition: transition, bottomFade: bottomFade,
                 tuning: tuning, presentsFrame: artworkLoader.hasPresentedFrame, reflectionEnabled: reflects,
-                reduceTransparency: reduceTransparency))
+                reduceTransparency: reduceTransparency,
+                background: tuning[.background].frame(CGRect(origin: .zero, size: size)),
+                dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: size)),
+                backgroundDimming: configuration.backgroundDimming ?? 0.16),
+            background: artworkBackground)
         .id(artworkLoader.requestToken)
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false).accessibilityHidden(true)
+    }
+
+    private var artworkBackground: AMLLBackground {
+        AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
+            active: scenePhase == .active && !search && !devices,
+            blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
+            color: configuration.backgroundColor ?? .sourceDefault,
+            gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
+            flowing: configuration.flowingBackground ?? .init(), dimming: 0)
     }
 
     private var artworkRequestKey: String {
@@ -629,5 +624,14 @@ private struct LyricsPageDynamicRange: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+private struct LyricsBackdropComposition: ViewModifier {
+    let immersive: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        // A live UIKit backdrop must sample the original layers, not a SwiftUI
+        // offscreen copy. The lyric-visible path keeps its existing HDR group.
+        if immersive { content } else { content.compositingGroup() }
     }
 }

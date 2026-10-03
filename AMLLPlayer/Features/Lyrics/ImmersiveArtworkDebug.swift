@@ -12,7 +12,7 @@ enum ImmersiveArtworkLayer: String, CaseIterable, Identifiable, Codable {
         case .video: "完整视频"
         case .reflection: "封面倒影（无额外模糊）"
         case .transition: "渐变模糊过渡"
-        case .bottomFade: "最上层底部渐隐"
+        case .bottomFade: "底部渐隐"
         }
     }
 }
@@ -48,6 +48,27 @@ struct ImmersiveArtworkLayerAdjustment: Codable, Equatable {
 struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
     var layers: [String: ImmersiveArtworkLayerAdjustment] = [:]
     var blurRadius = 32.0
+    /// Top to bottom, matching the editor's visible order. Optional for old saved tuning.
+    var order: [ImmersiveArtworkLayer]?
+
+    var orderedLayers: [ImmersiveArtworkLayer] {
+        var result: [ImmersiveArtworkLayer] = []
+        for layer in (order ?? Array(ImmersiveArtworkLayer.allCases.reversed())) where !result.contains(layer) {
+            result.append(layer)
+        }
+        for layer in ImmersiveArtworkLayer.allCases.reversed() where !result.contains(layer) { result.append(layer) }
+        return result
+    }
+
+    func isBelow(_ layer: ImmersiveArtworkLayer, _ other: ImmersiveArtworkLayer) -> Bool {
+        orderedLayers.firstIndex(of: layer)! > orderedLayers.firstIndex(of: other)!
+    }
+
+    mutating func moveLayers(fromOffsets: IndexSet, toOffset: Int) {
+        var updated = orderedLayers
+        updated.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        order = updated
+    }
 
     subscript(_ layer: ImmersiveArtworkLayer) -> ImmersiveArtworkLayerAdjustment {
         get {
@@ -86,7 +107,8 @@ final class ImmersiveArtworkDebugStore {
             dimming.opacity = backgroundDimming
             complete[.dimming] = dimming
         }
-        for layer in ImmersiveArtworkLayer.allCases { complete[layer] = configuration[layer] }
+        for layer in ImmersiveArtworkLayer.allCases { complete[layer] = complete[layer] }
+        complete.order = complete.orderedLayers
         return (try? encoder.encode(complete)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 }
@@ -102,7 +124,7 @@ struct ImmersiveArtworkDebugPanel: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("临时调试：背景＋暗度 → 视频＋倒影 → 渐变模糊 → 底部渐隐。前景文字与控件不参与这些调节。")
+                    Text("临时调试：可调整下方所有层的顺序。前景文字与控件不参与这些调节。")
                         .font(.footnote)
                     if viewport.width > 0 {
                         Text("视口 \(Int(viewport.width)) × \(Int(viewport.height)) pt；视频底边 \(video.maxY, specifier: "%.1f") pt")
@@ -110,6 +132,14 @@ struct ImmersiveArtworkDebugPanel: View {
                     }
                     Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数。视频在调整后的容器内始终等比完整显示，倒影与模糊自动对齐实际画面。倒影开关还需开启原有封面倒影设置。底部渐隐的不透明度表示渐隐强度。")
                         .font(.footnote).foregroundStyle(.secondary)
+                    Text("实时模糊强度为系统效果的 0–80 调节值，不是高斯半径。关闭视频后不保留视频模糊副本；仍开启且位于下方的倒影与背景继续参与模糊。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section {
+                    ForEach(store.configuration.orderedLayers) { layer in Text(layer.title) }
+                        .onMove { from, to in store.configuration.moveLayers(fromOffsets: from, toOffset: to) }
+                } header: { Text("层级顺序（最上层 → 最下层）") } footer: {
+                    Text("点击编辑后拖动排序，与歌词来源顺序使用相同控件。上移提高层级；实时模糊只作用于它下方可见的内容。底部渐隐只作用于它下方的视频、倒影和模糊，不改变背景本身。")
                 }
                 ForEach(ImmersiveArtworkLayer.allCases) { layer in
                     Section(layer.title) {
@@ -120,7 +150,7 @@ struct ImmersiveArtworkDebugPanel: View {
                         slider("高度", value: binding(layer, \.height), range: 0.1 ... 2, step: 0.01, unit: "×")
                         slider(layer == .bottomFade ? "渐隐强度" : "不透明度", value: binding(layer, \.opacity), range: 0 ... 1, step: 0.01, unit: "")
                         if layer == .transition {
-                            slider("最大模糊半径", value: Binding(get: { store.configuration.validatedBlur }, set: { store.configuration.blurRadius = $0 }), range: 0 ... 80, step: 1, unit: "pt")
+                            slider("实时模糊强度", value: Binding(get: { store.configuration.validatedBlur }, set: { store.configuration.blurRadius = $0 }), range: 0 ... 80, step: 1, unit: "")
                         }
                         Button("重置此层") { store.configuration.layers.removeValue(forKey: layer.rawValue) }
                     }
@@ -135,7 +165,10 @@ struct ImmersiveArtworkDebugPanel: View {
             }
             .navigationTitle("沉浸封面层级调试")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { EditButton() }
+                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+            }
         }
     }
 

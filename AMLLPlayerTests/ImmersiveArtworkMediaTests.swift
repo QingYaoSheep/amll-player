@@ -1,11 +1,137 @@
 @testable import AMLLPlayer
 import AVFoundation
+import CoreImage
 import MetalKit
 import UIKit
 import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testUpwardFadeReducesBlurRadiusWithoutFadingTheLayer() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = CGRect(x: 0, y: 0, width: 200, height: 650)
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        for index in 0 ..< 25 {
+            let stripe = UIView(frame: CGRect(x: index * 8, y: 0, width: 8, height: 650))
+            stripe.backgroundColor = index.isMultiple(of: 2) ? .white : .black
+            surface.backgroundSurface.addSubview(stripe)
+        }
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
+        tuning.blurRadius = 40
+        let video = AnimatedArtwork(url: URL(fileURLWithPath: "/no-video-required.mp4"), active: false)
+        func apply() {
+            surface.configure(video: video, layout: .init(video: CGRect(x: 0, y: 0, width: 128, height: 400),
+                reflection: .zero, transition: CGRect(x: 0, y: 180, width: 200, height: 470), bottomFade: .zero,
+                tuning: tuning, presentsFrame: true, reflectionEnabled: false, reduceTransparency: false))
+            surface.layoutIfNeeded()
+        }
+        apply()
+        XCTAssertEqual(surface.transitionSurface.alpha, 1)
+        XCTAssertNil(surface.transitionSurface.mask, "The radius gradient must not also fade the image's opacity")
+        try await waitUntil { surface.transitionSurface.presentedFrames > 3 }
+        let upper = try backdropVariance(window, y: 190)
+        let middle = try backdropVariance(window, y: 290)
+        XCTAssertGreaterThan(upper, 1000)
+        XCTAssertLessThan(middle, upper * 0.15,
+            "The middle must be the radius-blurred backdrop, without sharp pixels from a second opacity ramp")
+        tuning[.transition].opacity = 0.4
+        apply()
+        let opacityMask = try XCTUnwrap((surface.transitionSurface.mask as? UIImageView)?.image)
+        let context = CIContext()
+        let mask = try XCTUnwrap(CIImage(image: opacityMask))
+        func alpha(y: CGFloat) -> Int {
+            var bytes = [UInt8](repeating: 0, count: 4)
+            bytes.withUnsafeMutableBytes { storage in
+                context.render(mask, toBitmap: storage.baseAddress!, rowBytes: 4,
+                    bounds: CGRect(x: 64, y: y, width: 1, height: 1), format: .RGBA8,
+                    colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+            }
+            return Int(bytes[3])
+        }
+        XCTAssertEqual(Double(alpha(y: 10)), 102, accuracy: 1)
+        XCTAssertEqual(Double(alpha(y: 400)), 102, accuracy: 1,
+            "The explicit debug opacity is uniform and independent of the blur fade")
+    }
+
+    func testLiveBlurSamplesEveryVisibleLowerPlaneAndKeepsHigherPlanesSharp() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = CGRect(x: 0, y: 0, width: 200, height: 650)
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        surface.backgroundSurface.backgroundColor = .blue
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.video, .reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
+        tuning.blurRadius = 24
+        surface.configure(video: AnimatedArtwork(url: URL(fileURLWithPath: "/unused.mp4"), active: false),
+            layout: .init(video: .zero, reflection: .zero, transition: surface.bounds, bottomFade: .zero,
+                tuning: tuning, presentsFrame: false, reflectionEnabled: false, reduceTransparency: false))
+        surface.layoutIfNeeded()
+        // These are actual additional sibling planes, not preselected background/video inputs.
+        let lower = UIView(frame: surface.bounds)
+        for index in 0 ..< 25 {
+            let stripe = UIView(frame: CGRect(x: index * 8, y: 0, width: 8, height: 650))
+            stripe.backgroundColor = index.isMultiple(of: 2) ? .white : .black
+            lower.addSubview(stripe)
+        }
+        lower.layer.zPosition = surface.transitionSurface.layer.zPosition - 0.5
+        surface.insertSubview(lower, belowSubview: surface.transitionSurface)
+        try await waitUntil { surface.transitionSurface.presentedFrames > 3 }
+        let blurred = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
+        XCTAssertGreaterThan(blurred[0], 60)
+        XCTAssertLessThan(blurred[0], 200)
+        XCTAssertEqual(Double(blurred[0]), Double(blurred[1]), accuracy: 3)
+        XCTAssertEqual(Double(blurred[0]), Double(blurred[2]), accuracy: 3,
+            "The new lower plane must participate; a blue background-only snapshot is incorrect")
+        XCTAssertLessThan(try backdropVariance(window, y: 460), 500)
+        let above = UIView(frame: CGRect(x: 0, y: 400, width: 200, height: 100))
+        for index in 0 ..< 25 {
+            let stripe = UIView(frame: CGRect(x: index * 8, y: 0, width: 8, height: 100))
+            stripe.backgroundColor = index.isMultiple(of: 2) ? .white : .black
+            above.addSubview(stripe)
+        }
+        above.layer.zPosition = surface.transitionSurface.layer.zPosition + 0.5
+        surface.addSubview(above)
+        let before = surface.transitionSurface.presentedFrames
+        try await waitUntil { surface.transitionSurface.presentedFrames > before + 3 }
+        XCTAssertGreaterThan(try backdropVariance(window, y: 460), 1000,
+            "Content above the blur must stay sharp")
+        above.layer.zPosition = surface.transitionSurface.layer.zPosition - 0.25
+        let moved = surface.transitionSurface.presentedFrames
+        try await waitUntil { surface.transitionSurface.presentedFrames > moved + 3 }
+        XCTAssertLessThan(try backdropVariance(window, y: 460), 500,
+            "Reordering real planes must affect the next live sample without rebuilding the player")
+        above.isHidden = true
+        lower.subviews.forEach { $0.removeFromSuperview() }
+        lower.backgroundColor = .red
+        let changed = surface.transitionSurface.presentedFrames
+        try await waitUntil { surface.transitionSurface.presentedFrames > changed + 3 }
+        let red = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
+        XCTAssertGreaterThan(red[0], 240)
+        XCTAssertLessThan(red[2], 10, "Live updates cannot retain the hidden or previous plane's image")
+    }
+
     func testBackgroundRemainsBlurredToTheBottomWhileTheUpperExtensionBecomesClear() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -152,10 +278,11 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         }
 
         // A hidden video's geometry must not create a ramp in the fully blurred background.
-        let firstMask = try XCTUnwrap((surface.transitionSurface.mask as? UIImageView)?.image?.pngData())
+        let firstFrame = surface.transitionSurface.frame
+        XCTAssertNil(surface.transitionSurface.mask)
         apply(strength: 80, videoEnd: 160)
-        let movedVideoMask = try XCTUnwrap((surface.transitionSurface.mask as? UIImageView)?.image?.pngData())
-        XCTAssertEqual(firstMask, movedVideoMask, "Hidden video geometry cannot change full background blur")
+        XCTAssertNil(surface.transitionSurface.mask)
+        XCTAssertEqual(firstFrame, surface.transitionSurface.frame, "Hidden video geometry cannot change full background blur")
 
         for index in 0 ..< 16 {
             let stripe = UIView(frame: CGRect(x: index * 8, y: 0, width: 8, height: 650))
@@ -315,7 +442,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertNil(surface.layer.mask, "A live backdrop must not be placed under an ancestor mask")
         XCTAssertNil(playerLayer.mask)
         XCTAssertNotNil(surface.videoPlane.mask)
-        XCTAssertNotNil(surface.transitionSurface.mask)
+        XCTAssertNil(surface.transitionSurface.mask, "The live blur fade controls radius, not opacity")
         XCTAssertEqual(surface.transitionSurface.alpha, 1)
         let player = playerLayer.player
         configure(reflects: true)

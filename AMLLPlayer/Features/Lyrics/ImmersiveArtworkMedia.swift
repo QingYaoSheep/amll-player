@@ -170,7 +170,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             func bottomFade(for layer: ImmersiveArtworkLayer) -> CGRect? {
                 fadeEnabled && tuning.isBelow(layer, .bottomFade) ? layout.bottomFade : nil
             }
-            // Keep the media fade and transition's own fade independently tunable.
+            // Media opacity fades independently; the backdrop fade changes only its blur radius.
             layer.mask = nil
             videoPlane.mask = ImmersiveArtworkVisibility.mask(frame: layout.video,
                 fade: bottomFade(for: .video), strength: tuning[.bottomFade].opacity)
@@ -178,7 +178,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 fade: bottomFade(for: .reflection), strength: tuning[.bottomFade].opacity)
             transitionSurface.configure(amount: tuning.validatedBlur / 80,
                 mask: ImmersiveArtworkVisibility.mask(frame: profile.frame,
-                    fade: nil, strength: 0, blurProfile: profile,
+                    fade: nil, strength: 0,
                     opacity: tuning[.transition].opacity * layout.pageOpacity))
             CATransaction.commit()
             let visible = bounds.intersection(layout.reflection)
@@ -205,17 +205,27 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             format.opaque = false
             let renderer = UIGraphicsImageRenderer(size: region.size, format: format)
             var layers: [ImmersiveBlurInput.Plane] = []
-            for kind in layout.tuning.orderedLayers.reversed() where layout.tuning.isBelow(kind, .transition) {
-                guard let view = plane(for: kind), !view.isHidden, view.alpha > 0,
+            // Read the real hierarchy each time, including any additional lower sibling.
+            // Equal zPosition values use UIKit's insertion order. Never capture this
+            // effect or an upper plane, which would feed yesterday's blur back into itself.
+            let ordered = subviews.enumerated().sorted { lhs, rhs in
+                if lhs.element.layer.zPosition != rhs.element.layer.zPosition {
+                    return lhs.element.layer.zPosition < rhs.element.layer.zPosition
+                }
+                return lhs.offset < rhs.offset
+            }.map(\.element)
+            guard let effectIndex = ordered.firstIndex(where: { $0 === transitionSurface }) else { return nil }
+            for view in ordered.prefix(effectIndex) {
+                guard !view.isHidden, view.alpha > 0,
                       view.frame.intersects(region) else { continue }
-                if kind == .video {
+                if view === videoPlane {
                     guard layout.presentsFrame, videoSurface.layer.opacity > 0, let buffer = frames.currentBuffer else { continue }
                     let mask = (videoPlane.mask as? UIImageView)?.image?.cgImage
                     layers.append(.video(buffer, frame: videoPlane.frame, mask: mask, opacity: Double(videoPlane.alpha)))
                 } else {
                     let image = renderer.image { context in
                         context.cgContext.translateBy(x: view.frame.minX - region.minX, y: view.frame.minY - region.minY)
-                        if kind == .reflection {
+                        if view === reflectionPlane {
                             // Reflection already owns the presented CGImage and its masks.
                             view.layer.render(in: context.cgContext)
                         } else {
@@ -247,9 +257,9 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
 enum ImmersiveArtworkVisibility {
     /// Media fading is independent of the continuous background blur profile.
     static func mask(frame: CGRect, fade: CGRect?, strength: Double,
-                     blurProfile: ImmersiveBackgroundBlurProfile? = nil, opacity: Double = 1) -> UIView? {
+                     opacity: Double = 1) -> UIView? {
         guard frame.width > 0, frame.height > 0 else { return nil }
-        guard fade != nil || blurProfile != nil || opacity != 1 else { return nil }
+        guard fade != nil || opacity != 1 else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
@@ -259,8 +269,7 @@ enum ImmersiveArtworkVisibility {
             for row in 0 ..< rows {
                 let y = CGFloat(row) + 0.5
                 let globalY = frame.minY + y
-                var alpha = opacity
-                if let blurProfile { alpha *= Double(blurProfile.strength(at: globalY)) }
+                let alpha = opacity
                 context.setFillColor(UIColor(white: 1, alpha: CGFloat(alpha)).cgColor)
                 context.fill(CGRect(x: 0, y: CGFloat(row), width: frame.width, height: 1))
                 if let fade, globalY >= fade.minY {

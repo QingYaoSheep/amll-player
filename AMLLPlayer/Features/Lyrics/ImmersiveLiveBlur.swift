@@ -16,8 +16,9 @@ struct ImmersiveBlurInput: @unchecked Sendable {
 }
 
 /// Pure Gaussian backdrop softening. Unlike a system material this does not
-/// change color, saturation, or darkening. The mask/radius ramp belongs to the
-/// upward background extension. Below the junction it remains fully blurred.
+/// change color, saturation, or darkening. Only the filter radius ramps through
+/// the upward extension; it does not apply an image-opacity fade. Below the
+/// junction it remains fully blurred.
 enum ImmersiveBlurImage {
     static func image(_ input: ImmersiveBlurInput, radius: CGFloat) -> CIImage {
         let size = CGSize(width: input.region.width * input.scale, height: input.region.height * input.scale)
@@ -66,7 +67,7 @@ enum ImmersiveBlurImage {
         } else {
             ramp = CIImage(color: .white)
         }
-        // Exactly the same profile as the visible coverage; no second lower fade.
+        // This grayscale mask controls filter radius only, never image alpha.
         let mask = ramp.applyingFilter("CIColorPolynomial", parameters: [
             "inputRedCoefficients": CIVector(x: 0, y: 0, z: 3, w: -2),
             "inputGreenCoefficients": CIVector(x: 0, y: 0, z: 3, w: -2),

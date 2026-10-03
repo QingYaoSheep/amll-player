@@ -27,7 +27,7 @@ enum AMLLImmersiveArtworkGeometry {
     static let overlapFraction: CGFloat = 0.34
     static let maximumBlur: CGFloat = 32
     /// Shorten the fade region from its top only; keep the video bottom fixed.
-    static let transitionTopInsetFraction: CGFloat = 0.05
+    static let transitionTopInsetFraction: CGFloat = 0.15
 
     /// Smooth both ends so the original video cannot leave a rectangular bottom edge.
     static let transitionFadeStops: [(location: Double, alpha: Double)] = (0 ... 16).map { sample in

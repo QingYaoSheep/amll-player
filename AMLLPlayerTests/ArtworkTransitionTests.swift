@@ -49,7 +49,7 @@ final class ArtworkTransitionTests: XCTestCase {
         XCTAssertEqual(tail.minX, video.minX)
         XCTAssertEqual(tail.width, video.width)
         XCTAssertEqual(tail.maxY, video.maxY, accuracy: 0.001)
-        XCTAssertEqual(tail.height, 129.2, accuracy: 0.001)
+        XCTAssertEqual(tail.height, 115.6, accuracy: 0.001)
         let source = try XCTUnwrap(CIFilter(name: "CILinearGradient", parameters: [
             "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0, y: 400),
             "inputColor0": CIColor.blue, "inputColor1": CIColor.red,
@@ -57,7 +57,7 @@ final class ArtworkTransitionTests: XCTestCase {
         let image = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
                                                                     videoSize: video.size, surfaceSize: tail.size,
                                                                     outputSize: tail.size, blurRadius: 0))
-        for y in [0, 40, 80, 128] {
+        for y in [0, 40, 80, 114] {
             let actual = pixel(image, x: 100, y: y)
             let expected = pixel(source, x: 100, y: y)
             for channel in 0 ..< 4 {

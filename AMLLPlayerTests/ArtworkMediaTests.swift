@@ -174,7 +174,7 @@ final class ArtworkMediaTests: XCTestCase {
         let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: tall)
         let fadeTop = tall.maxY - tall.height * AMLLImmersiveArtworkGeometry.overlapFraction
         XCTAssertGreaterThan(transition.minY, fadeTop)
-        XCTAssertEqual(transition.minY - fadeTop, tall.height * 0.34 * 0.05, accuracy: 0.001)
+        XCTAssertEqual(transition.minY - fadeTop, tall.height * 0.34 * 0.15, accuracy: 0.001)
         XCTAssertEqual(transition.maxY, tall.maxY, accuracy: 0.001)
         XCTAssertEqual(transition.width, tall.width)
         XCTAssertEqual(transition.minX, tall.minX)

@@ -192,6 +192,11 @@ struct AnimatedArtwork: UIViewRepresentable {
                 ])
                 let template = AVPlayerItem(asset: asset)
                 disableAudio(in: template)
+                // The looper prepares replicas asynchronously. Seed the paused
+                // queue so the player layer can load/present a first frame even
+                // before those replicas become available. Do not mutate the
+                // queue after the looper takes ownership.
+                player.insert(template, after: nil)
                 looper = AVPlayerLooper(player: player, templateItem: template)
                 observeCurrentItem()
             }

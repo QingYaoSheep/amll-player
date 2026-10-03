@@ -29,14 +29,15 @@ enum AMLLImmersiveArtworkGeometry {
     /// Shorten the fade region from its top only; keep the video bottom fixed.
     static let transitionTopInsetFraction: CGFloat = 0.15
 
-    /// Smooth both ends so the original video cannot leave a rectangular bottom edge.
+    /// The blur overlay is strongest at the bottom and fades out towards its top.
     static let transitionFadeStops: [(location: Double, alpha: Double)] = (0 ... 16).map { sample in
         let t = Double(sample) / 16
-        return (t, 1 - t * t * (3 - 2 * t))
+        return (t, t * t * (3 - 2 * t))
     }
 
+    /// Keep the video's downward fade independent of the overlay's upward fade.
     static let videoFadeStops: [(location: Double, alpha: Double)] = [(0, 1)] + transitionFadeStops.map {
-        (1 - Double(overlapFraction) + $0.location * Double(overlapFraction), $0.alpha)
+        (1 - Double(overlapFraction) + $0.location * Double(overlapFraction), 1 - $0.alpha)
     }
 
     static func frame(viewport: CGSize, video: CGSize) -> CGRect {

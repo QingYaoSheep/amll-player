@@ -159,7 +159,7 @@ final class ArtworkTransitionTests: XCTestCase {
         XCTAssertGreaterThan(top, bottom * 2)
     }
 
-    func testProductionMasksAndTransitionHaveNoStepAtTheVideoBottom() throws {
+    func testProductionTransitionFadesUpWhileTheVideoFadesDown() throws {
         let videoSize = CGSize(width: 128, height: 400)
         let viewport = CGSize(width: 128, height: 650)
         let frame = CGRect(origin: .zero, size: videoSize)
@@ -174,6 +174,11 @@ final class ArtworkTransitionTests: XCTestCase {
         let transitionSurface = ArtworkVideoTransition.Surface(frame: CGRect(origin: .zero, size: tail.size))
         transitionSurface.layoutSubviews()
         let tailMask = try maskImage(XCTUnwrap(transitionSurface.layer.mask as? CAGradientLayer), size: tail.size)
+        XCTAssertLessThanOrEqual(pixel(tailMask, x: 64, y: Int(tail.height) - 1)[3], 1)
+        XCTAssertGreaterThanOrEqual(pixel(tailMask, x: 64, y: 0)[3], 254)
+        XCTAssertGreaterThan(pixel(tailMask, x: 64, y: 20)[3], pixel(tailMask, x: 64, y: 80)[3])
+        XCTAssertLessThanOrEqual(pixel(mainMask, x: 64, y: 0)[3], 1)
+        XCTAssertEqual(pixel(mainMask, x: 64, y: 399)[3], 255)
         let transition = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
                                                                          videoSize: videoSize, surfaceSize: tail.size, outputSize: tail.size))
         func masked(_ image: CIImage, _ mask: CIImage) -> CIImage {
@@ -182,29 +187,29 @@ final class ArtworkTransitionTests: XCTestCase {
                 kCIInputMaskImageKey: mask,
             ])
         }
-        let result = masked(source, mainMask)
-            .transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - frame.maxY))
-            .composited(over: masked(transition, tailMask)
-                .transformed(by: CGAffineTransform(translationX: tail.minX, y: viewport.height - tail.maxY)))
+        let result = masked(transition, tailMask)
+            .transformed(by: CGAffineTransform(translationX: tail.minX, y: viewport.height - tail.maxY))
+            .composited(over: masked(source, mainMask)
+                .transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - frame.maxY)))
             .composited(over: CIImage(color: .blue))
             .cropped(to: CGRect(origin: .zero, size: viewport))
-        let boundary = Int(viewport.height - frame.maxY)
+        let boundary = Int(viewport.height - tail.minY)
         for y in (boundary - 3) ... (boundary + 3) {
             let above = pixel(result, x: 64, y: y)
             let below = pixel(result, x: 64, y: y - 1)
             for channel in 0 ..< 3 {
                 XCTAssertLessThanOrEqual(abs(above[channel] - below[channel]), 3,
-                                         "A fully opaque rectangular video would leave a large step here")
+                                         "The upward fade must not introduce a step at the transition's top")
             }
         }
         let image = try XCTUnwrap(context.createCGImage(result, from: result.extent))
         let attachment = XCTAttachment(image: UIImage(cgImage: image))
-        attachment.name = "Immersive video bottom continuity"
+        attachment.name = "Upward blur fade and downward video fade"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
-    func testReflectionUnderTransitionHasNoStepOnWhiteOrDarkBackground() throws {
+    func testReflectionRemainsBelowTheUpwardFadingTransitionOnWhiteOrDarkBackground() throws {
         let videoSize = CGSize(width: 128, height: 400)
         let viewport = CGSize(width: 128, height: 650)
         let video = CGRect(origin: .zero, size: videoSize)
@@ -233,17 +238,16 @@ final class ArtworkTransitionTests: XCTestCase {
                 .composited(over: CIImage(color: background))
                 .cropped(to: CGRect(origin: .zero, size: viewport))
             let boundary = Int(viewport.height - video.maxY)
-            for y in (boundary - 3) ... (boundary + 3) {
-                let above = pixel(result, x: 64, y: y)
-                let below = pixel(result, x: 64, y: y - 1)
-                for channel in 0 ..< 3 {
-                    XCTAssertLessThanOrEqual(abs(above[channel] - below[channel]), 3,
-                                             "Enabling reflection must not add a rectangular seam")
-                }
-            }
+            // The revised overlay remains visible at the video bottom. Capture
+            // that boundary for device review instead of asserting the former
+            // downward-fading overlay's zero-alpha bottom.
+            XCTAssertLessThanOrEqual(pixel(result, x: 64, y: boundary)[0], 1)
+            XCTAssertGreaterThanOrEqual(pixel(result, x: 64, y: boundary)[2], 254)
+            XCTAssertEqual(pixel(result, x: 64, y: boundary - 1),
+                           pixel(reflected.composited(over: CIImage(color: background)), x: 64, y: boundary - 1))
             let image = try XCTUnwrap(context.createCGImage(result, from: result.extent))
             let attachment = XCTAttachment(image: UIImage(cgImage: image))
-            attachment.name = "Reflection below transition on \(name)"
+            attachment.name = "Reflection below upward blur fade on \(name)"
             attachment.lifetime = .keepAlways
             add(attachment)
         }

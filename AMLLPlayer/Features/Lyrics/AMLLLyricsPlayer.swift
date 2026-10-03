@@ -372,7 +372,7 @@ struct AMLLLyricsPlayer: View {
     private func immersiveArtworkLayers(_ item: PlaybackItem, size: CGSize) -> some View {
         let tuning = artworkDebug.configuration
         let originalVideo = AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
-        let video = tuning[.video].frame(originalVideo)
+        let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(originalVideo), source: originalVideo.size)
         let reflection = tuning[.reflection].frame(ArtworkReflectionGeometry.frame(cover: video, viewportHeight: size.height))
         let transition = tuning[.transition].frame(AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: size.height))
         let bottomFade = tuning[.bottomFade].frame(AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: size))

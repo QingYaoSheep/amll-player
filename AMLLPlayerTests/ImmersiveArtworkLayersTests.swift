@@ -115,6 +115,19 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         XCTAssertTrue(restored[.reflection].enabled)
     }
 
+    func testIndependentContainerSlidersKeepVideoAndReflectionAlignedWithoutStretching() {
+        let container = CGRect(x: 10, y: 30, width: 360, height: 400)
+        let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: container, source: CGSize(width: 9, height: 16))
+        XCTAssertEqual(video.width / video.height, 9.0 / 16, accuracy: 0.0001)
+        XCTAssertTrue(container.contains(video))
+        let reflection = ArtworkReflectionGeometry.frame(cover: video, viewportHeight: 874)
+        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: 874)
+        XCTAssertEqual(reflection.minY, video.maxY)
+        XCTAssertEqual(reflection.width, video.width)
+        XCTAssertEqual(transition.width, video.width)
+        XCTAssertEqual(transition.maxY, 874)
+    }
+
     private func pixel(_ image: CIImage, x: Int, y: Int) -> [Int] {
         var bytes = [UInt8](repeating: 0, count: 4)
         bytes.withUnsafeMutableBytes { storage in

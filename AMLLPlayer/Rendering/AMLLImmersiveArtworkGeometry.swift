@@ -56,6 +56,16 @@ enum AMLLImmersiveArtworkGeometry {
         return CGRect(x: (viewport.width - width) / 2, y: 0, width: width, height: height)
     }
 
+    /// Debug width/height resize the container, while the complete video remains aspect-fit.
+    /// Reflection and blur must use the visible content rect, not its letterboxing.
+    static func fittedFrame(container: CGRect, source: CGSize) -> CGRect {
+        guard container.width > 0, container.height > 0, source.width > 0, source.height > 0 else { return .zero }
+        let scale = min(container.width / source.width, container.height / source.height)
+        let size = CGSize(width: source.width * scale, height: source.height * scale)
+        return CGRect(x: container.midX - size.width / 2, y: container.midY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
+
     static func transitionFrame(video: CGRect, viewportHeight: CGFloat? = nil) -> CGRect {
         let halfHeight = transitionHalfHeight(videoHeight: video.height)
         let top = video.maxY - halfHeight

@@ -103,7 +103,7 @@ struct ImmersiveArtworkDebugPanel: View {
                         Text("视口 \(Int(viewport.width)) × \(Int(viewport.height)) pt；视频底边 \(video.maxY, specifier: "%.1f") pt")
                             .font(.caption).monospacedDigit()
                     }
-                    Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数。倒影开关还需开启原有封面倒影设置。底部渐隐的不透明度表示渐隐强度。")
+                    Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数。视频在调整后的容器内始终等比完整显示，倒影与模糊自动对齐实际画面。倒影开关还需开启原有封面倒影设置。底部渐隐的不透明度表示渐隐强度。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 ForEach(ImmersiveArtworkLayer.allCases) { layer in

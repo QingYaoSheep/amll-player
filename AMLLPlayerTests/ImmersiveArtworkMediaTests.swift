@@ -5,6 +5,45 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testPlayerLevelOutputProducesReflectionAcrossActualLoopItems() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = window.bounds
+        controller.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        let videoFrame = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let layout = ImmersiveArtworkMedia.Layout(video: videoFrame,
+            reflection: ArtworkReflectionGeometry.frame(cover: videoFrame, viewportHeight: 650),
+            transition: AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame, viewportHeight: 650),
+            bottomFade: .zero, tuning: .init(), presentsFrame: true,
+            reflectionEnabled: true, reduceTransparency: false)
+        surface.configure(video: AnimatedArtwork(url: url, active: false), layout: layout)
+        surface.videoSurface.usePlayerLevelFrameOutput()
+        surface.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
+        surface.layoutIfNeeded()
+        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        XCTAssertNotNil(player.videoOutput)
+        XCTAssertTrue(player.currentItem?.outputs.isEmpty == true, "Keep only one frame-output path")
+        try await waitUntil { frames.receivedFrames > 0 && surface.reflectionSurface.layer.contents != nil }
+        let firstItem = player.currentItem
+        let received = frames.receivedFrames
+        try await waitUntil { player.currentItem !== firstItem && frames.receivedFrames > received + 5 }
+        XCTAssertGreaterThan(surface.reflectionSurface.presentedFrames, 0)
+        XCTAssertNotNil(player.videoOutput, "A loop must retain the player-level output")
+    }
+
     func testPausedVideoAttachesOutputBeforePlayingAndReflectionSurvivesRemount() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

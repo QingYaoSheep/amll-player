@@ -9,10 +9,13 @@ import SwiftUI
     private var lastBuffer: CVPixelBuffer?
     private(set) var receivedFrames = 0
     var outputAttached = false
+    var outputKind = "item 级（BGRA）"
+    var samplingAttempts = 0
+    var mediaDiagnostic = ""
     var layoutDiagnostic = "尚未安装沉浸画布"
     var hasFrame: Bool { lastBuffer != nil }
     var diagnosticText: String {
-        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n\(layoutDiagnostic)"
+        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n\(mediaDiagnostic)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n\(layoutDiagnostic)"
     }
 
     func attach(_ view: ArtworkReflection.Surface) {
@@ -38,6 +41,9 @@ import SwiftUI
         source = token
         lastBuffer = nil
         receivedFrames = 0
+        samplingAttempts = 0
+        outputKind = "item 级（BGRA）"
+        mediaDiagnostic = ""
         surface?.clear()
         transitionSurface?.clear()
         return token

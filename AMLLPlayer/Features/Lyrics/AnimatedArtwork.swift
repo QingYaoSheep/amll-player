@@ -79,6 +79,9 @@ struct AnimatedArtwork: UIViewRepresentable {
         private weak var outputItem: AVPlayerItem?
         private var outputWakeDeadline: CFTimeInterval?
         private var outputNotificationRequested = false
+        private var playerVideoOutput: AVPlayerVideoOutput?
+        private var lastPlayerOutputTime: CMTime?
+        private var outputStarvationStart: CFTimeInterval?
         private var displayLink: CADisplayLink?
         private var watchdog = ArtworkPlaybackWatchdog()
         private var lastTick: CFTimeInterval?
@@ -308,6 +311,8 @@ struct AnimatedArtwork: UIViewRepresentable {
                 outputItem?.remove(output)
             }
             output = nil; outputItem = nil; outputTarget = nil; outputWakeDeadline = nil
+            player.videoOutput = nil; playerVideoOutput = nil; lastPlayerOutputTime = nil
+            outputStarvationStart = nil
             outputNotificationRequested = false
             reflectionFrames?.outputAttached = false
             reflectionFrames?.clear(source: reflectionToken)
@@ -346,7 +351,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         }
 
         private func attachReflectionOutput() {
-            guard reflectionFrames != nil, let item = player.currentItem else { return }
+            guard playerVideoOutput == nil, reflectionFrames != nil, let item = player.currentItem else { return }
             if outputItem !== item {
                 if let output {
                     output.setDelegate(nil, queue: nil)
@@ -367,6 +372,23 @@ struct AnimatedArtwork: UIViewRepresentable {
         func refreshReflectionFrame(hostTime: CFTimeInterval? = nil) {
             guard !failed, let reflectionFrames, let reflectionToken,
                   let item = player.currentItem else { return }
+            reflectionFrames.samplingAttempts += 1
+            reflectionFrames.mediaDiagnostic = "媒体时间：\(String(format: "%.2f", player.currentTime().seconds)) s；速率：\(player.rate)；视频已显示：\(playerLayer.isReadyForDisplay ? "是" : "否")；资源：\(url?.isFileURL == true ? (url?.pathExtension ?? "本地") : "在线")"
+            if let playerVideoOutput {
+                for timestamp in [hostTime, CACurrentMediaTime()].compactMap({ $0 }) {
+                    let time = CMTime(seconds: timestamp, preferredTimescale: 1_000_000_000)
+                    guard let sample = playerVideoOutput.taggedBuffers(forHostTime: time),
+                          lastPlayerOutputTime.map({ CMTimeCompare($0, sample.presentationTime) != 0 }) ?? true else { continue }
+                    for tagged in sample.taggedBufferGroup {
+                        if case let .pixelBuffer(buffer) = tagged.buffer {
+                            lastPlayerOutputTime = sample.presentationTime
+                            reflectionFrames.display(buffer, source: reflectionToken)
+                            return
+                        }
+                    }
+                }
+                return
+            }
             attachReflectionOutput()
             guard item.status == .readyToPlay, let output, outputItem === item else { return }
             let predicted = hostTime.map { output.itemTime(forHostTime: $0) }
@@ -374,9 +396,38 @@ struct AnimatedArtwork: UIViewRepresentable {
                 if output.hasNewPixelBuffer(forItemTime: time),
                    let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
                     reflectionFrames.display(buffer, source: reflectionToken)
+                    outputStarvationStart = nil
                     return
                 }
             }
+            if playbackActive, playerLayer.isReadyForDisplay, item.status == .readyToPlay,
+               player.timeControlStatus == .playing {
+                let now = CACurrentMediaTime()
+                if outputStarvationStart == nil { outputStarvationStart = now }
+                if now - (outputStarvationStart ?? now) >= 1 {
+                    usePlayerLevelFrameOutput()
+                }
+            } else { outputStarvationStart = nil }
+        }
+
+        /// HLS / decoder changes can leave an item output attached but silent.
+        /// Switch once to the public player-level output with native pixel
+        /// buffers. It follows the same player across loop items and avoids a
+        /// second decoder/player or a permanently retained blank reflection.
+        func usePlayerLevelFrameOutput() {
+            guard playerVideoOutput == nil, reflectionFrames != nil else { return }
+            if let output {
+                output.setDelegate(nil, queue: nil)
+                outputItem?.remove(output)
+            }
+            output = nil; outputItem = nil; outputTarget = nil
+            outputNotificationRequested = false
+            let specification = AVVideoOutputSpecification(tagCollections: [[.mediaType(.video)]])
+            let next = AVPlayerVideoOutput(specification: specification)
+            playerVideoOutput = next
+            player.videoOutput = next
+            lastPlayerOutputTime = nil
+            reflectionFrames?.outputKind = "播放器级（原生像素格式）"
         }
 
         private func requestOutputNotification() {

@@ -5,6 +5,57 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testPausedVideoAttachesOutputBeforePlayingAndReflectionSurvivesRemount() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = window.bounds
+        controller.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        let videoFrame = CGRect(x: 0, y: 0, width: 128, height: 400)
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.transition].enabled = false
+        tuning[.bottomFade].enabled = false
+        let video = AnimatedArtwork(url: url, active: false)
+        surface.configure(video: video, layout: .init(video: videoFrame,
+            reflection: ArtworkReflectionGeometry.frame(cover: videoFrame, viewportHeight: 650),
+            transition: AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame, viewportHeight: 650),
+            bottomFade: .zero, tuning: tuning, presentsFrame: true,
+            reflectionEnabled: true, reduceTransparency: false))
+        surface.layoutIfNeeded()
+        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        XCTAssertEqual(player.rate, 0, "A paused cover must not start playing to obtain its reflection")
+        XCTAssertEqual(player.currentItem?.outputs.compactMap { $0 as? AVPlayerItemVideoOutput }.count, 1,
+            "Install the output before playback, rather than waiting for a playing display-link tick")
+        try await waitUntil { frames.hasFrame && surface.reflectionSurface.layer.contents != nil }
+        XCTAssertGreaterThan(frames.receivedFrames, 0)
+        XCTAssertGreaterThan(surface.reflectionSurface.presentedFrames, 0)
+
+        // A paused page may attach after its cached frame was received. It
+        // must render that frame even though no more player ticks occur.
+        surface.reflectionSurface.removeFromSuperview()
+        surface.reflectionSurface.clear()
+        let received = frames.receivedFrames
+        frames.replayLatest() // Retains the frame while detached; no render yet.
+        XCTAssertNil(surface.reflectionSurface.layer.contents)
+        surface.reflectionPlane.addSubview(surface.reflectionSurface)
+        surface.layoutIfNeeded()
+        try await waitUntil { surface.reflectionSurface.layer.contents != nil }
+        XCTAssertEqual(frames.receivedFrames, received)
+        XCTAssertEqual(player.rate, 0)
+    }
+
     func testActualPlayerAndLiveBlurFollowSavedOrderingAndVisibility() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let frames = ArtworkReflectionFrames()

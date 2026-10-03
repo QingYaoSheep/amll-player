@@ -78,7 +78,8 @@ struct AMLLLyricsPlayer: View {
             .sheet(isPresented: $showingArtworkDebug) {
                 ImmersiveArtworkDebugPanel(viewport: geometry.size,
                     video: AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size, video: artworkLoader.videoSize ?? .zero),
-                    backgroundDimming: configuration.backgroundDimming ?? 0.16)
+                    backgroundDimming: configuration.backgroundDimming ?? 0.16,
+                    frames: artworkReflectionFrames)
                     .presentationDetents([.medium, .large])
             }
         }

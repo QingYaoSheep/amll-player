@@ -7,6 +7,13 @@ import SwiftUI
     weak var transitionSurface: ArtworkVideoTransition.Surface?
     private var source: UUID?
     private var lastBuffer: CVPixelBuffer?
+    private(set) var receivedFrames = 0
+    var outputAttached = false
+    var layoutDiagnostic = "尚未安装沉浸画布"
+    var hasFrame: Bool { lastBuffer != nil }
+    var diagnosticText: String {
+        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n\(layoutDiagnostic)"
+    }
 
     func attach(_ view: ArtworkReflection.Surface) {
         guard surface !== view else { return }
@@ -30,6 +37,7 @@ import SwiftUI
         let token = UUID()
         source = token
         lastBuffer = nil
+        receivedFrames = 0
         surface?.clear()
         transitionSurface?.clear()
         return token
@@ -37,6 +45,7 @@ import SwiftUI
 
     func display(_ buffer: CVPixelBuffer, source token: UUID) {
         guard token == source else { return }
+        receivedFrames += 1
         lastBuffer = buffer
         surface?.display(buffer)
         transitionSurface?.display(buffer)
@@ -131,6 +140,7 @@ struct ArtworkReflection: UIViewRepresentable {
         private var pending: Frame?
         private var previousSize = CGSize.zero
         private var lastBuffer: CVPixelBuffer?
+        private(set) var presentedFrames = 0
         private let fade = CAGradientLayer()
 
         /// Pixel buffers are retained immutable inputs. Only the serial worker
@@ -175,6 +185,11 @@ struct ArtworkReflection: UIViewRepresentable {
             CATransaction.commit()
         }
 
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil, let lastBuffer { display(lastBuffer) }
+        }
+
         override func layoutSubviews() {
             super.layoutSubviews()
             if previousSize != bounds.size {
@@ -202,6 +217,7 @@ struct ArtworkReflection: UIViewRepresentable {
             generation = UUID()
             pending = nil
             lastBuffer = nil
+            presentedFrames = 0
             layer.contents = nil
         }
 
@@ -226,6 +242,7 @@ struct ArtworkReflection: UIViewRepresentable {
         private func present(_ image: CGImage?) {
             CATransaction.begin(); CATransaction.setDisableActions(true)
             layer.contents = image
+            if image != nil { presentedFrames += 1 }
             CATransaction.commit()
         }
     }

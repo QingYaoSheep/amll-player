@@ -119,6 +119,8 @@ struct ImmersiveArtworkDebugPanel: View {
     var viewport: CGSize = .zero
     var video: CGRect = .zero
     var backgroundDimming: Double = 0.16
+    var frames: ArtworkReflectionFrames? = nil
+    @State private var frameDiagnostic = ""
 
     var body: some View {
         NavigationStack {
@@ -140,6 +142,19 @@ struct ImmersiveArtworkDebugPanel: View {
                         .onMove { from, to in store.configuration.moveLayers(fromOffsets: from, toOffset: to) }
                 } header: { Text("层级顺序（最上层 → 最下层）") } footer: {
                     Text("点击编辑后拖动排序，与歌词来源顺序使用相同控件。上移提高层级；实时模糊只作用于它下方可见的内容。底部渐隐只作用于它下方的视频、倒影和模糊，不改变背景本身。")
+                }
+                if frames != nil {
+                    Section("倒影实时诊断") {
+                        Text(frameDiagnostic).font(.caption).monospacedDigit()
+                        Button("复制倒影诊断") { UIPasteboard.general.string = frameDiagnostic }
+                    }
+                    .task {
+                        while !Task.isCancelled {
+                            frameDiagnostic = frames?.diagnosticText ?? ""
+                            do { try await Task.sleep(for: .milliseconds(500)) }
+                            catch { return }
+                        }
+                    }
                 }
                 ForEach(ImmersiveArtworkLayer.allCases) { layer in
                     Section(layer.title) {

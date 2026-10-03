@@ -75,7 +75,10 @@ struct AnimatedArtwork: UIViewRepresentable {
         private weak var reflectionFrames: ArtworkReflectionFrames?
         private var reflectionToken: UUID?
         private var output: AVPlayerItemVideoOutput?
+        private var outputTarget: Target?
         private weak var outputItem: AVPlayerItem?
+        private var outputWakeDeadline: CFTimeInterval?
+        private var outputNotificationRequested = false
         private var displayLink: CADisplayLink?
         private var watchdog = ArtworkPlaybackWatchdog()
         private var lastTick: CFTimeInterval?
@@ -84,10 +87,21 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var reportedFirstFrame = false
         private var reportedVideoSize = CGSize.zero
         private var generation = UUID()
-        @MainActor private final class Target: NSObject {
+        @MainActor private final class Target: NSObject, AVPlayerItemOutputPullDelegate {
             weak var surface: Surface?
             @objc func tick(_ link: CADisplayLink) {
                 surface?.capture(link)
+            }
+            nonisolated func outputMediaDataWillChange(_ sender: AVPlayerItemOutput) {
+                Task { @MainActor [weak self] in
+                    guard let surface = self?.surface, !surface.failed, surface.output === sender else { return }
+                    surface.outputNotificationRequested = false
+                    surface.refreshReflectionFrame()
+                    if !surface.playbackActive, surface.reflectionFrames?.hasFrame != true {
+                        surface.outputWakeDeadline = CACurrentMediaTime() + 2
+                        surface.displayLink?.isPaused = false
+                    }
+                }
             }
         }
 
@@ -128,6 +142,14 @@ struct AnimatedArtwork: UIViewRepresentable {
             CATransaction.begin(); CATransaction.setDisableActions(true)
             bottomFade.frame = bounds
             CATransaction.commit()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil {
+                refreshReflectionFrame()
+                reflectionFrames?.replayLatest()
+            }
         }
 
         @objc private func resetWatchdogTimestamp() {
@@ -175,6 +197,9 @@ struct AnimatedArtwork: UIViewRepresentable {
                 self.reflectionFrames = reflectionFrames
                 reflectionToken = reflectionFrames?.begin()
             }
+            // Attach to the actual loop item before play(), including paused
+            // presentation. Late attachment in capture() missed this lifecycle.
+            attachReflectionOutput()
             if displayLink == nil {
                 let target = Target(); target.surface = self
                 let link = CADisplayLink(target: target, selector: #selector(Target.tick(_:)))
@@ -186,7 +211,8 @@ struct AnimatedArtwork: UIViewRepresentable {
                 lastTick = nil
             }
             playbackActive = active
-            displayLink?.isPaused = !active
+            if active { outputWakeDeadline = nil }
+            displayLink?.isPaused = !active && outputWakeDeadline == nil
             if active, !failed, player.currentItem?.status != .failed {
                 player.play()
             } else {
@@ -196,6 +222,10 @@ struct AnimatedArtwork: UIViewRepresentable {
                     guard let self, !playbackActive else { return }
                     report(.paused)
                 }
+            }
+            refreshReflectionFrame()
+            if !active, reflectionFrames?.hasFrame != true {
+                requestOutputNotification()
             }
         }
 
@@ -223,6 +253,7 @@ struct AnimatedArtwork: UIViewRepresentable {
             tracksObservation = nil; statusObservation = nil
             observedItem = item
             guard let item else { updateVisibility(); return }
+            attachReflectionOutput()
             tracksObservation = item.observe(\.tracks, options: [.initial, .new]) { [weak self, weak item] _, _ in
                 Task { @MainActor [weak self, weak item] in
                     guard let self, let item, player.currentItem === item else { return }
@@ -257,6 +288,7 @@ struct AnimatedArtwork: UIViewRepresentable {
             CATransaction.setDisableActions(true)
             playerLayer.opacity = visible ? 1 : 0
             CATransaction.commit()
+            if visible { refreshReflectionFrame() }
             let size = player.currentItem?.presentationSize ?? .zero
             if visible, let url, !reportedFirstFrame || (size.width > 0 && size.height > 0 && size != reportedVideoSize) {
                 reportedFirstFrame = true
@@ -272,9 +304,12 @@ struct AnimatedArtwork: UIViewRepresentable {
         private func clearReflection() {
             displayLink?.invalidate(); displayLink = nil
             if let output {
+                output.setDelegate(nil, queue: nil)
                 outputItem?.remove(output)
             }
-            output = nil; outputItem = nil
+            output = nil; outputItem = nil; outputTarget = nil; outputWakeDeadline = nil
+            outputNotificationRequested = false
+            reflectionFrames?.outputAttached = false
             reflectionFrames?.clear(source: reflectionToken)
             reflectionFrames = nil; reflectionToken = nil
         }
@@ -300,20 +335,54 @@ struct AnimatedArtwork: UIViewRepresentable {
                              userInfo: [NSLocalizedDescriptionKey: "动态封面播放等待超时"]))
                 return
             }
-            guard let reflectionFrames, let reflectionToken, let item = player.currentItem,
-                  item.status == .readyToPlay else { return }
+            refreshReflectionFrame(hostTime: link.targetTimestamp)
+            if !playbackActive, reflectionFrames?.hasFrame == true || link.timestamp >= (outputWakeDeadline ?? 0) {
+                outputWakeDeadline = nil
+                displayLink?.isPaused = true
+                if reflectionFrames?.hasFrame != true {
+                    requestOutputNotification()
+                }
+            }
+        }
+
+        private func attachReflectionOutput() {
+            guard reflectionFrames != nil, let item = player.currentItem else { return }
             if outputItem !== item {
                 if let output {
+                    output.setDelegate(nil, queue: nil)
                     outputItem?.remove(output)
                 }
                 let next = AVPlayerItemVideoOutput(pixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+                let target = Target(); target.surface = self
+                next.setDelegate(target, queue: .main)
                 item.add(next); output = next; outputItem = item
+                outputTarget = target
+                outputNotificationRequested = false
+                reflectionFrames?.outputAttached = true
             }
-            guard let output else { return }
-            let time = output.itemTime(forHostTime: link.targetTimestamp)
-            guard output.hasNewPixelBuffer(forItemTime: time),
-                  let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else { return }
-            reflectionFrames.display(buffer, source: reflectionToken)
+        }
+
+        /// Host-time prediction may be invalid during initial HLS buffering or
+        /// pause. Fall back to the actual item's media time, never another clock.
+        func refreshReflectionFrame(hostTime: CFTimeInterval? = nil) {
+            guard !failed, let reflectionFrames, let reflectionToken,
+                  let item = player.currentItem else { return }
+            attachReflectionOutput()
+            guard item.status == .readyToPlay, let output, outputItem === item else { return }
+            let predicted = hostTime.map { output.itemTime(forHostTime: $0) }
+            for time in [predicted, player.currentTime()].compactMap({ $0 }) where time.isNumeric {
+                if output.hasNewPixelBuffer(forItemTime: time),
+                   let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
+                    reflectionFrames.display(buffer, source: reflectionToken)
+                    return
+                }
+            }
+        }
+
+        private func requestOutputNotification() {
+            guard !outputNotificationRequested, let output else { return }
+            outputNotificationRequested = true
+            output.requestNotificationOfMediaDataChange(withAdvanceInterval: 0.03)
         }
 
         private func fail(_ error: Error?) {

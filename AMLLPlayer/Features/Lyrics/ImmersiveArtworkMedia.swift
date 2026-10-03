@@ -88,6 +88,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         override func didMoveToWindow() {
             super.didMoveToWindow()
             attachBackgroundController()
+            if window != nil {
+                videoSurface.refreshReflectionFrame()
+                frames.replayLatest()
+            }
         }
 
         private func attachBackgroundController() {
@@ -172,6 +176,11 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                     fade: bottomFade(for: .transition), strength: tuning[.bottomFade].opacity,
                     transitionEnd: layout.video.maxY, opacity: tuning[.transition].opacity * layout.pageOpacity))
             CATransaction.commit()
+            let visible = bounds.intersection(layout.reflection)
+            let covered = [.background, .dimming, .video].filter {
+                tuning[$0].enabled && tuning[$0].opacity > 0 && tuning.isBelow(.reflection, $0)
+            }.map(\.title).joined(separator: "、")
+            frames.layoutDiagnostic = "视频 Y=\(Int(layout.video.minY))–\(Int(layout.video.maxY)) pt；倒影 Y=\(Int(layout.reflection.minY))–\(Int(layout.reflection.maxY)) pt\n倒影屏内高度：\(visible.isNull ? 0 : Int(visible.height)) pt；显示：\(reflectionPlane.isHidden ? "关闭" : "开启")；不透明度：\(tuning[.reflection].opacity)\n倒影上方可能遮盖的层：\(covered.isEmpty ? "无" : covered)"
             reflectionSurface.setNeedsLayout()
             frames.replayLatest()
         }

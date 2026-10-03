@@ -91,6 +91,7 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         let mask = try nativeMaskImage(maskView.layer, size: size)
         let rendered = CIImage(color: .red).cropped(to: CGRect(origin: .zero, size: size))
             .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputBackgroundImageKey: CIImage(color: .blue), kCIInputMaskImageKey: mask])
+            .cropped(to: CGRect(origin: .zero, size: size))
         XCTAssertGreaterThan(pixel(rendered, x: 64, y: 649)[0], 250)
         XCTAssertLessThan(pixel(rendered, x: 64, y: 649)[2], 5)
         XCTAssertGreaterThan(pixel(rendered, x: 64, y: 0)[2], 250)
@@ -139,6 +140,26 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         XCTAssertEqual(Set(settings.orderedLayers), Set(ImmersiveArtworkLayer.allCases))
         XCTAssertEqual(settings.orderedLayers.count, ImmersiveArtworkLayer.allCases.count)
         XCTAssertEqual(settings.orderedLayers.first, .video)
+    }
+
+    func testImmersiveOverrideRemovesBackgroundBlurWithoutChangingSavedConfiguration() {
+        let flowing = FlowingBackgroundConfiguration(rotationSpeed: 2, distortion: 5, blur: 55)
+        var background = AMLLBackground(artworkURL: nil, active: true, blur: 60, mode: .flowing, flowing: flowing)
+        XCTAssertEqual(background.effectiveMeshBlur, 60)
+        XCTAssertEqual(background.effectiveFlowingConfiguration, flowing)
+        background.suppressBlur = true
+        XCTAssertEqual(background.effectiveMeshBlur, 0)
+        XCTAssertEqual(background.effectiveFlowingConfiguration.blur, 0)
+        XCTAssertEqual(background.effectiveFlowingConfiguration.distortion, 5)
+        XCTAssertEqual(background.effectiveFlowingConfiguration.rotationSpeed, 2)
+        XCTAssertEqual(background.flowing, flowing)
+        background.suppressBlur = false
+        XCTAssertEqual(background.effectiveFlowingConfiguration, flowing)
+        let pixi = AMLLPixiBackground.Coordinator(seed: 42)
+        pixi.setBlurEnabled(false)
+        XCTAssertFalse(pixi.blurEnabled)
+        pixi.setBlurEnabled(true)
+        XCTAssertTrue(pixi.blurEnabled)
     }
 
     func testIndependentContainerSlidersKeepVideoAndReflectionAlignedWithoutStretching() {

@@ -9,13 +9,20 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let frames = ArtworkReflectionFrames()
         let surface = ImmersiveArtworkMedia.Surface(frames: frames)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 128, height: 650))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
         let controller = UIViewController()
         window.rootViewController = controller
         window.makeKeyAndVisible()
         surface.frame = window.bounds
         controller.view.addSubview(surface)
-        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
         let videoFrame = CGRect(x: 0, y: 0, width: 128, height: 400)
         let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame, viewportHeight: 650)
         let reflection = ArtworkReflectionGeometry.frame(cover: videoFrame, viewportHeight: 650)
@@ -48,6 +55,24 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         configure(reflects: true)
         try await waitUntil { surface.reflectionSurface.layer.contents != nil }
         XCTAssertTrue(playerLayer.player === player, "Effect toggles must keep the one existing player")
+
+        // Verify presented pixels, not just a decoded bitmap that might be
+        // outside the viewport or multiplied away by several fade masks.
+        tuning[.transition].enabled = false
+        tuning[.bottomFade].enabled = false
+        tuning[.dimming].enabled = false
+        surface.backgroundSurface.backgroundColor = .black
+        configure(reflects: false)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let withoutReflection = try backdropPixel(window, at: CGPoint(x: 64, y: 440))
+        configure(reflects: true)
+        try await waitUntil { surface.reflectionSurface.layer.contents != nil }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let withReflection = try backdropPixel(window, at: CGPoint(x: 64, y: 440))
+        XCTAssertGreaterThan(zip(withReflection.prefix(3), withoutReflection.prefix(3))
+            .reduce(0) { $0 + abs($1.0 - $1.1) }, 10, "Enabling reflection must change visible pixels below the video")
+        tuning[.transition].enabled = true
+        tuning[.bottomFade].enabled = true
 
         tuning.order = [.bottomFade, .video, .transition, .reflection, .dimming, .background]
         configure(reflects: true)

@@ -85,6 +85,7 @@ struct AMLLFlowingBackground: UIViewRepresentable {
     var artworkURL: URL?
     var active: Bool
     var configuration: FlowingBackgroundConfiguration
+    var suppressBlur = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -98,7 +99,8 @@ struct AMLLFlowingBackground: UIViewRepresentable {
 
     func updateUIView(_ surface: AMLLFlowingBackgroundSurface, context: Context) {
         context.coordinator.configure(url: artworkURL, configuration: configuration, active: active,
-                                      reduceMotion: reduceMotion, reduceTransparency: reduceTransparency)
+                                      reduceMotion: reduceMotion, reduceTransparency: reduceTransparency,
+                                      suppressBlur: suppressBlur)
     }
 
     static func dismantleUIView(_ surface: AMLLFlowingBackgroundSurface, coordinator: Coordinator) {
@@ -147,9 +149,11 @@ struct AMLLFlowingBackground: UIViewRepresentable {
         }
 
         func configure(url: URL?, configuration: FlowingBackgroundConfiguration, active: Bool,
-                       reduceMotion: Bool, reduceTransparency: Bool) {
-            let changedParameters = state.configuration != configuration.validated()
-            state.configure(configuration, immediately: reduceMotion)
+                       reduceMotion: Bool, reduceTransparency: Bool, suppressBlur: Bool = false) {
+            var effective = configuration
+            if suppressBlur { effective.blur = 0 }
+            let changedParameters = state.configuration != effective.validated()
+            state.configure(effective, immediately: reduceMotion || suppressBlur)
             let becameActive = active && !self.active
             let becameVisible = active && !reduceTransparency && (!self.active || self.reduceTransparency)
             self.active = active

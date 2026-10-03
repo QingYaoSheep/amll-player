@@ -10,9 +10,18 @@ struct AMLLBackground: View {
     var gradientEnd: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
     var flowing: FlowingBackgroundConfiguration = .init()
     var dimming: Double = 0
+    /// Presentation override; never writes the user's background preferences.
+    var suppressBlur = false
     @State private var usedMesh = false
     @State private var usedPixi = false
     @State private var usedFlowing = false
+
+    var effectiveMeshBlur: Double { suppressBlur ? 0 : blur }
+    var effectiveFlowingConfiguration: FlowingBackgroundConfiguration {
+        var value = flowing
+        if suppressBlur { value.blur = 0 }
+        return value
+    }
 
     var body: some View {
         ZStack {
@@ -23,15 +32,16 @@ struct AMLLBackground: View {
                 LinearGradient(colors: [color.swiftUIColor, gradientEnd.swiftUIColor], startPoint: .top, endPoint: .bottom)
             }
             if usedMesh || mode == .mesh {
-                AMLLMeshBackground(artworkURL: artworkURL, active: active && mode == .mesh, blur: blur)
+                AMLLMeshBackground(artworkURL: artworkURL, active: active && mode == .mesh, blur: effectiveMeshBlur)
                     .opacity(mode == .mesh ? 1 : 0)
             }
             if usedPixi || mode == .pixi {
-                AMLLPixiBackground(artworkURL: artworkURL, active: active && mode == .pixi)
+                AMLLPixiBackground(artworkURL: artworkURL, active: active && mode == .pixi, blurEnabled: !suppressBlur)
                     .opacity(mode == .pixi ? 1 : 0)
             }
             if usedFlowing || mode == .flowing {
-                AMLLFlowingBackground(artworkURL: artworkURL, active: active && mode == .flowing, configuration: flowing)
+                AMLLFlowingBackground(artworkURL: artworkURL, active: active && mode == .flowing,
+                    configuration: effectiveFlowingConfiguration, suppressBlur: suppressBlur)
                     .opacity(mode == .flowing ? 1 : 0)
             }
         }

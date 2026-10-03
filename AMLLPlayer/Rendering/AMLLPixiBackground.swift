@@ -6,6 +6,7 @@ struct AMLLPixiBackground: UIViewRepresentable {
     var artworkURL: URL?
     var active: Bool
     var seed: UInt32? = nil
+    var blurEnabled = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -24,6 +25,7 @@ struct AMLLPixiBackground: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
+        context.coordinator.setBlurEnabled(blurEnabled)
         if active {
             context.coordinator.setArtwork(artworkURL)
         }
@@ -53,12 +55,19 @@ struct AMLLPixiBackground: UIViewRepresentable {
         private var lastFrame: CFTimeInterval?
         private var running = false
         private var staticMode = false
+        private(set) var blurEnabled = true
         private var url: URL?
         private var task: Task<Void, Never>?
         private let inFlight = DispatchSemaphore(value: 3)
 
         init(seed: UInt32) {
             random = .init(state: seed); super.init()
+        }
+
+        func setBlurEnabled(_ enabled: Bool) {
+            guard enabled != blurEnabled else { return }
+            blurEnabled = enabled
+            view?.setNeedsDisplay()
         }
 
         func attach(_ view: MTKView) {
@@ -209,13 +218,15 @@ struct AMLLPixiBackground: UIViewRepresentable {
                 }
                 return true
             }
-            for item in AMLLPixiState.blurPasses(minimumBorder: Double(min(width, height))) {
-                guard blur(item.strength, quality: item.quality) else { return }
+            if blurEnabled {
+                for item in AMLLPixiState.blurPasses(minimumBorder: Double(min(width, height))) {
+                    guard blur(item.strength, quality: item.quality) else { return }
+                }
             }
             for operation in 0 ..< 3 {
                 guard filter("Color", SIMD4(Float(operation), 0, 0, 0)) else { return }
             }
-            guard blur(5, quality: 1) else { return }
+            if blurEnabled, !blur(5, quality: 1) { return }
             for center in centers {
                 guard filter("Bulge", SIMD4(Float(width), Float(height), center.x, center.y)) else { return }
             }

@@ -11,11 +11,14 @@ import SwiftUI
     var outputAttached = false
     var outputKind = "item 级（BGRA）"
     var samplingAttempts = 0
-    var mediaDiagnostic = ""
+    var mediaTime = 0.0
+    var mediaRate: Float = 0
+    var videoDisplayed = false
+    var resourceKind = ""
     var layoutDiagnostic = "尚未安装沉浸画布"
     var hasFrame: Bool { lastBuffer != nil }
     var diagnosticText: String {
-        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n\(mediaDiagnostic)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n\(layoutDiagnostic)"
+        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n\(layoutDiagnostic)"
     }
 
     func attach(_ view: ArtworkReflection.Surface) {
@@ -43,7 +46,7 @@ import SwiftUI
         receivedFrames = 0
         samplingAttempts = 0
         outputKind = "item 级（BGRA）"
-        mediaDiagnostic = ""
+        mediaTime = 0; mediaRate = 0; videoDisplayed = false; resourceKind = ""
         surface?.clear()
         transitionSurface?.clear()
         return token

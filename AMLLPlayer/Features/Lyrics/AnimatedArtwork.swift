@@ -227,7 +227,9 @@ struct AnimatedArtwork: UIViewRepresentable {
                 }
             }
             refreshReflectionFrame()
-            if !active, reflectionFrames?.hasFrame != true {
+            if !active, reflectionFrames != nil, reflectionFrames?.hasFrame != true {
+                if outputWakeDeadline == nil { outputWakeDeadline = CACurrentMediaTime() + 2 }
+                displayLink?.isPaused = false
                 requestOutputNotification()
             }
         }
@@ -373,7 +375,10 @@ struct AnimatedArtwork: UIViewRepresentable {
             guard !failed, let reflectionFrames, let reflectionToken,
                   let item = player.currentItem else { return }
             reflectionFrames.samplingAttempts += 1
-            reflectionFrames.mediaDiagnostic = "媒体时间：\(String(format: "%.2f", player.currentTime().seconds)) s；速率：\(player.rate)；视频已显示：\(playerLayer.isReadyForDisplay ? "是" : "否")；资源：\(url?.isFileURL == true ? (url?.pathExtension ?? "本地") : "在线")"
+            reflectionFrames.mediaTime = player.currentTime().seconds
+            reflectionFrames.mediaRate = player.rate
+            reflectionFrames.videoDisplayed = playerLayer.isReadyForDisplay
+            reflectionFrames.resourceKind = url?.isFileURL == true ? (url?.pathExtension ?? "本地") : "在线"
             if let playerVideoOutput {
                 for timestamp in [hostTime, CACurrentMediaTime()].compactMap({ $0 }) {
                     let time = CMTime(seconds: timestamp, preferredTimescale: 1_000_000_000)
@@ -400,8 +405,8 @@ struct AnimatedArtwork: UIViewRepresentable {
                     return
                 }
             }
-            if playbackActive, playerLayer.isReadyForDisplay, item.status == .readyToPlay,
-               player.timeControlStatus == .playing {
+            if playerLayer.isReadyForDisplay, item.status == .readyToPlay,
+               player.timeControlStatus != .waitingToPlayAtSpecifiedRate {
                 let now = CACurrentMediaTime()
                 if outputStarvationStart == nil { outputStarvationStart = now }
                 if now - (outputStarvationStart ?? now) >= 1 {

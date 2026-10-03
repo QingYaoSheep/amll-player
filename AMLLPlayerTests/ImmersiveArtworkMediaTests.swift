@@ -31,15 +31,18 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             reflectionEnabled: true, reduceTransparency: false)
         surface.configure(video: AnimatedArtwork(url: url, active: false), layout: layout)
         surface.videoSurface.usePlayerLevelFrameOutput()
-        surface.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
+        surface.configure(video: AnimatedArtwork(url: url, active: false), layout: layout)
         surface.layoutIfNeeded()
         let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
         XCTAssertNotNil(player.videoOutput)
         XCTAssertTrue(player.currentItem?.outputs.isEmpty == true, "Keep only one frame-output path")
         try await waitUntil { frames.receivedFrames > 0 && surface.reflectionSurface.layer.contents != nil }
+        XCTAssertEqual(player.rate, 0, "Player-level output must also provide a paused cover's reflection")
+        surface.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
         let firstItem = player.currentItem
-        let received = frames.receivedFrames
-        try await waitUntil { player.currentItem !== firstItem && frames.receivedFrames > received + 5 }
+        try await waitUntil { player.currentItem != nil && player.currentItem !== firstItem }
+        let receivedAfterLoop = frames.receivedFrames
+        try await waitUntil { frames.receivedFrames > receivedAfterLoop + 5 }
         XCTAssertGreaterThan(surface.reflectionSurface.presentedFrames, 0)
         XCTAssertNotNil(player.videoOutput, "A loop must retain the player-level output")
     }

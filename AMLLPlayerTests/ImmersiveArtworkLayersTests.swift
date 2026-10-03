@@ -6,6 +6,30 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkLayersTests: XCTestCase {
+    func testBackgroundBlurProfileStartsAtTheJunctionAndExtendsUpWithoutMovingItsBottom() {
+        let viewport = CGSize(width: 402, height: 874)
+        let video = AMLLImmersiveArtworkGeometry.frame(viewport: viewport, video: CGSize(width: 9, height: 16))
+        let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: viewport)
+        XCTAssertEqual(profile.frame.width, viewport.width)
+        XCTAssertEqual(profile.frame.maxY, viewport.height)
+        XCTAssertEqual(profile.fullStrengthY, video.maxY, accuracy: 0.001)
+        XCTAssertEqual(profile.strength(at: profile.frame.minY), 0)
+        XCTAssertEqual(profile.strength(at: video.maxY), 1)
+        XCTAssertEqual(profile.strength(at: viewport.height), 1)
+        XCTAssertEqual(profile.strength(at: (profile.frame.minY + video.maxY) / 2), 0.5, accuracy: 0.001)
+        var adjustment = ImmersiveArtworkLayerAdjustment()
+        adjustment.height = 1.5
+        adjustment.y = -20
+        let longer = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: viewport, adjustment: adjustment)
+        XCTAssertLessThan(longer.frame.minY, profile.frame.minY)
+        XCTAssertEqual(longer.frame.maxY, viewport.height)
+        XCTAssertEqual(longer.fullStrengthY, video.maxY, accuracy: 0.001)
+        let backgroundOnly = profile.backgroundOnly(viewportHeight: viewport.height)
+        XCTAssertEqual(backgroundOnly.frame.minY, 0)
+        XCTAssertEqual(backgroundOnly.strength(at: 0), 1)
+        XCTAssertEqual(backgroundOnly.strength(at: viewport.height), 1)
+    }
+
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 

@@ -28,8 +28,6 @@ enum AMLLImmersiveArtworkGeometry {
     static let maximumBlur: CGFloat = 32
     /// Keep the shortened upper fade; the lower region now extends to the viewport edge.
     static let transitionTopInsetFraction: CGFloat = 0.15
-    /// Fixed to the blur plane, including when it is moved away from the video.
-    static let transitionFadeFraction: CGFloat = 0.5
     static func transitionFadeStops(solidStart: Double) -> [(location: Double, alpha: Double)] {
         (0 ... 32).map { sample in
             let t = Double(sample) / 32
@@ -43,7 +41,7 @@ enum AMLLImmersiveArtworkGeometry {
         return (t, 1 - t * t * (3 - 2 * t))
     }
 
-    /// The original video fade stays independent of the two-sided blur overlay.
+    /// The original video fade stays independent of the continuous background blur.
     static let videoFadeStops: [(location: Double, alpha: Double)] = [(0, 1)] + (0 ... 16).map { sample in
         let t = Double(sample) / 16
         return (1 - Double(overlapFraction) + t * Double(overlapFraction), 1 - t * t * (3 - 2 * t))
@@ -82,5 +80,35 @@ enum AMLLImmersiveArtworkGeometry {
 
     static func transitionHalfHeight(videoHeight: CGFloat) -> CGFloat {
         videoHeight * overlapFraction * (1 - transitionTopInsetFraction)
+    }
+}
+
+/// One continuous background blur region. Its lower area stays at full
+/// strength; only the extension above the video/background junction ramps down.
+struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
+    let frame: CGRect
+    let fullStrengthY: CGFloat
+
+    static func extendingBackground(video: CGRect, viewport: CGSize,
+                                    adjustment: ImmersiveArtworkLayerAdjustment = .init()) -> Self {
+        guard viewport.width > 0, viewport.height > 0 else { return .init(frame: .zero, fullStrengthY: 0) }
+        let adjustment = adjustment.validated()
+        let junction = min(viewport.height, max(0, video.maxY))
+        let extensionHeight = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: video.height) * adjustment.height
+        let top = min(junction, max(0, junction - extensionHeight + adjustment.y))
+        let width = viewport.width * adjustment.width
+        return .init(frame: CGRect(x: (viewport.width - width) / 2 + adjustment.x, y: top,
+                                  width: width, height: max(1, viewport.height - top)), fullStrengthY: junction)
+    }
+
+    func backgroundOnly(viewportHeight: CGFloat) -> Self {
+        .init(frame: CGRect(x: frame.minX, y: 0, width: frame.width, height: max(1, viewportHeight)), fullStrengthY: 0)
+    }
+
+    func strength(at y: CGFloat) -> CGFloat {
+        let end = min(frame.maxY, max(frame.minY, fullStrengthY))
+        guard end > frame.minY else { return 1 }
+        let t = min(1, max(0, (y - frame.minY) / (end - frame.minY)))
+        return t * t * (3 - 2 * t)
     }
 }

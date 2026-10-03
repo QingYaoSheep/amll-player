@@ -132,16 +132,16 @@ struct ImmersiveArtworkDebugPanel: View {
                         Text("视口 \(Int(viewport.width)) × \(Int(viewport.height)) pt；视频底边 \(video.maxY, specifier: "%.1f") pt")
                             .font(.caption).monospacedDigit()
                     }
-                    Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数。视频在调整后的容器内始终等比完整显示，倒影与模糊自动对齐实际画面。倒影开关还需开启原有封面倒影设置。底部渐隐的不透明度表示渐隐强度。")
+                    Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数，模糊层的纵向参数只调整上方渐变。视频在调整后的容器内始终等比完整显示。倒影开关还需开启原有封面倒影设置。底部渐隐的不透明度表示渐隐强度。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("实时模糊半径为 0–80pt，不叠加材质底色或暗度。顶部淡出固定在本层上半段，与视频位置无关。关闭视频后不保留视频模糊副本；仍开启且位于下方的倒影与背景继续参与模糊。")
+                    Text("底部背景保持完整模糊，从视频底边向上渐弱。模糊半径为 0–80pt，不叠加材质底色或暗度。上沿偏移和向上渐变长度只调整上方衔接，底边始终延伸到屏幕底部。关闭视频后仅模糊当前背景与可见倒影。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
                     ForEach(store.configuration.orderedLayers) { layer in Text(layer.title) }
                         .onMove { from, to in store.configuration.moveLayers(fromOffsets: from, toOffset: to) }
                 } header: { Text("层级顺序（最上层 → 最下层）") } footer: {
-                    Text("点击编辑后拖动排序，与歌词来源顺序使用相同控件。上移提高层级；实时模糊只作用于它下方可见的内容。底部渐隐只作用于它下方的视频、倒影和模糊，不改变背景本身。")
+                    Text("点击编辑后拖动排序，与歌词来源顺序使用相同控件。上移提高层级；实时模糊只作用于它下方可见的内容。底部渐隐只作用于它下方的视频和倒影，背景模糊持续到屏幕底边。")
                 }
                 if frames != nil {
                     Section("倒影实时诊断") {
@@ -160,9 +160,9 @@ struct ImmersiveArtworkDebugPanel: View {
                     Section(layer.title) {
                         Toggle("显示此层", isOn: binding(layer, \.enabled))
                         slider("水平位置", value: binding(layer, \.x), range: -1200 ... 1200, step: 1, unit: "pt")
-                        slider("纵向位置", value: binding(layer, \.y), range: -1200 ... 1200, step: 1, unit: "pt")
+                        slider(layer == .transition ? "上沿偏移" : "纵向位置", value: binding(layer, \.y), range: -1200 ... 1200, step: 1, unit: "pt")
                         slider("宽度", value: binding(layer, \.width), range: 0.1 ... 2, step: 0.01, unit: "×")
-                        slider("高度", value: binding(layer, \.height), range: 0.1 ... 2, step: 0.01, unit: "×")
+                        slider(layer == .transition ? "向上渐变长度" : "高度", value: binding(layer, \.height), range: 0.1 ... 2, step: 0.01, unit: "×")
                         slider(layer == .bottomFade ? "渐隐强度" : "不透明度", value: binding(layer, \.opacity), range: 0 ... 1, step: 0.01, unit: "")
                         if layer == .transition {
                             slider("实时模糊强度", value: Binding(get: { store.configuration.validatedBlur }, set: { store.configuration.blurRadius = $0 }), range: 0 ... 80, step: 1, unit: "pt")

@@ -22,6 +22,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         var backgroundDimming = 0.16
         var cornerRadius: CGFloat = 0
         var pageOpacity = 1.0
+        var blurProfile: ImmersiveBackgroundBlurProfile? = nil
     }
 
     func makeUIView(context _: Context) -> Surface { Surface(frames: frames) }
@@ -43,6 +44,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         private var previousLayout: Layout?
         private var appliedLayout: Layout?
         private var appliedBounds: CGRect?
+        private var blurProfile: ImmersiveBackgroundBlurProfile?
 
         init(frames: ArtworkReflectionFrames) {
             self.frames = frames
@@ -151,7 +153,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             reflectionPlane.isHidden = !layout.reflectionEnabled || !layout.presentsFrame || !tuning[.reflection].enabled
             reflectionSurface.isHidden = reflectionPlane.isHidden
             reflectionSurface.configure(opacity: tuning[.reflection].opacity * layout.pageOpacity)
-            transitionSurface.frame = layout.transition
+            var profile = layout.blurProfile ?? .init(frame: layout.transition, fullStrengthY: layout.video.maxY)
+            if videoPlane.isHidden || !layout.presentsFrame { profile = profile.backgroundOnly(viewportHeight: bounds.height) }
+            blurProfile = profile
+            transitionSurface.frame = profile.frame
             transitionSurface.isHidden = layout.reduceTransparency || !tuning[.transition].enabled || tuning.validatedBlur == 0
 
             // Both UIView order and CALayer order follow the saved priority.
@@ -172,9 +177,9 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             reflectionPlane.mask = ImmersiveArtworkVisibility.mask(frame: layout.reflection,
                 fade: bottomFade(for: .reflection), strength: tuning[.bottomFade].opacity)
             transitionSurface.configure(amount: tuning.validatedBlur / 80,
-                mask: ImmersiveArtworkVisibility.mask(frame: layout.transition,
-                    fade: bottomFade(for: .transition), strength: tuning[.bottomFade].opacity,
-                    transitionFade: true, opacity: tuning[.transition].opacity * layout.pageOpacity))
+                mask: ImmersiveArtworkVisibility.mask(frame: profile.frame,
+                    fade: nil, strength: 0, blurProfile: profile,
+                    opacity: tuning[.transition].opacity * layout.pageOpacity))
             CATransaction.commit()
             let visible = bounds.intersection(layout.reflection)
             let covered = [.background, .dimming, .video].filter {
@@ -189,9 +194,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         /// using CALayer.render, so its current frame comes from the same player.
         /// No offscreen/hidden/upper video is kept in the blur input.
         private func captureBlurInput() -> ImmersiveBlurInput? {
-            guard let layout = previousLayout, window != nil, !transitionSurface.isHidden else { return nil }
+            guard let layout = previousLayout, let profile = blurProfile,
+                  window != nil, !transitionSurface.isHidden else { return nil }
             let padding = CGFloat(layout.tuning.validatedBlur * 3)
-            let region = layout.transition.insetBy(dx: -padding, dy: -padding).intersection(bounds)
+            let region = profile.frame.insetBy(dx: -padding, dy: -padding).intersection(bounds)
             guard !region.isNull, region.width > 0, region.height > 0 else { return nil }
             let scale = min(1.5, window?.screen.scale ?? 1)
             let format = UIGraphicsImageRendererFormat()
@@ -220,7 +226,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                     if let image = image.cgImage { layers.append(.bitmap(image)) }
                 }
             }
-            return ImmersiveBlurInput(region: region, transition: layout.transition, scale: scale, planes: layers)
+            return ImmersiveBlurInput(region: region, profile: profile, scale: scale, planes: layers)
         }
 
         func stop() {
@@ -239,11 +245,11 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
 
 @MainActor
 enum ImmersiveArtworkVisibility {
-    /// The transition's own upper fade does not depend on video size/position.
+    /// Media fading is independent of the continuous background blur profile.
     static func mask(frame: CGRect, fade: CGRect?, strength: Double,
-                     transitionFade: Bool = false, opacity: Double = 1) -> UIView? {
+                     blurProfile: ImmersiveBackgroundBlurProfile? = nil, opacity: Double = 1) -> UIView? {
         guard frame.width > 0, frame.height > 0 else { return nil }
-        guard fade != nil || transitionFade || opacity != 1 else { return nil }
+        guard fade != nil || blurProfile != nil || opacity != 1 else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
@@ -254,10 +260,7 @@ enum ImmersiveArtworkVisibility {
                 let y = CGFloat(row) + 0.5
                 let globalY = frame.minY + y
                 var alpha = opacity
-                if transitionFade {
-                    let t = min(1, max(0, y / max(1, frame.height * AMLLImmersiveArtworkGeometry.transitionFadeFraction)))
-                    alpha *= Double(t * t * (3 - 2 * t))
-                }
+                if let blurProfile { alpha *= Double(blurProfile.strength(at: globalY)) }
                 context.setFillColor(UIColor(white: 1, alpha: CGFloat(alpha)).cgColor)
                 context.fill(CGRect(x: 0, y: CGFloat(row), width: frame.width, height: 1))
                 if let fade, globalY >= fade.minY {

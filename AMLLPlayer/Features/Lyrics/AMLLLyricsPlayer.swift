@@ -354,7 +354,9 @@ struct AMLLLyricsPlayer: View {
         let originalVideo = AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
         let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(originalVideo), source: originalVideo.size)
         let reflection = tuning[.reflection].frame(ArtworkReflectionGeometry.frame(cover: video, viewportHeight: size.height))
-        let transition = tuning[.transition].frame(AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: size.height))
+        let blurProfile = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: size,
+            adjustment: tuning[.transition])
+        let transition = blurProfile.frame
         let bottomFade = tuning[.bottomFade].frame(AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: size))
         let reflects = configuration.animatedArtwork?.reflection == true && !reduceMotion && tuning[.reflection].enabled
         return ImmersiveArtworkMedia(video: immersiveVideo(item), frames: artworkReflectionFrames,
@@ -364,7 +366,7 @@ struct AMLLLyricsPlayer: View {
                 background: tuning[.background].frame(CGRect(origin: .zero, size: size)),
                 dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: size)),
                 backgroundDimming: configuration.backgroundDimming ?? 0.16,
-                cornerRadius: cornerRadius, pageOpacity: opacity),
+                cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: blurProfile),
             background: immersiveArtworkBackground)
         .id(artworkLoader.requestToken)
         .frame(width: size.width, height: size.height)

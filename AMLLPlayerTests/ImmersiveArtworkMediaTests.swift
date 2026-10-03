@@ -6,6 +6,60 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testBackgroundRemainsBlurredToTheBottomWhileTheUpperExtensionBecomesClear() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = CGRect(x: 0, y: 0, width: 200, height: 650)
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        for index in 0 ..< 25 {
+            let stripe = UIView(frame: CGRect(x: index * 8, y: 0, width: 8, height: 650))
+            stripe.backgroundColor = index.isMultiple(of: 2) ? .white : .black
+            surface.backgroundSurface.addSubview(stripe)
+        }
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.reflection].enabled = false
+        tuning[.dimming].enabled = false
+        tuning.blurRadius = 24
+        let videoRect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let transition = CGRect(x: 0, y: 180, width: 200, height: 470)
+        let video = AnimatedArtwork(url: URL(fileURLWithPath: "/no-video-required.mp4"), active: false)
+        func apply(showsVideo: Bool, finalFade: Bool) {
+            tuning[.video].enabled = showsVideo
+            tuning[.bottomFade].enabled = finalFade
+            surface.configure(video: video, layout: .init(video: videoRect, reflection: .zero,
+                transition: transition, bottomFade: CGRect(x: 0, y: 300, width: 200, height: 350), tuning: tuning,
+                presentsFrame: true, reflectionEnabled: false, reduceTransparency: false))
+            surface.layoutIfNeeded()
+        }
+        apply(showsVideo: true, finalFade: true)
+        try await Task.sleep(for: .milliseconds(600))
+        let upper = try backdropVariance(window, y: 190)
+        let background = try backdropVariance(window, y: 440)
+        let bottom = try backdropVariance(window, y: 630)
+        XCTAssertGreaterThan(upper, 1000, "The extension must approach the original detail at its upper edge")
+        XCTAssertLessThan(background, upper * 0.15)
+        XCTAssertLessThan(bottom, upper * 0.15, "Final media fade must not reveal a sharp background at the bottom")
+        apply(showsVideo: true, finalFade: false)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(try backdropVariance(window, y: 630), bottom, accuracy: 100,
+            "Bottom blur is independent of the media fade toggle")
+        apply(showsVideo: false, finalFade: true)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(surface.transitionSurface.frame.minY, 0,
+            "Without a visible video the background starts at the top and is fully blurred")
+        XCTAssertLessThan(try backdropVariance(window, y: 50), upper * 0.15)
+    }
+
     func testPureBlurCapturesTheActualMetalBackgroundWithoutTint() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -97,11 +151,11 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
                 "Pure blur must not add a material tint, darkening, or saturation to uniform colors")
         }
 
-        // Moving the video edge must not move the transition's own upper fade.
+        // A hidden video's geometry must not create a ramp in the fully blurred background.
         let firstMask = try XCTUnwrap((surface.transitionSurface.mask as? UIImageView)?.image?.pngData())
         apply(strength: 80, videoEnd: 160)
         let movedVideoMask = try XCTUnwrap((surface.transitionSurface.mask as? UIImageView)?.image?.pngData())
-        XCTAssertEqual(firstMask, movedVideoMask, "The fade is anchored to the transition, not the video")
+        XCTAssertEqual(firstMask, movedVideoMask, "Hidden video geometry cannot change full background blur")
 
         for index in 0 ..< 16 {
             let stripe = UIView(frame: CGRect(x: index * 8, y: 0, width: 8, height: 650))

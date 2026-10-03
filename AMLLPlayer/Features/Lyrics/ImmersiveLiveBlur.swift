@@ -9,14 +9,15 @@ struct ImmersiveBlurInput: @unchecked Sendable {
         case video(CVPixelBuffer, frame: CGRect, mask: CGImage?, opacity: Double)
     }
     let region: CGRect
-    let transition: CGRect
+    let profile: ImmersiveBackgroundBlurProfile
+    var transition: CGRect { profile.frame }
     let scale: CGFloat
     let planes: [Plane]
 }
 
 /// Pure Gaussian backdrop softening. Unlike a system material this does not
 /// change color, saturation, or darkening. The mask/radius ramp belongs to the
-/// transition itself, rather than ending at a moving video edge.
+/// upward background extension. Below the junction it remains fully blurred.
 enum ImmersiveBlurImage {
     static func image(_ input: ImmersiveBlurInput, radius: CGFloat) -> CIImage {
         let size = CGSize(width: input.region.width * input.scale, height: input.region.height * input.scale)
@@ -54,13 +55,18 @@ enum ImmersiveBlurImage {
             y: (input.region.maxY - input.transition.maxY) * input.scale,
             width: input.transition.width * input.scale, height: input.transition.height * input.scale)
         guard radius > 0 else { return image.cropped(to: output) }
-        let fadeHeight = output.height * AMLLImmersiveArtworkGeometry.transitionFadeFraction
-        let ramp = CIFilter(name: "CILinearGradient", parameters: [
-            "inputPoint0": CIVector(x: 0, y: output.maxY),
-            "inputPoint1": CIVector(x: 0, y: output.maxY - fadeHeight),
-            "inputColor0": CIColor.black, "inputColor1": CIColor.white,
-        ])!.outputImage!
-        // Smoothstep matches the effect alpha's fixed upper ramp.
+        let fadeHeight = max(0, min(input.transition.maxY, input.profile.fullStrengthY) - input.transition.minY) * input.scale
+        let ramp: CIImage
+        if fadeHeight > 0 {
+            ramp = CIFilter(name: "CILinearGradient", parameters: [
+                "inputPoint0": CIVector(x: 0, y: output.maxY),
+                "inputPoint1": CIVector(x: 0, y: output.maxY - fadeHeight),
+                "inputColor0": CIColor.black, "inputColor1": CIColor.white,
+            ])!.outputImage!
+        } else {
+            ramp = CIImage(color: .white)
+        }
+        // Exactly the same profile as the visible coverage; no second lower fade.
         let mask = ramp.applyingFilter("CIColorPolynomial", parameters: [
             "inputRedCoefficients": CIVector(x: 0, y: 0, z: 3, w: -2),
             "inputGreenCoefficients": CIVector(x: 0, y: 0, z: 3, w: -2),

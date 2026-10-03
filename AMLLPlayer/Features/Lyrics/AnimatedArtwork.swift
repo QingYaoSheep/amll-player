@@ -387,7 +387,10 @@ struct AnimatedArtwork: UIViewRepresentable {
             reflectionFrames.resourceKind = url?.isFileURL == true ? (url?.pathExtension ?? "本地") : "在线"
             let now = CACurrentMediaTime()
             let eligible = window != nil && UIApplication.shared.applicationState == .active
-                && playerLayer.isReadyForDisplay && (playbackActive || !reflectionFrames.hasFrame)
+                // Readiness may drop between HLS loop items. Once this resource
+                // presented a frame, keep the foreground starvation clock alive.
+                && (reportedFirstFrame || playerLayer.isReadyForDisplay)
+                && (playbackActive || !reflectionFrames.hasFrame)
             let starved = frameOutputWatchdog.sample(now: now, eligible: eligible)
             if playerVideoOutput == nil, starved { usePlayerLevelFrameOutput() }
             reflectionFrames.outputStarvationSeconds = frameOutputWatchdog.waiting

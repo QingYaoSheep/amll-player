@@ -27,7 +27,7 @@ struct SettingsView: View {
                 NavigationLink { MusicHelpView(model: model) } label: {
                     SettingsItem(title: "帮助与故障排查", subtitle: "使用说明与连接检查", symbol: "questionmark.circle", color: .blue)
                 }
-                NavigationLink { ImmersiveArtworkDebugPanel() } label: {
+                NavigationLink { ImmersiveArtworkDebugPanel(backgroundDimming: model.renderPreferences.configuration.validated().backgroundDimming ?? 0.16) } label: {
                     SettingsItem(title: "沉浸封面层级调试（临时）", subtitle: "各层开关、位置、大小、透明度与模糊", symbol: "slider.horizontal.3", color: .orange)
                 }
                 NavigationLink { MusicAboutView() } label: {

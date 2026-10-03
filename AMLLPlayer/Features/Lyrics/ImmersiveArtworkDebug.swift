@@ -77,10 +77,15 @@ final class ImmersiveArtworkDebugStore {
             .flatMap { try? JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: $0) } ?? .init()
     }
     func reset() { configuration = .init() }
-    var exportedValues: String {
+    func exportedValues(backgroundDimming: Double) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         var complete = configuration
+        if complete.layers[ImmersiveArtworkLayer.dimming.rawValue] == nil {
+            var dimming = complete[.dimming]
+            dimming.opacity = backgroundDimming
+            complete[.dimming] = dimming
+        }
         for layer in ImmersiveArtworkLayer.allCases { complete[layer] = configuration[layer] }
         return (try? encoder.encode(complete)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
@@ -121,8 +126,8 @@ struct ImmersiveArtworkDebugPanel: View {
                     }
                 }
                 Section {
-                    Button("复制全部调试数值") { UIPasteboard.general.string = store.exportedValues }
-                    ShareLink("导出调试数值", item: store.exportedValues)
+                    Button("复制全部调试数值") { UIPasteboard.general.string = store.exportedValues(backgroundDimming: backgroundDimming) }
+                    ShareLink("导出调试数值", item: store.exportedValues(backgroundDimming: backgroundDimming))
                     Button("恢复全部调试默认值") { store.reset() }
                 } footer: {
                     Text("数值仅用于沉浸封面，独立保存。调整满意后复制发给开发者，再固化参数并删除本面板。")

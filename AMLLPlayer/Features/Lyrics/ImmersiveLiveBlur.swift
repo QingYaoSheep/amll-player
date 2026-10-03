@@ -133,12 +133,20 @@ final class ImmersiveLiveBlurSurface: UIView {
 
     func configure(amount: Double, mask: UIView?) {
         self.amount = amount.isFinite ? min(1, max(0, amount)) : 0
-        generation = UUID()
         // Discard old composition on hide/reorder/resize/strength changes, even paused.
-        layer.contents = nil
+        discardComposition()
         self.mask = mask
         alpha = 1
         updateScheduler()
+    }
+
+    /// Invalidate both the displayed image and an in-flight snapshot when the
+    /// visible video has no pixels for its current resource generation.
+    func discardComposition() {
+        generation = UUID()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        layer.contents = nil
+        CATransaction.commit()
     }
 
     private func updateScheduler() {

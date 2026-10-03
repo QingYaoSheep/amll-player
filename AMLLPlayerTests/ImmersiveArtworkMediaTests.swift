@@ -63,8 +63,6 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         // Reproduce an output-generation gap while the actual AVPlayerLayer
         // still displays its frame. A partial background clone is not a blur.
         _ = frames.begin()
-        tuning.blurRadius = 25
-        configure()
         let before = surface.transitionSurface.presentedFrames
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertFalse(frames.hasFrame)

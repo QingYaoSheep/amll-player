@@ -228,6 +228,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                         // A background-only clone over a displayed video is not
                         // a backdrop blur. Wait for this resource's actual pixels.
                         frames.blurWaitingForVideoFrame = true
+                        transitionSurface.discardComposition()
                         return nil
                     }
                     let mask = (videoPlane.mask as? UIImageView)?.image?.cgImage

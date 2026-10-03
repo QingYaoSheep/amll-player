@@ -60,6 +60,7 @@ import SwiftUI
         blurInputs = []; blurWaitingForVideoFrame = false
         surface?.clear()
         transitionSurface?.clear()
+        liveBlurSurface?.discardComposition()
         return token
     }
 
@@ -78,6 +79,7 @@ import SwiftUI
         lastBuffer = nil
         surface?.clear()
         transitionSurface?.clear()
+        liveBlurSurface?.discardComposition()
     }
 }
 

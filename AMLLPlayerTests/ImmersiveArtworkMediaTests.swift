@@ -1,10 +1,129 @@
 @testable import AMLLPlayer
 import AVFoundation
+import MetalKit
 import UIKit
 import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testPureBlurCapturesTheActualMetalBackgroundWithoutTint() async throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = window.bounds
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        let metal = MTKView(frame: surface.bounds, device: device)
+        metal.framebufferOnly = true
+        metal.clearColor = MTLClearColor(red: 0.15, green: 0.6, blue: 0.3, alpha: 1)
+        let delegate = SolidMetalBackdrop(device: device)
+        metal.delegate = delegate
+        surface.backgroundSurface.addSubview(metal)
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.video, .reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
+        tuning.blurRadius = 60
+        surface.configure(video: AnimatedArtwork(url: URL(fileURLWithPath: "/unused.mp4"), active: false),
+            layout: .init(video: .zero, reflection: .zero, transition: CGRect(x: 0, y: 100, width: 128, height: 500),
+                bottomFade: .zero, tuning: tuning, presentsFrame: false, reflectionEnabled: false, reduceTransparency: false))
+        metal.draw()
+        try await waitUntil { surface.transitionSurface.presentedFrames > 3 }
+        let raw = try backdropPixel(window, at: CGPoint(x: 160, y: 460))
+        let blurred = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
+        XCTAssertGreaterThan(raw[1], raw[0] + 30, "The fixture must present an actual green Metal drawable")
+        for channel in 0 ..< 3 { XCTAssertEqual(Double(blurred[channel]), Double(raw[channel]), accuracy: 3) }
+        withExtendedLifetime(delegate) {}
+    }
+
+    private final class SolidMetalBackdrop: NSObject, MTKViewDelegate {
+        let queue: any MTLCommandQueue
+        init(device: any MTLDevice) { queue = device.makeCommandQueue()! }
+        func mtkView(_: MTKView, drawableSizeWillChange _: CGSize) {}
+        func draw(in view: MTKView) {
+            guard let descriptor = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
+                  let command = queue.makeCommandBuffer(), let encoder = command.makeRenderCommandEncoder(descriptor: descriptor) else { return }
+            encoder.endEncoding()
+            command.present(drawable)
+            command.commit()
+        }
+    }
+
+    func testTransitionPreservesBackdropColorAndRespondsToRepeatedStrengthChanges() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = window.bounds
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.video].enabled = false
+        tuning[.reflection].enabled = false
+        tuning[.bottomFade].enabled = false
+        tuning[.dimming].enabled = false
+        let video = AnimatedArtwork(url: URL(fileURLWithPath: "/no-video-needed.mp4"), active: false)
+        func apply(strength: Double, enabled: Bool = true, videoEnd: CGFloat = 400) {
+            tuning.blurRadius = strength
+            tuning[.transition].enabled = enabled
+            surface.configure(video: video, layout: .init(video: CGRect(x: 0, y: 0, width: 128, height: videoEnd),
+                reflection: .zero, transition: CGRect(x: 0, y: 100, width: 128, height: 500), bottomFade: .zero,
+                tuning: tuning, presentsFrame: false, reflectionEnabled: false, reduceTransparency: false))
+            surface.layoutIfNeeded()
+        }
+        surface.backgroundSurface.backgroundColor = UIColor(red: 0.15, green: 0.6, blue: 0.3, alpha: 1)
+        apply(strength: 80, enabled: false)
+        try await Task.sleep(for: .milliseconds(200))
+        let plain = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
+        apply(strength: 80)
+        try await Task.sleep(for: .milliseconds(500))
+        let blurredColor = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
+        for channel in 0 ..< 3 {
+            XCTAssertEqual(Double(blurredColor[channel]), Double(plain[channel]), accuracy: 3,
+                "Pure blur must not add a material tint, darkening, or saturation to uniform colors")
+        }
+
+        // Moving the video edge must not move the transition's own upper fade.
+        let firstMask = try XCTUnwrap((surface.transitionSurface.mask as? UIImageView)?.image?.pngData())
+        apply(strength: 80, videoEnd: 160)
+        let movedVideoMask = try XCTUnwrap((surface.transitionSurface.mask as? UIImageView)?.image?.pngData())
+        XCTAssertEqual(firstMask, movedVideoMask, "The fade is anchored to the transition, not the video")
+
+        for index in 0 ..< 16 {
+            let stripe = UIView(frame: CGRect(x: index * 8, y: 0, width: 8, height: 650))
+            stripe.backgroundColor = index.isMultiple(of: 2) ? .white : .black
+            surface.backgroundSurface.addSubview(stripe)
+        }
+        apply(strength: 2)
+        try await Task.sleep(for: .milliseconds(500))
+        let weak = try backdropVariance(window, y: 460)
+        apply(strength: 60)
+        try await Task.sleep(for: .milliseconds(500))
+        let strong = try backdropVariance(window, y: 460)
+        apply(strength: 2)
+        try await Task.sleep(for: .milliseconds(500))
+        let weakAgain = try backdropVariance(window, y: 460)
+        XCTAssertGreaterThan(weak, strong + 300, "The live strength slider must change rendered detail")
+        XCTAssertGreaterThan(weakAgain, strong + 300, "Lowering strength must undo the blur without remounting")
+        XCTAssertEqual(weakAgain, weak, accuracy: max(100, weak * 0.1))
+        apply(strength: 0)
+        XCTAssertTrue(surface.transitionSurface.isHidden)
+    }
+
     func testPlayerLevelOutputProducesReflectionAcrossActualLoopItems() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -193,13 +312,13 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         let red = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
         XCTAssertGreaterThan(red[0], red[2] + 30, "Hidden video must not leak into the red backdrop")
 
-        // No new video-frame renderer is invoked when the underlying color changes.
+        // A paused/hidden video cannot prevent changes to the live background.
         surface.backgroundSurface.backgroundColor = .blue
         try await Task.sleep(nanoseconds: 300_000_000)
         let blue = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
         XCTAssertGreaterThan(blue[2], blue[0] + 30, "Live blur must follow the currently visible background")
         XCTAssertTrue(playerLayer.player === player)
-        XCTAssertNil(surface.transitionSurface.layer.contents, "The live blur owns no retained video bitmap")
+        XCTAssertGreaterThan(surface.transitionSurface.presentedFrames, 0, "Pure blur must render the current visible composite")
 
         // Pixel colors alone could pass if the effect were invisible. Verify
         // visible backdrop detail is actually blurred by the production view.

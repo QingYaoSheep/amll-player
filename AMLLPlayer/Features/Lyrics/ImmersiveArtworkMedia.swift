@@ -1,7 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-/// One native hierarchy determines the actual backdrop sampled by UIKit's live blur.
+/// One native hierarchy determines the visible backdrop used by the untinted blur.
 struct ImmersiveArtworkMedia: UIViewRepresentable {
     let video: AnimatedArtwork
     let frames: ArtworkReflectionFrames
@@ -59,6 +59,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             }
             // The blur is a live backdrop effect, never an independent video-frame copy.
             frames.attach(reflectionSurface)
+            transitionSurface.capture = { [weak self] in self?.captureBlurInput() }
         }
 
         required init?(coder _: NSCoder) { nil }
@@ -164,8 +165,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             func bottomFade(for layer: ImmersiveArtworkLayer) -> CGRect? {
                 fadeEnabled && tuning.isBelow(layer, .bottomFade) ? layout.bottomFade : nil
             }
-            // UIKit forbids masks/partial alpha on a live blur's ancestors. Apply
-            // its combined visibility mask directly to the effect view instead.
+            // Keep the media fade and transition's own fade independently tunable.
             layer.mask = nil
             videoPlane.mask = ImmersiveArtworkVisibility.mask(frame: layout.video,
                 fade: bottomFade(for: .video), strength: tuning[.bottomFade].opacity)
@@ -174,7 +174,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             transitionSurface.configure(amount: tuning.validatedBlur / 80,
                 mask: ImmersiveArtworkVisibility.mask(frame: layout.transition,
                     fade: bottomFade(for: .transition), strength: tuning[.bottomFade].opacity,
-                    transitionEnd: layout.video.maxY, opacity: tuning[.transition].opacity * layout.pageOpacity))
+                    transitionFade: true, opacity: tuning[.transition].opacity * layout.pageOpacity))
             CATransaction.commit()
             let visible = bounds.intersection(layout.reflection)
             let covered = [.background, .dimming, .video].filter {
@@ -183,6 +183,44 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             frames.layoutDiagnostic = "视频 Y=\(Int(layout.video.minY))–\(Int(layout.video.maxY)) pt；倒影 Y=\(Int(layout.reflection.minY))–\(Int(layout.reflection.maxY)) pt\n倒影屏内高度：\(visible.isNull ? 0 : Int(visible.height)) pt；显示：\(reflectionPlane.isHidden ? "关闭" : "开启")；不透明度：\(tuning[.reflection].opacity)\n倒影上方可能遮盖的层：\(covered.isEmpty ? "无" : covered)"
             reflectionSurface.setNeedsLayout()
             frames.replayLatest()
+        }
+
+        /// Snapshot only actual lower planes. AVPlayerLayer cannot be rendered
+        /// using CALayer.render, so its current frame comes from the same player.
+        /// No offscreen/hidden/upper video is kept in the blur input.
+        private func captureBlurInput() -> ImmersiveBlurInput? {
+            guard let layout = previousLayout, window != nil, !transitionSurface.isHidden else { return nil }
+            let padding = CGFloat(layout.tuning.validatedBlur * 3)
+            let region = layout.transition.insetBy(dx: -padding, dy: -padding).intersection(bounds)
+            guard !region.isNull, region.width > 0, region.height > 0 else { return nil }
+            let scale = min(1.5, window?.screen.scale ?? 1)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = scale
+            format.opaque = false
+            let renderer = UIGraphicsImageRenderer(size: region.size, format: format)
+            var layers: [ImmersiveBlurInput.Plane] = []
+            for kind in layout.tuning.orderedLayers.reversed() where layout.tuning.isBelow(kind, .transition) {
+                guard let view = plane(for: kind), !view.isHidden, view.alpha > 0,
+                      view.frame.intersects(region) else { continue }
+                if kind == .video {
+                    guard layout.presentsFrame, videoSurface.layer.opacity > 0, let buffer = frames.currentBuffer else { continue }
+                    let mask = (videoPlane.mask as? UIImageView)?.image?.cgImage
+                    layers.append(.video(buffer, frame: videoPlane.frame, mask: mask, opacity: Double(videoPlane.alpha)))
+                } else {
+                    let image = renderer.image { context in
+                        context.cgContext.translateBy(x: view.frame.minX - region.minX, y: view.frame.minY - region.minY)
+                        if kind == .reflection {
+                            // Reflection already owns the presented CGImage and its masks.
+                            view.layer.render(in: context.cgContext)
+                        } else {
+                            // Public hierarchy capture includes the hosting view's Metal backgrounds.
+                            view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
+                        }
+                    }
+                    if let image = image.cgImage { layers.append(.bitmap(image)) }
+                }
+            }
+            return ImmersiveBlurInput(region: region, transition: layout.transition, scale: scale, planes: layers)
         }
 
         func stop() {
@@ -199,53 +237,13 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
     }
 }
 
-/// Public UIKit backdrop sampling automatically respects hidden views and z order.
-/// The control is normalized effect strength, not a claimed Gaussian radius in pt.
-final class ImmersiveLiveBlurSurface: UIVisualEffectView {
-    private var effectAnimator: UIViewPropertyAnimator?
-    private(set) var amount: Double = -1
-
-    init() {
-        super.init(effect: nil)
-        isUserInteractionEnabled = false
-    }
-    required init?(coder _: NSCoder) { nil }
-
-    func configure(amount: Double, mask: UIView?) {
-        if self.amount != amount || effectAnimator == nil {
-            if effectAnimator == nil {
-                let animator = UIViewPropertyAnimator(duration: 1, curve: .linear) { [weak self] in
-                    self?.effect = UIBlurEffect(style: .regular)
-                }
-                animator.pausesOnCompletion = true
-                animator.startAnimation()
-                animator.pauseAnimation()
-                effectAnimator = animator
-            }
-            self.amount = amount
-            effectAnimator?.fractionComplete = CGFloat(min(1, max(0, amount)))
-        }
-        // Reassign on every geometry change: UIKit copies a visual-effect mask.
-        self.mask = mask
-        alpha = 1
-    }
-
-    func stop() {
-        effectAnimator?.stopAnimation(true)
-        effectAnimator = nil
-        effect = nil
-        mask = nil
-    }
-}
-
 @MainActor
 enum ImmersiveArtworkVisibility {
-    /// A direct view mask combines the upward blur fade, debug opacity and final
-    /// downward fade without putting the live backdrop inside a masked parent.
+    /// The transition's own upper fade does not depend on video size/position.
     static func mask(frame: CGRect, fade: CGRect?, strength: Double,
-                     transitionEnd: CGFloat? = nil, opacity: Double = 1) -> UIView? {
+                     transitionFade: Bool = false, opacity: Double = 1) -> UIView? {
         guard frame.width > 0, frame.height > 0 else { return nil }
-        guard fade != nil || transitionEnd != nil || opacity != 1 else { return nil }
+        guard fade != nil || transitionFade || opacity != 1 else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
@@ -256,8 +254,8 @@ enum ImmersiveArtworkVisibility {
                 let y = CGFloat(row) + 0.5
                 let globalY = frame.minY + y
                 var alpha = opacity
-                if let transitionEnd {
-                    let t = min(1, max(0, (globalY - frame.minY) / max(1, transitionEnd - frame.minY)))
+                if transitionFade {
+                    let t = min(1, max(0, y / max(1, frame.height * AMLLImmersiveArtworkGeometry.transitionFadeFraction)))
                     alpha *= Double(t * t * (3 - 2 * t))
                 }
                 context.setFillColor(UIColor(white: 1, alpha: CGFloat(alpha)).cgColor)

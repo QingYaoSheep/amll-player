@@ -28,6 +28,8 @@ enum AMLLImmersiveArtworkGeometry {
     static let maximumBlur: CGFloat = 32
     /// Keep the shortened upper fade; the lower region now extends to the viewport edge.
     static let transitionTopInsetFraction: CGFloat = 0.15
+    /// Fixed to the blur plane, including when it is moved away from the video.
+    static let transitionFadeFraction: CGFloat = 0.5
     static func transitionFadeStops(solidStart: Double) -> [(location: Double, alpha: Double)] {
         (0 ... 32).map { sample in
             let t = Double(sample) / 32

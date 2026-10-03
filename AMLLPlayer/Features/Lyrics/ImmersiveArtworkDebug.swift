@@ -134,7 +134,7 @@ struct ImmersiveArtworkDebugPanel: View {
                     }
                     Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数。视频在调整后的容器内始终等比完整显示，倒影与模糊自动对齐实际画面。倒影开关还需开启原有封面倒影设置。底部渐隐的不透明度表示渐隐强度。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("实时模糊强度为系统效果的 0–80 调节值，不是高斯半径。关闭视频后不保留视频模糊副本；仍开启且位于下方的倒影与背景继续参与模糊。")
+                    Text("实时模糊半径为 0–80pt，不叠加材质底色或暗度。顶部淡出固定在本层上半段，与视频位置无关。关闭视频后不保留视频模糊副本；仍开启且位于下方的倒影与背景继续参与模糊。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
@@ -165,7 +165,7 @@ struct ImmersiveArtworkDebugPanel: View {
                         slider("高度", value: binding(layer, \.height), range: 0.1 ... 2, step: 0.01, unit: "×")
                         slider(layer == .bottomFade ? "渐隐强度" : "不透明度", value: binding(layer, \.opacity), range: 0 ... 1, step: 0.01, unit: "")
                         if layer == .transition {
-                            slider("实时模糊强度", value: Binding(get: { store.configuration.validatedBlur }, set: { store.configuration.blurRadius = $0 }), range: 0 ... 80, step: 1, unit: "")
+                            slider("实时模糊强度", value: Binding(get: { store.configuration.validatedBlur }, set: { store.configuration.blurRadius = $0 }), range: 0 ... 80, step: 1, unit: "pt")
                         }
                         Button("重置此层") { store.configuration.layers.removeValue(forKey: layer.rawValue) }
                     }

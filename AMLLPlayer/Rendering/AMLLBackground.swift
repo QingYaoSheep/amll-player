@@ -9,6 +9,7 @@ struct AMLLBackground: View {
     var color: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
     var gradientEnd: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
     var flowing: FlowingBackgroundConfiguration = .init()
+    var dimming: Double = 0
     @State private var usedMesh = false
     @State private var usedPixi = false
     @State private var usedFlowing = false
@@ -34,6 +35,7 @@ struct AMLLBackground: View {
                     .opacity(mode == .flowing ? 1 : 0)
             }
         }
+        .overlay { Color.black.opacity(dimming) }
         .onChange(of: mode, initial: true) { _, value in
             if value == .mesh {
                 usedMesh = true

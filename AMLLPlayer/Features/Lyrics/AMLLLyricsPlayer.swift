@@ -38,7 +38,8 @@ struct AMLLLyricsPlayer: View {
                                blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
                                color: configuration.backgroundColor ?? .sourceDefault,
                                gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
-                               flowing: configuration.flowingBackground ?? .init())
+                               flowing: configuration.flowingBackground ?? .init(),
+                               dimming: configuration.backgroundDimming ?? 0.16)
                 if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                     let videoFrame = AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size,
                                                                         video: artworkLoader.videoSize ?? .zero)
@@ -54,15 +55,13 @@ struct AMLLLyricsPlayer: View {
                             .accessibilityHidden(true)
                     }
                     if artworkLoader.hasPresentedFrame, !reduceTransparency {
-                        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame,
-                                                                                      viewportHeight: geometry.size.height)
+                        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: videoFrame)
                         ArtworkVideoTransition(frames: artworkReflectionFrames, videoSize: videoFrame.size)
                             .frame(width: transition.width, height: transition.height)
                             .position(x: transition.midX, y: transition.midY)
                             .accessibilityHidden(true)
                     }
                 }
-                Color.black.opacity(configuration.backgroundDimming ?? 0.16)
                 if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                     player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
                 } else {

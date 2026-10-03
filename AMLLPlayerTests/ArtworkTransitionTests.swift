@@ -1,6 +1,7 @@
 @testable import AMLLPlayer
 import AVFoundation
 import CoreImage
+import SwiftUI
 import UIKit
 import XCTest
 
@@ -8,6 +9,46 @@ import XCTest
 final class ArtworkTransitionTests: XCTestCase {
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    func testBackgroundDimmingLeavesTheArtworkAboveItUnchanged() throws {
+        func render(dimming: Double) throws -> CIImage {
+            let content = ZStack(alignment: .topLeading) {
+                AMLLBackground(artworkURL: nil, active: false, blur: 0, mode: .solid,
+                               color: .init(red: 1, green: 1, blue: 1), dimming: dimming)
+                Color.red.frame(width: 64, height: 100)
+            }.frame(width: 128, height: 200)
+            let image = try XCTUnwrap(ImageRenderer(content: content).cgImage)
+            return CIImage(cgImage: image)
+        }
+        let original = try render(dimming: 0)
+        let dimmed = try render(dimming: 0.75)
+        XCTAssertEqual(pixel(original, x: 32, y: 150), pixel(dimmed, x: 32, y: 150),
+                       "The artwork above the production background must keep its brightness")
+        XCTAssertGreaterThan(pixel(original, x: 100, y: 150)[0] - pixel(dimmed, x: 100, y: 150)[0], 100)
+    }
+
+    func testShortenedTransitionSamplesTheSameVideoPixelsWithoutStretching() throws {
+        let video = CGRect(x: 22, y: 0, width: 200, height: 400)
+        let tail = AMLLImmersiveArtworkGeometry.transitionFrame(video: video)
+        XCTAssertEqual(tail.minX, video.minX)
+        XCTAssertEqual(tail.width, video.width)
+        XCTAssertEqual(tail.maxY, video.maxY, accuracy: 0.001)
+        XCTAssertEqual(tail.height, 129.2, accuracy: 0.001)
+        let source = try XCTUnwrap(CIFilter(name: "CILinearGradient", parameters: [
+            "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0, y: 400),
+            "inputColor0": CIColor.blue, "inputColor1": CIColor.red,
+        ])?.outputImage).cropped(to: CGRect(origin: .zero, size: video.size))
+        let image = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
+                                                                    videoSize: video.size, surfaceSize: tail.size,
+                                                                    outputSize: tail.size, blurRadius: 0))
+        for y in [0, 40, 80, 128] {
+            let actual = pixel(image, x: 100, y: y)
+            let expected = pixel(source, x: 100, y: y)
+            for channel in 0 ..< 4 {
+                XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
+            }
+        }
+    }
 
     func testImmersiveVideoHasAnActualBottomMaskButSquareCoverDoesNot() throws {
         let surface = AnimatedArtwork.Surface(frame: CGRect(x: 0, y: 0, width: 128, height: 400))
@@ -106,7 +147,7 @@ final class ArtworkTransitionTests: XCTestCase {
         let videoSize = CGSize(width: 128, height: 400)
         let viewport = CGSize(width: 128, height: 650)
         let frame = CGRect(origin: .zero, size: videoSize)
-        let tail = AMLLImmersiveArtworkGeometry.transitionFrame(video: frame, viewportHeight: viewport.height)
+        let tail = AMLLImmersiveArtworkGeometry.transitionFrame(video: frame)
         let source = CIImage(color: .red).cropped(to: frame)
         let surface = AnimatedArtwork.Surface(frame: frame)
         defer { surface.stop() }
@@ -151,7 +192,7 @@ final class ArtworkTransitionTests: XCTestCase {
         let videoSize = CGSize(width: 128, height: 400)
         let viewport = CGSize(width: 128, height: 650)
         let video = CGRect(origin: .zero, size: videoSize)
-        let tail = AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: viewport.height)
+        let tail = AMLLImmersiveArtworkGeometry.transitionFrame(video: video)
         let reflection = ArtworkReflectionGeometry.frame(cover: video, viewportHeight: viewport.height)
         let reflectionSurface = ArtworkReflection.Surface(frame: CGRect(origin: .zero, size: reflection.size))
         reflectionSurface.layoutSubviews()

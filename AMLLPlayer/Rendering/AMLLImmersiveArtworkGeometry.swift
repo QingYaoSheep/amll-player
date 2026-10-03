@@ -22,6 +22,8 @@ enum AMLLArtworkDisplayPolicy {
 enum AMLLImmersiveArtworkGeometry {
     static let overlapFraction: CGFloat = 0.34
     static let maximumBlur: CGFloat = 32
+    /// Shorten the fade region from its top only; keep the video bottom fixed.
+    static let transitionTopInsetFraction: CGFloat = 0.05
 
     /// Smooth both ends so the original video cannot leave a rectangular bottom edge.
     static let transitionFadeStops: [(location: Double, alpha: Double)] = (0 ... 16).map { sample in
@@ -42,11 +44,8 @@ enum AMLLImmersiveArtworkGeometry {
         return CGRect(x: (viewport.width - width) / 2, y: 0, width: width, height: height)
     }
 
-    static func transitionFrame(video: CGRect, viewportHeight: CGFloat) -> CGRect {
-        let extensionHeight = min(260, max(120, viewportHeight * 0.22))
-        let horizontalExtension = min(48, max(24, video.width * 0.08))
-        return CGRect(x: video.minX - horizontalExtension, y: video.maxY - video.height * overlapFraction,
-                      width: video.width + horizontalExtension * 2,
-                      height: video.height * overlapFraction + extensionHeight)
+    static func transitionFrame(video: CGRect) -> CGRect {
+        let height = video.height * overlapFraction * (1 - transitionTopInsetFraction)
+        return CGRect(x: video.minX, y: video.maxY - height, width: video.width, height: height)
     }
 }

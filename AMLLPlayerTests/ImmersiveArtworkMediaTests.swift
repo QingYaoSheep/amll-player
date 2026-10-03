@@ -38,7 +38,11 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         }
         configure()
         try await waitUntil { frames.hasFrame && surface.transitionSurface.presentedFrames > 3 }
-        let image = try XCTUnwrap(surface.transitionSurface.layer.contents as? CGImage)
+        let contents = try XCTUnwrap(surface.transitionSurface.layer.contents)
+        guard CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else {
+            return XCTFail("The live blur must publish a CGImage")
+        }
+        let image = contents as! CGImage
         let filtered = CIImage(cgImage: image)
         let context = CIContext()
         func pixel(x: CGFloat, y: CGFloat) -> [Int] {

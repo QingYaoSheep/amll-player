@@ -170,7 +170,7 @@ enum ArtworkVideoTransitionImage {
         let pixelScaleX = outputSize.width / surfaceSize.width
         let pixelScaleY = outputSize.height / surfaceSize.height
         let horizontalExtension = max(0, (surfaceSize.width - videoSize.width) / 2) * pixelScaleX
-        let overlap = videoSize.height * AMLLImmersiveArtworkGeometry.overlapFraction
+        let overlap = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: videoSize.height)
         let extensionHeight = max(0, surfaceSize.height - overlap) * pixelScaleY
         let image = source
             .transformed(by: CGAffineTransform(translationX: -source.extent.minX, y: -source.extent.minY))
@@ -180,13 +180,22 @@ enum ArtworkVideoTransitionImage {
             .clampedToExtent()
         let output = CGRect(origin: .zero, size: outputSize)
         guard blurRadius > 0 else { return image.cropped(to: output) }
-        let mask = CIFilter(name: "CILinearGradient", parameters: [
+        let upperRamp = CIFilter(name: "CILinearGradient", parameters: [
             "inputPoint0": CIVector(x: 0, y: outputSize.height),
-            "inputPoint1": CIVector(x: 0, y: 0),
-            "inputColor0": CIColor(red: 0, green: 0, blue: 0, alpha: 1),
-            "inputColor1": CIColor(red: 1, green: 1, blue: 1, alpha: 1),
+            "inputPoint1": CIVector(x: 0, y: outputSize.height * CGFloat(AMLLImmersiveArtworkGeometry.transitionPeakEnd)),
+            "inputColor0": CIColor.black,
+            "inputColor1": CIColor.white,
         ])?.outputImage
-        guard let mask else { return nil }
+        let lowerRamp = CIFilter(name: "CILinearGradient", parameters: [
+            "inputPoint0": CIVector(x: 0, y: 0),
+            "inputPoint1": CIVector(x: 0, y: outputSize.height * CGFloat(AMLLImmersiveArtworkGeometry.transitionPeakStart)),
+            "inputColor0": CIColor.black,
+            "inputColor1": CIColor.white,
+        ])?.outputImage
+        guard let upperRamp, let lowerRamp else { return nil }
+        let mask = upperRamp.applyingFilter("CIDarkenBlendMode", parameters: [
+            kCIInputBackgroundImageKey: lowerRamp,
+        ]).cropped(to: output)
         return image.applyingFilter("CIMaskedVariableBlur", parameters: [
             kCIInputRadiusKey: blurRadius * outputSize.width / surfaceSize.width,
             "inputMask": mask,
@@ -195,7 +204,7 @@ enum ArtworkVideoTransitionImage {
 }
 
 /// Uses the same silent player's frame output as the optional reflection.
-/// Sits above the fading video and reflection, softening their shared boundary.
+/// Sits behind the fading video and reflection, bridging the video into the backdrop.
 struct ArtworkVideoTransition: UIViewRepresentable {
     let frames: ArtworkReflectionFrames
     let videoSize: CGSize

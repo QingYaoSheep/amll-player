@@ -175,13 +175,14 @@ final class ArtworkMediaTests: XCTestCase {
         let fadeTop = tall.maxY - tall.height * AMLLImmersiveArtworkGeometry.overlapFraction
         XCTAssertGreaterThan(transition.minY, fadeTop)
         XCTAssertEqual(transition.minY - fadeTop, tall.height * 0.34 * 0.15, accuracy: 0.001)
-        XCTAssertEqual(transition.maxY, tall.maxY, accuracy: 0.001)
+        XCTAssertEqual(transition.midY, tall.maxY, accuracy: 0.001)
+        XCTAssertEqual(transition.maxY - tall.maxY, tall.maxY - transition.minY, accuracy: 0.001)
         XCTAssertEqual(transition.width, tall.width)
         XCTAssertEqual(transition.minX, tall.minX)
         XCTAssertEqual(transition.midX, tall.midX, accuracy: 0.001)
         let reflection = ArtworkReflectionGeometry.frame(cover: tall, viewportHeight: viewport.height)
         XCTAssertEqual(reflection.minY, tall.maxY, accuracy: 0.001)
-        XCTAssertEqual(reflection.minY, transition.maxY, accuracy: 0.001)
+        XCTAssertEqual(reflection.minY, transition.midY, accuracy: 0.001)
     }
 
     func testLyricsCoverAndImmersiveResourceDisplayMatrix() {

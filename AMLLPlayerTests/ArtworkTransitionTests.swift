@@ -43,13 +43,13 @@ final class ArtworkTransitionTests: XCTestCase {
         XCTAssertGreaterThan(pixel(original, x: 100, y: 150)[0] - pixel(dimmed, x: 100, y: 150)[0], 100)
     }
 
-    func testShortenedTransitionSamplesTheSameVideoPixelsWithoutStretching() throws {
+    func testCenteredTransitionKeepsVideoPixelsAlignedAndExtendsItsBottomEdge() throws {
         let video = CGRect(x: 22, y: 0, width: 200, height: 400)
         let tail = AMLLImmersiveArtworkGeometry.transitionFrame(video: video)
         XCTAssertEqual(tail.minX, video.minX)
         XCTAssertEqual(tail.width, video.width)
-        XCTAssertEqual(tail.maxY, video.maxY, accuracy: 0.001)
-        XCTAssertEqual(tail.height, 115.6, accuracy: 0.001)
+        XCTAssertEqual(tail.midY, video.maxY, accuracy: 0.001)
+        XCTAssertEqual(tail.height, 231.2, accuracy: 0.001)
         let source = try XCTUnwrap(CIFilter(name: "CILinearGradient", parameters: [
             "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0, y: 400),
             "inputColor0": CIColor.blue, "inputColor1": CIColor.red,
@@ -57,9 +57,11 @@ final class ArtworkTransitionTests: XCTestCase {
         let image = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
                                                                     videoSize: video.size, surfaceSize: tail.size,
                                                                     outputSize: tail.size, blurRadius: 0))
-        for y in [0, 40, 80, 114] {
+        let expectedImage = source.transformed(by: CGAffineTransform(translationX: 0, y: tail.maxY - video.maxY))
+            .clampedToExtent()
+        for y in [0, 40, 110, 120, 160, 220] {
             let actual = pixel(image, x: 100, y: y)
-            let expected = pixel(source, x: 100, y: y)
+            let expected = pixel(expectedImage, x: 100, y: y)
             for channel in 0 ..< 4 {
                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
             }
@@ -90,17 +92,18 @@ final class ArtworkTransitionTests: XCTestCase {
         let image = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
                                                                     videoSize: CGSize(width: 200, height: 400), surfaceSize: CGSize(width: 200, height: 200),
                                                                     outputSize: CGSize(width: 200, height: 200), blurRadius: 0))
-        // 136 pt overlaps the real video and 64 pt extends below it.
+        // The shortened upper region is 115.6 pt; 84.4 pt extends below it.
+        let expectedImage = source.transformed(by: CGAffineTransform(translationX: 0, y: 84.4)).clampedToExtent()
         for y in [100, 140, 180] {
             let actual = pixel(image, x: 100, y: y)
-            let expected = pixel(source, x: 100, y: y - 64)
+            let expected = pixel(expectedImage, x: 100, y: y)
             for channel in 0 ..< 4 {
                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
             }
         }
         for y in [0, 20, 60] {
             let actual = pixel(image, x: 100, y: y)
-            let expected = pixel(source, x: 100, y: 0)
+            let expected = pixel(expectedImage, x: 100, y: y)
             for channel in 0 ..< 4 {
                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
             }
@@ -118,14 +121,14 @@ final class ArtworkTransitionTests: XCTestCase {
                                                                     outputSize: CGSize(width: 264, height: 200), blurRadius: 0))
         for x in [0, 50, 100, 150, 199] {
             let actual = pixel(image, x: x + 32, y: 100)
-            let expected = pixel(source, x: x, y: 36)
+            let expected = pixel(source, x: x, y: 16)
             for channel in 0 ..< 4 {
                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
             }
         }
         for (x, edge) in [(0, 0), (263, 199)] {
             let actual = pixel(image, x: x, y: 100)
-            let expected = pixel(source, x: edge, y: 36)
+            let expected = pixel(source, x: edge, y: 16)
             for channel in 0 ..< 4 {
                 XCTAssertLessThanOrEqual(abs(actual[channel] - expected[channel]), 1)
             }
@@ -135,7 +138,7 @@ final class ArtworkTransitionTests: XCTestCase {
         XCTAssertGreaterThan(surface.layer.opacity, 0.24)
     }
 
-    func testBlurProgressivelyRemovesDetailTowardsTheBottom() throws {
+    func testBlurIsStrongestInTheMiddleAndFadesTowardsBothEnds() throws {
         let source = try XCTUnwrap(CIFilter(name: "CIStripesGenerator", parameters: [
             "inputCenter": CIVector(x: 0, y: 0), "inputColor0": CIColor.white,
             "inputColor1": CIColor.black, "inputWidth": 8, "inputSharpness": 1,
@@ -154,12 +157,15 @@ final class ArtworkTransitionTests: XCTestCase {
             return values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count)
         }
         let top = variance(y: 198)
-        let bottom = variance(y: 4)
+        let middle = variance(y: 100)
+        let bottom = variance(y: 2)
         XCTAssertGreaterThan(top, 1000)
-        XCTAssertGreaterThan(top, bottom * 2)
+        XCTAssertGreaterThan(bottom, 1000)
+        XCTAssertGreaterThan(top, middle * 2)
+        XCTAssertGreaterThan(bottom, middle * 2)
     }
 
-    func testProductionTransitionFadesUpWhileTheVideoFadesDown() throws {
+    func testProductionTransitionPeaksAtTheVideoBottomAndFadesAtBothEnds() throws {
         let videoSize = CGSize(width: 128, height: 400)
         let viewport = CGSize(width: 128, height: 650)
         let frame = CGRect(origin: .zero, size: videoSize)
@@ -175,8 +181,10 @@ final class ArtworkTransitionTests: XCTestCase {
         transitionSurface.layoutSubviews()
         let tailMask = try maskImage(XCTUnwrap(transitionSurface.layer.mask as? CAGradientLayer), size: tail.size)
         XCTAssertLessThanOrEqual(pixel(tailMask, x: 64, y: Int(tail.height) - 1)[3], 1)
-        XCTAssertGreaterThanOrEqual(pixel(tailMask, x: 64, y: 0)[3], 254)
-        XCTAssertGreaterThan(pixel(tailMask, x: 64, y: 20)[3], pixel(tailMask, x: 64, y: 80)[3])
+        XCTAssertLessThanOrEqual(pixel(tailMask, x: 64, y: 0)[3], 1)
+        XCTAssertEqual(pixel(tailMask, x: 64, y: Int(tail.height / 2))[3], 255)
+        XCTAssertGreaterThan(pixel(tailMask, x: 64, y: 80)[3], pixel(tailMask, x: 64, y: 20)[3])
+        XCTAssertGreaterThan(pixel(tailMask, x: 64, y: 150)[3], pixel(tailMask, x: 64, y: 210)[3])
         XCTAssertLessThanOrEqual(pixel(mainMask, x: 64, y: 0)[3], 1)
         XCTAssertEqual(pixel(mainMask, x: 64, y: 399)[3], 255)
         let transition = try XCTUnwrap(ArtworkVideoTransitionImage.image(source: source,
@@ -190,9 +198,12 @@ final class ArtworkTransitionTests: XCTestCase {
         let baseline = masked(source, mainMask)
             .transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - frame.maxY))
             .composited(over: CIImage(color: .blue))
-        let result = masked(transition, tailMask)
+        let softened = masked(transition, tailMask)
             .transformed(by: CGAffineTransform(translationX: tail.minX, y: viewport.height - tail.maxY))
-            .composited(over: baseline)
+        let result = masked(source, mainMask)
+            .transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - frame.maxY))
+            .composited(over: softened)
+            .composited(over: CIImage(color: .blue))
             .cropped(to: CGRect(origin: .zero, size: viewport))
         let boundary = Int(viewport.height - tail.minY)
         for y in (boundary - 3) ... (boundary + 3) {
@@ -203,17 +214,26 @@ final class ArtworkTransitionTests: XCTestCase {
             for channel in 0 ..< 3 {
                 XCTAssertLessThanOrEqual(abs((above[channel] - below[channel])
                     - (baselineAbove[channel] - baselineBelow[channel])), 2,
-                                         "The upward fade must not introduce a step at the transition's top")
+                                         "The upper fade must not introduce a step beyond the existing video gradient")
             }
         }
         let image = try XCTUnwrap(context.createCGImage(result, from: result.extent))
         let attachment = XCTAttachment(image: UIImage(cgImage: image))
-        attachment.name = "Upward blur fade and downward video fade"
+        let seam = Int(viewport.height - frame.maxY)
+        for y in (seam - 3) ... (seam + 3) {
+            let above = pixel(result, x: 64, y: y)
+            let below = pixel(result, x: 64, y: y - 1)
+            for channel in 0 ..< 3 {
+                XCTAssertLessThanOrEqual(abs(above[channel] - below[channel]), 3,
+                                         "The opaque center must bridge the original video bottom")
+            }
+        }
+        attachment.name = "Centered blur below video with two-sided fade"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
-    func testReflectionRemainsBelowTheUpwardFadingTransitionOnWhiteOrDarkBackground() throws {
+    func testVideoAndReflectionAboveTheCenteredTransitionHaveNoBottomSeam() throws {
         let videoSize = CGSize(width: 128, height: 400)
         let viewport = CGSize(width: 128, height: 650)
         let video = CGRect(origin: .zero, size: videoSize)
@@ -237,23 +257,27 @@ final class ArtworkTransitionTests: XCTestCase {
         let softened = transition.applyingFilter("CIBlendWithAlphaMask", parameters: [
             kCIInputBackgroundImageKey: CIImage(color: .clear), kCIInputMaskImageKey: tailMask,
         ]).transformed(by: CGAffineTransform(translationX: tail.minX, y: viewport.height - tail.maxY))
+        let mainVideo = source.transformed(by: CGAffineTransform(translationX: 0, y: viewport.height - video.maxY))
         for (name, background) in [("white", CIColor.white), ("dark", CIColor.black)] {
-            let result = softened.composited(over: reflected)
+            let result = reflected.composited(over: mainVideo)
+                .composited(over: softened)
                 .composited(over: CIImage(color: background))
                 .cropped(to: CGRect(origin: .zero, size: viewport))
             let boundary = Int(viewport.height - video.maxY)
-            // The revised overlay remains visible at the video bottom. Capture
-            // that boundary for device review instead of asserting the former
-            // downward-fading overlay's zero-alpha bottom.
-            let overlayWithoutReflection = softened.composited(over: CIImage(color: background))
-            XCTAssertEqual(pixel(result, x: 64, y: boundary),
-                           pixel(overlayWithoutReflection, x: 64, y: boundary),
-                           "The reflection must not draw over the transition at the video bottom")
-            XCTAssertEqual(pixel(result, x: 64, y: boundary - 1),
-                           pixel(reflected.composited(over: CIImage(color: background)), x: 64, y: boundary - 1))
+            for y in (boundary - 3) ... (boundary + 3) {
+                let above = pixel(result, x: 64, y: y)
+                let below = pixel(result, x: 64, y: y - 1)
+                for channel in 0 ..< 3 {
+                    XCTAssertLessThanOrEqual(abs(above[channel] - below[channel]), 3,
+                                             "The centered transition must bridge the video into its reflection")
+                }
+            }
+            let end = Int(viewport.height - tail.maxY)
+            let reflectionOnly = reflected.composited(over: CIImage(color: background))
+            XCTAssertEqual(pixel(result, x: 64, y: end), pixel(reflectionOnly, x: 64, y: end))
             let image = try XCTUnwrap(context.createCGImage(result, from: result.extent))
             let attachment = XCTAttachment(image: UIImage(cgImage: image))
-            attachment.name = "Reflection below upward blur fade on \(name)"
+            attachment.name = "Video and reflection above centered blur on \(name)"
             attachment.lifetime = .keepAlways
             add(attachment)
         }

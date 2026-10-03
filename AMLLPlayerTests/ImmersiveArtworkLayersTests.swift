@@ -75,11 +75,17 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         let size = CGSize(width: 128, height: 650)
         let video = CGRect(x: 0, y: 0, width: 128, height: 400)
         let fade = AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: size)
-        let content = ZStack {
-            Color.blue
-            Color.red.mask { ImmersiveArtworkBottomFade(frame: fade, strength: 1) }
-        }.frame(width: size.width, height: size.height)
-        let rendered = try CIImage(cgImage: XCTUnwrap(ImageRenderer(content: content).cgImage))
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = CGRect(origin: .zero, size: size)
+        defer { surface.stop() }
+        surface.configure(video: AnimatedArtwork(url: URL(fileURLWithPath: "/missing-layer-fixture.mp4"), active: false),
+            layout: .init(video: video, reflection: ArtworkReflectionGeometry.frame(cover: video, viewportHeight: size.height),
+                transition: AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: size.height),
+                bottomFade: fade, tuning: .init(), presentsFrame: false, reflectionEnabled: false, reduceTransparency: false))
+        surface.layoutIfNeeded()
+        let mask = try nativeMaskImage(XCTUnwrap(surface.layer.mask), size: size)
+        let rendered = CIImage(color: .red).cropped(to: CGRect(origin: .zero, size: size))
+            .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputBackgroundImageKey: CIImage(color: .blue), kCIInputMaskImageKey: mask])
         XCTAssertGreaterThan(pixel(rendered, x: 64, y: 649)[0], 250)
         XCTAssertLessThan(pixel(rendered, x: 64, y: 649)[2], 5)
         XCTAssertGreaterThan(pixel(rendered, x: 64, y: 0)[2], 250)
@@ -138,6 +144,10 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
     }
 
     private func maskImage(_ mask: CAGradientLayer, size: CGSize) throws -> CIImage {
+        try nativeMaskImage(mask, size: size)
+    }
+
+    private func nativeMaskImage(_ mask: CALayer, size: CGSize) throws -> CIImage {
         mask.frame = CGRect(origin: .zero, size: size)
         let bitmap = try XCTUnwrap(CGContext(data: nil, width: Int(size.width), height: Int(size.height),
             bitsPerComponent: 8, bytesPerRow: Int(size.width) * 4, space: colorSpace,

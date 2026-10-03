@@ -20,6 +20,12 @@ import SwiftUI
         if let lastBuffer { view.display(lastBuffer) }
     }
 
+    func replayLatest() {
+        guard let lastBuffer else { return }
+        surface?.display(lastBuffer)
+        transitionSurface?.display(lastBuffer)
+    }
+
     func begin() -> UUID {
         let token = UUID()
         source = token
@@ -185,7 +191,7 @@ struct ArtworkReflection: UIViewRepresentable {
 
         func display(_ buffer: CVPixelBuffer) {
             lastBuffer = buffer
-            guard bounds.width > 0, bounds.height > 0, window != nil else { return }
+            guard bounds.width > 0, bounds.height > 0, window != nil, !isHidden else { return }
             let scale = min(1.5, window?.screen.scale ?? 1)
             let size = CGSize(width: max(2, (bounds.width * scale).rounded()), height: max(2, (bounds.height * scale).rounded()))
             pending = Frame(buffer: buffer, size: size, scale: scale, generation: generation)
@@ -379,7 +385,7 @@ struct ArtworkVideoTransition: UIViewRepresentable {
 
         func display(_ buffer: CVPixelBuffer) {
             lastBuffer = buffer
-            guard bounds.width > 0, bounds.height > 0, window != nil,
+            guard bounds.width > 0, bounds.height > 0, window != nil, !isHidden,
                   videoSize.width > 0, videoSize.height > 0 else { return }
             let scale = min(1.5, window?.screen.scale ?? 1)
             let size = CGSize(width: max(2, (bounds.width * scale).rounded()),

@@ -164,25 +164,3 @@ struct ImmersiveArtworkDebugPanel: View {
         }
     }
 }
-
-/// Applied last to the media group, never to the background or foreground controls.
-struct ImmersiveArtworkBottomFade: View {
-    let frame: CGRect
-    let strength: Double
-    var body: some View {
-        Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
-            context.blendMode = .destinationOut
-            let colors = AMLLImmersiveArtworkGeometry.bottomFadeStops.map {
-                Gradient.Stop(color: .white.opacity((1 - $0.alpha) * strength), location: CGFloat($0.location))
-            }
-            context.fill(Path(frame), with: .linearGradient(Gradient(stops: colors),
-                startPoint: CGPoint(x: frame.midX, y: frame.minY), endPoint: CGPoint(x: frame.midX, y: frame.maxY)))
-            if frame.maxY < size.height {
-                context.fill(Path(CGRect(x: frame.minX, y: frame.maxY, width: frame.width, height: size.height - frame.maxY)), with: .color(.white.opacity(strength)))
-            }
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}

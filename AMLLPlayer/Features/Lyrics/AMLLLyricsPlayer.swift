@@ -349,7 +349,7 @@ struct AMLLLyricsPlayer: View {
             .accessibilityHidden(true)
     }
 
-    private func immersiveArtwork(_ item: PlaybackItem, frame: CGRect, size: CGSize) -> some View {
+    private func immersiveVideo(_ item: PlaybackItem) -> AnimatedArtwork {
         let url = artworkLoader.playbackURL!
         let token = artworkLoader.requestToken
         return AnimatedArtwork(url: url,
@@ -361,12 +361,6 @@ struct AMLLLyricsPlayer: View {
                                onFirstFrame: { url, videoSize in artworkLoader.firstFramePresented(token: token, url: url, size: videoSize) },
                                gravity: .resizeAspect,
                                fadesBottom: false)
-            .id(token)
-            .frame(width: frame.width, height: frame.height)
-            .position(x: frame.midX, y: frame.midY)
-            .frame(width: size.width, height: size.height)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 
     private func immersiveArtworkLayers(_ item: PlaybackItem, size: CGSize) -> some View {
@@ -377,31 +371,12 @@ struct AMLLLyricsPlayer: View {
         let transition = tuning[.transition].frame(AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: size.height))
         let bottomFade = tuning[.bottomFade].frame(AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: size))
         let reflects = configuration.animatedArtwork?.reflection == true && !reduceMotion && tuning[.reflection].enabled
-        let composition = ArtworkTransitionComposition(video: video, reflection: reflection, transition: transition,
-            reflectionEnabled: reflects, reflectionOpacity: tuning[.reflection].opacity,
-            blurRadius: tuning.validatedBlur)
-        return ZStack {
-            // One common media plane, with no per-video fade or per-reflection blur.
-            immersiveArtwork(item, frame: video, size: size)
-                .opacity(tuning[.video].enabled ? tuning[.video].opacity : 0)
-            if reflects, artworkLoader.hasPresentedFrame {
-                ArtworkReflection(frames: artworkReflectionFrames, opacity: tuning[.reflection].opacity)
-                    .frame(width: reflection.width, height: reflection.height)
-                    .clipped().position(x: reflection.midX, y: reflection.midY)
-            }
-            if artworkLoader.hasPresentedFrame, !reduceTransparency, tuning[.transition].enabled {
-                ArtworkVideoTransition(frames: artworkReflectionFrames, videoSize: video.size, composition: composition)
-                    .frame(width: transition.width, height: transition.height)
-                    .position(x: transition.midX, y: transition.midY)
-                    .opacity(tuning[.transition].opacity)
-            }
-        }
+        return ImmersiveArtworkMedia(video: immersiveVideo(item), frames: artworkReflectionFrames,
+            layout: .init(video: video, reflection: reflection, transition: transition, bottomFade: bottomFade,
+                tuning: tuning, presentsFrame: artworkLoader.hasPresentedFrame, reflectionEnabled: reflects,
+                reduceTransparency: reduceTransparency))
+        .id(artworkLoader.requestToken)
         .frame(width: size.width, height: size.height)
-        .mask {
-            if tuning[.bottomFade].enabled, !reduceTransparency {
-                ImmersiveArtworkBottomFade(frame: bottomFade, strength: tuning[.bottomFade].opacity)
-            } else { Color.white }
-        }
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 

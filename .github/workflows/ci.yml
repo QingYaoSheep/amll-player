@@ -48,7 +48,17 @@ jobs:
           [[ "$SDK_VERSION" == 27.* ]]
 
       - name: Install Metal toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
+        run: |
+          # Reuse an installed compiler; an unavailable asset catalog must not
+          # reject a runner whose selected Xcode already has a working toolchain.
+          if xcrun --sdk iphoneos metal --version; then exit 0; fi
+          for attempt in 1 2 3; do
+            if xcodebuild -downloadComponent MetalToolchain && xcrun --sdk iphoneos metal --version; then
+              exit 0
+            fi
+            if [[ "$attempt" != 3 ]]; then sleep 10; fi
+          done
+          exit 1
 
       - name: Generate project
         run: bash Scripts/generate-project.sh

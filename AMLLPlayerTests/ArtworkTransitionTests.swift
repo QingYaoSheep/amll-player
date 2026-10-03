@@ -10,6 +10,22 @@ final class ArtworkTransitionTests: XCTestCase {
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
+    func testReflectionToggleRemovesTheVideoFadeAndDisablingItRestoresTheFade() throws {
+        let surface = AnimatedArtwork.Surface(frame: CGRect(x: 0, y: 0, width: 128, height: 400))
+        defer { surface.stop() }
+        let url = URL(fileURLWithPath: "/missing-artwork-transition-fixture.mp4")
+        for reflection in [false, true, false] {
+            let fades = AMLLArtworkDisplayPolicy.fadesImmersiveBottom(reflectionEnabled: reflection, reduceTransparency: false)
+            surface.configure(url: url, active: false, gravity: .resizeAspect, fadesBottom: fades)
+            surface.layoutSubviews()
+            XCTAssertEqual(surface.layer.mask != nil, !reflection)
+            XCTAssertEqual((surface.layer as? AVPlayerLayer)?.videoGravity, .resizeAspect)
+        }
+        for reflection in [false, true] {
+            XCTAssertFalse(AMLLArtworkDisplayPolicy.fadesImmersiveBottom(reflectionEnabled: reflection, reduceTransparency: true))
+        }
+    }
+
     func testBackgroundDimmingLeavesTheArtworkAboveItUnchanged() throws {
         func render(dimming: Double) throws -> CIImage {
             let content = ZStack(alignment: .topLeading) {

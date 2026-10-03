@@ -345,7 +345,10 @@ struct AMLLLyricsPlayer: View {
                                onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
                                onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) },
                                onFirstFrame: { url, videoSize in artworkLoader.firstFramePresented(token: token, url: url, size: videoSize) },
-                               gravity: .resizeAspect, fadesBottom: !reduceTransparency)
+                               gravity: .resizeAspect,
+                               fadesBottom: AMLLArtworkDisplayPolicy.fadesImmersiveBottom(
+                                   reflectionEnabled: configuration.animatedArtwork?.reflection == true,
+                                   reduceTransparency: reduceTransparency))
             .id(token)
             .frame(width: frame.width, height: frame.height)
             .position(x: frame.midX, y: frame.midY)

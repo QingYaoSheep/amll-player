@@ -1,6 +1,10 @@
 import CoreGraphics
 
 enum AMLLArtworkDisplayPolicy {
+    static func fadesImmersiveBottom(reflectionEnabled: Bool, reduceTransparency: Bool) -> Bool {
+        !reflectionEnabled && !reduceTransparency
+    }
+
     static func usesStaticLyricsCover(isPhone: Bool, showsLyrics: Bool) -> Bool {
         isPhone && showsLyrics
     }

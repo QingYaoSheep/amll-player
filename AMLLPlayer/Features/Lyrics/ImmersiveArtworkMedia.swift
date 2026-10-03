@@ -61,6 +61,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             }
             // The blur is a live backdrop effect, never an independent video-frame copy.
             frames.attach(reflectionSurface)
+            frames.liveBlurSurface = transitionSurface
             transitionSurface.capture = { [weak self] in self?.captureBlurInput() }
         }
 
@@ -180,6 +181,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 mask: ImmersiveArtworkVisibility.mask(frame: profile.frame,
                     fade: nil, strength: 0,
                     opacity: tuning[.transition].opacity * layout.pageOpacity))
+            frames.blurLayoutDiagnostic = "模糊 Y=\(Int(profile.frame.minY))–\(Int(profile.frame.maxY)) pt；半径：\(tuning.validatedBlur) pt；显示：\(transitionSurface.isHidden ? "关闭" : "开启")；混合比例：\(tuning[.transition].opacity)"
             CATransaction.commit()
             let visible = bounds.intersection(layout.reflection)
             let covered = [.background, .dimming, .video].filter {
@@ -215,13 +217,22 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 return lhs.offset < rhs.offset
             }.map(\.element)
             guard let effectIndex = ordered.firstIndex(where: { $0 === transitionSurface }) else { return nil }
+            frames.blurInputs = []
+            frames.blurWaitingForVideoFrame = false
             for view in ordered.prefix(effectIndex) {
                 guard !view.isHidden, view.alpha > 0,
                       view.frame.intersects(region) else { continue }
                 if view === videoPlane {
-                    guard layout.presentsFrame, videoSurface.layer.opacity > 0, let buffer = frames.currentBuffer else { continue }
+                    guard layout.presentsFrame, videoSurface.layer.opacity > 0 else { continue }
+                    guard let buffer = frames.currentBuffer else {
+                        // A background-only clone over a displayed video is not
+                        // a backdrop blur. Wait for this resource's actual pixels.
+                        frames.blurWaitingForVideoFrame = true
+                        return nil
+                    }
                     let mask = (videoPlane.mask as? UIImageView)?.image?.cgImage
                     layers.append(.video(buffer, frame: videoPlane.frame, mask: mask, opacity: Double(videoPlane.alpha)))
+                    frames.blurInputs.append("完整视频")
                 } else {
                     let image = renderer.image { context in
                         context.cgContext.translateBy(x: view.frame.minX - region.minX, y: view.frame.minY - region.minY)
@@ -234,6 +245,8 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                         }
                     }
                     if let image = image.cgImage { layers.append(.bitmap(image)) }
+                    frames.blurInputs.append(view === reflectionPlane ? "封面倒影"
+                        : view === backgroundSurface ? "背景" : view === dimmingSurface ? "暗度" : "附加下层")
                 }
             }
             return ImmersiveBlurInput(region: region, profile: profile, scale: scale, planes: layers)
@@ -243,6 +256,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             videoSurface.stop()
             reflectionSurface.clear()
             transitionSurface.stop()
+            if frames.liveBlurSurface === transitionSurface { frames.liveBlurSurface = nil }
             if let host = backgroundHost {
                 host.willMove(toParent: nil)
                 host.view.removeFromSuperview()

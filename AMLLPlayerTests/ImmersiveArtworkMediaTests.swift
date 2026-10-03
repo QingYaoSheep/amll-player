@@ -7,6 +7,68 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testRealVideoAndBackgroundAreBothBlurredAtTheirJunction() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = CGRect(x: 0, y: 0, width: 200, height: 650)
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        surface.backgroundSurface.backgroundColor = .blue
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
+        tuning.blurRadius = 24
+        let video = AnimatedArtwork(url: url, active: false)
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let transition = AMLLImmersiveArtworkGeometry.transitionFrame(video: rect, viewportHeight: 650)
+        func configure() {
+            surface.configure(video: video, layout: .init(video: rect, reflection: .zero, transition: transition,
+                bottomFade: .zero, tuning: tuning, presentsFrame: true, reflectionEnabled: false, reduceTransparency: false))
+            surface.layoutIfNeeded()
+        }
+        configure()
+        try await waitUntil { frames.hasFrame && surface.transitionSurface.presentedFrames > 3 }
+        let image = try XCTUnwrap(surface.transitionSurface.layer.contents as? CGImage)
+        let filtered = CIImage(cgImage: image)
+        let context = CIContext()
+        func pixel(x: CGFloat, y: CGFloat) -> [Int] {
+            let scale = surface.transitionSurface.layer.contentsScale
+            var bytes = [UInt8](repeating: 0, count: 4)
+            bytes.withUnsafeMutableBytes { storage in
+                context.render(filtered, toBitmap: storage.baseAddress!, rowBytes: 4,
+                    bounds: CGRect(x: x * scale, y: CGFloat(image.height) - (y - transition.minY) * scale - 1,
+                        width: 1, height: 1), format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+            }
+            return bytes.map(Int.init)
+        }
+        let videoPixel = pixel(x: 12, y: 360)
+        XCTAssertGreaterThan(videoPixel[0], 60, "The blurred image must contain the actual red video stripe, not only blue background")
+        let junction = pixel(x: 12, y: 404)
+        XCTAssertGreaterThan(junction[0], 10, "Video color must soften into the background across the junction")
+        XCTAssertGreaterThan(junction[2], 10, "The junction must also include the blue background")
+        // Reproduce an output-generation gap while the actual AVPlayerLayer
+        // still displays its frame. A partial background clone is not a blur.
+        _ = frames.begin()
+        tuning.blurRadius = 25
+        configure()
+        let before = surface.transitionSurface.presentedFrames
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(frames.hasFrame)
+        XCTAssertEqual(surface.transitionSurface.presentedFrames, before)
+        XCTAssertNil(surface.transitionSurface.layer.contents,
+            "Never publish a background-only image over a visible video whose pixels are missing")
+    }
+
     func testUpwardFadeReducesBlurRadiusWithoutFadingTheLayer() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

@@ -81,7 +81,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var outputNotificationRequested = false
         private var playerVideoOutput: AVPlayerVideoOutput?
         private var lastPlayerOutputTime: CMTime?
-        private var outputStarvationStart: CFTimeInterval?
+        private var frameOutputWatchdog = ArtworkFrameOutputWatchdog()
         private var displayLink: CADisplayLink?
         private var watchdog = ArtworkPlaybackWatchdog()
         private var lastTick: CFTimeInterval?
@@ -157,6 +157,7 @@ struct AnimatedArtwork: UIViewRepresentable {
 
         @objc private func resetWatchdogTimestamp() {
             lastTick = nil
+            frameOutputWatchdog.suspend()
         }
 
         func configure(url: URL, active: Bool, allowCellular: Bool = false,
@@ -319,7 +320,7 @@ struct AnimatedArtwork: UIViewRepresentable {
             }
             output = nil; outputItem = nil; outputTarget = nil; outputWakeDeadline = nil
             player.videoOutput = nil; playerVideoOutput = nil; lastPlayerOutputTime = nil
-            outputStarvationStart = nil
+            frameOutputWatchdog = ArtworkFrameOutputWatchdog()
             outputNotificationRequested = false
             reflectionFrames?.outputAttached = false
             reflectionFrames?.clear(source: reflectionToken)
@@ -384,6 +385,12 @@ struct AnimatedArtwork: UIViewRepresentable {
             reflectionFrames.mediaRate = player.rate
             reflectionFrames.videoDisplayed = playerLayer.isReadyForDisplay
             reflectionFrames.resourceKind = url?.isFileURL == true ? (url?.pathExtension ?? "本地") : "在线"
+            let now = CACurrentMediaTime()
+            let eligible = window != nil && UIApplication.shared.applicationState == .active
+                && playerLayer.isReadyForDisplay && (playbackActive || !reflectionFrames.hasFrame)
+            let starved = frameOutputWatchdog.sample(now: now, eligible: eligible)
+            if playerVideoOutput == nil, starved { usePlayerLevelFrameOutput() }
+            reflectionFrames.outputStarvationSeconds = frameOutputWatchdog.waiting
             if let playerVideoOutput {
                 for timestamp in [hostTime, CACurrentMediaTime()].compactMap({ $0 }) {
                     let time = CMTime(seconds: timestamp, preferredTimescale: 1_000_000_000)
@@ -392,7 +399,10 @@ struct AnimatedArtwork: UIViewRepresentable {
                     for tagged in sample.taggedBufferGroup {
                         if case let .pixelBuffer(buffer) = tagged.buffer {
                             lastPlayerOutputTime = sample.presentationTime
-                            reflectionFrames.display(buffer, source: reflectionToken)
+                            if reflectionFrames.display(buffer, source: reflectionToken) {
+                                frameOutputWatchdog.receivedFrame(now: now)
+                                reflectionFrames.outputStarvationSeconds = 0
+                            }
                             return
                         }
                     }
@@ -405,19 +415,13 @@ struct AnimatedArtwork: UIViewRepresentable {
             for time in [predicted, player.currentTime()].compactMap({ $0 }) where time.isNumeric {
                 if output.hasNewPixelBuffer(forItemTime: time),
                    let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
-                    reflectionFrames.display(buffer, source: reflectionToken)
-                    outputStarvationStart = nil
+                    if reflectionFrames.display(buffer, source: reflectionToken) {
+                        frameOutputWatchdog.receivedFrame(now: now)
+                        reflectionFrames.outputStarvationSeconds = 0
+                    }
                     return
                 }
             }
-            if playerLayer.isReadyForDisplay, item.status == .readyToPlay,
-               player.timeControlStatus != .waitingToPlayAtSpecifiedRate {
-                let now = CACurrentMediaTime()
-                if outputStarvationStart == nil { outputStarvationStart = now }
-                if now - (outputStarvationStart ?? now) >= 1 {
-                    usePlayerLevelFrameOutput()
-                }
-            } else { outputStarvationStart = nil }
         }
 
         /// HLS / decoder changes can leave an item output attached but silent.
@@ -438,6 +442,8 @@ struct AnimatedArtwork: UIViewRepresentable {
             player.videoOutput = next
             lastPlayerOutputTime = nil
             reflectionFrames?.outputKind = "播放器级（原生像素格式）"
+            reflectionFrames?.frameOutputSwitches += 1
+            reflectionFrames?.outputAttached = true
         }
 
         private func requestOutputNotification() {

@@ -4,6 +4,27 @@ enum ArtworkPlaybackState: String, Equatable, Sendable {
     case preparing, displayed, buffering, paused, failed
 }
 
+/// Output starvation follows the displayed resource, not an individual loop
+/// item's readiness or transient network buffering. Only decoded pixels reset it.
+struct ArtworkFrameOutputWatchdog {
+    private(set) var waiting: TimeInterval = 0
+    private var lastSample: TimeInterval?
+
+    mutating func sample(now: TimeInterval, eligible: Bool) -> Bool {
+        guard eligible, now.isFinite else { suspend(); return false }
+        if let lastSample { waiting += max(0, now - lastSample) }
+        lastSample = now
+        return waiting >= 1
+    }
+
+    mutating func receivedFrame(now: TimeInterval) {
+        waiting = 0
+        lastSample = now.isFinite ? now : nil
+    }
+
+    mutating func suspend() { lastSample = nil }
+}
+
 /// Counts eligible foreground time, independently of the download deadline.
 struct ArtworkPlaybackWatchdog {
     enum Failure: Equatable { case firstFrameTimeout, stalledPlayback }

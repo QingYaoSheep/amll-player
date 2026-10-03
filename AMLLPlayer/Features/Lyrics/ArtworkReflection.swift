@@ -15,12 +15,19 @@ import SwiftUI
     var mediaRate: Float = 0
     var videoDisplayed = false
     var resourceKind = ""
+    var outputStarvationSeconds = 0.0
+    var frameOutputSwitches = 0
+    private(set) var rejectedFrames = 0
+    weak var liveBlurSurface: ImmersiveLiveBlurSurface?
+    var blurInputs: [String] = []
+    var blurWaitingForVideoFrame = false
+    var blurLayoutDiagnostic = ""
     var layoutDiagnostic = "尚未安装沉浸画布"
     var hasFrame: Bool { lastBuffer != nil }
     /// Immutable current frame for the visible-plane blur compositor.
     var currentBuffer: CVPixelBuffer? { lastBuffer }
     var diagnosticText: String {
-        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n\(layoutDiagnostic)"
+        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n无帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)；过期帧丢弃：\(rejectedFrames)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n模糊提交：\(liveBlurSurface?.presentedFrames ?? 0)；模糊输入：\(blurInputs.isEmpty ? "无" : blurInputs.joined(separator: "、"))；等待视频像素：\(blurWaitingForVideoFrame ? "是" : "否")\n\(blurLayoutDiagnostic)\n\(layoutDiagnostic)"
     }
 
     func attach(_ view: ArtworkReflection.Surface) {
@@ -49,17 +56,20 @@ import SwiftUI
         samplingAttempts = 0
         outputKind = "item 级（BGRA）"
         mediaTime = 0; mediaRate = 0; videoDisplayed = false; resourceKind = ""
+        outputStarvationSeconds = 0; frameOutputSwitches = 0; rejectedFrames = 0
+        blurInputs = []; blurWaitingForVideoFrame = false
         surface?.clear()
         transitionSurface?.clear()
         return token
     }
 
-    func display(_ buffer: CVPixelBuffer, source token: UUID) {
-        guard token == source else { return }
+    @discardableResult func display(_ buffer: CVPixelBuffer, source token: UUID) -> Bool {
+        guard token == source else { rejectedFrames += 1; return false }
         receivedFrames += 1
         lastBuffer = buffer
         surface?.display(buffer)
         transitionSurface?.display(buffer)
+        return true
     }
 
     func clear(source token: UUID?) {

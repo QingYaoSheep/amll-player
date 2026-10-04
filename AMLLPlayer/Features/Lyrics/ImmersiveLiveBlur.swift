@@ -106,6 +106,7 @@ final class ImmersiveLiveBlurSurface: UIView {
     var capture: (() -> ImmersiveBlurInput?)?
     private(set) var amount = 0.0
     private(set) var presentedFrames = 0
+    private(set) var renderedFrames = 0
     private var generation = UUID()
     private var inFlight = 0
     private var hasOutput = false
@@ -122,6 +123,7 @@ final class ImmersiveLiveBlurSurface: UIView {
     private var presentationTimes: [CFTimeInterval] = []
     private(set) var maximumInFlight = 0
     private(set) var gpuPresentedFrames = 0
+    private(set) var gpuCompletedFrames = 0
     var hasRenderedOutput: Bool { hasOutput }
     var preferredRefreshRate: Float? { displayLink?.preferredFrameRateRange.preferred }
     var diagnosticText: String {
@@ -131,8 +133,13 @@ final class ImmersiveLiveBlurSurface: UIView {
         }
         let duration = (presentationTimes.last ?? 0) - (presentationTimes.first ?? 0)
         let fps = duration > 0 ? Double(presentationTimes.count - 1) / duration : 0
-        return String(format: "模糊输出：%@；FPS：%.1f；采样 P95：%.2f ms；GPU P95：%.2f ms；帧龄 P95：%.2f ms；在途：%d/2",
-            renderer.device == nil ? "图像回退" : "Metal 直出", fps, p95(captureTimes), p95(gpuTimes), p95(inputAges), inFlight)
+        #if targetEnvironment(simulator)
+        let rateLabel = "模拟器完成率"
+        #else
+        let rateLabel = renderer.device == nil ? "图像提交率" : "FPS"
+        #endif
+        return String(format: "模糊输出：%@；%@：%.1f；采样 P95：%.2f ms；GPU P95：%.2f ms；帧龄 P95：%.2f ms；在途：%d/2",
+            renderer.device == nil ? "图像回退" : "Metal 直出", rateLabel, fps, p95(captureTimes), p95(gpuTimes), p95(inputAges), inFlight)
     }
 
     private final class OutputView: UIView {
@@ -364,6 +371,14 @@ final class ImmersiveLiveBlurSurface: UIView {
                             submitted.removeValue(forKey: id)
                             guard token == generation, renderingAllowed, window != nil, !isHidden, success else { return }
                             hasOutput = true
+                            renderedFrames += 1
+                            gpuCompletedFrames += 1
+                            #if targetEnvironment(simulator)
+                            // The simulator SDK excludes drawable presentation
+                            // callbacks. Count completed renders separately;
+                            // actual screen pixels are verified by the tests.
+                            recordTiming(timestamp: timestamp, outputAt: CACurrentMediaTime())
+                            #endif
                             CATransaction.begin(); CATransaction.setDisableActions(true)
                             outputView.layer.opacity = 1
                             CATransaction.commit()
@@ -372,15 +387,18 @@ final class ImmersiveLiveBlurSurface: UIView {
                             if gpuTimes.count > 120 { gpuTimes.removeFirst() }
                         }
                     }
+                    #if !targetEnvironment(simulator)
                     submission.drawable.addPresentedHandler { [weak self] drawable in
                         let presentedAt = drawable.presentedTime
                         Task { @MainActor [weak self] in
                             guard let self, token == generation, renderingAllowed,
                                   window != nil, !isHidden, presentedAt > 0 else { return }
-                            recordPresentation(timestamp: timestamp, presentedAt: presentedAt)
+                            recordTiming(timestamp: timestamp, outputAt: presentedAt)
+                            presentedFrames += 1
                             gpuPresentedFrames += 1
                         }
                     }
+                    #endif
                     submission.command.present(submission.drawable)
                     submission.command.commit()
                 }
@@ -396,7 +414,8 @@ final class ImmersiveLiveBlurSurface: UIView {
                 layer.contentsScale = input.scale
                 if image != nil {
                     hasOutput = true
-                    presentedFrames += 1
+                    renderedFrames += 1
+                    recordTiming(timestamp: timestamp, outputAt: CACurrentMediaTime())
                     if export { capturedOutput = image }
                 }
                 CATransaction.commit()
@@ -404,12 +423,11 @@ final class ImmersiveLiveBlurSurface: UIView {
         }
     }
 
-    private func recordPresentation(timestamp: CFTimeInterval, presentedAt: CFTimeInterval) {
+    private func recordTiming(timestamp: CFTimeInterval, outputAt: CFTimeInterval) {
         hasOutput = true
-        presentedFrames += 1
-        inputAges.append(max(0, presentedAt - timestamp) * 1000)
+        inputAges.append(max(0, outputAt - timestamp) * 1000)
         if inputAges.count > 120 { inputAges.removeFirst() }
-        presentationTimes.append(presentedAt)
+        presentationTimes.append(outputAt)
         if presentationTimes.count > 120 { presentationTimes.removeFirst() }
     }
 

@@ -35,7 +35,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         let before = try backdropPixel(window, at: CGPoint(x: 12, y: 181))
         tuning[.transition].enabled = true
         apply()
-        try await waitUntil { surface.transitionSurface.presentedFrames > 3 }
+        try await waitUntil { surface.transitionSurface.renderedFrames > 3 }
         let after = try backdropPixel(window, at: CGPoint(x: 12, y: 181))
         for channel in 0 ..< 3 {
             XCTAssertEqual(Double(after[channel]), Double(before[channel]), accuracy: 3,
@@ -70,7 +70,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         surface.configure(amount: 1 / 80.0, mask: nil)
         surface.layoutIfNeeded()
         surface.requestOutputSnapshot()
-        try await waitUntil { surface.capturedOutput != nil && surface.gpuPresentedFrames > 3 }
+        try await waitUntil { surface.capturedOutput != nil && surface.gpuCompletedFrames > 3 }
         let image = try XCTUnwrap(surface.capturedOutput)
         let exported = CIImage(cgImage: image)
         let context = CIContext()
@@ -94,10 +94,10 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertTrue(surface.hasRenderedOutput)
         XCTAssertNil(surface.layer.contents, "Production display must avoid a per-frame CPU image roundtrip")
         XCTAssertTrue(surface.diagnosticText.contains("Metal 直出"))
-        let completed = surface.presentedFrames
+        let completed = surface.renderedFrames
         surface.stop()
         try await Task.sleep(for: .milliseconds(150))
-        XCTAssertEqual(surface.presentedFrames, completed)
+        XCTAssertEqual(surface.renderedFrames, completed)
         XCTAssertFalse(surface.hasRenderedOutput)
     }
 
@@ -458,7 +458,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             reflection: layout.reflection, transition: layout.transition, bottomFade: .zero,
             tuning: tuning, presentsFrame: true, reflectionEnabled: true, reduceTransparency: false))
         current.layoutIfNeeded()
-        try await waitUntil { current.transitionSurface.presentedFrames > 0 && frames.blurInputs.contains("完整视频") }
+        try await waitUntil { current.transitionSurface.renderedFrames > 0 && frames.blurInputs.contains("完整视频") }
         XCTAssertEqual(frames.sessionDiagnostic, session, "Changing effect settings must preserve the frame session")
         XCTAssertFalse(frames.blurWaitingForVideoFrame)
 
@@ -506,7 +506,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             surface.layoutIfNeeded()
         }
         configure()
-        try await waitUntil { frames.hasFrame && surface.transitionSurface.presentedFrames > 3 }
+        try await waitUntil { frames.hasFrame && surface.transitionSurface.renderedFrames > 3 }
         surface.transitionSurface.requestOutputSnapshot()
         try await waitUntil { surface.transitionSurface.capturedOutput != nil }
         let image = try XCTUnwrap(surface.transitionSurface.capturedOutput)
@@ -535,10 +535,10 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         // Reproduce an output-generation gap while the actual AVPlayerLayer
         // still displays its frame. A partial background clone is not a blur.
         _ = frames.begin()
-        let before = surface.transitionSurface.presentedFrames
+        let before = surface.transitionSurface.renderedFrames
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertFalse(frames.hasFrame)
-        XCTAssertEqual(surface.transitionSurface.presentedFrames, before)
+        XCTAssertEqual(surface.transitionSurface.renderedFrames, before)
         XCTAssertNil(surface.transitionSurface.layer.contents,
             "Never publish a background-only image over a visible video whose pixels are missing")
         XCTAssertFalse(surface.transitionSurface.hasRenderedOutput)
@@ -577,7 +577,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         apply()
         XCTAssertEqual(surface.transitionSurface.alpha, 1)
         XCTAssertNil(surface.transitionSurface.mask, "The radius gradient must not also fade the image's opacity")
-        try await waitUntil { surface.transitionSurface.presentedFrames > 3 }
+        try await waitUntil { surface.transitionSurface.renderedFrames > 3 }
         let upper = try backdropVariance(window, y: 190)
         let middle = try backdropVariance(window, y: 290)
         XCTAssertGreaterThan(upper, 1000)
@@ -634,7 +634,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         }
         lower.layer.zPosition = surface.transitionSurface.layer.zPosition - 0.5
         surface.insertSubview(lower, belowSubview: surface.transitionSurface)
-        try await waitUntil { surface.transitionSurface.presentedFrames > 3 }
+        try await waitUntil { surface.transitionSurface.renderedFrames > 3 }
         let blurred = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
         XCTAssertGreaterThan(blurred[0], 60)
         XCTAssertLessThan(blurred[0], 200)
@@ -650,20 +650,20 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         }
         above.layer.zPosition = surface.transitionSurface.layer.zPosition + 0.5
         surface.addSubview(above)
-        let before = surface.transitionSurface.presentedFrames
-        try await waitUntil { surface.transitionSurface.presentedFrames > before + 3 }
+        let before = surface.transitionSurface.renderedFrames
+        try await waitUntil { surface.transitionSurface.renderedFrames > before + 3 }
         XCTAssertGreaterThan(try backdropVariance(window, y: 460), 1000,
             "Content above the blur must stay sharp")
         above.layer.zPosition = surface.transitionSurface.layer.zPosition - 0.25
-        let moved = surface.transitionSurface.presentedFrames
-        try await waitUntil { surface.transitionSurface.presentedFrames > moved + 3 }
+        let moved = surface.transitionSurface.renderedFrames
+        try await waitUntil { surface.transitionSurface.renderedFrames > moved + 3 }
         XCTAssertLessThan(try backdropVariance(window, y: 460), 500,
             "Reordering real planes must affect the next live sample without rebuilding the player")
         above.isHidden = true
         lower.subviews.forEach { $0.removeFromSuperview() }
         lower.backgroundColor = .red
-        let changed = surface.transitionSurface.presentedFrames
-        try await waitUntil { surface.transitionSurface.presentedFrames > changed + 3 }
+        let changed = surface.transitionSurface.renderedFrames
+        try await waitUntil { surface.transitionSurface.renderedFrames > changed + 3 }
         let red = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
         XCTAssertGreaterThan(red[0], 240)
         XCTAssertLessThan(red[2], 10, "Live updates cannot retain the hidden or previous plane's image")
@@ -752,7 +752,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             layout: .init(video: .zero, reflection: .zero, transition: CGRect(x: 0, y: 100, width: 128, height: 500),
                 bottomFade: .zero, tuning: tuning, presentsFrame: false, reflectionEnabled: false, reduceTransparency: false))
         metal.draw()
-        try await waitUntil { surface.transitionSurface.presentedFrames > 3 }
+        try await waitUntil { surface.transitionSurface.renderedFrames > 3 }
         let raw = try backdropPixel(window, at: CGPoint(x: 160, y: 460))
         let blurred = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
         XCTAssertGreaterThan(raw[1], raw[0] + 30, "The fixture must present an actual green Metal drawable")
@@ -1039,7 +1039,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         let blue = try backdropPixel(window, at: CGPoint(x: 64, y: 460))
         XCTAssertGreaterThan(blue[2], blue[0] + 30, "Live blur must follow the currently visible background")
         XCTAssertTrue(playerLayer.player === player)
-        XCTAssertGreaterThan(surface.transitionSurface.presentedFrames, 0, "Pure blur must render the current visible composite")
+        XCTAssertGreaterThan(surface.transitionSurface.renderedFrames, 0, "Pure blur must render the current visible composite")
 
         // Pixel colors alone could pass if the effect were invisible. Verify
         // visible backdrop detail is actually blurred by the production view.

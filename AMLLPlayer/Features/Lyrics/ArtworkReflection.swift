@@ -192,6 +192,16 @@ enum ArtworkReflectionImage {
         (0, 1), (0.12, 0.78), (0.22, 0.58), (0.50, 0.34), (0.72, 0.15), (0.88, 0.045), (1, 0),
     ]
 
+    static func source(_ buffer: CVPixelBuffer) -> CIImage {
+        // Item-output BGRA is display-encoded RGB. Interpreting its video
+        // transfer metadata again changes the SDR clone at zero blur radius.
+        // Native YUV output still needs its attached matrix/transfer metadata.
+        if CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA {
+            return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
+        }
+        return CIImage(cvPixelBuffer: buffer)
+    }
+
     static func image(source: CIImage, outputSize: CGSize) -> CIImage {
         let output = CGRect(origin: .zero, size: outputSize)
         let clear = CIImage(color: .clear).cropped(to: output)
@@ -281,7 +291,7 @@ struct ArtworkReflection: UIViewRepresentable {
             let context = CIContext(options: [.cacheIntermediates: false])
 
             func render(_ frame: Frame) -> CGImage? {
-                let image = ArtworkReflectionImage.image(source: CIImage(cvPixelBuffer: frame.buffer), outputSize: frame.size)
+                let image = ArtworkReflectionImage.image(source: ArtworkReflectionImage.source(frame.buffer), outputSize: frame.size)
                 return context.createCGImage(image, from: CGRect(origin: .zero, size: frame.size))
             }
         }
@@ -463,7 +473,7 @@ struct ArtworkVideoTransition: UIViewRepresentable {
             let context = CIContext(options: [.cacheIntermediates: false])
 
             func render(_ frame: Frame) -> CGImage? {
-                guard let image = ArtworkVideoTransitionImage.image(source: CIImage(cvPixelBuffer: frame.buffer),
+                guard let image = ArtworkVideoTransitionImage.image(source: ArtworkReflectionImage.source(frame.buffer),
                                                                     videoSize: frame.videoSize, surfaceSize: frame.surfaceSize, outputSize: frame.size,
                                                                     blurRadius: CGFloat(frame.composition?.blurRadius ?? 32), composition: frame.composition)
                 else { return nil }

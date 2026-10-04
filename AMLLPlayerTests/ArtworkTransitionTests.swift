@@ -43,7 +43,8 @@ final class ArtworkTransitionTests: XCTestCase {
                 XCTAssertEqual(Double(right - left + 1), Double(expected), accuracy: 1)
                 XCTAssertEqual(Double(top - bottom + 1), Double(expected), accuracy: 1,
                     "Reflection height must crop the same-scale mirror, not stretch a small source strip")
-                let distanceFromTop = height - 1 - top
+                // CIContext's bitmap rows are stored from the visible top.
+                let distanceFromTop = bottom
                 XCTAssertEqual(Double(distanceFromTop), Double(4 * 100 / sourceSize.width), accuracy: 1,
                     "The source bottom must meet the reflection top at every container height")
                 let naturalHeight = sourceSize.height * 100 / sourceSize.width

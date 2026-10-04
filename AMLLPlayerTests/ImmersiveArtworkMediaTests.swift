@@ -37,9 +37,11 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         apply()
         try await waitUntil { surface.transitionSurface.renderedFrames > 3 }
         let after = try backdropPixel(window, at: CGPoint(x: 12, y: 181))
+        let buffer = try XCTUnwrap(frames.currentBuffer)
+        let sourceDiagnostic = "format=\(CVPixelBufferGetPixelFormatType(buffer)), imported=\(String(describing: ArtworkReflectionImage.source(buffer).colorSpace)), default=\(String(describing: CIImage(cvPixelBuffer: buffer).colorSpace))"
         for channel in 0 ..< 3 {
             XCTAssertEqual(Double(after[channel]), Double(before[channel]), accuracy: 3,
-                "The zero-strength upper edge must preserve the real lower-plane color, without an opaque seam")
+                "The zero-strength upper edge must preserve the real lower-plane color, without an opaque seam; \(sourceDiagnostic)")
         }
         let preferredRate = try XCTUnwrap(surface.transitionSurface.preferredRefreshRate)
         XCTAssertGreaterThanOrEqual(preferredRate, Float(60),

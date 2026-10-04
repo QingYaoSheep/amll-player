@@ -79,7 +79,9 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         let reflection = CGRect(x: 0, y: 400, width: 128, height: 220)
         let tail = AMLLImmersiveArtworkGeometry.transitionFrame(video: video, viewportHeight: 650)
         let raw = ArtworkReflectionImage.image(source: source, outputSize: reflection.size)
-        let expected = pixel(source, x: 64, y: 48)
+        // At 1:1 width scale, 110px below the source bottom remains 110px
+        // into the mirror; it is no longer compressed into a 24% strip.
+        let expected = pixel(source, x: 64, y: 110)
         let actual = pixel(raw, x: 64, y: 110)
         for channel in 0 ..< 3 { XCTAssertLessThanOrEqual(abs(expected[channel] - actual[channel]), 3) }
         func composite(reflects: Bool) throws -> CIImage {

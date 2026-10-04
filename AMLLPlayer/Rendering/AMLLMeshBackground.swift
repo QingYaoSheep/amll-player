@@ -172,6 +172,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
             loadTask?.cancel(); loadTask = nil
         }
 
+        func suspendClock() { lastFrame = nil }
+
         func setRunning(_ value: Bool, staticMode: Bool) {
             self.staticMode = staticMode
             guard running != value else { return }

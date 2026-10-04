@@ -10,7 +10,7 @@ final class AMLLBackgroundFrameSource {
     private let meshView: MTKView
     private let pixiView: MTKView
     private let flowing: AMLLFlowingBackgroundRenderer?
-    private var flowingState = AMLLFlowingBackgroundState()
+    private(set) var flowingState = AMLLFlowingBackgroundState()
     private let worker = FlowingImageWorker()
     private var flowingURL: URL?
     private var flowTask: Task<Void, Never>?
@@ -32,8 +32,9 @@ final class AMLLBackgroundFrameSource {
     }
 
     func configure(_ value: AMLLBackground, reduceMotion: Bool, reduceTransparency: Bool) {
-        if background?.active != value.active || self.reduceMotion != reduceMotion || self.reduceTransparency != reduceTransparency {
-            lastTime = nil
+        if background?.active != value.active || background?.mode != value.mode
+            || self.reduceMotion != reduceMotion || self.reduceTransparency != reduceTransparency {
+            suspendClock()
         }
         background = value
         self.reduceMotion = reduceMotion
@@ -105,5 +106,10 @@ final class AMLLBackgroundFrameSource {
         revision = UUID(); flowTask?.cancel(); flowTask = nil
         mesh.stop(); pixi.stop(); flowing?.clear()
         lastTime = nil
+    }
+
+    func suspendClock() {
+        lastTime = nil
+        mesh.suspendClock(); pixi.suspendClock()
     }
 }

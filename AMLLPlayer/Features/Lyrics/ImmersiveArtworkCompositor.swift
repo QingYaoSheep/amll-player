@@ -223,7 +223,10 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
                 let link = CADisplayLink(target: target, selector: #selector(Target.tick(_:)))
                 link.preferredFrameRateRange = .init(minimum: 30, maximum: 60, preferred: 60)
                 link.add(to: .main, forMode: .common); displayLink = link
-            } else if !active { displayLink?.invalidate(); displayLink = nil }
+            } else if !active {
+                displayLink?.invalidate(); displayLink = nil
+                backgrounds?.suspendClock()
+            }
         }
 
         func draw(at timestamp: CFTimeInterval, targetTime: CFTimeInterval) {

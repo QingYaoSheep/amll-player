@@ -105,6 +105,8 @@ struct AMLLPixiBackground: UIViewRepresentable {
             }
         }
 
+        func suspendClock() { lastFrame = nil }
+
         func setArtwork(_ value: URL?) {
             guard value != url else { return }
             url = value

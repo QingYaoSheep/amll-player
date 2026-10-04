@@ -126,6 +126,38 @@ final class ImmersiveRewriteTests: XCTestCase {
         XCTAssertEqual(surface.metal.isPaused, true, "Only the compositor display link schedules frames")
     }
 
+    func testSharedBackgroundExcludesOtherModesAndSuspendedTime() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let queue = try XCTUnwrap(device.makeCommandQueue())
+        let source = AMLLBackgroundFrameSource(device: device, queue: queue)
+        defer { source.stop() }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 16, height: 16, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead, .shaderWrite]
+        let target = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+        var background = AMLLBackground(artworkURL: nil, active: true, blur: 40, mode: .flowing)
+        func render(_ time: Double) throws {
+            let command = try XCTUnwrap(queue.makeCommandBuffer())
+            XCTAssertNotNil(source.image(command: command, target: target, viewport: .init(width: 16, height: 16), at: time))
+            command.commit(); command.waitUntilCompleted()
+            XCTAssertEqual(command.status, .completed)
+        }
+        source.configure(background, reduceMotion: false, reduceTransparency: false)
+        try render(0); try render(1)
+        let angle = source.flowingState.angle
+        XCTAssertGreaterThan(angle, 0)
+        background.mode = .solid
+        source.configure(background, reduceMotion: false, reduceTransparency: false)
+        try render(30)
+        background.mode = .flowing
+        source.configure(background, reduceMotion: false, reduceTransparency: false)
+        try render(60)
+        XCTAssertEqual(source.flowingState.angle, angle, accuracy: 0.000001)
+        source.suspendClock(); try render(120)
+        XCTAssertEqual(source.flowingState.angle, angle, accuracy: 0.000001)
+        try render(121)
+        XCTAssertEqual(source.flowingState.angle, angle * 2, accuracy: 0.000001)
+    }
+
     private func makeLayout(_ style: ImmersiveArtworkStyle, dimming: Double = 0, reflects: Bool = true) -> ImmersiveArtworkComposition {
         .init(viewport: .init(width: 128, height: 400), video: .init(x: 0, y: 0, width: 128, height: 240),
             reflection: .init(x: 0, y: 240, width: 128, height: 160),

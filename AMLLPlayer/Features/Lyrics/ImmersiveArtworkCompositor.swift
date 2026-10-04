@@ -219,7 +219,7 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
         private(set) var presentedFrames = 0
         private(set) var coalescedFrames = 0
         private(set) var repeatedDrawableCount = 0
-        private var previousDrawableID: UInt64?
+        private var previousDrawableID: Int?
         private var tickTime: (CFTimeInterval, CFTimeInterval)?
         private var intervals: [Double] = []
         private var gpuTimes: [Double] = []
@@ -327,7 +327,7 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
             var submitted = false
             defer { if !submitted { pool.release(slot) } }
             guard let drawable = metal.currentDrawable, let command = queue.makeCommandBuffer() else { return }
-            if previousDrawableID == drawable.drawableID { repeatedDrawableCount += 1 }
+            if let previousDrawableID, previousDrawableID == drawable.drawableID { repeatedDrawableCount += 1 }
             previousDrawableID = drawable.drawableID
             let width = drawable.texture.width, height = drawable.texture.height
             if targets[slot]?.width != width || targets[slot]?.height != height {

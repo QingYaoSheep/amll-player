@@ -415,6 +415,11 @@ struct AnimatedArtwork: UIViewRepresentable {
             let starved = frameOutputWatchdog.sample(now: now, eligible: eligible)
             if playerVideoOutput == nil, starved { usePlayerLevelFrameOutput() }
             reflectionFrames.outputStarvationSeconds = frameOutputWatchdog.waiting
+            if externallyDriven, frameOutputWatchdog.timedOut {
+                fail(NSError(domain: "AMLL.ArtworkFrameOutput", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "动态封面视频帧等待超时"]))
+                return
+            }
             if let playerVideoOutput {
                 for timestamp in [hostTime, CACurrentMediaTime()].compactMap({ $0 }) {
                     let time = CMTime(seconds: timestamp, preferredTimescale: 1_000_000_000)

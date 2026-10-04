@@ -242,7 +242,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 }
             }
             if intermediate?.width != target.width || intermediate?.height != target.height {
-                let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: view.colorPixelFormat,
+                let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: target.pixelFormat,
                                                                           width: max(1, target.width), height: max(1, target.height), mipmapped: false)
                 descriptor.usage = [.renderTarget, .shaderRead]
                 descriptor.storageMode = .private

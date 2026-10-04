@@ -9,6 +9,7 @@ enum ArtworkPlaybackState: String, Equatable, Sendable {
 struct ArtworkFrameOutputWatchdog {
     private(set) var waiting: TimeInterval = 0
     private var lastSample: TimeInterval?
+    var timedOut: Bool { waiting >= 30 }
 
     mutating func sample(now: TimeInterval, eligible: Bool) -> Bool {
         guard eligible, now.isFinite else { suspend(); return false }

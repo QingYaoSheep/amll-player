@@ -155,7 +155,7 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
         private var reportedInsets: UIEdgeInsets?
         private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
-        private final class Target: NSObject {
+        @MainActor private final class Target: NSObject {
             weak var view: Surface?
             @objc func tick(_ link: CADisplayLink) { view?.draw(at: link.timestamp, targetTime: link.targetTimestamp) }
         }

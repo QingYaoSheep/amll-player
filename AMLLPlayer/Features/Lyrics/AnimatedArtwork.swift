@@ -411,7 +411,7 @@ struct AnimatedArtwork: UIViewRepresentable {
                 // Readiness may drop between HLS loop items. Once this resource
                 // presented a frame, keep the foreground starvation clock alive.
                 && (reportedFirstFrame || playerLayer.isReadyForDisplay || (externallyDriven && item.status == .readyToPlay))
-                && (playbackActive || !reflectionFrames.hasFrame)
+                && (playbackActive || (!externallyDriven && !reflectionFrames.hasFrame))
             let starved = frameOutputWatchdog.sample(now: now, eligible: eligible)
             if playerVideoOutput == nil, starved { usePlayerLevelFrameOutput() }
             reflectionFrames.outputStarvationSeconds = frameOutputWatchdog.waiting

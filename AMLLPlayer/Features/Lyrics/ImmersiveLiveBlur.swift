@@ -209,10 +209,10 @@ final class ImmersiveLiveBlurSurface: UIView {
             let image = ImmersiveBlurImage.image(input, radius: radius)
             let width = CGFloat(drawable.texture.width), height = CGFloat(drawable.texture.height)
             guard abs(image.extent.width - width) <= 1, abs(image.extent.height - height) <= 1 else { return nil }
-            // Core Image uses bottom-left image coordinates; a CA drawable
-            // stores its first row at the visible top.
+            // Normalize the cropped extent only. Core Image's Metal destination
+            // already handles its texture orientation; another flip inverts
+            // both the displayed video and the spatial blur-radius ramp.
             let mapped = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
-                .transformed(by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: height))
             context.render(mapped, to: drawable.texture, commandBuffer: command,
                 bounds: CGRect(x: 0, y: 0, width: width, height: height), colorSpace: colorSpace)
             var readback: Readback?

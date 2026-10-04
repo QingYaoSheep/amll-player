@@ -7,6 +7,54 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testUnattachedConfigurationCannotRetireVisibleImmersivePlayer() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let frames = ArtworkReflectionFrames()
+        let visible = ImmersiveArtworkMedia.Surface(frames: frames)
+        visible.frame = window.bounds
+        window.rootViewController?.view.addSubview(visible)
+        let preflight = ImmersiveArtworkMedia.Surface(frames: frames)
+        defer {
+            preflight.stop(); visible.stop(); visible.removeFromSuperview()
+            window.isHidden = true; previousKeyWindow?.makeKey()
+        }
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.transition].enabled = false
+        tuning[.bottomFade].enabled = false
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let layout = ImmersiveArtworkMedia.Layout(video: rect,
+            reflection: ArtworkReflectionGeometry.frame(cover: rect, viewportHeight: window.bounds.height),
+            transition: .zero, bottomFade: .zero, tuning: tuning,
+            presentsFrame: true, reflectionEnabled: true, reduceTransparency: false)
+        let video = AnimatedArtwork(url: url, active: true)
+        visible.configure(video: video, layout: layout)
+        visible.layoutIfNeeded()
+        try await waitUntil { frames.hasFrame && frames.primaryFrameReady }
+        let player = try XCTUnwrap((visible.videoSurface.layer as? AVPlayerLayer)?.player)
+        let source = frames.sessionDiagnostic
+        let received = frames.receivedFrames
+        // SwiftUI configures native views before attachment. A size/preflight
+        // instance sharing this page's frame hub must not become its producer.
+        preflight.configure(video: video, layout: layout)
+        preflight.stop()
+        visible.configure(video: video, layout: layout)
+        XCTAssertEqual(frames.sessionDiagnostic, source)
+        XCTAssertTrue(frames.primaryFrameReady, frames.diagnosticText)
+        XCTAssertTrue(frames.outputAttached, frames.diagnosticText)
+        XCTAssertTrue(frames.surface === visible.reflectionSurface)
+        XCTAssertNotNil(player.currentItem, "The on-screen video must not be stopped by an unattached view")
+        XCTAssertEqual(player.rate, 1)
+        try await waitUntil { frames.receivedFrames > received + 3 }
+        XCTAssertNotNil(visible.reflectionSurface.layer.contents)
+    }
+
     func testVisibleVideoReportsFirstFrameAndKeepsPlayingWithoutAuxiliaryFrameSession() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

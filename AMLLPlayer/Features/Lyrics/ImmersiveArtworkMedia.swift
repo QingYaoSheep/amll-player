@@ -242,6 +242,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         private func captureBlurInput() -> ImmersiveBlurInput? {
             guard frames.ownsPresentation(presentation), let layout = previousLayout, let profile = blurProfile,
                   window != nil, !transitionSurface.isHidden else { return nil }
+            // Sample now rather than using the older asynchronously rendered
+            // reflection. Both media planes below use this exact pixel buffer.
+            videoSurface.refreshReflectionFrame(hostTime: CACurrentMediaTime())
+            let currentBuffer = frames.currentBuffer
             let padding = CGFloat(layout.tuning.validatedBlur * 3)
             let region = profile.frame.insetBy(dx: -padding, dy: -padding).intersection(bounds)
             guard !region.isNull, region.width > 0, region.height > 0 else { return nil }
@@ -268,7 +272,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                       view.frame.intersects(region) else { continue }
                 if view === videoPlane {
                     guard layout.presentsFrame, videoSurface.layer.opacity > 0 else { continue }
-                    guard let buffer = frames.currentBuffer else {
+                    guard let buffer = currentBuffer else {
                         // A background-only clone over a displayed video is not
                         // a backdrop blur. Wait for this resource's actual pixels.
                         frames.blurWaitingForVideoFrame = true
@@ -278,16 +282,20 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                     let mask = (videoPlane.mask as? UIImageView)?.image?.cgImage
                     layers.append(.video(buffer, frame: videoPlane.frame, mask: mask, opacity: Double(videoPlane.alpha)))
                     frames.blurInputs.append("完整视频")
+                } else if view === reflectionPlane {
+                    guard let buffer = currentBuffer, reflectionSurface.layer.opacity > 0 else { continue }
+                    let mask = (reflectionPlane.mask as? UIImageView)?.image?.cgImage
+                    layers.append(.reflection(buffer, frame: reflectionPlane.frame, mask: mask,
+                        opacity: Double(reflectionPlane.alpha) * Double(reflectionSurface.layer.opacity)))
+                    frames.blurInputs.append("封面倒影")
+                } else if view === dimmingSurface, let color = view.backgroundColor {
+                    layers.append(.solid(CIColor(color: color), frame: view.frame))
+                    frames.blurInputs.append("暗度")
                 } else {
                     let image = renderer.image { context in
                         context.cgContext.translateBy(x: view.frame.minX - region.minX, y: view.frame.minY - region.minY)
-                        if view === reflectionPlane {
-                            // Reflection already owns the presented CGImage and its masks.
-                            view.layer.render(in: context.cgContext)
-                        } else {
-                            // Public hierarchy capture includes the hosting view's Metal backgrounds.
-                            view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
-                        }
+                        // Public hierarchy capture includes the hosting view's Metal backgrounds.
+                        view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
                     }
                     if let image = image.cgImage { layers.append(.bitmap(image)) }
                     frames.blurInputs.append(view === reflectionPlane ? "封面倒影"

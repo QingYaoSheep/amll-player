@@ -51,7 +51,7 @@ struct ArtworkFramePresentation: Equatable {
     }
     var diagnosticText: String {
         let commit = Bundle.main.object(forInfoDictionaryKey: "AMLLBuildCommit") as? String ?? "local"
-        return "动态封面构建：\(commit.prefix(8))；倒影链路：4\n\(pageDiagnostic)\n\(producerDiagnostic)\n\(frameDiagnosticText)\n视图生命周期：\(lifecycleEvents.isEmpty ? "无" : lifecycleEvents.joined(separator: " → "))"
+        return "动态封面构建：\(commit.prefix(8))；倒影链路：4\n\(pageDiagnostic)\n\(producerDiagnostic)\n\(frameDiagnosticText)\n\(liveBlurSurface?.diagnosticText ?? "模糊输出：未挂载")\n视图生命周期：\(lifecycleEvents.isEmpty ? "无" : lifecycleEvents.joined(separator: " → "))"
     }
     private var frameDiagnosticText: String {
         "取帧输出：\(outputAttached ? "已接入" : "未接入")；取得像素帧：\(acquiredFrames)；接受帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n无像素帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)；来源不匹配：\(rejectedFrames)\n\(sessionDiagnostic)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n模糊提交：\(liveBlurSurface?.presentedFrames ?? 0)；模糊输入：\(blurInputs.isEmpty ? "无" : blurInputs.joined(separator: "、"))；等待视频像素：\(blurWaitingForVideoFrame ? "是" : "否")\n\(blurLayoutDiagnostic)\n\(layoutDiagnostic)"
@@ -189,7 +189,7 @@ enum ArtworkReflectionGeometry {
 enum ArtworkReflectionImage {
     static let opacity: Float = 0.32
     static let fadeStops: [(location: Double, alpha: Double)] = [
-        (0, 0), (0.04, 0.20), (0.12, 0.78), (0.22, 0.58), (0.50, 0.34), (0.72, 0.15), (0.88, 0.045), (1, 0),
+        (0, 1), (0.12, 0.78), (0.22, 0.58), (0.50, 0.34), (0.72, 0.15), (0.88, 0.045), (1, 0),
     ]
 
     static func image(source: CIImage, outputSize: CGSize) -> CIImage {
@@ -285,8 +285,7 @@ struct ArtworkReflection: UIViewRepresentable {
             isUserInteractionEnabled = false
             isAccessibilityElement = false
             layer.opacity = ArtworkReflectionImage.opacity
-            // Enter from zero at the video edge; the softening layer above
-            // cannot hide a reflection that starts with a nonzero alpha step.
+            // Attach at full strength to the video edge; only fade downward.
             fade.colors = ArtworkReflectionImage.fadeStops.map { UIColor(white: 1, alpha: CGFloat($0.alpha)).cgColor }
             fade.locations = ArtworkReflectionImage.fadeStops.map { NSNumber(value: $0.location) }
             layer.mask = fade

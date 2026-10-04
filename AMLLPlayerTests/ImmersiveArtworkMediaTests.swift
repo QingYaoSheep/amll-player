@@ -41,11 +41,64 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             XCTAssertEqual(Double(after[channel]), Double(before[channel]), accuracy: 3,
                 "The zero-strength upper edge must preserve the real lower-plane color, without an opaque seam")
         }
-        let link = Mirror(reflecting: surface.transitionSurface).children
-            .first { $0.label == "displayLink" }?.value as? CADisplayLink
-        let preferredRate = try XCTUnwrap(try XCTUnwrap(link).preferredFrameRateRange.preferred)
+        let preferredRate = try XCTUnwrap(surface.transitionSurface.preferredRefreshRate)
         XCTAssertGreaterThanOrEqual(preferredRate, Float(60),
             "The backdrop must not be capped to the previous 30Hz sampling loop")
+    }
+
+    func testGPUOutputPreservesTopBottomOrientationAndBoundsSubmissions() async throws {
+        _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let window = try playbackWindow()
+        let surface = ImmersiveLiveBlurSurface()
+        surface.frame = CGRect(x: 0, y: 0, width: 100, height: 120)
+        window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let bitmap = try XCTUnwrap(UIGraphicsImageRenderer(size: surface.bounds.size, format: format).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 100, height: 60))
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 60, width: 100, height: 60))
+        }.cgImage)
+        let scale = min(1.5, window.screen.scale)
+        let resizedImage = CIImage(cgImage: bitmap).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let resized = try XCTUnwrap(CIContext().createCGImage(resizedImage, from: resizedImage.extent))
+        surface.capture = {
+            return .init(region: surface.frame, profile: .init(frame: surface.frame, fullStrengthY: 120),
+                scale: scale, planes: [.bitmap(resized)])
+        }
+        surface.configure(amount: 1 / 80.0, mask: nil)
+        surface.layoutIfNeeded()
+        surface.requestOutputSnapshot()
+        try await waitUntil { surface.capturedOutput != nil && surface.gpuPresentedFrames > 3 }
+        let image = try XCTUnwrap(surface.capturedOutput)
+        let exported = CIImage(cgImage: image)
+        let context = CIContext()
+        func pixel(topY: CGFloat) -> [Int] {
+            var bytes = [UInt8](repeating: 0, count: 4)
+            bytes.withUnsafeMutableBytes {
+                context.render(exported, toBitmap: $0.baseAddress!, rowBytes: 4,
+                    bounds: CGRect(x: CGFloat(image.width) / 2, y: CGFloat(image.height) - topY * scale - 1,
+                        width: 1, height: 1), format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+            }
+            return bytes.map(Int.init)
+        }
+        XCTAssertGreaterThan(pixel(topY: 10)[0], 240, "Read the actual GPU drawable, not a separate Core Image re-render")
+        XCTAssertGreaterThan(pixel(topY: 110)[2], 240)
+        let visibleTop = try backdropPixel(window, at: CGPoint(x: 50, y: 10))
+        let visibleBottom = try backdropPixel(window, at: CGPoint(x: 50, y: 110))
+        XCTAssertGreaterThan(visibleTop[0], 240)
+        XCTAssertGreaterThan(visibleBottom[2], 240)
+        XCTAssertLessThanOrEqual(surface.maximumInFlight, 2)
+        XCTAssertGreaterThan(surface.maximumInFlight, 0)
+        XCTAssertTrue(surface.hasRenderedOutput)
+        XCTAssertNil(surface.layer.contents, "Production display must avoid a per-frame CPU image roundtrip")
+        XCTAssertTrue(surface.diagnosticText.contains("Metal 直出"))
+        let completed = surface.presentedFrames
+        surface.stop()
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(surface.presentedFrames, completed)
+        XCTAssertFalse(surface.hasRenderedOutput)
     }
 
     func testUnattachedConfigurationCannotRetireVisibleImmersivePlayer() async throws {
@@ -452,15 +505,13 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         }
         configure()
         try await waitUntil { frames.hasFrame && surface.transitionSurface.presentedFrames > 3 }
-        let contents = try XCTUnwrap(surface.transitionSurface.layer.contents)
-        guard CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else {
-            return XCTFail("The live blur must publish a CGImage")
-        }
-        let image = contents as! CGImage
+        surface.transitionSurface.requestOutputSnapshot()
+        try await waitUntil { surface.transitionSurface.capturedOutput != nil }
+        let image = try XCTUnwrap(surface.transitionSurface.capturedOutput)
         let filtered = CIImage(cgImage: image)
         let context = CIContext()
         func pixel(x: CGFloat, y: CGFloat) -> [Int] {
-            let scale = surface.transitionSurface.layer.contentsScale
+            let scale = CGFloat(image.width) / transition.width
             var bytes = [UInt8](repeating: 0, count: 4)
             bytes.withUnsafeMutableBytes { storage in
                 context.render(filtered, toBitmap: storage.baseAddress!, rowBytes: 4,
@@ -474,6 +525,11 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         let junction = pixel(x: 12, y: 404)
         XCTAssertGreaterThan(junction[0], 10, "Video color must soften into the background across the junction")
         XCTAssertGreaterThan(junction[2], 10, "The junction must also include the blue background")
+        XCTAssertLessThanOrEqual(surface.transitionSurface.maximumInFlight, 2)
+        let screenVideo = try backdropPixel(window, at: CGPoint(x: 12, y: 360))
+        let screenBackground = try backdropPixel(window, at: CGPoint(x: 12, y: 620))
+        XCTAssertGreaterThan(screenVideo[0], 60, "The actual GPU view must keep the video above its background")
+        XCTAssertGreaterThan(screenBackground[2], screenBackground[0] + 30)
         // Reproduce an output-generation gap while the actual AVPlayerLayer
         // still displays its frame. A partial background clone is not a blur.
         _ = frames.begin()
@@ -483,6 +539,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertEqual(surface.transitionSurface.presentedFrames, before)
         XCTAssertNil(surface.transitionSurface.layer.contents,
             "Never publish a background-only image over a visible video whose pixels are missing")
+        XCTAssertFalse(surface.transitionSurface.hasRenderedOutput)
     }
 
     func testUpwardFadeReducesBlurRadiusWithoutFadingTheLayer() async throws {

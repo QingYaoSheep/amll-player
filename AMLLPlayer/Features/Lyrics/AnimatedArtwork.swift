@@ -258,10 +258,13 @@ struct AnimatedArtwork: UIViewRepresentable {
             if displayLink == nil {
                 let target = Target(); target.surface = self
                 let link = CADisplayLink(target: target, selector: #selector(Target.tick(_:)))
-                link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
                 link.add(to: .main, forMode: .common)
                 displayLink = link
             }
+            let immersive = reflectionPresentation != nil
+            let rate: Float = immersive ? 60 : 30
+            displayLink?.preferredFrameRateRange = CAFrameRateRange(minimum: immersive ? 30 : 15,
+                maximum: rate, preferred: rate)
             if playbackActive != active {
                 lastTick = nil
             }

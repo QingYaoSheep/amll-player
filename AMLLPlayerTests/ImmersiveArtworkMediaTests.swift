@@ -46,9 +46,9 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         controller.view.addSubview(current)
         current.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
         current.layoutIfNeeded()
-        try await waitUntil { frames.hasFrame && current.reflectionSurface.layer.contents != nil }
-        let accepted = frames.receivedFrames
         let playerLayer = try XCTUnwrap(current.videoSurface.layer as? AVPlayerLayer)
+        try await waitUntil { playerLayer.isReadyForDisplay && frames.hasFrame && current.reflectionSurface.layer.contents != nil }
+        let accepted = frames.receivedFrames
         XCTAssertTrue(playerLayer.isReadyForDisplay)
 
         // A retired SwiftUI presentation can receive the cached resource update
@@ -58,10 +58,34 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         retired.removeFromSuperview()
         XCTAssertTrue(frames.hasFrame, "Retired resource updates must preserve the current video pixels")
         XCTAssertTrue(frames.outputAttached, "Retired teardown must not clear the current output state")
+        XCTAssertTrue(frames.liveBlurSurface === current.transitionSurface, "Retired teardown cannot detach the current blur receiver")
         try await waitUntil { frames.receivedFrames > accepted + 3 }
         XCTAssertTrue(playerLayer.isReadyForDisplay, "The real player can remain visible while its frames are rejected")
         XCTAssertNotNil(current.reflectionSurface.layer.contents, frames.diagnosticText)
         XCTAssertTrue(frames.surface === current.reflectionSurface)
+        XCTAssertEqual(frames.rejectedFrames, 0)
+        let session = frames.sessionDiagnostic
+        tuning[.transition].enabled = true
+        current.configure(video: AnimatedArtwork(url: url, active: true), layout: .init(video: rect,
+            reflection: layout.reflection, transition: layout.transition, bottomFade: .zero,
+            tuning: tuning, presentsFrame: true, reflectionEnabled: true, reduceTransparency: false))
+        current.layoutIfNeeded()
+        try await waitUntil { current.transitionSurface.presentedFrames > 0 && frames.blurInputs.contains("完整视频") }
+        XCTAssertEqual(frames.sessionDiagnostic, session, "Changing effect settings must preserve the frame session")
+        XCTAssertFalse(frames.blurWaitingForVideoFrame)
+
+        // The current presentation may legitimately replace an online identity
+        // with its cached identity. Only that replacement gets a new source.
+        current.configure(video: AnimatedArtwork(url: cachedURL, active: false), layout: layout)
+        current.layoutIfNeeded()
+        try await waitUntil { playerLayer.isReadyForDisplay && frames.hasFrame && current.reflectionSurface.layer.contents != nil }
+        XCTAssertNotEqual(frames.sessionDiagnostic, session)
+        XCTAssertEqual(playerLayer.player?.rate, 0)
+        retired.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
+        retired.stop()
+        XCTAssertTrue(frames.hasFrame)
+        XCTAssertTrue(frames.outputAttached)
+        XCTAssertEqual(frames.rejectedFrames, 0)
     }
 
     func testRealVideoAndBackgroundAreBothBlurredAtTheirJunction() async throws {
@@ -459,6 +483,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertTrue(player.currentItem?.outputs.isEmpty == true, "Keep only one frame-output path")
         try await waitUntil { frames.receivedFrames > 0 && surface.reflectionSurface.layer.contents != nil }
         XCTAssertEqual(player.rate, 0, "Player-level output must also provide a paused cover's reflection")
+        let session = frames.sessionDiagnostic
         surface.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
         let firstItem = player.currentItem
         try await waitUntil { player.currentItem != nil && player.currentItem !== firstItem }
@@ -466,6 +491,8 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         try await waitUntil { frames.receivedFrames > receivedAfterLoop + 5 }
         XCTAssertGreaterThan(surface.reflectionSurface.presentedFrames, 0)
         XCTAssertNotNil(player.videoOutput, "A loop must retain the player-level output")
+        XCTAssertEqual(frames.sessionDiagnostic, session, "Loop replicas must retain the resource's frame session")
+        XCTAssertEqual(frames.rejectedFrames, 0)
     }
 
     func testPausedVideoAttachesOutputBeforePlayingAndReflectionSurvivesRemount() async throws {

@@ -74,6 +74,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         private weak var observedItem: AVPlayerItem?
         private weak var reflectionFrames: ArtworkReflectionFrames?
         private var reflectionToken: UUID?
+        private var reflectionPresentation: ArtworkFramePresentation?
         private var output: AVPlayerItemVideoOutput?
         private var outputTarget: Target?
         private weak var outputItem: AVPlayerItem?
@@ -90,6 +91,10 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var reportedFirstFrame = false
         private var reportedVideoSize = CGSize.zero
         private var generation = UUID()
+        private var ownsReflectionSession: Bool {
+            guard let reflectionFrames, let reflectionToken else { return false }
+            return reflectionFrames.accepts(source: reflectionToken)
+        }
         @MainActor private final class Target: NSObject, AVPlayerItemOutputPullDelegate {
             weak var surface: Surface?
             @objc func tick(_ link: CADisplayLink) {
@@ -162,6 +167,7 @@ struct AnimatedArtwork: UIViewRepresentable {
 
         func configure(url: URL, active: Bool, allowCellular: Bool = false,
                        reflectionFrames: ArtworkReflectionFrames? = nil,
+                       presentation: ArtworkFramePresentation? = nil,
                        gravity: AVLayerVideoGravity = .resizeAspectFill, fadesBottom: Bool = false)
         {
             guard url.isFileURL || url.scheme?.lowercased() == "https" else { stop(); return }
@@ -201,10 +207,17 @@ struct AnimatedArtwork: UIViewRepresentable {
                 looper = AVPlayerLooper(player: player, templateItem: template)
                 observeCurrentItem()
             }
-            if self.reflectionFrames !== reflectionFrames {
+            if self.reflectionFrames !== reflectionFrames || reflectionPresentation != presentation {
                 clearReflection()
                 self.reflectionFrames = reflectionFrames
-                reflectionToken = reflectionFrames?.begin()
+                reflectionPresentation = presentation
+                if let reflectionFrames {
+                    if let presentation {
+                        reflectionToken = reflectionFrames.begin(presentation: presentation, resource: generation)
+                    } else {
+                        reflectionToken = reflectionFrames.begin()
+                    }
+                }
             }
             // Attach to the actual loop item before play(), including paused
             // presentation. Late attachment in capture() missed this lifecycle.
@@ -301,12 +314,14 @@ struct AnimatedArtwork: UIViewRepresentable {
             CATransaction.commit()
             if visible { refreshReflectionFrame() }
             let size = player.currentItem?.presentationSize ?? .zero
-            if visible, let url, !reportedFirstFrame || (size.width > 0 && size.height > 0 && size != reportedVideoSize) {
+            if visible, reflectionFrames == nil || ownsReflectionSession,
+               let url, !reportedFirstFrame || (size.width > 0 && size.height > 0 && size != reportedVideoSize) {
                 reportedFirstFrame = true
                 reportedVideoSize = size
                 let generation = generation
                 Task { @MainActor [weak self] in
-                    guard let self, self.generation == generation, self.url == url else { return }
+                    guard let self, self.generation == generation, self.url == url,
+                          self.reflectionFrames == nil || self.ownsReflectionSession else { return }
                     onFirstFrame(url, size)
                 }
             }
@@ -322,9 +337,8 @@ struct AnimatedArtwork: UIViewRepresentable {
             player.videoOutput = nil; playerVideoOutput = nil; lastPlayerOutputTime = nil
             frameOutputWatchdog = ArtworkFrameOutputWatchdog()
             outputNotificationRequested = false
-            reflectionFrames?.outputAttached = false
             reflectionFrames?.clear(source: reflectionToken)
-            reflectionFrames = nil; reflectionToken = nil
+            reflectionFrames = nil; reflectionToken = nil; reflectionPresentation = nil
         }
 
         private func capture(_ link: CADisplayLink) {
@@ -359,7 +373,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         }
 
         private func attachReflectionOutput() {
-            guard playerVideoOutput == nil, reflectionFrames != nil, let item = player.currentItem else { return }
+            guard ownsReflectionSession, playerVideoOutput == nil, let item = player.currentItem else { return }
             if outputItem !== item {
                 if let output {
                     output.setDelegate(nil, queue: nil)
@@ -379,6 +393,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         /// pause. Fall back to the actual item's media time, never another clock.
         func refreshReflectionFrame(hostTime: CFTimeInterval? = nil) {
             guard !failed, let reflectionFrames, let reflectionToken,
+                  reflectionFrames.accepts(source: reflectionToken),
                   let item = player.currentItem else { return }
             reflectionFrames.samplingAttempts += 1
             reflectionFrames.mediaTime = player.currentTime().seconds
@@ -401,10 +416,12 @@ struct AnimatedArtwork: UIViewRepresentable {
                           lastPlayerOutputTime.map({ CMTimeCompare($0, sample.presentationTime) != 0 }) ?? true else { continue }
                     for tagged in sample.taggedBufferGroup {
                         if case let .pixelBuffer(buffer) = tagged.buffer {
-                            lastPlayerOutputTime = sample.presentationTime
+                            // Decoder availability and session acceptance are
+                            // separate. A rejected session is not decoder starvation.
+                            frameOutputWatchdog.receivedFrame(now: now)
+                            reflectionFrames.outputStarvationSeconds = 0
                             if reflectionFrames.display(buffer, source: reflectionToken) {
-                                frameOutputWatchdog.receivedFrame(now: now)
-                                reflectionFrames.outputStarvationSeconds = 0
+                                lastPlayerOutputTime = sample.presentationTime
                             }
                             return
                         }
@@ -418,10 +435,9 @@ struct AnimatedArtwork: UIViewRepresentable {
             for time in [predicted, player.currentTime()].compactMap({ $0 }) where time.isNumeric {
                 if output.hasNewPixelBuffer(forItemTime: time),
                    let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
-                    if reflectionFrames.display(buffer, source: reflectionToken) {
-                        frameOutputWatchdog.receivedFrame(now: now)
-                        reflectionFrames.outputStarvationSeconds = 0
-                    }
+                    frameOutputWatchdog.receivedFrame(now: now)
+                    reflectionFrames.outputStarvationSeconds = 0
+                    reflectionFrames.display(buffer, source: reflectionToken)
                     return
                 }
             }
@@ -432,7 +448,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         /// buffers. It follows the same player across loop items and avoids a
         /// second decoder/player or a permanently retained blank reflection.
         func usePlayerLevelFrameOutput() {
-            guard playerVideoOutput == nil, reflectionFrames != nil else { return }
+            guard ownsReflectionSession, playerVideoOutput == nil else { return }
             if let output {
                 output.setDelegate(nil, queue: nil)
                 outputItem?.remove(output)
@@ -457,17 +473,19 @@ struct AnimatedArtwork: UIViewRepresentable {
 
         private func fail(_ error: Error?) {
             guard !failed, let url else { return }
+            let reportsFailure = reflectionFrames == nil || ownsReflectionSession
             failed = true
             player.pause()
             displayLink?.isPaused = true
+            report(.failed)
             reflectionFrames?.clear(source: reflectionToken)
             updateVisibility()
-            report(.failed)
-            onFailure(url, error)
+            if reportsFailure { onFailure(url, error) }
         }
 
         private func report(_ state: ArtworkPlaybackState) {
-            guard let url, reportedState != state else { return }
+            guard reflectionFrames == nil || ownsReflectionSession,
+                  let url, reportedState != state else { return }
             reportedState = state
             onState(url, state)
         }

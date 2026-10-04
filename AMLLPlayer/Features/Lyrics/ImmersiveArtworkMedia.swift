@@ -40,6 +40,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         let backgroundSurface = UIView()
         let dimmingSurface = UIView()
         private let frames: ArtworkReflectionFrames
+        private let presentation: ArtworkFramePresentation
         private var backgroundHost: UIHostingController<AMLLBackground>?
         private var previousLayout: Layout?
         private var appliedLayout: Layout?
@@ -48,6 +49,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
 
         init(frames: ArtworkReflectionFrames) {
             self.frames = frames
+            presentation = frames.makePresentation()
             super.init(frame: .zero)
             isOpaque = false
             isUserInteractionEnabled = false
@@ -60,14 +62,16 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 addSubview(view)
             }
             // The blur is a live backdrop effect, never an independent video-frame copy.
-            frames.attach(reflectionSurface)
-            frames.liveBlurSurface = transitionSurface
             transitionSurface.capture = { [weak self] in self?.captureBlurInput() }
         }
 
         required init?(coder _: NSCoder) { nil }
 
         func configure(video: AnimatedArtwork, layout: Layout, background: AMLLBackground? = nil) {
+            guard frames.activate(presentation, reflection: reflectionSurface, blur: transitionSurface) else {
+                videoSurface.stop()
+                return
+            }
             if let background {
                 if let backgroundHost { backgroundHost.rootView = background }
                 else {
@@ -86,13 +90,13 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             previousLayout = layout
             applyLayout(layout)
             videoSurface.configure(url: video.url, active: video.active, allowCellular: video.allowCellular,
-                reflectionFrames: frames, gravity: .resizeAspect, fadesBottom: false)
+                reflectionFrames: frames, presentation: presentation, gravity: .resizeAspect, fadesBottom: false)
         }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
             attachBackgroundController()
-            if window != nil {
+            if window != nil, frames.ownsPresentation(presentation) {
                 videoSurface.refreshReflectionFrame()
                 frames.replayLatest()
             }
@@ -129,6 +133,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         }
 
         private func applyLayout(_ layout: Layout) {
+            guard frames.ownsPresentation(presentation) else { return }
             guard appliedLayout != layout || appliedBounds != bounds else { return }
             appliedLayout = layout
             appliedBounds = bounds
@@ -196,7 +201,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         /// using CALayer.render, so its current frame comes from the same player.
         /// No offscreen/hidden/upper video is kept in the blur input.
         private func captureBlurInput() -> ImmersiveBlurInput? {
-            guard let layout = previousLayout, let profile = blurProfile,
+            guard frames.ownsPresentation(presentation), let layout = previousLayout, let profile = blurProfile,
                   window != nil, !transitionSurface.isHidden else { return nil }
             let padding = CGFloat(layout.tuning.validatedBlur * 3)
             let region = profile.frame.insetBy(dx: -padding, dy: -padding).intersection(bounds)
@@ -257,7 +262,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             videoSurface.stop()
             reflectionSurface.clear()
             transitionSurface.stop()
-            if frames.liveBlurSurface === transitionSurface { frames.liveBlurSurface = nil }
+            frames.release(presentation)
             if let host = backgroundHost {
                 host.willMove(toParent: nil)
                 host.view.removeFromSuperview()

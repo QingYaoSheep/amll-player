@@ -1,13 +1,23 @@
 import CoreImage
 import SwiftUI
 
+/// A presentation's order is allocated once, never on an ordinary view update.
+struct ArtworkFramePresentation: Equatable {
+    fileprivate let order: UInt64
+    fileprivate let id: UUID
+}
+
 /// Frame handoff from the existing silent video; reflection never creates a second player.
 @MainActor final class ArtworkReflectionFrames {
     weak var surface: ArtworkReflection.Surface?
     weak var transitionSurface: ArtworkVideoTransition.Surface?
     private var source: UUID?
+    private var presentation: ArtworkFramePresentation?
+    private var nextPresentationOrder: UInt64 = 0
+    private var resource: UUID?
     private var lastBuffer: CVPixelBuffer?
     private(set) var receivedFrames = 0
+    private(set) var acquiredFrames = 0
     var outputAttached = false
     var outputKind = "item 级（BGRA）"
     var samplingAttempts = 0
@@ -18,6 +28,7 @@ import SwiftUI
     var outputStarvationSeconds = 0.0
     var frameOutputSwitches = 0
     private(set) var rejectedFrames = 0
+    private(set) var rejectionReason = "无"
     weak var liveBlurSurface: ImmersiveLiveBlurSurface?
     var blurInputs: [String] = []
     var blurWaitingForVideoFrame = false
@@ -26,8 +37,50 @@ import SwiftUI
     var hasFrame: Bool { lastBuffer != nil }
     /// Immutable current frame for the visible-plane blur compositor.
     var currentBuffer: CVPixelBuffer? { lastBuffer }
+    var sessionDiagnostic: String {
+        "呈现实例：\(presentation.map { String($0.id.uuidString.prefix(8)) } ?? "独立")；资源代次：\(resource.map { String($0.uuidString.prefix(8)) } ?? "无")；帧来源：\(source.map { String($0.uuidString.prefix(8)) } ?? "已结束")；拒绝原因：\(rejectionReason)"
+    }
     var diagnosticText: String {
-        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n无帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)；过期帧丢弃：\(rejectedFrames)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n模糊提交：\(liveBlurSurface?.presentedFrames ?? 0)；模糊输入：\(blurInputs.isEmpty ? "无" : blurInputs.joined(separator: "、"))；等待视频像素：\(blurWaitingForVideoFrame ? "是" : "否")\n\(blurLayoutDiagnostic)\n\(layoutDiagnostic)"
+        "取帧输出：\(outputAttached ? "已接入" : "未接入")；取得像素帧：\(acquiredFrames)；接受帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n无像素帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)；来源不匹配：\(rejectedFrames)\n\(sessionDiagnostic)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n模糊提交：\(liveBlurSurface?.presentedFrames ?? 0)；模糊输入：\(blurInputs.isEmpty ? "无" : blurInputs.joined(separator: "、"))；等待视频像素：\(blurWaitingForVideoFrame ? "是" : "否")\n\(blurLayoutDiagnostic)\n\(layoutDiagnostic)"
+    }
+
+    func makePresentation() -> ArtworkFramePresentation {
+        nextPresentationOrder += 1
+        return .init(order: nextPresentationOrder, id: UUID())
+    }
+
+    /// Late updates/dismantles of an older SwiftUI surface cannot retake the
+    /// session. The producer and both receiving planes share this ownership.
+    func activate(_ next: ArtworkFramePresentation, reflection: ArtworkReflection.Surface,
+                  blur: ImmersiveLiveBlurSurface) -> Bool {
+        guard presentation.map({ next.order >= $0.order }) ?? true else { return false }
+        if presentation != next {
+            clear(source: source)
+            presentation = next
+        }
+        attach(reflection)
+        liveBlurSurface = blur
+        return true
+    }
+
+    func ownsPresentation(_ owner: ArtworkFramePresentation) -> Bool { presentation == owner }
+
+    func accepts(source token: UUID) -> Bool { source == token }
+
+    func begin(presentation owner: ArtworkFramePresentation, resource: UUID) -> UUID? {
+        guard ownsPresentation(owner) else { return nil }
+        let token = begin()
+        self.resource = resource
+        return token
+    }
+
+    func release(_ owner: ArtworkFramePresentation) {
+        guard ownsPresentation(owner) else { return }
+        clear(source: source)
+        surface = nil
+        transitionSurface = nil
+        liveBlurSurface = nil
+        // Retain the highest presentation order so retired views stay retired.
     }
 
     func attach(_ view: ArtworkReflection.Surface) {
@@ -51,12 +104,15 @@ import SwiftUI
     func begin() -> UUID {
         let token = UUID()
         source = token
+        resource = nil
         lastBuffer = nil
         receivedFrames = 0
+        acquiredFrames = 0
         samplingAttempts = 0
         outputKind = "item 级（BGRA）"
         mediaTime = 0; mediaRate = 0; videoDisplayed = false; resourceKind = ""
         outputStarvationSeconds = 0; frameOutputSwitches = 0; rejectedFrames = 0
+        rejectionReason = "无"
         blurInputs = []; blurWaitingForVideoFrame = false
         surface?.clear()
         transitionSurface?.clear()
@@ -65,7 +121,12 @@ import SwiftUI
     }
 
     @discardableResult func display(_ buffer: CVPixelBuffer, source token: UUID) -> Bool {
-        guard token == source else { rejectedFrames += 1; return false }
+        acquiredFrames += 1
+        guard accepts(source: token) else {
+            rejectedFrames += 1
+            rejectionReason = source == nil ? "当前会话已结束" : "帧来源与当前会话不匹配"
+            return false
+        }
         receivedFrames += 1
         lastBuffer = buffer
         surface?.display(buffer)
@@ -76,6 +137,7 @@ import SwiftUI
     func clear(source token: UUID?) {
         guard token == source else { return }
         source = nil
+        outputAttached = false
         lastBuffer = nil
         surface?.clear()
         transitionSurface?.clear()

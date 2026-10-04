@@ -3,14 +3,14 @@ import ImageIO
 import MetalKit
 import SwiftUI
 
-private struct FlowingDecodedImage: @unchecked Sendable {
+struct FlowingDecodedImage: @unchecked Sendable {
     // CGImage is immutable; ownership can safely move from the decode actor.
     let image: CGImage
 }
 
 /// Serializes decode/fallback filtering. Cancelled waiting requests check
 /// cancellation before doing any image work; they never accumulate CI jobs.
-private actor FlowingImageWorker {
+actor FlowingImageWorker {
     private let context = CIContext(options: [.cacheIntermediates: false])
 
     func decode(_ data: Data) throws -> FlowingDecodedImage {

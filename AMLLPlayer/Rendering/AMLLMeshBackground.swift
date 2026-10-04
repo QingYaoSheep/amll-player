@@ -202,15 +202,22 @@ struct AMLLMeshBackground: UIViewRepresentable {
         func draw(in view: MTKView) {
             guard inFlight.wait(timeout: .now()) == .success else { return }
             var submitted = false
-            defer {
-                if !submitted {
-                    inFlight.signal()
-                }
-            }
-            guard let pipeline, let compositePipeline, let queue, let device = view.device,
-                  let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
-                  let command = queue.makeCommandBuffer() else { return }
-            let now = CACurrentMediaTime()
+            defer { if !submitted { inFlight.signal() } }
+            guard let drawable = view.currentDrawable, let command = queue?.makeCommandBuffer(),
+                  encode(command: command, target: drawable.texture, at: CACurrentMediaTime()) else { return }
+            command.present(drawable)
+            let semaphore = inFlight
+            command.addCompletedHandler { _ in semaphore.signal() }
+            submitted = true
+            command.commit()
+        }
+
+        /// Encode the same mesh algorithm into an externally owned frame transaction.
+        func encode(command: MTLCommandBuffer, target: MTLTexture, at timestamp: CFTimeInterval) -> Bool {
+            guard let pipeline, let compositePipeline, let device = view?.device else { return false }
+            let pass = MTLRenderPassDescriptor()
+            pass.colorAttachments[0].texture = target
+            let now = timestamp
             let delta = running ? (lastFrame.map { max(0, now - $0) } ?? 0) : 0
             lastFrame = now
             if running {
@@ -234,18 +241,18 @@ struct AMLLMeshBackground: UIViewRepresentable {
                     states[states.count - 1].alpha = min(1.1, latest.alpha + delta / 0.5)
                 }
             }
-            if intermediate == nil {
+            if intermediate?.width != target.width || intermediate?.height != target.height {
                 let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: view.colorPixelFormat,
-                                                                          width: max(1, drawable.texture.width), height: max(1, drawable.texture.height), mipmapped: false)
+                                                                          width: max(1, target.width), height: max(1, target.height), mipmapped: false)
                 descriptor.usage = [.renderTarget, .shaderRead]
                 descriptor.storageMode = .private
                 intermediate = device.makeTexture(descriptor: descriptor)
             }
-            guard let intermediate else { return }
-            let height = max(1, view.drawableSize.height)
+            guard let intermediate else { return false }
+            let height = max(1, CGFloat(target.height))
             var uniforms = Uniforms(
                 time: Float(animationTime / 10), volume: 0, alpha: 1,
-                aspect: Float(view.drawableSize.width / height)
+                aspect: Float(CGFloat(target.width) / height)
             )
             pass.colorAttachments[0].loadAction = .clear
             pass.colorAttachments[0].clearColor = MTLClearColorMake(0.08, 0.08, 0.08, 1)
@@ -257,7 +264,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 offscreen.colorAttachments[0].texture = intermediate
                 offscreen.colorAttachments[0].loadAction = .clear
                 offscreen.colorAttachments[0].storeAction = .store
-                guard let encoder = command.makeRenderCommandEncoder(descriptor: offscreen) else { return }
+                guard let encoder = command.makeRenderCommandEncoder(descriptor: offscreen) else { return false }
                 encoder.setRenderPipelineState(pipeline)
                 encoder.setVertexBuffer(state.vertices, offset: 0, index: 0)
                 encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
@@ -266,7 +273,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 encoder.drawIndexedPrimitives(type: .triangle, indexCount: state.count, indexType: .uint32,
                                               indexBuffer: state.indices, indexBufferOffset: 0)
                 encoder.endEncoding()
-                guard let composite = command.makeRenderCommandEncoder(descriptor: pass) else { return }
+                guard let composite = command.makeRenderCommandEncoder(descriptor: pass) else { return false }
                 var alpha = Float((1 - cos(Double.pi * min(1, max(0, state.alpha)))) / 2)
                 composite.setRenderPipelineState(compositePipeline)
                 composite.setFragmentTexture(intermediate, index: 0)
@@ -278,11 +285,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
             if states.isEmpty {
                 command.makeRenderCommandEncoder(descriptor: pass)?.endEncoding()
             }
-            command.present(drawable)
-            let semaphore = inFlight
-            command.addCompletedHandler { _ in semaphore.signal() }
-            submitted = true
-            command.commit()
+            return true
         }
 
         /// Reproduces AMLL's 32×32 low-quality resize, color matrix, and four-pass box blur.

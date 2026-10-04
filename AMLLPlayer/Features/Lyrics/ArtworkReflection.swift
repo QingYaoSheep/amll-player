@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreImage
 import SwiftUI
 
@@ -7,6 +8,8 @@ import SwiftUI
     weak var transitionSurface: ArtworkVideoTransition.Surface?
     private var source: UUID?
     private var lastBuffer: CVPixelBuffer?
+    private(set) var currentFrame: ImmersiveArtworkFrame?
+    weak var compositor: ImmersiveArtworkCompositor.Surface?
     private(set) var receivedFrames = 0
     var outputAttached = false
     var outputKind = "item 级（BGRA）"
@@ -27,7 +30,10 @@ import SwiftUI
     /// Immutable current frame for the visible-plane blur compositor.
     var currentBuffer: CVPixelBuffer? { lastBuffer }
     var diagnosticText: String {
-        "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n无帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)；过期帧丢弃：\(rejectedFrames)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n模糊提交：\(liveBlurSurface?.presentedFrames ?? 0)；模糊输入：\(blurInputs.isEmpty ? "无" : blurInputs.joined(separator: "、"))；等待视频像素：\(blurWaitingForVideoFrame ? "是" : "否")\n\(blurLayoutDiagnostic)\n\(layoutDiagnostic)"
+        if let compositor {
+            return "收到视频帧：\(receivedFrames)；采样：\(samplingAttempts)；输出：\(outputKind)\n无帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)\n" + compositor.diagnostic
+        }
+        return "取帧输出：\(outputAttached ? "已接入" : "未接入")；收到帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n无帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)；过期帧丢弃：\(rejectedFrames)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n模糊提交：\(liveBlurSurface?.presentedFrames ?? 0)；模糊输入：\(blurInputs.isEmpty ? "无" : blurInputs.joined(separator: "、"))；等待视频像素：\(blurWaitingForVideoFrame ? "是" : "否")\n\(blurLayoutDiagnostic)\n\(layoutDiagnostic)"
     }
 
     func attach(_ view: ArtworkReflection.Surface) {
@@ -52,6 +58,7 @@ import SwiftUI
         let token = UUID()
         source = token
         lastBuffer = nil
+        currentFrame = nil
         receivedFrames = 0
         samplingAttempts = 0
         outputKind = "item 级（BGRA）"
@@ -64,10 +71,11 @@ import SwiftUI
         return token
     }
 
-    @discardableResult func display(_ buffer: CVPixelBuffer, source token: UUID) -> Bool {
+    @discardableResult func display(_ buffer: CVPixelBuffer, source token: UUID, presentationTime: CMTime = .invalid) -> Bool {
         guard token == source else { rejectedFrames += 1; return false }
         receivedFrames += 1
         lastBuffer = buffer
+        currentFrame = .init(pixels: buffer, presentationTime: presentationTime, generation: token)
         surface?.display(buffer)
         transitionSurface?.display(buffer)
         return true
@@ -77,6 +85,7 @@ import SwiftUI
         guard token == source else { return }
         source = nil
         lastBuffer = nil
+        currentFrame = nil
         surface?.clear()
         transitionSurface?.clear()
         liveBlurSurface?.discardComposition()

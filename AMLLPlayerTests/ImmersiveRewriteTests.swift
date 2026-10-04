@@ -18,6 +18,32 @@ final class ImmersiveRewriteTests: XCTestCase {
         }
     }
 
+    func testRenderedVideoMaskMatchesEveryLegacyStop() {
+        let height: CGFloat = 10000
+        let mask = ImmersiveArtworkImage.legacyVideoMask(size: .init(width: 2, height: height))
+        for stop in AMLLImmersiveArtworkGeometry.videoFadeStops {
+            let y = min(height - 1, max(0, (1 - stop.location) * height - 0.5))
+            XCTAssertEqual(Double(pixel(mask, x: 0, y: y)[0]) / 255, stop.alpha, accuracy: 1.0 / 255,
+                           "The rendered GPU mask retains the old linear samples at \(stop.location)")
+        }
+    }
+
+    func testVideoAndReflectionTogglesHaveIndependentPixelEffects() {
+        let background = CIImage(color: .blue)
+        let video = CIImage(color: .red).cropped(to: .init(x: 0, y: 0, width: 128, height: 240))
+        for reflects in [false, true] {
+            for fades in [false, true] {
+                var style = ImmersiveArtworkStyle(); style.blurRadius = 0; style.videoFadeEnabled = fades
+                let image = ImmersiveArtworkImage.compose(background: background, video: video,
+                    layout: makeLayout(style, reflects: reflects), scale: 1)
+                XCTAssertEqual(pixel(image, x: 64, y: 350)[0], 255)
+                XCTAssertEqual(pixel(image, x: 64, y: 0)[3], 255)
+                XCTAssertEqual(pixel(image, x: 64, y: 140)[0] > 100, reflects)
+                XCTAssertEqual(pixel(image, x: 64, y: 170)[0] < 100, fades)
+            }
+        }
+    }
+
     func testStyleCompatibilityIgnoresOldLayerOrderingAndClampsOnlyNewParameters() throws {
         let defaults = try JSONDecoder().decode(ImmersiveArtworkStyle.self, from: Data("{\"order\":[\"video\"],\"layers\":{}}".utf8))
         XCTAssertEqual(defaults, ImmersiveArtworkStyle())

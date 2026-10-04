@@ -49,6 +49,7 @@ struct AnimatedArtwork: UIViewRepresentable {
     }
 
     final class Surface: UIView {
+        var prepareAudio: () throws -> Void = { try ArtworkAudioPolicy.prepare() }
         var onFailure: (URL, Error?) -> Void = { _, _ in }
         var onState: (URL, ArtworkPlaybackState) -> Void = { _, _ in }
         var onFirstFrame: (URL, CGSize) -> Void = { _, _ in }
@@ -183,11 +184,12 @@ struct AnimatedArtwork: UIViewRepresentable {
                 do {
                     // Configure before AVPlayerLooper inserts an item or playback begins.
                     // Ambient mixes with the existing music session without taking control.
-                    try ArtworkAudioPolicy.prepare()
+                    try prepareAudio()
                 } catch {
                     let generation = generation
                     Task { @MainActor [weak self] in
-                        guard let self, self.generation == generation else { return }
+                        guard let self, self.generation == generation,
+                              presentation.map({ reflectionFrames?.ownsPresentation($0) == true }) ?? true else { return }
                         self.fail(error)
                     }
                     return

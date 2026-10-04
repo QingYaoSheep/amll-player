@@ -7,6 +7,40 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testRetiredAudioSetupFailureCannotInvalidateReplacementPresentation() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let frames = ArtworkReflectionFrames()
+        let retired = ImmersiveArtworkMedia.Surface(frames: frames)
+        let current = ImmersiveArtworkMedia.Surface(frames: frames)
+        defer { retired.stop(); current.stop() }
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let layout = ImmersiveArtworkMedia.Layout(video: rect, reflection: .zero,
+            transition: .zero, bottomFade: .zero, tuning: .init(), presentsFrame: false,
+            reflectionEnabled: false, reduceTransparency: false)
+        var oldFailures = 0
+        var oldStates: [ArtworkPlaybackState] = []
+        let error = NSError(domain: "AMLL.Test.AudioPreparation", code: 1)
+        retired.videoSurface.prepareAudio = { throw error }
+        retired.configure(video: AnimatedArtwork(url: url, active: false,
+            onFailure: { _, _ in oldFailures += 1 }, onState: { _, state in oldStates.append(state) }), layout: layout)
+        // Take over before the main-actor setup-failure callback can execute.
+        current.configure(video: AnimatedArtwork(url: url, active: false), layout: layout)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(oldFailures, 0)
+        XCTAssertFalse(oldStates.contains(.failed))
+        XCTAssertTrue(frames.liveBlurSurface === current.transitionSurface)
+        XCTAssertTrue(frames.outputAttached)
+
+        var currentFailures = 0
+        var currentStates: [ArtworkPlaybackState] = []
+        current.stop()
+        current.videoSurface.prepareAudio = { throw error }
+        current.configure(video: AnimatedArtwork(url: url, active: false,
+            onFailure: { _, _ in currentFailures += 1 }, onState: { _, state in currentStates.append(state) }), layout: layout)
+        try await waitUntil { currentFailures == 1 }
+        XCTAssertTrue(currentStates.contains(.failed), "The active presentation must still report a real setup failure")
+    }
+
     func testRetiredPresentationCannotInvalidateCurrentPlayersReflection() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let cachedURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")

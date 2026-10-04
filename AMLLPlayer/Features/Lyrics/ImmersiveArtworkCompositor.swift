@@ -131,6 +131,20 @@ private struct ImmersiveGPUJob: @unchecked Sendable {
     let frame: ImmersiveArtworkFrame?
     let layout: ImmersiveArtworkComposition
     let scale: CGFloat
+    let validity: ImmersiveGPUValidity
+}
+
+private final class ImmersiveGPUValidity: @unchecked Sendable {
+    private let lock = NSLock()
+    private var valid = true
+    var isValid: Bool { lock.lock(); defer { lock.unlock() }; return valid }
+    func invalidate() { lock.lock(); valid = false; lock.unlock() }
+    func presentIfValid(_ job: ImmersiveGPUJob) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard valid else { return false }
+        job.command.present(job.drawable)
+        return true
+    }
 }
 
 private final class ImmersiveGPUWorker: @unchecked Sendable {
@@ -143,19 +157,20 @@ private final class ImmersiveGPUWorker: @unchecked Sendable {
     func submit(_ job: ImmersiveGPUJob, completion: @escaping @Sendable (Bool, Double) -> Void) {
         work.async { [self] in
             autoreleasepool {
-                let image = ImmersiveArtworkImage.compose(background: job.background,
-                    video: job.frame.map { CIImage(cvPixelBuffer: $0.pixels) }, layout: job.layout, scale: job.scale)
-                let destination = CIRenderDestination(mtlTexture: job.drawable.texture, commandBuffer: job.command)
-                destination.colorSpace = colorSpace; destination.isFlipped = true
                 var encoded = false
-                do { _ = try context.startTask(toRender: image, to: destination); encoded = true }
-                catch { /* Commit background work to release its in-flight buffers. */ }
-                let succeeded = encoded
+                if job.validity.isValid {
+                    let image = ImmersiveArtworkImage.compose(background: job.background,
+                        video: job.frame.map { CIImage(cvPixelBuffer: $0.pixels) }, layout: job.layout, scale: job.scale)
+                    let destination = CIRenderDestination(mtlTexture: job.drawable.texture, commandBuffer: job.command)
+                    destination.colorSpace = colorSpace; destination.isFlipped = true
+                    do { _ = try context.startTask(toRender: image, to: destination); encoded = true }
+                    catch { /* Commit background work to release its in-flight buffers. */ }
+                }
+                let succeeded = encoded && job.validity.presentIfValid(job)
                 job.command.addCompletedHandler { command in
                     completion(succeeded && command.status == .completed,
                                (command.gpuEndTime - command.gpuStartTime) * 1000)
                 }
-                if encoded { job.command.present(job.drawable) }
                 job.command.commit()
             }
         }
@@ -196,7 +211,10 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
         private var targets: [(any MTLTexture)?] = [nil, nil]
         private var configuration: ImmersiveArtworkCompositor?
         private var displayLink: CADisplayLink?
-        private var revision = UUID()
+        private var validity = ImmersiveGPUValidity()
+        private var revision = UUID() {
+            didSet { validity.invalidate(); validity = ImmersiveGPUValidity() }
+        }
         private(set) var submittedFrames = 0
         private(set) var presentedFrames = 0
         private(set) var coalescedFrames = 0
@@ -336,7 +354,7 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
                 ?? CIImage(color: CIColor(red: 0.08, green: 0.08, blue: 0.08)).cropped(to: extent)
             let revision = revision, pool = pool
             worker.submit(.init(command: command, drawable: drawable, background: background,
-                frame: frame, layout: layout, scale: scale)) { [weak self] succeeded, duration in
+                frame: frame, layout: layout, scale: scale, validity: validity)) { [weak self] succeeded, duration in
                 pool.release(slot)
                 Task { @MainActor [weak self] in
                     guard let self, self.revision == revision, self.window != nil else { return }

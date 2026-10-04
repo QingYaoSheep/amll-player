@@ -10,6 +10,51 @@ final class ArtworkTransitionTests: XCTestCase {
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
+    func testReflectionKeepsSquareFeaturesSquareAcrossContainerHeights() throws {
+        // An actual image feature catches anisotropic stretching, rather than
+        // only checking the destination rectangle's dimensions.
+        for sourceSize in [CGSize(width: 200, height: 400), CGSize(width: 400, height: 200)] {
+            let origin = CGPoint(x: 17, y: 23)
+            let sourceRect = CGRect(origin: origin, size: sourceSize)
+            let marker = CGRect(x: origin.x + sourceSize.width / 2 - 20, y: origin.y + 4, width: 40, height: 40)
+            let source = CIImage(color: .red).cropped(to: marker)
+                .composited(over: CIImage(color: .blue).cropped(to: sourceRect))
+            for height in [60, 150, 240] {
+                let output = ArtworkReflectionImage.image(source: source,
+                    outputSize: CGSize(width: 100, height: CGFloat(height)))
+                var bytes = [UInt8](repeating: 0, count: 100 * height * 4)
+                bytes.withUnsafeMutableBytes {
+                    context.render(output, toBitmap: $0.baseAddress!, rowBytes: 400,
+                        bounds: CGRect(x: 0, y: 0, width: 100, height: CGFloat(height)),
+                        format: .RGBA8, colorSpace: colorSpace)
+                }
+                var left = 100, right = -1, bottom = height, top = -1
+                for y in 0 ..< height {
+                    for x in 0 ..< 100 {
+                        let offset = (y * 100 + x) * 4
+                        guard bytes[offset] > 240, bytes[offset + 1] < 10,
+                              bytes[offset + 2] < 10, bytes[offset + 3] > 240 else { continue }
+                        left = min(left, x); right = max(right, x)
+                        bottom = min(bottom, y); top = max(top, y)
+                    }
+                }
+                XCTAssertGreaterThanOrEqual(right, left, "The bottom-edge marker must remain visible")
+                let expected = 40 * 100 / sourceSize.width
+                XCTAssertEqual(Double(right - left + 1), Double(expected), accuracy: 1)
+                XCTAssertEqual(Double(top - bottom + 1), Double(expected), accuracy: 1,
+                    "Reflection height must crop the same-scale mirror, not stretch a small source strip")
+                let distanceFromTop = height - 1 - top
+                XCTAssertEqual(Double(distanceFromTop), Double(4 * 100 / sourceSize.width), accuracy: 1,
+                    "The source bottom must meet the reflection top at every container height")
+                let naturalHeight = sourceSize.height * 100 / sourceSize.width
+                if CGFloat(height) > naturalHeight {
+                    XCTAssertEqual(pixel(output, x: 50, y: 0)[3], 0,
+                        "Area beyond the full mirrored frame must stay transparent")
+                }
+            }
+        }
+    }
+
     func testReflectionBeginsOpaqueAndOnlyFadesDownward() throws {
         let mask = ArtworkReflectionImage.alphaMask(size: CGSize(width: 128, height: 240))
         XCTAssertGreaterThanOrEqual(pixel(mask, x: 64, y: 239)[3], 250,

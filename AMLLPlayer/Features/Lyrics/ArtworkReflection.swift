@@ -193,13 +193,20 @@ enum ArtworkReflectionImage {
     ]
 
     static func image(source: CIImage, outputSize: CGSize) -> CIImage {
-        let height = max(2, (source.extent.height * 0.24).rounded())
-        let crop = CGRect(x: source.extent.minX, y: source.extent.minY, width: source.extent.width, height: height)
-        return source.cropped(to: crop)
-            .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
-            .transformed(by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: height))
-            .transformed(by: CGAffineTransform(scaleX: outputSize.width / crop.width, y: outputSize.height / height))
-            .cropped(to: CGRect(origin: .zero, size: outputSize))
+        let output = CGRect(origin: .zero, size: outputSize)
+        let clear = CIImage(color: .clear).cropped(to: output)
+        guard source.extent.width > 0, source.extent.height > 0,
+              source.extent.width.isFinite, source.extent.height.isFinite,
+              outputSize.width > 0, outputSize.height > 0 else { return clear }
+        // Mirror at the video scale, align its source bottom to our top edge,
+        // then clip the visible length. Height tuning never stretches pixels.
+        let scale = outputSize.width / source.extent.width
+        let reflectedHeight = source.extent.height * scale
+        return source.transformed(by: CGAffineTransform(translationX: -source.extent.minX, y: -source.extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            .transformed(by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: reflectedHeight))
+            .transformed(by: CGAffineTransform(translationX: 0, y: outputSize.height - reflectedHeight))
+            .composited(over: clear).cropped(to: output)
     }
 
     static func alphaMask(size: CGSize) -> CIImage {

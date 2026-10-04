@@ -190,6 +190,55 @@ final class ImmersiveRewriteTests: XCTestCase {
         XCTAssertEqual(source.flowingState.angle, angle * 2, accuracy: 0.000001)
     }
 
+    func testSuspendingWithQueuedGPUWorkDoesNotPresentOrFailTheVideo() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController(); window.makeKeyAndVisible()
+        let queue = DispatchQueue(label: "AMLL.tests.immersive.suspension")
+        queue.suspend()
+        var suspended = true
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkCompositor.Surface(frames: frames, renderingQueue: queue)
+        surface.frame = .init(x: 0, y: 0, width: 128, height: 650)
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            if suspended { queue.resume() }
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true; previous?.makeKey()
+        }
+        var failed = false
+        var firstFrame = false
+        let video = AnimatedArtwork(url: url, active: true, onFailure: { _, _ in failed = true },
+                                    onFirstFrame: { _, _ in firstFrame = true })
+        var background = AMLLBackground(artworkURL: nil, active: true, blur: 0, mode: .solid,
+                                        color: .init(red: 0, green: 0, blue: 1))
+        func configure() {
+            surface.configure(.init(video: video, frames: frames, background: background, style: .init(),
+                metadataTop: 400, reflects: true, reduceTransparency: false, cornerRadius: 0, opacity: 1))
+        }
+        configure(); surface.layoutIfNeeded()
+        let deadline = CACurrentMediaTime() + 3
+        while surface.submittedFrames == 0 && CACurrentMediaTime() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(surface.submittedFrames, 0, "The production scheduler queued actual GPU work")
+        XCTAssertEqual(surface.presentedFrames, 0)
+        background.active = false; configure()
+        queue.resume(); suspended = false
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(surface.presentedFrames, 0, "Suspended generation cannot present queued frames")
+        XCTAssertFalse(failed, "Discarding old work does not turn suspension into a video failure")
+        background.active = true; configure()
+        let resumeDeadline = CACurrentMediaTime() + 12
+        while !firstFrame && CACurrentMediaTime() < resumeDeadline {
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertTrue(firstFrame, "The resumed generation still presents its first frame")
+    }
+
     private func makeLayout(_ style: ImmersiveArtworkStyle, dimming: Double = 0, reflects: Bool = true) -> ImmersiveArtworkComposition {
         .init(viewport: .init(width: 128, height: 400), video: .init(x: 0, y: 0, width: 128, height: 240),
             reflection: .init(x: 0, y: 240, width: 128, height: 160),

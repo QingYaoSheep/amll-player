@@ -148,10 +148,11 @@ private final class ImmersiveGPUValidity: @unchecked Sendable {
 }
 
 private final class ImmersiveGPUWorker: @unchecked Sendable {
-    private let work = DispatchQueue(label: "AMLL.immersive.gpu", qos: .userInitiated)
+    private let work: DispatchQueue
     private let context: CIContext
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-    init(queue: any MTLCommandQueue) {
+    init(queue: any MTLCommandQueue, work: DispatchQueue) {
+        self.work = work
         context = CIContext(mtlCommandQueue: queue, options: [.cacheIntermediates: false])
     }
     func submit(_ job: ImmersiveGPUJob, completion: @escaping @Sendable (Bool, Double) -> Void) {
@@ -238,13 +239,14 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
             }
         }
 
-        init(frames: ArtworkReflectionFrames) {
+        init(frames: ArtworkReflectionFrames,
+             renderingQueue: DispatchQueue = DispatchQueue(label: "AMLL.immersive.gpu", qos: .userInitiated)) {
             self.frames = frames
             let device = MTLCreateSystemDefaultDevice()
             let queue = device?.makeCommandQueue()
             self.queue = queue
             metal = MTKView(frame: .zero, device: device)
-            worker = queue.map { ImmersiveGPUWorker(queue: $0) }
+            worker = queue.map { ImmersiveGPUWorker(queue: $0, work: renderingQueue) }
             backgrounds = device.flatMap { device in queue.map { AMLLBackgroundFrameSource(device: device, queue: $0) } }
             super.init(frame: .zero)
             isUserInteractionEnabled = false
@@ -303,6 +305,7 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
                 link.preferredFrameRateRange = .init(minimum: 30, maximum: 60, preferred: 60)
                 link.add(to: .main, forMode: .common); displayLink = link
             } else if !active {
+                if displayLink != nil { revision = UUID() }
                 displayLink?.invalidate(); displayLink = nil
                 backgrounds?.suspendClock()
             }

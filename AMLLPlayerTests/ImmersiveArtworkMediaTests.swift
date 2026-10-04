@@ -7,6 +7,40 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testFailureStateCallbackCanReplaceResourceWithoutClearingNewSession() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let cachedURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+        try FileManager.default.copyItem(at: url, to: cachedURL)
+        defer { try? FileManager.default.removeItem(at: cachedURL) }
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        defer { surface.stop() }
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let layout = ImmersiveArtworkMedia.Layout(video: rect, reflection: .zero,
+            transition: .zero, bottomFade: .zero, tuning: .init(), presentsFrame: false,
+            reflectionEnabled: false, reduceTransparency: false)
+        var replacementConfigured = false
+        var oldFailures = 0
+        var replacementFailures = 0
+        surface.videoSurface.prepareAudio = { throw NSError(domain: "AMLL.Test.AudioPreparation", code: 1) }
+        surface.configure(video: AnimatedArtwork(url: url, active: false,
+            onFailure: { _, _ in oldFailures += 1 }, onState: { _, state in
+                guard state == .failed else { return }
+                surface.videoSurface.prepareAudio = {}
+                surface.configure(video: AnimatedArtwork(url: cachedURL, active: false,
+                    onFailure: { _, _ in replacementFailures += 1 }), layout: layout)
+                replacementConfigured = true
+            }), layout: layout)
+        try await waitUntil { replacementConfigured }
+        XCTAssertTrue(frames.outputAttached, "The obsolete failure must not clear the replacement output")
+        XCTAssertTrue(frames.surface === surface.reflectionSurface)
+        XCTAssertEqual(oldFailures, 0)
+        XCTAssertEqual(replacementFailures, 0, "An old URL must not be sent to the replacement failure handler")
+        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        XCTAssertNotNil(player.currentItem)
+        XCTAssertEqual(player.rate, 0)
+    }
+
     func testRetiredAudioSetupFailureCannotInvalidateReplacementPresentation() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let frames = ArtworkReflectionFrames()

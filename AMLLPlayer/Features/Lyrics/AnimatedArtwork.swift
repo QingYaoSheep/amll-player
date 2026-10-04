@@ -177,10 +177,26 @@ struct AnimatedArtwork: UIViewRepresentable {
             layer.mask = fadesBottom ? bottomFade : nil
             bottomFade.frame = bounds
             CATransaction.commit()
-            if self.url != url || self.allowCellular != allowCellular {
+            let replacesResource = self.url != url || self.allowCellular != allowCellular
+            if replacesResource {
                 stop()
                 self.url = url
                 self.allowCellular = allowCellular
+            }
+            // Bind ownership before any throwing setup or deferred callback.
+            if self.reflectionFrames !== reflectionFrames || reflectionPresentation != presentation {
+                clearReflection()
+                self.reflectionFrames = reflectionFrames
+                reflectionPresentation = presentation
+                if let reflectionFrames {
+                    if let presentation {
+                        reflectionToken = reflectionFrames.begin(presentation: presentation, resource: generation)
+                    } else {
+                        reflectionToken = reflectionFrames.begin()
+                    }
+                }
+            }
+            if replacesResource {
                 do {
                     // Configure before AVPlayerLooper inserts an item or playback begins.
                     // Ambient mixes with the existing music session without taking control.
@@ -208,18 +224,6 @@ struct AnimatedArtwork: UIViewRepresentable {
                 player.insert(template, after: nil)
                 looper = AVPlayerLooper(player: player, templateItem: template)
                 observeCurrentItem()
-            }
-            if self.reflectionFrames !== reflectionFrames || reflectionPresentation != presentation {
-                clearReflection()
-                self.reflectionFrames = reflectionFrames
-                reflectionPresentation = presentation
-                if let reflectionFrames {
-                    if let presentation {
-                        reflectionToken = reflectionFrames.begin(presentation: presentation, resource: generation)
-                    } else {
-                        reflectionToken = reflectionFrames.begin()
-                    }
-                }
             }
             // Attach to the actual loop item before play(), including paused
             // presentation. Late attachment in capture() missed this lifecycle.
@@ -475,11 +479,15 @@ struct AnimatedArtwork: UIViewRepresentable {
 
         private func fail(_ error: Error?) {
             guard !failed, let url else { return }
+            let failingGeneration = generation
             let reportsFailure = reflectionFrames == nil || ownsReflectionSession
             failed = true
             player.pause()
             displayLink?.isPaused = true
             report(.failed)
+            // An external state callback may replace this player synchronously.
+            // Nothing from this failure may clear or notify that replacement.
+            guard generation == failingGeneration, reflectionFrames == nil || ownsReflectionSession else { return }
             reflectionFrames?.clear(source: reflectionToken)
             updateVisibility()
             if reportsFailure { onFailure(url, error) }

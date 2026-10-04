@@ -42,14 +42,16 @@ enum ImmersiveArtworkImage {
     static func legacyVideoMask(size: CGSize) -> CIImage {
         let rect = CGRect(origin: .zero, size: size)
         let stops = AMLLImmersiveArtworkGeometry.videoFadeStops
-        var result = CIImage(color: .white).cropped(to: rect)
+        // Alpha bypasses RGB color conversion, matching CAGradientLayer's
+        // white-with-alpha stops even in a linear GPU working space.
+        var result = CIImage(color: .clear).cropped(to: rect)
         for index in 1 ..< stops.count {
             let a = stops[index - 1], b = stops[index]
             let top = (1 - a.location) * size.height, bottom = (1 - b.location) * size.height
             let segment = CIFilter(name: "CILinearGradient", parameters: [
                 "inputPoint0": CIVector(x: 0, y: bottom), "inputPoint1": CIVector(x: 0, y: top),
-                "inputColor0": CIColor(red: b.alpha, green: b.alpha, blue: b.alpha),
-                "inputColor1": CIColor(red: a.alpha, green: a.alpha, blue: a.alpha),
+                "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: b.alpha),
+                "inputColor1": CIColor(red: 1, green: 1, blue: 1, alpha: a.alpha),
             ])!.outputImage!.cropped(to: CGRect(x: 0, y: bottom, width: size.width, height: top - bottom))
             result = segment.composited(over: result)
         }
@@ -75,7 +77,7 @@ enum ImmersiveArtworkImage {
                 .cropped(to: CGRect(origin: .zero, size: videoSize))
             let clear = CIImage(color: .clear)
             let video = layout.style.videoFadeEnabled && !layout.reduceTransparency
-                ? local.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: clear,
+                ? local.applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputBackgroundImageKey: clear,
                     kCIInputMaskImageKey: legacyVideoMask(size: videoSize)]) : local
             image = video.transformed(by: CGAffineTransform(translationX: origin.x, y: origin.y)).composited(over: image)
             if layout.reflectionEnabled, layout.reflection.height > 0 {

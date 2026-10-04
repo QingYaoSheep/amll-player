@@ -23,7 +23,7 @@ final class ImmersiveRewriteTests: XCTestCase {
         let mask = ImmersiveArtworkImage.legacyVideoMask(size: .init(width: 2, height: height))
         for stop in AMLLImmersiveArtworkGeometry.videoFadeStops {
             let y = min(height - 1, max(0, (1 - stop.location) * height - 0.5))
-            XCTAssertEqual(Double(pixel(mask, x: 0, y: y)[0]) / 255, stop.alpha, accuracy: 1.0 / 255,
+            XCTAssertEqual(Double(pixel(mask, x: 0, y: y)[3]) / 255, stop.alpha, accuracy: 1.0 / 255,
                            "The rendered GPU mask retains the old linear samples at \(stop.location)")
         }
     }

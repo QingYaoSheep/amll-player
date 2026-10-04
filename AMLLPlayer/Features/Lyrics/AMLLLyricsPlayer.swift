@@ -367,7 +367,7 @@ struct AMLLLyricsPlayer: View {
                 dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: size)),
                 backgroundDimming: configuration.backgroundDimming ?? 0.16,
                 cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: blurProfile),
-            background: immersiveArtworkBackground)
+            background: artworkBackground)
         .id(artworkLoader.requestToken)
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false).accessibilityHidden(true)
@@ -380,12 +380,6 @@ struct AMLLLyricsPlayer: View {
             color: configuration.backgroundColor ?? .sourceDefault,
             gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
             flowing: configuration.flowingBackground ?? .init(), dimming: 0)
-    }
-
-    private var immersiveArtworkBackground: AMLLBackground {
-        var background = artworkBackground
-        background.suppressBlur = true
-        return background
     }
 
     private var artworkRequestKey: String {

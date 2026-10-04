@@ -2,20 +2,6 @@
 import XCTest
 
 final class ArtworkPlaybackWatchdogTests: XCTestCase {
-    func testUnifiedOutputHasABoundedDeadlineEvenWhenMediaTimeAdvances() {
-        var clock = ArtworkFrameOutputWatchdog()
-        clock.receivedFrame(now: 0)
-        _ = clock.sample(now: 29, eligible: true)
-        XCTAssertFalse(clock.timedOut)
-        _ = clock.sample(now: 500, eligible: false)
-        _ = clock.sample(now: 501, eligible: true)
-        XCTAssertFalse(clock.timedOut, "Paused and background time are excluded")
-        _ = clock.sample(now: 502, eligible: true)
-        XCTAssertTrue(clock.timedOut)
-        clock.receivedFrame(now: 502)
-        XCTAssertFalse(clock.timedOut)
-    }
-
     func testMissingDecodedFramesAccumulateAcrossBufferingAndLoopBoundaries() {
         var clock = ArtworkFrameOutputWatchdog()
         // Eligibility means an actually displayed foreground cover. Changing

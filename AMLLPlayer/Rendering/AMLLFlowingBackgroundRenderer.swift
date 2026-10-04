@@ -160,12 +160,6 @@ final class AMLLFlowingBackgroundRenderer {
         submit(size: size, state: state) { (target, nil) }
     }
 
-    @discardableResult
-    func encode(command: any MTLCommandBuffer, target: any MTLTexture, size: CGSize,
-                state: AMLLFlowingBackgroundState) -> Bool {
-        submit(size: size, state: state, externalCommand: command) { (target, nil) } != nil
-    }
-
     private func makeTexture(width: Int, height: Int) -> (any MTLTexture)? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm,
                                                                  width: width, height: height, mipmapped: false)
@@ -184,7 +178,6 @@ final class AMLLFlowingBackgroundRenderer {
     }
 
     private func submit(size: CGSize, state: AMLLFlowingBackgroundState,
-                        externalCommand: (any MTLCommandBuffer)? = nil,
                         targetProvider: () -> ((any MTLTexture), (any CAMetalDrawable)?)?) -> (any MTLCommandBuffer)?
     {
         guard size.width > 0, size.height > 0, let slot = pool.acquire() else { return nil }
@@ -193,7 +186,7 @@ final class AMLLFlowingBackgroundRenderer {
         defer { if !committed { pool.release(slot) } }
         let waiting = CACurrentMediaTime()
         guard let (target, drawable) = targetProvider() else { return nil }
-        guard let command = externalCommand ?? queue.makeCommandBuffer() else { return renderFailed() }
+        guard let command = queue.makeCommandBuffer() else { return renderFailed() }
         drawableWait = CACurrentMediaTime() - waiting
         guard target.pixelFormat == .bgra8Unorm else { return renderFailed() }
         if targets[slot]?.raw.width != target.width || targets[slot]?.raw.height != target.height {
@@ -253,7 +246,7 @@ final class AMLLFlowingBackgroundRenderer {
             pool.release(slot, command: buffer)
             if let completion { Task { @MainActor in completion() } }
         }
-        if externalCommand == nil { command.commit() }
+        command.commit()
         committed = true
         lastComposite = surfaces.raw
         if current != nil { hasPresentedArtwork = true }

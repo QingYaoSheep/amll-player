@@ -105,8 +105,6 @@ struct AMLLPixiBackground: UIViewRepresentable {
             }
         }
 
-        func suspendClock() { lastFrame = nil }
-
         func setArtwork(_ value: URL?) {
             guard value != url else { return }
             url = value
@@ -154,26 +152,21 @@ struct AMLLPixiBackground: UIViewRepresentable {
         }
 
         func draw(in view: MTKView) {
-            guard inFlight.wait(timeout: .now()) == .success else { return }
+            guard pipelines.count == 5, let device = view.device, let queue,
+                  view.drawableSize.width > 0, view.drawableSize.height > 0,
+                  inFlight.wait(timeout: .now()) == .success else { return }
             var submitted = false
-            defer { if !submitted { inFlight.signal() } }
-            guard let drawable = view.currentDrawable, let command = queue?.makeCommandBuffer(),
-                  encode(command: command, target: drawable.texture, at: CACurrentMediaTime()) else { return }
-            command.present(drawable)
-            let semaphore = inFlight
-            command.addCompletedHandler { _ in semaphore.signal() }
-            command.commit()
-            submitted = true
-        }
-
-        /// Reuse the sprite/filter pipeline without another display loop or submission.
-        func encode(command: MTLCommandBuffer, target: MTLTexture, at timestamp: CFTimeInterval) -> Bool {
-            guard pipelines.count == 5, let device = view?.device else { return false }
+            defer {
+                if !submitted {
+                    inFlight.signal()
+                }
+            }
+            guard let drawable = view.currentDrawable, let command = queue.makeCommandBuffer() else { return }
             // PrebuiltLyricPlayer explicitly passes renderScale=1 (core alone defaults to .75).
-            let width = max(1, Int(CGFloat(target.width)))
-            let height = max(1, Int(CGFloat(target.height)))
-            guard prepareTextures(width: width, height: height, device: device) else { return false }
-            let now = timestamp
+            let width = max(1, Int(view.drawableSize.width))
+            let height = max(1, Int(view.drawableSize.height))
+            guard prepareTextures(width: width, height: height, device: device) else { return }
+            let now = CACurrentMediaTime()
             // Pinned Pixi Ticker caps elapsedMS at 100 before producing deltaTime.
             let elapsed = running ? min(0.1, max(0, now - (lastFrame ?? now))) : 0
             lastFrame = now
@@ -199,7 +192,7 @@ struct AMLLPixiBackground: UIViewRepresentable {
             initial.colorAttachments[0].loadAction = .clear
             initial.colorAttachments[0].storeAction = .store
             initial.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-            guard let encoder = command.makeRenderCommandEncoder(descriptor: initial), let spritesPipeline = pipelines["Sprites"] else { return false }
+            guard let encoder = command.makeRenderCommandEncoder(descriptor: initial), let spritesPipeline = pipelines["Sprites"] else { return }
             encoder.setRenderPipelineState(spritesPipeline)
             for layer in layers {
                 var uniforms = [SIMD4(Float(width), Float(height), Float(layer.state.alpha), 0)] + layer.sprites
@@ -227,18 +220,22 @@ struct AMLLPixiBackground: UIViewRepresentable {
             }
             if blurEnabled {
                 for item in AMLLPixiState.blurPasses(minimumBorder: Double(min(width, height))) {
-                    guard blur(item.strength, quality: item.quality) else { return false }
+                    guard blur(item.strength, quality: item.quality) else { return }
                 }
             }
             for operation in 0 ..< 3 {
-                guard filter("Color", SIMD4(Float(operation), 0, 0, 0)) else { return false }
+                guard filter("Color", SIMD4(Float(operation), 0, 0, 0)) else { return }
             }
-            if blurEnabled, !blur(5, quality: 1) { return false }
+            if blurEnabled, !blur(5, quality: 1) { return }
             for center in centers {
-                guard filter("Bulge", SIMD4(Float(width), Float(height), center.x, center.y)) else { return false }
+                guard filter("Bulge", SIMD4(Float(width), Float(height), center.x, center.y)) else { return }
             }
-            guard pass(command, name: "Copy", source: textures[current], target: target, value: .zero) else { return false }
-            return true
+            guard pass(command, name: "Copy", source: textures[current], target: drawable.texture, value: .zero) else { return }
+            command.present(drawable)
+            let semaphore = inFlight
+            command.addCompletedHandler { _ in semaphore.signal() }
+            command.commit()
+            submitted = true
         }
 
         private func pass(_ command: MTLCommandBuffer, name: String, source: MTLTexture, target: MTLTexture, value: SIMD4<Float>) -> Bool {

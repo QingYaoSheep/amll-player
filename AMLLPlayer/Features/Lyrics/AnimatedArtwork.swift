@@ -89,7 +89,6 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var failed = false
         private var reportedFirstFrame = false
         private var reportedVideoSize = CGSize.zero
-        private var externallyDriven = false
         private var generation = UUID()
         @MainActor private final class Target: NSObject, AVPlayerItemOutputPullDelegate {
             weak var surface: Surface?
@@ -163,12 +162,10 @@ struct AnimatedArtwork: UIViewRepresentable {
 
         func configure(url: URL, active: Bool, allowCellular: Bool = false,
                        reflectionFrames: ArtworkReflectionFrames? = nil,
-                       gravity: AVLayerVideoGravity = .resizeAspectFill, fadesBottom: Bool = false,
-                       externallyDriven: Bool = false)
+                       gravity: AVLayerVideoGravity = .resizeAspectFill, fadesBottom: Bool = false)
         {
             guard url.isFileURL || url.scheme?.lowercased() == "https" else { stop(); return }
             playerLayer.videoGravity = gravity
-            self.externallyDriven = externallyDriven
             CATransaction.begin(); CATransaction.setDisableActions(true)
             layer.mask = fadesBottom ? bottomFade : nil
             bottomFade.frame = bounds
@@ -212,8 +209,7 @@ struct AnimatedArtwork: UIViewRepresentable {
             // Attach to the actual loop item before play(), including paused
             // presentation. Late attachment in capture() missed this lifecycle.
             attachReflectionOutput()
-            if externallyDriven { displayLink?.invalidate(); displayLink = nil }
-            if displayLink == nil && !externallyDriven {
+            if displayLink == nil {
                 let target = Target(); target.surface = self
                 let link = CADisplayLink(target: target, selector: #selector(Target.tick(_:)))
                 link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
@@ -301,11 +297,11 @@ struct AnimatedArtwork: UIViewRepresentable {
             let visible = !failed && url != nil && player.currentItem?.status == .readyToPlay && playerLayer.isReadyForDisplay
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            playerLayer.opacity = visible && !externallyDriven ? 1 : 0
+            playerLayer.opacity = visible ? 1 : 0
             CATransaction.commit()
             if visible { refreshReflectionFrame() }
             let size = player.currentItem?.presentationSize ?? .zero
-            if !externallyDriven, visible, let url, !reportedFirstFrame || (size.width > 0 && size.height > 0 && size != reportedVideoSize) {
+            if visible, let url, !reportedFirstFrame || (size.width > 0 && size.height > 0 && size != reportedVideoSize) {
                 reportedFirstFrame = true
                 reportedVideoSize = size
                 let generation = generation
@@ -332,51 +328,34 @@ struct AnimatedArtwork: UIViewRepresentable {
         }
 
         private func capture(_ link: CADisplayLink) {
-            sampleVideoFrame(at: link.timestamp, targetTime: link.targetTimestamp)
-            if !playbackActive, reflectionFrames?.hasFrame == true || link.timestamp >= (outputWakeDeadline ?? 0) {
-                outputWakeDeadline = nil
-                displayLink?.isPaused = true
-                if reflectionFrames?.hasFrame != true { requestOutputNotification() }
-            }
-        }
-
-        /// The compositor drives this once per display frame, even while the
-        /// song is paused and its independently animated background is moving.
-        func sampleVideoFrame(at timestamp: CFTimeInterval, targetTime: CFTimeInterval) {
             let eligible = playbackActive && UIApplication.shared.applicationState == .active
-            let elapsed = lastTick.map { timestamp - $0 } ?? 0
-            lastTick = eligible ? timestamp : nil
+            let elapsed = lastTick.map { link.timestamp - $0 } ?? 0
+            lastTick = eligible ? link.timestamp : nil
             guard !failed else { return }
             if playerLayer.isReadyForDisplay,
                player.currentItem?.presentationSize != reportedVideoSize {
                 updateVisibility()
             }
-            let displayed = externallyDriven ? reportedFirstFrame : playerLayer.isReadyForDisplay
             let state: ArtworkPlaybackState = !eligible ? .paused
-                : !displayed ? .preparing
+                : !playerLayer.isReadyForDisplay ? .preparing
                 : player.timeControlStatus == .waitingToPlayAtSpecifiedRate ? .buffering : .displayed
             report(state)
             if let failure = watchdog.advance(elapsed: elapsed, eligible: eligible,
-                                              displayed: displayed,
+                                              displayed: playerLayer.isReadyForDisplay,
                                               position: player.currentTime().seconds)
             {
                 fail(NSError(domain: "AMLL.ArtworkPlayback", code: failure == .firstFrameTimeout ? 1 : 2,
                              userInfo: [NSLocalizedDescriptionKey: "动态封面播放等待超时"]))
                 return
             }
-            refreshReflectionFrame(hostTime: targetTime)
-        }
-
-        func compositionDidPresent(_ frame: ImmersiveArtworkFrame) {
-            guard externallyDriven, !failed, let url, frame.generation == reflectionToken else { return }
-            guard !reportedFirstFrame || reportedVideoSize != frame.size else { return }
-            reportedFirstFrame = true; reportedVideoSize = frame.size
-            onFirstFrame(url, frame.size)
-        }
-
-        func failComposition() {
-            fail(NSError(domain: "AMLL.ArtworkComposition", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "动态封面画面合成失败"]))
+            refreshReflectionFrame(hostTime: link.targetTimestamp)
+            if !playbackActive, reflectionFrames?.hasFrame == true || link.timestamp >= (outputWakeDeadline ?? 0) {
+                outputWakeDeadline = nil
+                displayLink?.isPaused = true
+                if reflectionFrames?.hasFrame != true {
+                    requestOutputNotification()
+                }
+            }
         }
 
         private func attachReflectionOutput() {
@@ -410,16 +389,11 @@ struct AnimatedArtwork: UIViewRepresentable {
             let eligible = window != nil && UIApplication.shared.applicationState == .active
                 // Readiness may drop between HLS loop items. Once this resource
                 // presented a frame, keep the foreground starvation clock alive.
-                && (reportedFirstFrame || playerLayer.isReadyForDisplay || (externallyDriven && item.status == .readyToPlay))
-                && (playbackActive || (!externallyDriven && !reflectionFrames.hasFrame))
+                && (reportedFirstFrame || playerLayer.isReadyForDisplay)
+                && (playbackActive || !reflectionFrames.hasFrame)
             let starved = frameOutputWatchdog.sample(now: now, eligible: eligible)
             if playerVideoOutput == nil, starved { usePlayerLevelFrameOutput() }
             reflectionFrames.outputStarvationSeconds = frameOutputWatchdog.waiting
-            if externallyDriven, frameOutputWatchdog.timedOut {
-                fail(NSError(domain: "AMLL.ArtworkFrameOutput", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "动态封面视频帧等待超时"]))
-                return
-            }
             if let playerVideoOutput {
                 for timestamp in [hostTime, CACurrentMediaTime()].compactMap({ $0 }) {
                     let time = CMTime(seconds: timestamp, preferredTimescale: 1_000_000_000)
@@ -428,7 +402,7 @@ struct AnimatedArtwork: UIViewRepresentable {
                     for tagged in sample.taggedBufferGroup {
                         if case let .pixelBuffer(buffer) = tagged.buffer {
                             lastPlayerOutputTime = sample.presentationTime
-                            if reflectionFrames.display(buffer, source: reflectionToken, presentationTime: sample.presentationTime) {
+                            if reflectionFrames.display(buffer, source: reflectionToken) {
                                 frameOutputWatchdog.receivedFrame(now: now)
                                 reflectionFrames.outputStarvationSeconds = 0
                             }
@@ -442,10 +416,9 @@ struct AnimatedArtwork: UIViewRepresentable {
             guard item.status == .readyToPlay, let output, outputItem === item else { return }
             let predicted = hostTime.map { output.itemTime(forHostTime: $0) }
             for time in [predicted, player.currentTime()].compactMap({ $0 }) where time.isNumeric {
-                var displayedTime = CMTime.invalid
                 if output.hasNewPixelBuffer(forItemTime: time),
-                   let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: &displayedTime) {
-                    if reflectionFrames.display(buffer, source: reflectionToken, presentationTime: displayedTime.isNumeric ? displayedTime : time) {
+                   let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
+                    if reflectionFrames.display(buffer, source: reflectionToken) {
                         frameOutputWatchdog.receivedFrame(now: now)
                         reflectionFrames.outputStarvationSeconds = 0
                     }

@@ -10,7 +10,7 @@ final class ImmersiveRewriteTests: XCTestCase {
     func testLegacyFadeKeepsTheUpperTwoThirdsAndEndsAtTheVideoEdge() {
         let style = ImmersiveArtworkStyle()
         XCTAssertEqual(style.videoAlpha(at: 0.50), 1)
-        XCTAssertEqual(style.videoAlpha(at: 0.66), 1)
+        XCTAssertEqual(style.videoAlpha(at: 0.66), 1, accuracy: 1e-12)
         XCTAssertEqual(style.videoAlpha(at: 0.83), 0.5, accuracy: 0.000001)
         XCTAssertEqual(style.videoAlpha(at: 1), 0)
         for stop in AMLLImmersiveArtworkGeometry.videoFadeStops {
@@ -99,7 +99,8 @@ final class ImmersiveRewriteTests: XCTestCase {
         let image = ImmersiveArtworkImage.compose(background: CIImage(color: .black), video: video,
                                                  layout: makeLayout(style), scale: 1)
         XCTAssertGreaterThan(pixel(image, x: 64, y: 155)[0], 200)
-        XCTAssertLessThan(pixel(image, x: 64, y: 155)[1], 20)
+        XCTAssertEqual(Double(pixel(image, x: 64, y: 155)[1]), Double(pixel(video, x: 64, y: 4)[1]), accuracy: 3,
+                       "The top of the mirror samples the original bottom in the same color space")
         XCTAssertGreaterThan(pixel(image, x: 64, y: 80)[1], 20, "The mirror samples farther up the original, not a stretched 24% crop")
     }
 
@@ -149,6 +150,11 @@ final class ImmersiveRewriteTests: XCTestCase {
         let before = surface.presentedFrames
         try await Task.sleep(for: .milliseconds(250))
         XCTAssertGreaterThan(surface.presentedFrames, before)
+        XCTAssertEqual(surface.repeatedDrawableCount, 0, "Each display tick obtains a fresh drawable through MTKView.draw")
+        let heartbeat = expectation(description: "Main thread stays responsive while video and blur encode")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { heartbeat.fulfill() }
+        let heartbeatResult = await XCTWaiter.fulfillment(of: [heartbeat], timeout: 0.5)
+        XCTAssertEqual(heartbeatResult, .completed)
         XCTAssertEqual(surface.metal.isPaused, true, "Only the compositor display link schedules frames")
     }
 

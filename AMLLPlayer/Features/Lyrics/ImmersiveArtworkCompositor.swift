@@ -24,6 +24,7 @@ struct ImmersiveArtworkComposition: Equatable, Sendable {
 }
 
 enum ImmersiveArtworkImage {
+    private static let videoMasks = ImmersiveVideoMaskCache()
     private static func smoothGradient(size: CGSize, top: CGFloat, bottom: CGFloat) -> CIImage {
         if top <= bottom {
             return CIImage(color: .white).cropped(to: CGRect(origin: .zero, size: size))
@@ -40,22 +41,7 @@ enum ImmersiveArtworkImage {
     }
 
     static func legacyVideoMask(size: CGSize) -> CIImage {
-        let rect = CGRect(origin: .zero, size: size)
-        let stops = AMLLImmersiveArtworkGeometry.videoFadeStops
-        // Alpha bypasses RGB color conversion, matching CAGradientLayer's
-        // white-with-alpha stops even in a linear GPU working space.
-        var result = CIImage(color: .clear).cropped(to: rect)
-        for index in 1 ..< stops.count {
-            let a = stops[index - 1], b = stops[index]
-            let top = (1 - a.location) * size.height, bottom = (1 - b.location) * size.height
-            let segment = CIFilter(name: "CILinearGradient", parameters: [
-                "inputPoint0": CIVector(x: 0, y: bottom), "inputPoint1": CIVector(x: 0, y: top),
-                "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: b.alpha),
-                "inputColor1": CIColor(red: 1, green: 1, blue: 1, alpha: a.alpha),
-            ])!.outputImage!.cropped(to: CGRect(x: 0, y: bottom, width: size.width, height: top - bottom))
-            result = segment.composited(over: result)
-        }
-        return result
+        videoMasks.mask(size: size)
     }
 
     static func compose(background: CIImage, video source: CIImage?,
@@ -110,6 +96,72 @@ enum ImmersiveArtworkImage {
     }
 }
 
+/// A one-column float alpha LUT keeps the old piecewise-linear samples without
+/// compiling a nested seventeen-composite shader for every video frame.
+private final class ImmersiveVideoMaskCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [(CGSize, CIImage)] = []
+    func mask(size: CGSize) -> CIImage {
+        lock.lock(); defer { lock.unlock() }
+        if let entry = entries.first(where: { $0.0 == size }) { return entry.1 }
+        let height = max(1, Int(ceil(size.height)))
+        let style = ImmersiveArtworkStyle()
+        var pixels = [Float](repeating: 0, count: height * 4)
+        for row in 0 ..< height {
+            let alpha = Float(style.videoAlpha(at: 1 - (Double(row) + 0.5) / Double(height)))
+            for channel in 0 ..< 4 { pixels[row * 4 + channel] = alpha }
+        }
+        let data = pixels.withUnsafeBytes { Data($0) }
+        let image = CIImage(bitmapData: data, bytesPerRow: 4 * MemoryLayout<Float>.stride,
+            size: CGSize(width: 1, height: height), format: .RGBAf, colorSpace: nil)
+            .clampedToExtent().transformed(by: CGAffineTransform(scaleX: size.width, y: size.height / CGFloat(height)))
+            .cropped(to: CGRect(origin: .zero, size: size))
+        entries.append((size, image))
+        if entries.count > 2 { entries.removeFirst() }
+        return image
+    }
+}
+
+/// Metal objects and immutable image inputs cross the serial encoding boundary
+/// once. The main thread never mutates a command after transferring ownership.
+private struct ImmersiveGPUJob: @unchecked Sendable {
+    let command: any MTLCommandBuffer
+    let drawable: any CAMetalDrawable
+    let background: CIImage
+    let frame: ImmersiveArtworkFrame?
+    let layout: ImmersiveArtworkComposition
+    let scale: CGFloat
+}
+
+private final class ImmersiveGPUWorker: @unchecked Sendable {
+    private let work = DispatchQueue(label: "AMLL.immersive.gpu", qos: .userInitiated)
+    private let context: CIContext
+    private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    init(queue: any MTLCommandQueue) {
+        context = CIContext(mtlCommandQueue: queue, options: [.cacheIntermediates: false])
+    }
+    func submit(_ job: ImmersiveGPUJob, completion: @escaping @Sendable (Bool, Double) -> Void) {
+        work.async { [self] in
+            autoreleasepool {
+                let image = ImmersiveArtworkImage.compose(background: job.background,
+                    video: job.frame.map { CIImage(cvPixelBuffer: $0.pixels) }, layout: job.layout, scale: job.scale)
+                let destination = CIRenderDestination(mtlTexture: job.drawable.texture, commandBuffer: job.command)
+                destination.colorSpace = colorSpace; destination.isFlipped = true
+                var encoded = false
+                do { _ = try context.startTask(toRender: image, to: destination); encoded = true }
+                catch { /* Commit background work to release its in-flight buffers. */ }
+                let succeeded = encoded
+                job.command.addCompletedHandler { command in
+                    completion(succeeded && command.status == .completed,
+                               (command.gpuEndTime - command.gpuStartTime) * 1000)
+                }
+                if encoded { job.command.present(job.drawable) }
+                job.command.commit()
+            }
+        }
+    }
+}
+
 private final class ImmersiveFlightPool: @unchecked Sendable {
     private let lock = NSLock()
     private var free = [1, 0]
@@ -133,12 +185,12 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
     func updateUIView(_ view: Surface, context: Context) { view.configure(self) }
     static func dismantleUIView(_ view: Surface, coordinator: ()) { view.stop() }
 
-    @MainActor final class Surface: UIView {
+    @MainActor final class Surface: UIView, MTKViewDelegate {
         let videoSource = AnimatedArtwork.Surface()
         let metal: MTKView
         private let frames: ArtworkReflectionFrames
         private let queue: (any MTLCommandQueue)?
-        private let context: CIContext?
+        private let worker: ImmersiveGPUWorker?
         private let backgrounds: AMLLBackgroundFrameSource?
         private let pool = ImmersiveFlightPool()
         private var targets: [(any MTLTexture)?] = [nil, nil]
@@ -148,6 +200,9 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
         private(set) var submittedFrames = 0
         private(set) var presentedFrames = 0
         private(set) var coalescedFrames = 0
+        private(set) var repeatedDrawableCount = 0
+        private var previousDrawableID: UInt64?
+        private var tickTime: (CFTimeInterval, CFTimeInterval)?
         private var intervals: [Double] = []
         private var gpuTimes: [Double] = []
         private var lastTick: CFTimeInterval?
@@ -155,11 +210,14 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
         private var lastVideoTime: CMTime = .invalid
         private var reportedGPUFailure = false
         private var reportedInsets: UIEdgeInsets?
-        private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
         @MainActor private final class Target: NSObject {
             weak var view: Surface?
-            @objc func tick(_ link: CADisplayLink) { view?.draw(at: link.timestamp, targetTime: link.targetTimestamp) }
+            @objc func tick(_ link: CADisplayLink) {
+                guard let view else { return }
+                view.tickTime = (link.timestamp, link.targetTimestamp)
+                view.metal.draw()
+            }
         }
 
         init(frames: ArtworkReflectionFrames) {
@@ -168,12 +226,13 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
             let queue = device?.makeCommandQueue()
             self.queue = queue
             metal = MTKView(frame: .zero, device: device)
-            context = queue.map { CIContext(mtlCommandQueue: $0, options: [.cacheIntermediates: false]) }
+            worker = queue.map { ImmersiveGPUWorker(queue: $0) }
             backgrounds = device.flatMap { device in queue.map { AMLLBackgroundFrameSource(device: device, queue: $0) } }
             super.init(frame: .zero)
             isUserInteractionEnabled = false
             clipsToBounds = true
             metal.isPaused = true; metal.enableSetNeedsDisplay = false
+            metal.delegate = self
             metal.framebufferOnly = false; metal.colorPixelFormat = .bgra8Unorm
             metal.isOpaque = true; metal.backgroundColor = UIColor(white: 0.08, alpha: 1)
             addSubview(videoSource); addSubview(metal)
@@ -189,7 +248,7 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
             func p95(_ values: [Double]) -> Double {
                 let sorted = values.sorted(); return sorted.isEmpty ? 0 : sorted[Int(Double(sorted.count - 1) * 0.95)]
             }
-            return "统一提交：\(submittedFrames)；已呈现：\(presentedFrames)；合并：\(coalescedFrames)；GPU 错误：\(gpuFailures)\n视频时间：\(lastVideoTime.seconds.isFinite ? String(format: "%.3f", lastVideoTime.seconds) : "等待") s；帧间隔 P95：\(String(format: "%.2f", p95(intervals))) ms；GPU P95：\(String(format: "%.2f", p95(gpuTimes))) ms\n背景纹理：\(targets.compactMap { $0 }.count)；统一处理：背景、视频、倒影"
+            return "统一提交：\(submittedFrames)；已呈现：\(presentedFrames)；合并：\(coalescedFrames)；GPU 错误：\(gpuFailures)\n视频时间：\(lastVideoTime.seconds.isFinite ? String(format: "%.3f", lastVideoTime.seconds) : "等待") s；帧间隔 P95：\(String(format: "%.2f", p95(intervals))) ms；GPU P95：\(String(format: "%.2f", p95(gpuTimes))) ms\n背景纹理：\(targets.compactMap { $0 }.count)；重复 drawable：\(repeatedDrawableCount)；统一处理：背景、视频、倒影"
         }
 
         func configure(_ value: ImmersiveArtworkCompositor) {
@@ -231,10 +290,18 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
             }
         }
 
-        func draw(at timestamp: CFTimeInterval, targetTime: CFTimeInterval) {
+        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { revision = UUID() }
+
+        func draw(in view: MTKView) {
+            guard let (timestamp, targetTime) = tickTime else { return }
+            tickTime = nil
+            draw(at: timestamp, targetTime: targetTime)
+        }
+
+        private func draw(at timestamp: CFTimeInterval, targetTime: CFTimeInterval) {
             guard let configuration, bounds.width > 0, bounds.height > 0 else { return }
             videoSource.sampleVideoFrame(at: timestamp, targetTime: targetTime)
-            guard let queue, let context, let backgrounds, let device = metal.device else {
+            guard let queue, let worker, let backgrounds, let device = metal.device else {
                 if !reportedGPUFailure { reportedGPUFailure = true; videoSource.failComposition() }
                 return
             }
@@ -242,6 +309,8 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
             var submitted = false
             defer { if !submitted { pool.release(slot) } }
             guard let drawable = metal.currentDrawable, let command = queue.makeCommandBuffer() else { return }
+            if previousDrawableID == drawable.drawableID { repeatedDrawableCount += 1 }
+            previousDrawableID = drawable.drawableID
             let width = drawable.texture.width, height = drawable.texture.height
             if targets[slot]?.width != width || targets[slot]?.height != height {
                 let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
@@ -265,26 +334,10 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
             let extent = CGRect(x: 0, y: 0, width: width, height: height)
             let background = backgrounds.image(command: command, target: target, viewport: bounds.size, at: timestamp)
                 ?? CIImage(color: CIColor(red: 0.08, green: 0.08, blue: 0.08)).cropped(to: extent)
-            let image = ImmersiveArtworkImage.compose(background: background,
-                video: frame.map { CIImage(cvPixelBuffer: $0.pixels) }, layout: layout, scale: scale)
-            let destination = CIRenderDestination(mtlTexture: drawable.texture, commandBuffer: command)
-            destination.colorSpace = colorSpace; destination.isFlipped = true
-            do { _ = try context.startTask(toRender: image, to: destination) }
-            catch {
-                // Background encoders may already own in-flight buffers. Complete
-                // their command, without presentation, so every pool is released.
-                let pool = pool
-                command.addCompletedHandler { _ in pool.release(slot) }
-                command.commit(); submitted = true
-                videoSource.failComposition()
-                return
-            }
-            command.present(drawable)
             let revision = revision, pool = pool
-            command.addCompletedHandler { [weak self] buffer in
+            worker.submit(.init(command: command, drawable: drawable, background: background,
+                frame: frame, layout: layout, scale: scale)) { [weak self] succeeded, duration in
                 pool.release(slot)
-                let duration = (buffer.gpuEndTime - buffer.gpuStartTime) * 1000
-                let succeeded = buffer.status == .completed
                 Task { @MainActor [weak self] in
                     guard let self, self.revision == revision, self.window != nil else { return }
                     if succeeded {
@@ -297,7 +350,7 @@ struct ImmersiveArtworkCompositor: UIViewRepresentable {
                     } else { self.gpuFailures += 1; self.videoSource.failComposition() }
                 }
             }
-            command.commit(); submitted = true; submittedFrames += 1
+            submitted = true; submittedFrames += 1
             if let lastTick {
                 intervals.append((timestamp - lastTick) * 1000)
                 if intervals.count > 240 { intervals.removeFirst() }

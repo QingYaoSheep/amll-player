@@ -108,7 +108,9 @@ private final class ImmersiveVideoMaskCache: @unchecked Sendable {
         let style = ImmersiveArtworkStyle()
         var pixels = [Float](repeating: 0, count: height * 4)
         for row in 0 ..< height {
-            let alpha = Float(style.videoAlpha(at: 1 - (Double(row) + 0.5) / Double(height)))
+            // Bitmap rows start at the image top; Core Image coordinates start
+            // at the bottom. Keep the old top-to-bottom fade in bitmap order.
+            let alpha = Float(style.videoAlpha(at: (Double(row) + 0.5) / Double(height)))
             for channel in 0 ..< 4 { pixels[row * 4 + channel] = alpha }
         }
         let data = pixels.withUnsafeBytes { Data($0) }

@@ -198,14 +198,33 @@ enum ArtworkReflectionImage {
         // when no explicit space, primaries, or transfer encoding is attached.
         // Tagged wide-gamut/standard RGB and native YUV retain their metadata.
         if CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA,
-           CVBufferCopyAttachment(buffer, kCVImageBufferCGColorSpaceKey, nil) == nil,
-           CVBufferCopyAttachment(buffer, kCVImageBufferICCProfileKey, nil) == nil,
+           !hasExplicitRGBEncoding(buffer),
            CVBufferCopyAttachment(buffer, kCVImageBufferColorPrimariesKey, nil) == nil,
-           CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil) == nil,
-           CVBufferCopyAttachment(buffer, kCVImageBufferGammaLevelKey, nil) == nil {
+           CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil) == nil {
             return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
         }
         return CIImage(cvPixelBuffer: buffer)
+    }
+
+    /// Reconstruct the existing AVPlayerLayer plane, not an arbitrary RGB image.
+    /// Real item/player-output comparisons identify this legacy SDR descriptor
+    /// on decoded display RGB. Applying Composite NTSC again changes its color.
+    static func decodedVideoSource(_ buffer: CVPixelBuffer) -> CIImage {
+        if CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA,
+           !hasExplicitRGBEncoding(buffer),
+           CVBufferCopyAttachment(buffer, kCVImageBufferColorPrimariesKey, nil) as? String
+                == kCVImageBufferColorPrimaries_SMPTE_C as String,
+           CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil) as? String
+                == kCVImageBufferTransferFunction_ITU_R_709_2 as String {
+            return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
+        }
+        return source(buffer)
+    }
+
+    private static func hasExplicitRGBEncoding(_ buffer: CVPixelBuffer) -> Bool {
+        CVBufferCopyAttachment(buffer, kCVImageBufferCGColorSpaceKey, nil) != nil
+            || CVBufferCopyAttachment(buffer, kCVImageBufferICCProfileKey, nil) != nil
+            || CVBufferCopyAttachment(buffer, kCVImageBufferGammaLevelKey, nil) != nil
     }
 
     static func image(source: CIImage, outputSize: CGSize) -> CIImage {
@@ -297,7 +316,7 @@ struct ArtworkReflection: UIViewRepresentable {
             let context = CIContext(options: [.cacheIntermediates: false])
 
             func render(_ frame: Frame) -> CGImage? {
-                let image = ArtworkReflectionImage.image(source: ArtworkReflectionImage.source(frame.buffer), outputSize: frame.size)
+                let image = ArtworkReflectionImage.image(source: ArtworkReflectionImage.decodedVideoSource(frame.buffer), outputSize: frame.size)
                 return context.createCGImage(image, from: CGRect(origin: .zero, size: frame.size))
             }
         }
@@ -479,7 +498,7 @@ struct ArtworkVideoTransition: UIViewRepresentable {
             let context = CIContext(options: [.cacheIntermediates: false])
 
             func render(_ frame: Frame) -> CGImage? {
-                guard let image = ArtworkVideoTransitionImage.image(source: ArtworkReflectionImage.source(frame.buffer),
+                guard let image = ArtworkVideoTransitionImage.image(source: ArtworkReflectionImage.decodedVideoSource(frame.buffer),
                                                                     videoSize: frame.videoSize, surfaceSize: frame.surfaceSize, outputSize: frame.size,
                                                                     blurRadius: CGFloat(frame.composition?.blurRadius ?? 32), composition: frame.composition)
                 else { return nil }

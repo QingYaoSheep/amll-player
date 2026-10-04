@@ -15,8 +15,16 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         try await checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: true)
     }
 
-    private func checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: Bool) async throws {
-        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+    func testExplicitLegacyColorVideoMatchesItsUnfilteredPlane() async throws {
+        try await checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: false, resource: "artwork-layer-order-tagged")
+    }
+
+    func testExplicitLegacyColorPlayerOutputMatchesItsUnfilteredPlane() async throws {
+        try await checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: true, resource: "artwork-layer-order-tagged")
+    }
+
+    private func checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: Bool, resource: String = "artwork-layer-order") async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: resource, withExtension: "mp4"))
         let window = try playbackWindow()
         let frames = ArtworkReflectionFrames()
         let surface = ImmersiveArtworkMedia.Surface(frames: frames)
@@ -57,7 +65,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         try await waitUntil { surface.transitionSurface.renderedFrames > 3 }
         let after = try backdropPixel(window, at: CGPoint(x: 12, y: 181))
         let buffer = try XCTUnwrap(frames.currentBuffer)
-        let sourceDiagnostic = "format=\(CVPixelBufferGetPixelFormatType(buffer)), imported=\(String(describing: ArtworkReflectionImage.source(buffer).colorSpace)), default=\(String(describing: CIImage(cvPixelBuffer: buffer).colorSpace)), space=\(String(describing: CVBufferCopyAttachment(buffer, kCVImageBufferCGColorSpaceKey, nil))), ICC=\(CVBufferCopyAttachment(buffer, kCVImageBufferICCProfileKey, nil) != nil), primaries=\(String(describing: CVBufferCopyAttachment(buffer, kCVImageBufferColorPrimariesKey, nil))), transfer=\(String(describing: CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil))), gamma=\(String(describing: CVBufferCopyAttachment(buffer, kCVImageBufferGammaLevelKey, nil)))"
+        let sourceDiagnostic = "fixture=\(resource), format=\(CVPixelBufferGetPixelFormatType(buffer)), imported=\(String(describing: ArtworkReflectionImage.decodedVideoSource(buffer).colorSpace)), default=\(String(describing: CIImage(cvPixelBuffer: buffer).colorSpace)), space=\(String(describing: CVBufferCopyAttachment(buffer, kCVImageBufferCGColorSpaceKey, nil))), ICC=\(CVBufferCopyAttachment(buffer, kCVImageBufferICCProfileKey, nil) != nil), primaries=\(String(describing: CVBufferCopyAttachment(buffer, kCVImageBufferColorPrimariesKey, nil))), transfer=\(String(describing: CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil))), gamma=\(String(describing: CVBufferCopyAttachment(buffer, kCVImageBufferGammaLevelKey, nil)))"
         for channel in 0 ..< 3 {
             XCTAssertEqual(Double(after[channel]), Double(before[channel]), accuracy: 3,
                 "The zero-strength upper edge must preserve the real lower-plane color, without an opaque seam; \(sourceDiagnostic)")

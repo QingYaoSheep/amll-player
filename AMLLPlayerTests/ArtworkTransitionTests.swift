@@ -31,14 +31,25 @@ final class ArtworkTransitionTests: XCTestCase {
             let untagged = pixel(ArtworkReflectionImage.source(buffer), x: 0, y: 0)
             let displayEncoded = pixel(CIImage(cvPixelBuffer: buffer, options: [.colorSpace: colorSpace]), x: 0, y: 0)
             XCTAssertEqual(untagged, displayEncoded, "Untagged display RGB must not inherit a Composite NTSC fallback")
+            CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_SMPTE_C, .shouldPropagate)
+            CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
+            XCTAssertEqual(pixel(ArtworkReflectionImage.decodedVideoSource(buffer), x: 0, y: 0), displayEncoded,
+                "The verified legacy AV output descriptor must reconstruct the displayed SDR plane")
+            XCTAssertEqual(pixel(ArtworkReflectionImage.source(buffer), x: 0, y: 0),
+                pixel(CIImage(cvPixelBuffer: buffer), x: 0, y: 0), "Generic RGB imports still honor the source video tags")
+            CVBufferRemoveAttachment(buffer, kCVImageBufferColorPrimariesKey)
+            CVBufferRemoveAttachment(buffer, kCVImageBufferTransferFunctionKey)
             CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, taggedSpace, .shouldPropagate)
             let imported = ArtworkReflectionImage.source(buffer)
             let expected = CIImage(cvPixelBuffer: buffer, options: [.colorSpace: taggedSpace])
             let actualPixel = pixel(imported, x: 0, y: 0)
             let expectedPixel = pixel(expected, x: 0, y: 0)
+            let decodedPixel = pixel(ArtworkReflectionImage.decodedVideoSource(buffer), x: 0, y: 0)
             for channel in 0 ..< 4 {
                 XCTAssertEqual(Double(actualPixel[channel]), Double(expectedPixel[channel]), accuracy: 1,
                     "BGRA storage must not relabel the attached color space")
+                XCTAssertEqual(Double(decodedPixel[channel]),
+                    Double(expectedPixel[channel]), accuracy: 1, "Decoded output must retain explicit RGB color spaces")
             }
             if name == CGColorSpace.displayP3 {
                 CVBufferRemoveAttachment(buffer, kCVImageBufferCGColorSpaceKey)

@@ -38,7 +38,7 @@ enum ImmersiveBlurImage {
                     width: frame.width * input.scale, height: frame.height * input.scale)
                 image = CIImage(color: color).cropped(to: rect).composited(over: image)
             case let .video(buffer, frame, mask, opacity), let .reflection(buffer, frame, mask, opacity):
-                let source = ArtworkReflectionImage.source(buffer)
+                let source = ArtworkReflectionImage.decodedVideoSource(buffer)
                 let localSize = CGSize(width: frame.width * input.scale, height: frame.height * input.scale)
                 let rect = CGRect(origin: .zero, size: localSize)
                 let fitted = AMLLImmersiveArtworkGeometry.fittedFrame(container: rect, source: source.extent.size)

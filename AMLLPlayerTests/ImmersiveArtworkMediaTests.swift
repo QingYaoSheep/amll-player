@@ -7,6 +7,63 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testRetiredPresentationCannotInvalidateCurrentPlayersReflection() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let cachedURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+        try FileManager.default.copyItem(at: url, to: cachedURL)
+        defer { try? FileManager.default.removeItem(at: cachedURL) }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        let frames = ArtworkReflectionFrames()
+        let retired = ImmersiveArtworkMedia.Surface(frames: frames)
+        let current = ImmersiveArtworkMedia.Surface(frames: frames)
+        retired.frame = window.bounds
+        current.frame = window.bounds
+        controller.view.addSubview(retired)
+        defer {
+            retired.stop(); current.stop()
+            retired.removeFromSuperview(); current.removeFromSuperview()
+            window.isHidden = true; previousKeyWindow?.makeKey()
+        }
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.transition].enabled = false
+        tuning[.bottomFade].enabled = false
+        let layout = ImmersiveArtworkMedia.Layout(video: rect,
+            reflection: ArtworkReflectionGeometry.frame(cover: rect, viewportHeight: 650),
+            transition: AMLLImmersiveArtworkGeometry.transitionFrame(video: rect, viewportHeight: 650),
+            bottomFade: .zero, tuning: tuning, presentsFrame: true,
+            reflectionEnabled: true, reduceTransparency: false)
+        retired.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
+        retired.layoutIfNeeded()
+        try await waitUntil { frames.hasFrame }
+        controller.view.addSubview(current)
+        current.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
+        current.layoutIfNeeded()
+        try await waitUntil { frames.hasFrame && current.reflectionSurface.layer.contents != nil }
+        let accepted = frames.receivedFrames
+        let playerLayer = try XCTUnwrap(current.videoSurface.layer as? AVPlayerLayer)
+        XCTAssertTrue(playerLayer.isReadyForDisplay)
+
+        // A retired SwiftUI presentation can receive the cached resource update
+        // before its delayed dismantle. It must not steal the current session.
+        retired.configure(video: AnimatedArtwork(url: cachedURL, active: true), layout: layout)
+        retired.stop()
+        retired.removeFromSuperview()
+        XCTAssertTrue(frames.hasFrame, "Retired resource updates must preserve the current video pixels")
+        XCTAssertTrue(frames.outputAttached, "Retired teardown must not clear the current output state")
+        try await waitUntil { frames.receivedFrames > accepted + 3 }
+        XCTAssertTrue(playerLayer.isReadyForDisplay, "The real player can remain visible while its frames are rejected")
+        XCTAssertNotNil(current.reflectionSurface.layer.contents, frames.diagnosticText)
+        XCTAssertTrue(frames.surface === current.reflectionSurface)
+    }
+
     func testRealVideoAndBackgroundAreBothBlurredAtTheirJunction() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

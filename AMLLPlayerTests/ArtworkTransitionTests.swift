@@ -10,6 +10,19 @@ final class ArtworkTransitionTests: XCTestCase {
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
+    func testReflectionBeginsOpaqueAndOnlyFadesDownward() throws {
+        let mask = ArtworkReflectionImage.alphaMask(size: CGSize(width: 128, height: 240))
+        XCTAssertGreaterThanOrEqual(pixel(mask, x: 64, y: 239)[3], 250,
+            "The reflected video must connect at its top without a second fade-in")
+        XCTAssertGreaterThan(pixel(mask, x: 64, y: 210)[3], pixel(mask, x: 64, y: 120)[3])
+        XCTAssertLessThanOrEqual(pixel(mask, x: 64, y: 0)[3], 2)
+        let surface = ArtworkReflection.Surface(frame: CGRect(x: 0, y: 0, width: 128, height: 240))
+        let fade = try XCTUnwrap(surface.layer.mask as? CAGradientLayer)
+        let visibleMask = try maskImage(fade, size: surface.bounds.size)
+        XCTAssertGreaterThanOrEqual(pixel(visibleMask, x: 64, y: 239)[3], 250,
+            "The visible mask and the compositor must use the same descending stops")
+    }
+
     func testReflectionToggleRemovesTheVideoFadeAndDisablingItRestoresTheFade() throws {
         let surface = AnimatedArtwork.Surface(frame: CGRect(x: 0, y: 0, width: 128, height: 400))
         defer { surface.stop() }

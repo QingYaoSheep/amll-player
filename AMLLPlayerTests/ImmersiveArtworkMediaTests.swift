@@ -7,6 +7,46 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testBlurTopMatchesTheUnfilteredTranslucentVideo() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let window = try playbackWindow()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = CGRect(x: 0, y: 0, width: 200, height: 650)
+        window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        surface.backgroundSurface.backgroundColor = UIColor(red: 0.65, green: 0.5, blue: 0.85, alpha: 1)
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
+        tuning[.video].opacity = 0.65
+        tuning.blurRadius = 80
+        let video = AnimatedArtwork(url: url, active: false)
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let profile = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 180, width: 200, height: 470), fullStrengthY: 400)
+        func apply() {
+            surface.configure(video: video, layout: .init(video: rect, reflection: .zero,
+                transition: profile.frame, bottomFade: .zero, tuning: tuning, presentsFrame: true,
+                reflectionEnabled: false, reduceTransparency: false, blurProfile: profile))
+            surface.layoutIfNeeded()
+        }
+        tuning[.transition].enabled = false
+        apply()
+        try await waitUntil { frames.hasFrame && frames.primaryFrameReady }
+        let before = try backdropPixel(window, at: CGPoint(x: 12, y: 181))
+        tuning[.transition].enabled = true
+        apply()
+        try await waitUntil { surface.transitionSurface.presentedFrames > 3 }
+        let after = try backdropPixel(window, at: CGPoint(x: 12, y: 181))
+        for channel in 0 ..< 3 {
+            XCTAssertEqual(Double(after[channel]), Double(before[channel]), accuracy: 3,
+                "The zero-strength upper edge must preserve the real lower-plane color, without an opaque seam")
+        }
+        let link = Mirror(reflecting: surface.transitionSurface).children
+            .first { $0.label == "displayLink" }?.value as? CADisplayLink
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(link).preferredFrameRateRange.preferred, 60,
+            "The backdrop must not be capped to the previous 30Hz sampling loop")
+    }
+
     func testUnattachedConfigurationCannotRetireVisibleImmersivePlayer() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

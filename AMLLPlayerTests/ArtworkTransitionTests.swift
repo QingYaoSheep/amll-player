@@ -10,6 +10,34 @@ final class ArtworkTransitionTests: XCTestCase {
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
+    func testReflectionImportPreservesTaggedWideGamutRGB() throws {
+        for name in [CGColorSpace.displayP3, CGColorSpace.itur_2020] {
+            let taggedSpace = try XCTUnwrap(CGColorSpace(name: name))
+            var storage: CVPixelBuffer?
+            XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 2, 2, kCVPixelFormatType_32BGRA,
+                [kCVPixelBufferIOSurfacePropertiesKey: NSDictionary()] as CFDictionary, &storage), kCVReturnSuccess)
+            let buffer = try XCTUnwrap(storage)
+            CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, taggedSpace, .shouldPropagate)
+            XCTAssertEqual(CVPixelBufferLockBaseAddress(buffer, []), kCVReturnSuccess)
+            let bytes = try XCTUnwrap(CVPixelBufferGetBaseAddress(buffer)).assumingMemoryBound(to: UInt8.self)
+            for y in 0 ..< 2 {
+                for x in 0 ..< 2 {
+                    let offset = y * CVPixelBufferGetBytesPerRow(buffer) + x * 4
+                    bytes[offset] = 38; bytes[offset + 1] = 76; bytes[offset + 2] = 204; bytes[offset + 3] = 255
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+            let imported = ArtworkReflectionImage.source(buffer)
+            let expected = CIImage(cvPixelBuffer: buffer, options: [.colorSpace: taggedSpace])
+            let actualPixel = pixel(imported, x: 0, y: 0)
+            let expectedPixel = pixel(expected, x: 0, y: 0)
+            for channel in 0 ..< 4 {
+                XCTAssertEqual(Double(actualPixel[channel]), Double(expectedPixel[channel]), accuracy: 1,
+                    "BGRA storage must not relabel the attached wide-gamut color space")
+            }
+        }
+    }
+
     func testReflectionKeepsSquareFeaturesSquareAcrossContainerHeights() throws {
         // An actual image feature catches anisotropic stretching, rather than
         // only checking the destination rectangle's dimensions.

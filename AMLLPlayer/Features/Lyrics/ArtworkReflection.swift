@@ -193,12 +193,9 @@ enum ArtworkReflectionImage {
     ]
 
     static func source(_ buffer: CVPixelBuffer) -> CIImage {
-        // Item-output BGRA is display-encoded RGB. Interpreting its video
-        // transfer metadata again changes the SDR clone at zero blur radius.
-        // Native YUV output still needs its attached matrix/transfer metadata.
-        if CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA {
-            return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
-        }
+        // Channel storage does not establish a color space. The item output
+        // requests SDR conversion; native output keeps its attached gamut and
+        // transfer function, including wide-gamut RGB and YUV buffers.
         return CIImage(cvPixelBuffer: buffer)
     }
 

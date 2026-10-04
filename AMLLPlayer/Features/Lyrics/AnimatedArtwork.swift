@@ -417,7 +417,14 @@ struct AnimatedArtwork: UIViewRepresentable {
                     output.setDelegate(nil, queue: nil)
                     outputItem?.remove(output)
                 }
-                let next = AVPlayerItemVideoOutput(pixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+                // Request actual conversion to our SDR display space rather
+                // than relabelling decoded BGRA with a different transfer curve.
+                let next = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                    kCVImageBufferColorPrimariesKey as String: kCVImageBufferColorPrimaries_ITU_R_709_2,
+                    kCVImageBufferTransferFunctionKey as String: kCVImageBufferTransferFunction_sRGB,
+                    kCVImageBufferYCbCrMatrixKey as String: kCVImageBufferYCbCrMatrix_ITU_R_709_2,
+                ])
                 let target = Target(); target.surface = self
                 next.setDelegate(target, queue: .main)
                 item.add(next); output = next; outputItem = item

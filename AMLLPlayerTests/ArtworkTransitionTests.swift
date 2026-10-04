@@ -10,8 +10,8 @@ final class ArtworkTransitionTests: XCTestCase {
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    func testReflectionImportPreservesTaggedWideGamutRGB() throws {
-        for name in [CGColorSpace.displayP3, CGColorSpace.itur_2020] {
+    func testReflectionImportPreservesTaggedRGBAndDefaultsOnlyUntaggedRGB() throws {
+        for name in [CGColorSpace.sRGB, CGColorSpace.itur_709, CGColorSpace.displayP3, CGColorSpace.itur_2020] {
             let taggedSpace = try XCTUnwrap(CGColorSpace(name: name))
             var storage: CVPixelBuffer?
             XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 2, 2, kCVPixelFormatType_32BGRA,
@@ -27,13 +27,18 @@ final class ArtworkTransitionTests: XCTestCase {
                 }
             }
             CVPixelBufferUnlockBaseAddress(buffer, [])
+            CVBufferRemoveAttachment(buffer, kCVImageBufferCGColorSpaceKey)
+            let untagged = pixel(ArtworkReflectionImage.source(buffer), x: 0, y: 0)
+            let displayEncoded = pixel(CIImage(cvPixelBuffer: buffer, options: [.colorSpace: colorSpace]), x: 0, y: 0)
+            XCTAssertEqual(untagged, displayEncoded, "Untagged display RGB must not inherit a Composite NTSC fallback")
+            CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, taggedSpace, .shouldPropagate)
             let imported = ArtworkReflectionImage.source(buffer)
             let expected = CIImage(cvPixelBuffer: buffer, options: [.colorSpace: taggedSpace])
             let actualPixel = pixel(imported, x: 0, y: 0)
             let expectedPixel = pixel(expected, x: 0, y: 0)
             for channel in 0 ..< 4 {
                 XCTAssertEqual(Double(actualPixel[channel]), Double(expectedPixel[channel]), accuracy: 1,
-                    "BGRA storage must not relabel the attached wide-gamut color space")
+                    "BGRA storage must not relabel the attached color space")
             }
         }
     }

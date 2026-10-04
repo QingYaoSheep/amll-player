@@ -193,9 +193,16 @@ enum ArtworkReflectionImage {
     ]
 
     static func source(_ buffer: CVPixelBuffer) -> CIImage {
-        // Channel storage does not establish a color space. The item output
-        // requests SDR conversion; native output keeps its attached gamut and
-        // transfer function, including wide-gamut RGB and YUV buffers.
+        // Untagged decoded RGB otherwise inherits Core Image's Composite NTSC
+        // fallback, unlike AVPlayerLayer's display-encoded RGB. Use sRGB only
+        // when no explicit space, primaries, or transfer encoding is attached.
+        // Tagged wide-gamut/standard RGB and native YUV retain their metadata.
+        if CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA,
+           CVBufferCopyAttachment(buffer, kCVImageBufferCGColorSpaceKey, nil) == nil,
+           CVBufferCopyAttachment(buffer, kCVImageBufferColorPrimariesKey, nil) == nil,
+           CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil) == nil {
+            return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
+        }
         return CIImage(cvPixelBuffer: buffer)
     }
 

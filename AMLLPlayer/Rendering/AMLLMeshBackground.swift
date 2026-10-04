@@ -3,16 +3,24 @@ import SwiftUI
 import UIKit
 
 struct AMLLMeshBackground: UIViewRepresentable {
+    enum ColorMode: Equatable, Sendable {
+        case original, colorMode2
+
+        var textureSide: Int { self == .colorMode2 ? 64 : 32 }
+        var blurPasses: Int { self == .colorMode2 ? 2 : 4 }
+    }
+
     var artworkURL: URL?
     var active: Bool
     var blur: Double
+    var colorMode: ColorMode = .original
     /// Debug/reference playback can inject a seed; production seeds once per context.
     var seed: UInt32? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(seed: seed ?? UInt32.random(in: 1 ... UInt32.max))
+        Coordinator(seed: seed ?? UInt32.random(in: 1 ... UInt32.max), colorMode: colorMode)
     }
 
     func makeUIView(context: Context) -> MTKView {
@@ -27,7 +35,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
-        context.coordinator.setBlur(blur)
+        context.coordinator.setProcessing(blur: blur, colorMode: colorMode)
         if active {
             context.coordinator.setArtwork(artworkURL)
         }
@@ -85,10 +93,12 @@ struct AMLLMeshBackground: UIViewRepresentable {
         private var artworkURL: URL?
         private var artworkData: Data?
         private var blurRadius = 2
+        private var colorMode: ColorMode
         private var loadTask: Task<Void, Never>?
 
-        init(seed: UInt32) {
+        init(seed: UInt32, colorMode: ColorMode = .original) {
             random = AMLLMeshPreset.Random(state: seed)
+            self.colorMode = colorMode
             super.init()
         }
 
@@ -134,7 +144,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 do {
                     let data = try await ArtworkImageData.load(url)
                     try Task.checkCancellation()
-                    guard let loaded = Self.albumTexture(data: data, device: device, blurRadius: self?.blurRadius ?? 2)
+                    guard let loaded = Self.albumTexture(data: data, device: device, blurRadius: self?.blurRadius ?? 2,
+                                                        colorMode: self?.colorMode ?? .original)
                     else { throw URLError(.cannotDecodeContentData) }
                     guard self?.artworkURL == url else { return }
                     self?.artworkData = data
@@ -155,12 +166,13 @@ struct AMLLMeshBackground: UIViewRepresentable {
             }
         }
 
-        func setBlur(_ value: Double) {
+        func setProcessing(blur value: Double, colorMode: ColorMode) {
             let next = min(4, max(0, Int((value / 20).rounded())))
-            guard next != blurRadius else { return }
+            guard next != blurRadius || colorMode != self.colorMode else { return }
             blurRadius = next
+            self.colorMode = colorMode
             guard let artworkData, let device = view?.device,
-                  let rebuilt = Self.albumTexture(data: artworkData, device: device, blurRadius: next)
+                  let rebuilt = Self.albumTexture(data: artworkData, device: device, blurRadius: next, colorMode: colorMode)
             else { return }
             if !states.isEmpty {
                 states[states.count - 1].texture = rebuilt
@@ -285,10 +297,11 @@ struct AMLLMeshBackground: UIViewRepresentable {
             command.commit()
         }
 
-        /// Reproduces AMLL's 32×32 low-quality resize, color matrix, and four-pass box blur.
-        private static func albumTexture(data: Data, device: MTLDevice, blurRadius: Int) -> MTLTexture? {
+        /// Original: 32×32, source color matrix, four box-blur passes.
+        /// Color mode 2: 64×64, unadjusted cover colors, two box-blur passes.
+        static func albumTexture(data: Data, device: MTLDevice, blurRadius: Int, colorMode: ColorMode = .original) -> MTLTexture? {
             guard let image = UIImage(data: data)?.cgImage else { return nil }
-            let side = 32
+            let side = colorMode.textureSide
             let bytesPerRow = side * 4
             var pixels = [UInt8](repeating: 0, count: side * bytesPerRow)
             let rendered = pixels.withUnsafeMutableBytes { bytes -> Bool in
@@ -303,20 +316,22 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 return true
             }
             guard rendered else { return nil }
-            for index in stride(from: 0, to: pixels.count, by: 4) {
-                var red = (Double(pixels[index]) - 128) * 0.4 + 128
-                var green = (Double(pixels[index + 1]) - 128) * 0.4 + 128
-                var blue = (Double(pixels[index + 2]) - 128) * 0.4 + 128
-                let gray = red * 0.3 + green * 0.59 + blue * 0.11
-                red = ((gray * -2 + red * 3 - 128) * 1.7 + 128) * 0.75
-                green = ((gray * -2 + green * 3 - 128) * 1.7 + 128) * 0.75
-                blue = ((gray * -2 + blue * 3 - 128) * 1.7 + 128) * 0.75
-                pixels[index] = clampedByte(red)
-                pixels[index + 1] = clampedByte(green)
-                pixels[index + 2] = clampedByte(blue)
+            if colorMode == .original {
+                for index in stride(from: 0, to: pixels.count, by: 4) {
+                    var red = (Double(pixels[index]) - 128) * 0.4 + 128
+                    var green = (Double(pixels[index + 1]) - 128) * 0.4 + 128
+                    var blue = (Double(pixels[index + 2]) - 128) * 0.4 + 128
+                    let gray = red * 0.3 + green * 0.59 + blue * 0.11
+                    red = ((gray * -2 + red * 3 - 128) * 1.7 + 128) * 0.75
+                    green = ((gray * -2 + green * 3 - 128) * 1.7 + 128) * 0.75
+                    blue = ((gray * -2 + blue * 3 - 128) * 1.7 + 128) * 0.75
+                    pixels[index] = clampedByte(red)
+                    pixels[index + 1] = clampedByte(green)
+                    pixels[index + 2] = clampedByte(blue)
+                }
             }
             if blurRadius > 0 {
-                blur(&pixels, width: side, height: side, radius: blurRadius, quality: 4)
+                blur(&pixels, width: side, height: side, radius: blurRadius, quality: colorMode.blurPasses)
             }
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: false

@@ -163,6 +163,7 @@ struct LyricsAppearanceView: View {
                                                   set: { preferences.configuration.backgroundMode = $0 }))
                 {
                     Text("Mesh 网格").tag(LyricsRenderConfiguration.BackgroundMode.mesh)
+                    Text("Mesh网格（取色模式2）").tag(LyricsRenderConfiguration.BackgroundMode.meshColorMode2)
                     Text("Pixi 流动封面").tag(LyricsRenderConfiguration.BackgroundMode.pixi)
                     Text("流动背景").tag(LyricsRenderConfiguration.BackgroundMode.flowing)
                     Text("纯色").tag(LyricsRenderConfiguration.BackgroundMode.solid)
@@ -171,10 +172,14 @@ struct LyricsAppearanceView: View {
                 if preferences.profile == .amll {
                     adjustment("appearance.dimming", key: \.backgroundDimming, fallback: 0.16, range: 0 ... 0.8, step: 0.04)
                 }
-                if preferences.configuration.backgroundMode == nil || preferences.configuration.backgroundMode == .mesh {
+                if (preferences.configuration.backgroundMode ?? .mesh).isMesh {
                     LabeledContent("render.backgroundBlur", value: String(format: "%.0f pt", preferences.configuration.backgroundBlur))
                     Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
                     Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
+                    if preferences.configuration.backgroundMode == .meshColorMode2 {
+                        Text("使用 64×64 封面，保留原始颜色并进行两轮均值模糊；网格与动画沿用 Mesh 模式。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                 } else if preferences.configuration.backgroundMode == .flowing {
                     flowingAdjustment("旋转速度", key: \.rotationSpeed, range: 0 ... 6, step: 0.25, unit: "°/秒")
                     flowingAdjustment("扭曲强度", key: \.distortion, range: 0 ... 8, step: 0.5, unit: "%")

@@ -31,9 +31,10 @@ struct AMLLBackground: View {
             if mode == .gradient {
                 LinearGradient(colors: [color.swiftUIColor, gradientEnd.swiftUIColor], startPoint: .top, endPoint: .bottom)
             }
-            if usedMesh || mode == .mesh {
-                AMLLMeshBackground(artworkURL: artworkURL, active: active && mode == .mesh, blur: effectiveMeshBlur)
-                    .opacity(mode == .mesh ? 1 : 0)
+            if usedMesh || mode.isMesh {
+                AMLLMeshBackground(artworkURL: artworkURL, active: active && mode.isMesh, blur: effectiveMeshBlur,
+                                   colorMode: mode == .meshColorMode2 ? .colorMode2 : .original)
+                    .opacity(mode.isMesh ? 1 : 0)
             }
             if usedPixi || mode == .pixi {
                 AMLLPixiBackground(artworkURL: artworkURL, active: active && mode == .pixi, blurEnabled: !suppressBlur)
@@ -47,7 +48,7 @@ struct AMLLBackground: View {
         }
         .overlay { Color.black.opacity(dimming) }
         .onChange(of: mode, initial: true) { _, value in
-            if value == .mesh {
+            if value.isMesh {
                 usedMesh = true
             }
             if value == .pixi {

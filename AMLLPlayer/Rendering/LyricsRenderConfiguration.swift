@@ -55,7 +55,11 @@ enum AMLLLyricSizePreset: String, Codable, CaseIterable, Sendable {
 }
 
 struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
-    enum BackgroundMode: String, Codable, CaseIterable { case mesh, pixi, flowing, solid, gradient }
+    enum BackgroundMode: String, Codable, CaseIterable {
+        case mesh, meshColorMode2, pixi, flowing, solid, gradient
+
+        var isMesh: Bool { self == .mesh || self == .meshColorMode2 }
+    }
     struct BackgroundColor: Codable, Equatable, Sendable {
         var red: Double
         var green: Double

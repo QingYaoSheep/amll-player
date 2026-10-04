@@ -7,6 +7,91 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testVisibleVideoReportsFirstFrameAndKeepsPlayingWithoutAuxiliaryFrameSession() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = window.bounds
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        var firstFrame = false
+        var states: [ArtworkPlaybackState] = []
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.transition].enabled = false
+        tuning[.bottomFade].enabled = false
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        surface.configure(video: AnimatedArtwork(url: url, active: true,
+            onState: { _, state in states.append(state) }, onFirstFrame: { _, _ in firstFrame = true }),
+            layout: .init(video: rect, reflection: .zero, transition: .zero, bottomFade: .zero,
+                tuning: tuning, presentsFrame: false, reflectionEnabled: false, reduceTransparency: false))
+        // Inject an auxiliary receiver-generation gap before readiness. The
+        // current native presentation and its real AVPlayer remain unchanged.
+        _ = frames.begin()
+        let layer = try XCTUnwrap(surface.videoSurface.layer as? AVPlayerLayer)
+        let player = try XCTUnwrap(layer.player)
+        try await waitUntil { layer.isReadyForDisplay }
+        try await waitUntil { firstFrame && states.contains(.displayed) }
+        XCTAssertTrue(firstFrame, "A failed reflection source must not block the page's real video-first-frame callback")
+        XCTAssertTrue(states.contains(.displayed))
+        XCTAssertFalse(frames.hasFrame, "This case deliberately leaves the auxiliary source invalid")
+        XCTAssertEqual(player.rate, 1)
+        XCTAssertGreaterThan(player.currentTime().seconds, 0)
+    }
+
+    func testExplicitConfigurationRestoresPausedReflectionWithoutRestartingVideo() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previousKeyWindow = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = window.bounds
+        window.rootViewController?.view.addSubview(surface)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            previousKeyWindow?.makeKey()
+        }
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.transition].enabled = false
+        tuning[.bottomFade].enabled = false
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let layout = ImmersiveArtworkMedia.Layout(video: rect,
+            reflection: ArtworkReflectionGeometry.frame(cover: rect, viewportHeight: 650),
+            transition: .zero, bottomFade: .zero, tuning: tuning, presentsFrame: true,
+            reflectionEnabled: true, reduceTransparency: false)
+        let video = AnimatedArtwork(url: url, active: false)
+        surface.configure(video: video, layout: layout)
+        surface.videoSurface.usePlayerLevelFrameOutput()
+        surface.layoutIfNeeded()
+        try await waitUntil { frames.hasFrame && surface.reflectionSurface.layer.contents != nil }
+        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        let item = try XCTUnwrap(player.currentItem)
+        let output = try XCTUnwrap(player.videoOutput)
+        _ = frames.begin()
+        XCTAssertFalse(frames.hasFrame)
+        surface.configure(video: video, layout: layout)
+        try await waitUntil { frames.receivedFrames > 0 && surface.reflectionSurface.layer.contents != nil }
+        XCTAssertTrue(player.currentItem === item, "Repair the receiver binding without rebuilding the video queue")
+        XCTAssertTrue(player.videoOutput === output, "Reuse the existing decoder output")
+        XCTAssertEqual(player.rate, 0, "Recovering a paused reflection cannot start the video")
+        XCTAssertTrue(frames.hasFrame)
+        XCTAssertEqual(frames.rejectedFrames, 0)
+    }
+
     func testFailureStateCallbackCanReplaceResourceWithoutClearingNewSession() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let cachedURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")

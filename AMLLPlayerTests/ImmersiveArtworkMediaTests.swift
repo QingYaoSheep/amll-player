@@ -8,6 +8,14 @@ import XCTest
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
     func testBlurTopMatchesTheUnfilteredTranslucentVideo() async throws {
+        try await checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: false)
+    }
+
+    func testPlayerLevelBlurTopMatchesTheUnfilteredTranslucentVideo() async throws {
+        try await checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: true)
+    }
+
+    private func checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: Bool) async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let window = try playbackWindow()
         let frames = ArtworkReflectionFrames()
@@ -20,7 +28,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         for kind in [ImmersiveArtworkLayer.reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
         tuning[.video].opacity = 0.65
         tuning.blurRadius = 80
-        let video = AnimatedArtwork(url: url, active: false)
+        var video = AnimatedArtwork(url: url, active: playerLevel)
         let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
         let profile = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 180, width: 200, height: 470), fullStrengthY: 400)
         func apply() {
@@ -32,6 +40,17 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         tuning[.transition].enabled = false
         apply()
         try await waitUntil { frames.hasFrame && frames.primaryFrameReady }
+        if playerLevel {
+            let received = frames.receivedFrames
+            surface.videoSurface.usePlayerLevelFrameOutput()
+            try await waitUntil {
+                surface.videoSurface.refreshReflectionFrame(hostTime: CACurrentMediaTime())
+                return frames.receivedFrames > received
+            }
+            video.active = false
+            apply()
+            try await Task.sleep(for: .milliseconds(100))
+        }
         let before = try backdropPixel(window, at: CGPoint(x: 12, y: 181))
         tuning[.transition].enabled = true
         apply()

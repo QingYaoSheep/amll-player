@@ -25,6 +25,13 @@ struct ArtworkFramePresentation: Equatable {
     var mediaRate: Float = 0
     var videoDisplayed = false
     var resourceKind = ""
+    var producerIdentifier: UUID?
+    var primaryFrameReady = false
+    var producerSource: UUID?
+    var producerBindingValid: Bool { producerSource.map { accepts(source: $0) } ?? false }
+    private var producerDiagnostic: String {
+        "播放器实例：\(producerIdentifier.map { String($0.uuidString.prefix(8)) } ?? "未配置")；主视频首帧：\(primaryFrameReady ? "已就绪" : "等待")；倒影帧绑定：\(producerBindingValid ? "有效" : "等待配置恢复")"
+    }
     var outputStarvationSeconds = 0.0
     var frameOutputSwitches = 0
     private(set) var rejectedFrames = 0
@@ -41,6 +48,10 @@ struct ArtworkFramePresentation: Equatable {
         "呈现实例：\(presentation.map { String($0.id.uuidString.prefix(8)) } ?? "独立")；资源代次：\(resource.map { String($0.uuidString.prefix(8)) } ?? "无")；帧来源：\(source.map { String($0.uuidString.prefix(8)) } ?? "已结束")；拒绝原因：\(rejectionReason)"
     }
     var diagnosticText: String {
+        let commit = Bundle.main.object(forInfoDictionaryKey: "AMLLBuildCommit") as? String ?? "local"
+        return "动态封面构建：\(commit.prefix(8))；倒影链路：3\n\(producerDiagnostic)\n\(frameDiagnosticText)"
+    }
+    private var frameDiagnosticText: String {
         "取帧输出：\(outputAttached ? "已接入" : "未接入")；取得像素帧：\(acquiredFrames)；接受帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n无像素帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)；来源不匹配：\(rejectedFrames)\n\(sessionDiagnostic)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n模糊提交：\(liveBlurSurface?.presentedFrames ?? 0)；模糊输入：\(blurInputs.isEmpty ? "无" : blurInputs.joined(separator: "、"))；等待视频像素：\(blurWaitingForVideoFrame ? "是" : "否")\n\(blurLayoutDiagnostic)\n\(layoutDiagnostic)"
     }
 
@@ -56,6 +67,7 @@ struct ArtworkFramePresentation: Equatable {
         guard presentation.map({ next.order >= $0.order }) ?? true else { return false }
         if presentation != next {
             clear(source: source)
+            resetProducerDiagnostics()
             presentation = next
         }
         attach(reflection)
@@ -80,7 +92,18 @@ struct ArtworkFramePresentation: Equatable {
         surface = nil
         transitionSurface = nil
         liveBlurSurface = nil
+        resetProducerDiagnostics()
         // Retain the highest presentation order so retired views stay retired.
+    }
+
+    private func resetProducerDiagnostics() {
+        producerIdentifier = nil
+        producerSource = nil
+        primaryFrameReady = false
+        mediaTime = 0
+        mediaRate = 0
+        videoDisplayed = false
+        resourceKind = ""
     }
 
     func attach(_ view: ArtworkReflection.Surface) {
@@ -110,7 +133,6 @@ struct ArtworkFramePresentation: Equatable {
         acquiredFrames = 0
         samplingAttempts = 0
         outputKind = "item 级（BGRA）"
-        mediaTime = 0; mediaRate = 0; videoDisplayed = false; resourceKind = ""
         outputStarvationSeconds = 0; frameOutputSwitches = 0; rejectedFrames = 0
         rejectionReason = "无"
         blurInputs = []; blurWaitingForVideoFrame = false

@@ -84,6 +84,7 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var playerVideoOutput: AVPlayerVideoOutput?
         private var lastPlayerOutputTime: CMTime?
         private var frameOutputWatchdog = ArtworkFrameOutputWatchdog()
+        private var lastReflectionBuffer: CVPixelBuffer?
         private var displayLink: CADisplayLink?
         private var watchdog = ArtworkPlaybackWatchdog()
         private var lastTick: CFTimeInterval?
@@ -92,6 +93,15 @@ struct AnimatedArtwork: UIViewRepresentable {
         private var reportedFirstFrame = false
         private var reportedVideoSize = CGSize.zero
         private var generation = UUID()
+        private let playerIdentifier = UUID()
+        /// Video readiness and failure belong to the presentation, not to the
+        /// optional pixel-output lease used by reflection and backdrop blur.
+        private var ownsVideoPresentation: Bool {
+            if let reflectionPresentation {
+                return reflectionFrames?.ownsPresentation(reflectionPresentation) == true
+            }
+            return reflectionFrames == nil || ownsReflectionSession
+        }
         private var ownsReflectionSession: Bool {
             guard let reflectionFrames, let reflectionToken else { return false }
             return reflectionFrames.accepts(source: reflectionToken)
@@ -196,6 +206,23 @@ struct AnimatedArtwork: UIViewRepresentable {
                     }
                 }
             }
+            // Only an explicit configuration by the current presentation may
+            // restore a lost receiver lease. Sampling never claims ownership.
+            if let reflectionFrames, let presentation,
+               !failed, reflectionFrames.ownsPresentation(presentation), !ownsReflectionSession {
+                reflectionToken = reflectionFrames.begin(presentation: presentation, resource: generation)
+                lastPlayerOutputTime = nil
+                frameOutputWatchdog = ArtworkFrameOutputWatchdog()
+                reflectionFrames.outputKind = playerVideoOutput == nil ? "item 级（BGRA）" : "播放器级（原生像素格式）"
+                reflectionFrames.outputAttached = playerVideoOutput != nil
+                    || (output != nil && outputItem === player.currentItem)
+                // An item output need not emit another copy of a paused frame.
+                // Keep one accepted buffer for this unchanged video resource.
+                if !active, !playbackActive, let lastReflectionBuffer, let reflectionToken {
+                    reflectionFrames.display(lastReflectionBuffer, source: reflectionToken)
+                }
+            }
+            updateVideoDiagnostics()
             if replacesResource {
                 do {
                     // Configure before AVPlayerLooper inserts an item or playback begins.
@@ -320,14 +347,15 @@ struct AnimatedArtwork: UIViewRepresentable {
             CATransaction.commit()
             if visible { refreshReflectionFrame() }
             let size = player.currentItem?.presentationSize ?? .zero
-            if visible, reflectionFrames == nil || ownsReflectionSession,
+            if visible, ownsVideoPresentation,
                let url, !reportedFirstFrame || (size.width > 0 && size.height > 0 && size != reportedVideoSize) {
                 reportedFirstFrame = true
                 reportedVideoSize = size
+                updateVideoDiagnostics()
                 let generation = generation
                 Task { @MainActor [weak self] in
                     guard let self, self.generation == generation, self.url == url,
-                          self.reflectionFrames == nil || self.ownsReflectionSession else { return }
+                          self.ownsVideoPresentation else { return }
                     onFirstFrame(url, size)
                 }
             }
@@ -342,6 +370,7 @@ struct AnimatedArtwork: UIViewRepresentable {
             output = nil; outputItem = nil; outputTarget = nil; outputWakeDeadline = nil
             player.videoOutput = nil; playerVideoOutput = nil; lastPlayerOutputTime = nil
             frameOutputWatchdog = ArtworkFrameOutputWatchdog()
+            lastReflectionBuffer = nil
             outputNotificationRequested = false
             reflectionFrames?.clear(source: reflectionToken)
             reflectionFrames = nil; reflectionToken = nil; reflectionPresentation = nil
@@ -398,14 +427,11 @@ struct AnimatedArtwork: UIViewRepresentable {
         /// Host-time prediction may be invalid during initial HLS buffering or
         /// pause. Fall back to the actual item's media time, never another clock.
         func refreshReflectionFrame(hostTime: CFTimeInterval? = nil) {
+            updateVideoDiagnostics()
             guard !failed, let reflectionFrames, let reflectionToken,
                   reflectionFrames.accepts(source: reflectionToken),
                   let item = player.currentItem else { return }
             reflectionFrames.samplingAttempts += 1
-            reflectionFrames.mediaTime = player.currentTime().seconds
-            reflectionFrames.mediaRate = player.rate
-            reflectionFrames.videoDisplayed = playerLayer.isReadyForDisplay
-            reflectionFrames.resourceKind = url?.isFileURL == true ? (url?.pathExtension ?? "本地") : "在线"
             let now = CACurrentMediaTime()
             let eligible = window != nil && UIApplication.shared.applicationState == .active
                 // Readiness may drop between HLS loop items. Once this resource
@@ -427,6 +453,7 @@ struct AnimatedArtwork: UIViewRepresentable {
                             frameOutputWatchdog.receivedFrame(now: now)
                             reflectionFrames.outputStarvationSeconds = 0
                             if reflectionFrames.display(buffer, source: reflectionToken) {
+                                lastReflectionBuffer = buffer
                                 lastPlayerOutputTime = sample.presentationTime
                             }
                             return
@@ -443,7 +470,9 @@ struct AnimatedArtwork: UIViewRepresentable {
                    let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
                     frameOutputWatchdog.receivedFrame(now: now)
                     reflectionFrames.outputStarvationSeconds = 0
-                    reflectionFrames.display(buffer, source: reflectionToken)
+                    if reflectionFrames.display(buffer, source: reflectionToken) {
+                        lastReflectionBuffer = buffer
+                    }
                     return
                 }
             }
@@ -480,24 +509,36 @@ struct AnimatedArtwork: UIViewRepresentable {
         private func fail(_ error: Error?) {
             guard !failed, let url else { return }
             let failingGeneration = generation
-            let reportsFailure = reflectionFrames == nil || ownsReflectionSession
+            let reportsFailure = ownsVideoPresentation
             failed = true
             player.pause()
+            updateVideoDiagnostics()
             displayLink?.isPaused = true
             report(.failed)
             // An external state callback may replace this player synchronously.
             // Nothing from this failure may clear or notify that replacement.
-            guard generation == failingGeneration, reflectionFrames == nil || ownsReflectionSession else { return }
+            guard generation == failingGeneration, ownsVideoPresentation else { return }
             reflectionFrames?.clear(source: reflectionToken)
             updateVisibility()
             if reportsFailure { onFailure(url, error) }
         }
 
         private func report(_ state: ArtworkPlaybackState) {
-            guard reflectionFrames == nil || ownsReflectionSession,
+            guard ownsVideoPresentation,
                   let url, reportedState != state else { return }
             reportedState = state
             onState(url, state)
+        }
+
+        private func updateVideoDiagnostics() {
+            guard ownsVideoPresentation, let reflectionFrames else { return }
+            reflectionFrames.mediaTime = player.currentTime().seconds
+            reflectionFrames.mediaRate = player.rate
+            reflectionFrames.videoDisplayed = !failed && playerLayer.isReadyForDisplay
+            reflectionFrames.resourceKind = url?.isFileURL == true ? (url?.pathExtension ?? "本地") : "在线"
+            reflectionFrames.producerIdentifier = playerIdentifier
+            reflectionFrames.primaryFrameReady = reportedFirstFrame
+            reflectionFrames.producerSource = reflectionToken
         }
     }
 }

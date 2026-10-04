@@ -18,6 +18,9 @@ final class ArtworkFrameSessionTests: XCTestCase {
         XCTAssertTrue(frames.display(buffer, source: oldSource))
         XCTAssertTrue(frames.activate(second, reflection: currentReflection, blur: currentBlur))
         let currentSource = try XCTUnwrap(frames.begin(presentation: second, resource: UUID()))
+        frames.producerIdentifier = UUID()
+        frames.producerSource = currentSource
+        frames.primaryFrameReady = true
         frames.outputAttached = true
         XCTAssertTrue(frames.display(buffer, source: currentSource))
 
@@ -29,6 +32,8 @@ final class ArtworkFrameSessionTests: XCTestCase {
         XCTAssertTrue(frames.accepts(source: currentSource))
         XCTAssertTrue(frames.hasFrame)
         XCTAssertTrue(frames.outputAttached)
+        XCTAssertTrue(frames.producerBindingValid, "Retired cleanup must not invalidate the current producer diagnostic")
+        XCTAssertTrue(frames.primaryFrameReady)
         XCTAssertTrue(frames.surface === currentReflection)
         XCTAssertTrue(frames.liveBlurSurface === currentBlur)
         XCTAssertEqual(frames.acquiredFrames, 2)
@@ -66,6 +71,9 @@ final class ArtworkFrameSessionTests: XCTestCase {
         XCTAssertTrue(frames.activate(owner, reflection: reflection, blur: blur))
         let source = try XCTUnwrap(frames.begin(presentation: owner, resource: UUID()))
         frames.release(owner)
+        XCTAssertFalse(frames.producerBindingValid)
+        XCTAssertFalse(frames.primaryFrameReady)
+        XCTAssertNil(frames.producerIdentifier)
         XCTAssertFalse(frames.display(try pixelBuffer(), source: source))
         XCTAssertEqual(frames.acquiredFrames, 1)
         XCTAssertEqual(frames.receivedFrames, 0)

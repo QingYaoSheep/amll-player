@@ -40,15 +40,25 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         let layer = try XCTUnwrap(surface.videoSurface.layer as? AVPlayerLayer)
         let player = try XCTUnwrap(layer.player)
         try await waitUntil { layer.isReadyForDisplay }
-        try await waitUntil { firstFrame && states.contains(.displayed) }
+        try await waitUntil { firstFrame && states.contains(.displayed) && player.currentTime().seconds > 0 }
         XCTAssertTrue(firstFrame, "A failed reflection source must not block the page's real video-first-frame callback")
         XCTAssertTrue(states.contains(.displayed))
+        XCTAssertTrue(frames.primaryFrameReady)
+        XCTAssertFalse(frames.producerBindingValid)
         XCTAssertFalse(frames.hasFrame, "This case deliberately leaves the auxiliary source invalid")
         XCTAssertEqual(player.rate, 1)
         XCTAssertGreaterThan(player.currentTime().seconds, 0)
     }
 
     func testExplicitConfigurationRestoresPausedReflectionWithoutRestartingVideo() async throws {
+        try await verifyPausedReflectionRecovery(playerOutput: true)
+    }
+
+    func testExplicitConfigurationPreservesItemOutputAfterProlongedReceiverLoss() async throws {
+        try await verifyPausedReflectionRecovery(playerOutput: false)
+    }
+
+    private func verifyPausedReflectionRecovery(playerOutput: Bool) async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -75,20 +85,36 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             reflectionEnabled: true, reduceTransparency: false)
         let video = AnimatedArtwork(url: url, active: false)
         surface.configure(video: video, layout: layout)
-        surface.videoSurface.usePlayerLevelFrameOutput()
+        if playerOutput { surface.videoSurface.usePlayerLevelFrameOutput() }
         surface.layoutIfNeeded()
-        try await waitUntil { frames.hasFrame && surface.reflectionSurface.layer.contents != nil }
-        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        try await waitUntil { frames.primaryFrameReady && frames.videoDisplayed
+            && frames.hasFrame && surface.reflectionSurface.layer.contents != nil }
+        let playerLayer = try XCTUnwrap(surface.videoSurface.layer as? AVPlayerLayer)
+        let player = try XCTUnwrap(playerLayer.player)
         let item = try XCTUnwrap(player.currentItem)
-        let output = try XCTUnwrap(player.videoOutput)
+        let output = player.videoOutput
+        let itemOutput = item.outputs.first
+        XCTAssertTrue(playerOutput ? output != nil : itemOutput != nil)
         _ = frames.begin()
         XCTAssertFalse(frames.hasFrame)
+        XCTAssertFalse(frames.producerBindingValid, "A paused source invalidation must be visible without another display tick")
+        XCTAssertEqual(frames.videoDisplayed, playerLayer.isReadyForDisplay)
+        if !playerOutput {
+            // This interval is receiver downtime, not decoder starvation.
+            // Restoring it must not replace the healthy item-level output.
+            try await Task.sleep(for: .milliseconds(1200))
+        }
         surface.configure(video: video, layout: layout)
         try await waitUntil { frames.receivedFrames > 0 && surface.reflectionSurface.layer.contents != nil }
         XCTAssertTrue(player.currentItem === item, "Repair the receiver binding without rebuilding the video queue")
         XCTAssertTrue(player.videoOutput === output, "Reuse the existing decoder output")
+        if !playerOutput {
+            XCTAssertTrue(item.outputs.first === itemOutput)
+            XCTAssertEqual(frames.frameOutputSwitches, 0)
+        }
         XCTAssertEqual(player.rate, 0, "Recovering a paused reflection cannot start the video")
         XCTAssertTrue(frames.hasFrame)
+        XCTAssertTrue(frames.producerBindingValid)
         XCTAssertEqual(frames.rejectedFrames, 0)
     }
 

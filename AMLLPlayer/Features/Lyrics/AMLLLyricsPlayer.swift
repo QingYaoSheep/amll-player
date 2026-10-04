@@ -59,6 +59,9 @@ struct AMLLLyricsPlayer: View {
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
             }
+            .onChange(of: artworkPresentationDiagnostic(size: geometry.size), initial: true) { _, diagnostic in
+                artworkReflectionFrames.pageDiagnostic = diagnostic
+            }
             .foregroundStyle(.white)
             .modifier(LyricsShellClipping(immersive: immersive, radius: drag.radius))
             .scaleEffect(drag.scale)
@@ -540,6 +543,12 @@ struct AMLLLyricsPlayer: View {
         case .unavailable: return "动态封面：无匹配布局的视频，使用静态图"
         case .failed: return "动态封面：加载失败，使用静态图（\(artworkLoader.failureCode ?? "未知错误")）"
         }
+    }
+
+    private func artworkPresentationDiagnostic(size: CGSize) -> String {
+        let immersive = model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: size) } ?? false
+        let resource = artworkLoader.playbackURL.map { $0.isFileURL ? "本地" : "在线" } ?? "无"
+        return "页面资源：\(artworkLoader.status.rawValue)；类型：\(artworkLoader.kind?.rawValue ?? "无")；来源：\(resource)；沉浸挂载：\(immersive ? "是" : "否")；歌词：\(configuration.showLyrics ? "显示" : "隐藏")\n播放页状态：\(artworkStatus)；页面：\(Int(size.width))×\(Int(size.height)) pt"
     }
 
     private var artworkPlaybackDescription: String {

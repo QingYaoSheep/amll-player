@@ -43,7 +43,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         // SwiftUI configures native views before attachment. A size/preflight
         // instance sharing this page's frame hub must not become its producer.
         preflight.configure(video: video, layout: layout)
-        preflight.stop()
+        ImmersiveArtworkMedia.dismantleUIView(preflight, coordinator: ())
         visible.configure(video: video, layout: layout)
         XCTAssertEqual(frames.sessionDiagnostic, source)
         XCTAssertTrue(frames.primaryFrameReady, frames.diagnosticText)
@@ -53,6 +53,60 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertEqual(player.rate, 1)
         try await waitUntil { frames.receivedFrames > received + 3 }
         XCTAssertNotNil(visible.reflectionSurface.layer.contents)
+    }
+
+    func testConfigurationBeforeAttachmentStartsAfterLayoutWithoutAnotherUpdate() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        let window = try playbackWindow()
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        var firstFrame = false
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.transition].enabled = false
+        tuning[.bottomFade].enabled = false
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let layout = ImmersiveArtworkMedia.Layout(video: rect,
+            reflection: ArtworkReflectionGeometry.frame(cover: rect, viewportHeight: window.bounds.height),
+            transition: .zero, bottomFade: .zero, tuning: tuning,
+            presentsFrame: true, reflectionEnabled: true, reduceTransparency: false)
+        surface.configure(video: AnimatedArtwork(url: url, active: false), layout: layout)
+        surface.configure(video: AnimatedArtwork(url: url, active: true,
+            onFirstFrame: { _, _ in firstFrame = true }), layout: layout)
+        XCTAssertNil(frames.producerIdentifier)
+        XCTAssertFalse(frames.outputAttached)
+        window.rootViewController?.view.addSubview(surface)
+        XCTAssertNil(frames.producerIdentifier, "A zero-size view is still a pending presentation")
+        surface.frame = window.bounds
+        surface.layoutIfNeeded()
+        try await waitUntil { firstFrame && frames.hasFrame && surface.reflectionSurface.layer.contents != nil }
+        XCTAssertTrue(frames.primaryFrameReady)
+        XCTAssertTrue(frames.producerBindingValid)
+        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        XCTAssertEqual(player.rate, 1, "Attachment must commit the latest active input, not the earlier paused input")
+    }
+
+    func testDismantledPreflightCannotStartWhenAttachedLater() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        let window = try playbackWindow()
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
+        let layout = ImmersiveArtworkMedia.Layout(video: rect, reflection: .zero,
+            transition: .zero, bottomFade: .zero, tuning: .init(), presentsFrame: false,
+            reflectionEnabled: false, reduceTransparency: false)
+        surface.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
+        ImmersiveArtworkMedia.dismantleUIView(surface, coordinator: ())
+        surface.frame = window.bounds
+        window.rootViewController?.view.addSubview(surface)
+        surface.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)
+        surface.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertNil((surface.videoSurface.layer as? AVPlayerLayer)?.player?.currentItem)
+        XCTAssertFalse(frames.outputAttached)
+        XCTAssertNil(frames.producerIdentifier)
+        XCTAssertNil(frames.surface)
     }
 
     func testVisibleVideoReportsFirstFrameAndKeepsPlayingWithoutAuxiliaryFrameSession() async throws {
@@ -173,7 +227,10 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: cachedURL) }
         let frames = ArtworkReflectionFrames()
         let surface = ImmersiveArtworkMedia.Surface(frames: frames)
-        defer { surface.stop() }
+        let window = try playbackWindow()
+        surface.frame = window.bounds
+        window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
         let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
         let layout = ImmersiveArtworkMedia.Layout(video: rect, reflection: .zero,
             transition: .zero, bottomFade: .zero, tuning: .init(), presentsFrame: false,
@@ -205,7 +262,15 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         let frames = ArtworkReflectionFrames()
         let retired = ImmersiveArtworkMedia.Surface(frames: frames)
         let current = ImmersiveArtworkMedia.Surface(frames: frames)
-        defer { retired.stop(); current.stop() }
+        let window = try playbackWindow()
+        retired.frame = window.bounds
+        current.frame = window.bounds
+        window.rootViewController?.view.addSubview(retired)
+        window.rootViewController?.view.addSubview(current)
+        defer {
+            retired.stop(); current.stop(); retired.removeFromSuperview(); current.removeFromSuperview()
+            window.isHidden = true
+        }
         let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
         let layout = ImmersiveArtworkMedia.Layout(video: rect, reflection: .zero,
             transition: .zero, bottomFade: .zero, tuning: .init(), presentsFrame: false,
@@ -941,5 +1006,15 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTFail("Actual video playback did not present its first frame within six seconds")
+    }
+
+    private func playbackWindow() throws -> UIWindow {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController()
+        window.isHidden = false
+        return window
     }
 }

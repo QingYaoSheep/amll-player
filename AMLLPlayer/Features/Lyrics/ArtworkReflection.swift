@@ -28,6 +28,8 @@ struct ArtworkFramePresentation: Equatable {
     var producerIdentifier: UUID?
     var primaryFrameReady = false
     var producerSource: UUID?
+    var pageDiagnostic = "页面资源状态：尚未记录"
+    private var lifecycleEvents: [String] = []
     var producerBindingValid: Bool { producerSource.map { accepts(source: $0) } ?? false }
     private var producerDiagnostic: String {
         "播放器实例：\(producerIdentifier.map { String($0.uuidString.prefix(8)) } ?? "未配置")；主视频首帧：\(primaryFrameReady ? "已就绪" : "等待")；倒影帧绑定：\(producerBindingValid ? "有效" : "等待配置恢复")"
@@ -49,7 +51,7 @@ struct ArtworkFramePresentation: Equatable {
     }
     var diagnosticText: String {
         let commit = Bundle.main.object(forInfoDictionaryKey: "AMLLBuildCommit") as? String ?? "local"
-        return "动态封面构建：\(commit.prefix(8))；倒影链路：3\n\(producerDiagnostic)\n\(frameDiagnosticText)"
+        return "动态封面构建：\(commit.prefix(8))；倒影链路：4\n\(pageDiagnostic)\n\(producerDiagnostic)\n\(frameDiagnosticText)\n视图生命周期：\(lifecycleEvents.isEmpty ? "无" : lifecycleEvents.joined(separator: " → "))"
     }
     private var frameDiagnosticText: String {
         "取帧输出：\(outputAttached ? "已接入" : "未接入")；取得像素帧：\(acquiredFrames)；接受帧：\(receivedFrames)；倒影提交：\(surface?.presentedFrames ?? 0)\n输出类型：\(outputKind)；采样次数：\(samplingAttempts)\n无像素帧累计：\(String(format: "%.2f", outputStarvationSeconds)) s；备用切换：\(frameOutputSwitches)；来源不匹配：\(rejectedFrames)\n\(sessionDiagnostic)\n媒体时间：\(String(format: "%.2f", mediaTime)) s；速率：\(mediaRate)；视频已显示：\(videoDisplayed ? "是" : "否")；资源：\(resourceKind)\n倒影图像：\(surface?.layer.contents != nil ? "有" : "无")\n模糊提交：\(liveBlurSurface?.presentedFrames ?? 0)；模糊输入：\(blurInputs.isEmpty ? "无" : blurInputs.joined(separator: "、"))；等待视频像素：\(blurWaitingForVideoFrame ? "是" : "否")\n\(blurLayoutDiagnostic)\n\(layoutDiagnostic)"
@@ -60,12 +62,19 @@ struct ArtworkFramePresentation: Equatable {
         return .init(order: nextPresentationOrder, id: UUID())
     }
 
+    /// Retain a bounded history across teardown, without URLs or account data.
+    func recordLifecycle(_ event: String, presentation owner: ArtworkFramePresentation) {
+        lifecycleEvents.append("\(owner.id.uuidString.prefix(8))：\(event)")
+        if lifecycleEvents.count > 8 { lifecycleEvents.removeFirst(lifecycleEvents.count - 8) }
+    }
+
     /// Late updates/dismantles of an older SwiftUI surface cannot retake the
     /// session. The producer and both receiving planes share this ownership.
     func activate(_ next: ArtworkFramePresentation, reflection: ArtworkReflection.Surface,
                   blur: ImmersiveLiveBlurSurface) -> Bool {
         guard presentation.map({ next.order >= $0.order }) ?? true else { return false }
         if presentation != next {
+            recordLifecycle("接管当前呈现", presentation: next)
             clear(source: source)
             resetProducerDiagnostics()
             presentation = next
@@ -88,6 +97,7 @@ struct ArtworkFramePresentation: Equatable {
 
     func release(_ owner: ArtworkFramePresentation) {
         guard ownsPresentation(owner) else { return }
+        recordLifecycle("释放当前呈现", presentation: owner)
         clear(source: source)
         surface = nil
         transitionSurface = nil

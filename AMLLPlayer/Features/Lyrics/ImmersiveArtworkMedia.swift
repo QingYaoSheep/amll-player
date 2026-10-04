@@ -29,7 +29,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
     func updateUIView(_ view: Surface, context _: Context) {
         view.configure(video: video, layout: layout, background: background)
     }
-    static func dismantleUIView(_ view: Surface, coordinator _: ()) { view.stop() }
+    static func dismantleUIView(_ view: Surface, coordinator _: ()) { view.dismantle() }
 
     final class Surface: UIView {
         let videoSurface = AnimatedArtwork.Surface()
@@ -46,6 +46,15 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         private var appliedLayout: Layout?
         private var appliedBounds: CGRect?
         private var blurProfile: ImmersiveBackgroundBlurProfile?
+        private var rejectedConfiguration = false
+        private struct PendingConfiguration {
+            let video: AnimatedArtwork
+            let layout: Layout
+            let background: AMLLBackground?
+        }
+        private var pendingConfiguration: PendingConfiguration?
+        private var waitingForAttachment = false
+        private var dismantled = false
 
         init(frames: ArtworkReflectionFrames) {
             self.frames = frames
@@ -68,10 +77,37 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         required init?(coder _: NSCoder) { nil }
 
         func configure(video: AnimatedArtwork, layout: Layout, background: AMLLBackground? = nil) {
+            guard !dismantled else { return }
+            pendingConfiguration = PendingConfiguration(video: video, layout: layout, background: background)
+            applyPendingConfiguration()
+        }
+
+        /// SwiftUI may update/measure a representable which never enters a
+        /// window. Only the attached, sized presentation may claim the hub.
+        /// Window/layout callbacks commit the latest input without requiring
+        /// another SwiftUI update or restarting the resource request.
+        private func applyPendingConfiguration() {
+            guard !dismantled, let pendingConfiguration else { return }
+            guard window != nil, bounds.width > 0, bounds.height > 0 else {
+                if !waitingForAttachment {
+                    frames.recordLifecycle("等待窗口与有效尺寸", presentation: presentation)
+                    waitingForAttachment = true
+                }
+                return
+            }
+            self.pendingConfiguration = nil
+            waitingForAttachment = false
             guard frames.activate(presentation, reflection: reflectionSurface, blur: transitionSurface) else {
+                if !rejectedConfiguration {
+                    frames.recordLifecycle("配置拒绝：较旧呈现", presentation: presentation)
+                    rejectedConfiguration = true
+                }
                 videoSurface.stop()
                 return
             }
+            let video = pendingConfiguration.video
+            let layout = pendingConfiguration.layout
+            let background = pendingConfiguration.background
             if let background {
                 if let backgroundHost { backgroundHost.rootView = background }
                 else {
@@ -95,7 +131,9 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            frames.recordLifecycle(window == nil ? "离开窗口" : "进入窗口", presentation: presentation)
             attachBackgroundController()
+            applyPendingConfiguration()
             if window != nil, frames.ownsPresentation(presentation) {
                 videoSurface.refreshReflectionFrame()
                 frames.replayLatest()
@@ -117,6 +155,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            applyPendingConfiguration()
             if let previousLayout { applyLayout(previousLayout) }
         }
 
@@ -259,6 +298,12 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         }
 
         func stop() {
+            frames.recordLifecycle("停止视图（\(window == nil ? "未挂载" : "已挂载")，\(Int(bounds.width))×\(Int(bounds.height)) pt）", presentation: presentation)
+            pendingConfiguration = nil
+            waitingForAttachment = false
+            previousLayout = nil
+            appliedLayout = nil
+            appliedBounds = nil
             videoSurface.stop()
             reflectionSurface.clear()
             transitionSurface.stop()
@@ -269,6 +314,11 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 host.removeFromParent()
             }
             backgroundHost = nil
+        }
+
+        func dismantle() {
+            dismantled = true
+            stop()
         }
     }
 }

@@ -508,6 +508,10 @@ struct AnimatedArtwork: UIViewRepresentable {
 
         private func fail(_ error: Error?) {
             guard !failed, let url else { return }
+            if ownsVideoPresentation, let reflectionPresentation {
+                let failure = (error ?? URLError(.cannotDecodeContentData)) as NSError
+                reflectionFrames?.recordLifecycle("播放失败：\(failure.domain) (\(failure.code))", presentation: reflectionPresentation)
+            }
             let failingGeneration = generation
             let reportsFailure = ownsVideoPresentation
             failed = true

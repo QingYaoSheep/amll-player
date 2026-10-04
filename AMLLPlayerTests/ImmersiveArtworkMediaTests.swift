@@ -291,10 +291,12 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         let output = player.videoOutput
         let itemOutput = item.outputs.first
         XCTAssertTrue(playerOutput ? output != nil : itemOutput != nil)
+        let displayedBeforeInvalidation = frames.videoDisplayed
         _ = frames.begin()
         XCTAssertFalse(frames.hasFrame)
         XCTAssertFalse(frames.producerBindingValid, "A paused source invalidation must be visible without another display tick")
-        XCTAssertEqual(frames.videoDisplayed, playerLayer.isReadyForDisplay)
+        XCTAssertEqual(frames.videoDisplayed, displayedBeforeInvalidation,
+            "Invalidating auxiliary pixels must preserve primary display metadata; live layer readiness updates asynchronously")
         if !playerOutput {
             // This interval is receiver downtime, not decoder starvation.
             // Restoring it must not replace the healthy item-level output.

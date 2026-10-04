@@ -40,6 +40,20 @@ final class ArtworkTransitionTests: XCTestCase {
                 XCTAssertEqual(Double(actualPixel[channel]), Double(expectedPixel[channel]), accuracy: 1,
                     "BGRA storage must not relabel the attached color space")
             }
+            if name == CGColorSpace.displayP3 {
+                CVBufferRemoveAttachment(buffer, kCVImageBufferCGColorSpaceKey)
+                let profile = try XCTUnwrap(taggedSpace.copyICCData())
+                CVBufferSetAttachment(buffer, kCVImageBufferICCProfileKey, profile, .shouldPropagate)
+                let iccOnly = pixel(ArtworkReflectionImage.source(buffer), x: 0, y: 0)
+                for channel in 0 ..< 4 {
+                    XCTAssertEqual(Double(iccOnly[channel]), Double(expectedPixel[channel]), accuracy: 1,
+                        "An ICC-only P3 buffer is tagged color, even without a CGColorSpace attachment")
+                }
+                CVBufferRemoveAttachment(buffer, kCVImageBufferICCProfileKey)
+                CVBufferSetAttachment(buffer, kCVImageBufferGammaLevelKey, NSNumber(value: 1.8), .shouldPropagate)
+                XCTAssertEqual(pixel(ArtworkReflectionImage.source(buffer), x: 0, y: 0),
+                    pixel(CIImage(cvPixelBuffer: buffer), x: 0, y: 0), "Gamma metadata is an explicit transfer encoding")
+            }
         }
     }
 

@@ -199,8 +199,10 @@ enum ArtworkReflectionImage {
         // Tagged wide-gamut/standard RGB and native YUV retain their metadata.
         if CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA,
            CVBufferCopyAttachment(buffer, kCVImageBufferCGColorSpaceKey, nil) == nil,
+           CVBufferCopyAttachment(buffer, kCVImageBufferICCProfileKey, nil) == nil,
            CVBufferCopyAttachment(buffer, kCVImageBufferColorPrimariesKey, nil) == nil,
-           CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil) == nil {
+           CVBufferCopyAttachment(buffer, kCVImageBufferTransferFunctionKey, nil) == nil,
+           CVBufferCopyAttachment(buffer, kCVImageBufferGammaLevelKey, nil) == nil {
             return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
         }
         return CIImage(cvPixelBuffer: buffer)

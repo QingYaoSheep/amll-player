@@ -43,7 +43,8 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         }
         let link = Mirror(reflecting: surface.transitionSurface).children
             .first { $0.label == "displayLink" }?.value as? CADisplayLink
-        XCTAssertGreaterThanOrEqual(try XCTUnwrap(link).preferredFrameRateRange.preferred, 60,
+        let preferredRate = try XCTUnwrap(try XCTUnwrap(link).preferredFrameRateRange.preferred)
+        XCTAssertGreaterThanOrEqual(preferredRate, Float(60),
             "The backdrop must not be capped to the previous 30Hz sampling loop")
     }
 

@@ -125,6 +125,42 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["amllNativeLyricsDisplay"].firstMatch.exists)
     }
 
+    @MainActor func testAppleMusicAndNetEasePlaybackControlsUseTheirExistingQueues() {
+        for service in ["appleMusic", "netease"] {
+            let app = lyricsApp()
+            app.launchArguments += ["--quick-settings-service", service]
+            openPanel(app)
+            let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
+            let shuffle = app.switches["quickSettingsShuffle"]
+            for _ in 0 ..< 6 where !shuffle.isHittable { scroll.swipeUp() }
+            XCTAssertTrue(shuffle.isHittable)
+            XCTAssertEqual(shuffle.value as? String, "0")
+            shuffle.tap()
+            let acknowledged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: shuffle)
+            XCTAssertEqual(XCTWaiter.wait(for: [acknowledged], timeout: 4), .completed)
+            let repeatPicker = app.descendants(matching: .any)["quickSettingsRepeat"].firstMatch
+            if !repeatPicker.isHittable { scroll.swipeUp() }
+            repeatPicker.tap()
+            app.buttons["单曲循环"].tap()
+            XCTAssertTrue(panel(app).exists)
+            XCTAssertTrue((repeatPicker.value as? String ?? repeatPicker.label).contains("单曲循环"))
+            let queue = app.buttons["quickSettingsRoute.queue"]
+            for _ in 0 ..< 6 where !queue.isHittable { scroll.swipeDown() }
+            queue.tap()
+            let title = service == "netease" ? "网易云播放队列" : "系统播放队列"
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 4))
+            XCTAssertTrue(app.staticTexts["Fixture Song"].exists)
+            XCTAssertFalse(panel(app).exists)
+            app.buttons[service == "netease" ? "完成" : "Done"].tap()
+            XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
+            app.buttons["lyricsDisplayOptions"].tap()
+            for _ in 0 ..< 6 where !shuffle.isHittable { scroll.swipeUp() }
+            XCTAssertEqual(shuffle.value as? String, "1", "Reopening controls must preserve the service's acknowledged state.")
+            app.buttons["closeLyricsQuickSettings"].tap()
+            app.terminate()
+        }
+    }
+
     @MainActor private func lyricsApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["--lyrics-ui-testing", "--skip-welcome-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]

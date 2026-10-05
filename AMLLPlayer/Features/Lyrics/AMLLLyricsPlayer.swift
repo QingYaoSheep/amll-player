@@ -13,7 +13,7 @@ struct AMLLLyricsPlayer: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var search = false
     @State private var devices = false
-    @State private var quickSettings = LyricsQuickSettingsPresentation()
+    @State private var quickSettings: LyricsQuickSettingsPresentation
     @State private var browsing = false
     @State private var resumeToken = 0
     @State private var shellMotion = LyricsMotionModel()
@@ -24,6 +24,12 @@ struct AMLLLyricsPlayer: View {
     @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
     @State private var showingArtworkDebug = false
     @GestureState private var dismissalDrag: CGFloat = 0
+
+    init(model: AppModel, usesSystemZoom: Bool = false, presentation: LyricsQuickSettingsPresentation? = nil) {
+        self.model = model
+        self.usesSystemZoom = usesSystemZoom
+        _quickSettings = State(initialValue: presentation ?? LyricsQuickSettingsPresentation())
+    }
 
     private var configuration: LyricsRenderConfiguration {
         model.renderPreferences.configuration.validated()

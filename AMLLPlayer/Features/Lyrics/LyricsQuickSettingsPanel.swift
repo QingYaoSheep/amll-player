@@ -262,7 +262,7 @@ struct LyricsQuickSettingsPanel: View {
         section("quickSettings.appearance") {
             Toggle("appearance.autoSize", isOn: Binding(get: { configuration.sizePreset != nil }, set: {
                 model.renderPreferences.configuration.sizePreset = $0 ? .medium : nil
-            })).accessibilityIdentifier("quickSettingsAutoSize")
+            })).frame(minHeight: 44).accessibilityIdentifier("quickSettingsAutoSize")
             if configuration.sizePreset != nil {
                 Picker("render.sizePreset", selection: Binding(get: { configuration.sizePreset ?? .medium }, set: {
                     model.renderPreferences.configuration.sizePreset = $0
@@ -271,7 +271,7 @@ struct LyricsQuickSettingsPanel: View {
                         Text(LocalizedStringKey("render.size." + preset.rawValue)).tag(preset)
                     }
                 }
-                .accessibilityIdentifier("quickSettingsSizePreset")
+                .frame(minHeight: 44).accessibilityIdentifier("quickSettingsSizePreset")
             } else {
                 Picker("render.fontSize", selection: Binding(get: { configuration.fontSize }, set: {
                     model.renderPreferences.configuration.sizePreset = nil
@@ -283,7 +283,7 @@ struct LyricsQuickSettingsPanel: View {
                     Text("render.small").tag(26.0); Text("render.medium").tag(32.0)
                     Text("render.large").tag(40.0); Text("render.extraLarge").tag(48.0)
                 }
-                .accessibilityIdentifier("quickSettingsFontSize")
+                .frame(minHeight: 44).accessibilityIdentifier("quickSettingsFontSize")
             }
             Picker("quickSettings.background", selection: Binding(get: { configuration.backgroundMode ?? .mesh }, set: {
                 model.renderPreferences.configuration.backgroundMode = $0
@@ -295,7 +295,7 @@ struct LyricsQuickSettingsPanel: View {
                 Text("纯色").tag(LyricsRenderConfiguration.BackgroundMode.solid)
                 Text("双色渐变").tag(LyricsRenderConfiguration.BackgroundMode.gradient)
             }
-            .accessibilityIdentifier("quickSettingsBackground")
+            .frame(minHeight: 44).accessibilityIdentifier("quickSettingsBackground")
         }
     }
 
@@ -306,12 +306,14 @@ struct LyricsQuickSettingsPanel: View {
                 route("quickSettings.queue", symbol: "list.bullet", to: .queue)
                 Toggle("quickSettings.shuffle", isOn: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                     Task { await model.setShuffle(enabled) }
-                })).disabled(model.isPerformingAction)
+                })).frame(minHeight: 44).disabled(model.isPerformingAction)
+                    .accessibilityIdentifier("quickSettingsShuffle")
                 Picker("quickSettings.repeat", selection: Binding(get: { snapshot.repeatMode }, set: { mode in
                     Task { await model.setRepeat(mode) }
                 })) {
                     ForEach(MusicRepeatMode.allCases, id: \.self) { Text($0.title).tag($0) }
-                }.disabled(model.isPerformingAction)
+                }.frame(minHeight: 44).disabled(model.isPerformingAction)
+                    .accessibilityIdentifier("quickSettingsRepeat")
             }
         }
     }

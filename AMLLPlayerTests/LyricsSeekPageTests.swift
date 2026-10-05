@@ -5,6 +5,48 @@ import UIKit
 import XCTest
 
 @MainActor final class LyricsSeekPageTests: XCTestCase {
+    func testQuickSettingsKeepNativeAudioClockAndProductionCanvasRunning() async throws {
+        let (model, player, song) = try await makeModel()
+        let presentation = LyricsQuickSettingsPresentation()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model, presentation: presentation)
+            .environment(\.scenePhase, .active))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
+        defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
+        try await start(model, song)
+        try await wait("native audio is advancing") { player.currentTime().seconds > 0.3 && model.playbackSnapshot?.isPlaying == true }
+        let canvas = try await waitForCanvas(host.view)
+        let item = try XCTUnwrap(player.currentItem)
+        let previous = player.currentTime().seconds, revision = model.lyricsSeekRevision
+        var frames: [AMLLFrameState] = []
+        canvas.frameObserver = { frames.append($0) }
+        presentation.open(reduceMotion: false)
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertTrue(presentation.isPresented)
+        XCTAssertTrue(findCanvas(host.view) === canvas)
+        XCTAssertTrue(player.currentItem === item)
+        XCTAssertGreaterThan(player.rate, 0)
+        XCTAssertGreaterThan(player.currentTime().seconds - previous, 0.4)
+        XCTAssertGreaterThan(frames.count, 5)
+        XCTAssertGreaterThan(try XCTUnwrap(frames.last).lyricTime - (try XCTUnwrap(frames.first).lyricTime), 0.3)
+        XCTAssertEqual(model.lyricsSeekRevision, revision)
+        XCTAssertEqual(model.progress(), player.currentTime().seconds, accuracy: 0.4)
+        presentation.close(reduceMotion: false)
+        try await Task.sleep(for: .milliseconds(500))
+        canvas.frameObserver = nil
+        XCTAssertFalse(presentation.isPresented)
+        XCTAssertTrue(findCanvas(host.view) === canvas)
+        XCTAssertTrue(player.currentItem === item)
+        XCTAssertGreaterThan(player.rate, 0)
+        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in
+            host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+        })
+        attachment.name = "Quick-settings-native-audio-continuity"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
     func testProductionLyricClickKeepsTheReturnSpringAndStagger() async throws {
         let (model, player, song) = try await makeModel()
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)

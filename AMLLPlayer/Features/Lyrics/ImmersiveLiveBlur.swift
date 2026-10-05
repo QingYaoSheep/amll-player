@@ -113,7 +113,7 @@ final class ImmersiveLiveBlurSurface: UIView {
     private var displayLink: CADisplayLink?
     private let renderer = Renderer()
     private let outputView = OutputView()
-    private var submitted: [UUID: any MTLCommandBuffer] = [:]
+    private let commits = CommitRegistry()
     private var renderingAllowed = true
     private var captureOutput = false
     private(set) var capturedOutput: CGImage?
@@ -156,6 +156,46 @@ final class ImmersiveLiveBlurSurface: UIView {
         let drawable: any CAMetalDrawable
         let readback: Readback?
         let encodedAt = CACurrentMediaTime()
+    }
+
+    /// The worker may commit without a main-actor hop, but cancellation and
+    /// submission must be atomic. UIKit and all surface state remain on main.
+    private final class CommitRegistry: @unchecked Sendable {
+        private struct Entry {
+            let command: any MTLCommandBuffer
+            let waitMilliseconds: Double
+        }
+        private let lock = NSLock()
+        private var generation = UUID()
+        private var entries: [UUID: Entry] = [:]
+
+        func reset(to next: UUID) -> [any MTLCommandBuffer] {
+            lock.lock(); defer { lock.unlock() }
+            generation = next
+            let commands = entries.values.map(\.command)
+            entries.removeAll(keepingCapacity: true)
+            return commands
+        }
+
+        func accepts(_ token: UUID) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            return token == generation
+        }
+
+        func commit(_ submission: Submission, generation token: UUID) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard token == generation else { return false }
+            entries[submission.id] = Entry(command: submission.command,
+                waitMilliseconds: max(0, CACurrentMediaTime() - submission.encodedAt) * 1000)
+            submission.command.present(submission.drawable)
+            submission.command.commit()
+            return true
+        }
+
+        func complete(_ id: UUID) -> Double? {
+            lock.lock(); defer { lock.unlock() }
+            return entries.removeValue(forKey: id)?.waitMilliseconds
+        }
     }
 
     /// Allocated only by an explicit test export; ordinary display has no readback.
@@ -277,7 +317,7 @@ final class ImmersiveLiveBlurSurface: UIView {
             // Prevent queued encodes from committing after deactivation, and
             // ensure already committed work is scheduled before backgrounding.
             generation = UUID()
-            for command in submitted.values { command.waitUntilScheduled() }
+            for command in commits.reset(to: generation) { command.waitUntilScheduled() }
         }
         updateScheduler()
     }
@@ -310,6 +350,7 @@ final class ImmersiveLiveBlurSurface: UIView {
     /// visible video has no pixels for its current resource generation.
     func discardComposition() {
         generation = UUID()
+        _ = commits.reset(to: generation)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.contents = nil
         outputView.layer.opacity = 0
@@ -343,70 +384,78 @@ final class ImmersiveLiveBlurSurface: UIView {
         let token = generation
         let radius = CGFloat(amount * 80)
         let renderer = renderer
+        let commits = commits
         let destination = DrawableSource(outputView.metalLayer)
         let export = captureOutput
         captureOutput = false
         renderer.queue.async { [weak self] in
             if renderer.device != nil {
-                let submission = autoreleasepool { renderer.encode(input, radius: radius,
-                    destination: destination, captureOutput: export) }
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    guard let submission, token == generation, renderingAllowed,
-                          UIApplication.shared.applicationState == .active, window != nil, !isHidden else {
+                let submission = commits.accepts(token) ? autoreleasepool {
+                    renderer.encode(input, radius: radius, destination: destination, captureOutput: export)
+                } : nil
+                guard let submission else {
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
                         inFlight -= 1
                         if token == generation, export { captureOutput = true }
-                        return
                     }
-                    let id = submission.id
-                    let retainedInput = submission.input
-                    let readback = submission.readback
-                    submitted[id] = submission.command
-                    submission.command.addCompletedHandler { [weak self] command in
-                        // Hold the immutable buffer/planes until the GPU finishes.
-                        _ = retainedInput
-                        let gpu = max(0, command.gpuEndTime - command.gpuStartTime) * 1000
-                        let success = command.status == .completed
-                        let snapshot = success ? readback?.image() : nil
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            inFlight -= 1
-                            submitted.removeValue(forKey: id)
-                            guard token == generation, renderingAllowed, window != nil, !isHidden, success else { return }
-                            hasOutput = true
-                            renderedFrames += 1
-                            gpuCompletedFrames += 1
-                            #if targetEnvironment(simulator)
-                            // The simulator SDK excludes drawable presentation
-                            // callbacks. Count completed renders separately;
-                            // actual screen pixels are verified by the tests.
-                            recordTiming(timestamp: timestamp, outputAt: CACurrentMediaTime())
-                            #endif
-                            CATransaction.begin(); CATransaction.setDisableActions(true)
-                            outputView.layer.opacity = 1
-                            CATransaction.commit()
-                            if let snapshot { capturedOutput = snapshot }
-                            gpuTimes.append(gpu)
-                            if gpuTimes.count > 120 { gpuTimes.removeFirst() }
+                    return
+                }
+                let id = submission.id
+                let retainedInput = submission.input
+                let readback = submission.readback
+                submission.command.addCompletedHandler { [weak self] command in
+                    // Hold immutable input until the GPU completes. Only counters
+                    // and UIKit visibility return to main, never submission.
+                    _ = retainedInput
+                    let gpu = max(0, command.gpuEndTime - command.gpuStartTime) * 1000
+                    let completedAt = CACurrentMediaTime()
+                    let success = command.status == .completed
+                    let snapshot = success ? readback?.image() : nil
+                    Task { @MainActor [weak self] in
+                        let commitWait = commits.complete(id)
+                        guard let self else { return }
+                        inFlight -= 1
+                        guard token == generation, renderingAllowed, window != nil, !isHidden, success else { return }
+                        hasOutput = true
+                        renderedFrames += 1
+                        gpuCompletedFrames += 1
+                        if let commitWait {
+                            lastCommitWaitMilliseconds = commitWait
+                            commitWaitTimes.append(commitWait)
+                            if commitWaitTimes.count > 120 { commitWaitTimes.removeFirst() }
                         }
+                        #if targetEnvironment(simulator)
+                        // Completion time is sampled on the GPU callback, not
+                        // after waiting for the main actor to update diagnostics.
+                        recordTiming(timestamp: timestamp, outputAt: completedAt)
+                        #endif
+                        CATransaction.begin(); CATransaction.setDisableActions(true)
+                        outputView.layer.opacity = 1
+                        CATransaction.commit()
+                        if let snapshot { capturedOutput = snapshot }
+                        gpuTimes.append(gpu)
+                        if gpuTimes.count > 120 { gpuTimes.removeFirst() }
                     }
-                    #if !targetEnvironment(simulator)
-                    submission.drawable.addPresentedHandler { [weak self] drawable in
-                        let presentedAt = drawable.presentedTime
-                        Task { @MainActor [weak self] in
-                            guard let self, token == generation, renderingAllowed,
-                                  window != nil, !isHidden, presentedAt > 0 else { return }
-                            recordTiming(timestamp: timestamp, outputAt: presentedAt)
-                            presentedFrames += 1
-                            gpuPresentedFrames += 1
-                        }
+                }
+                #if !targetEnvironment(simulator)
+                submission.drawable.addPresentedHandler { [weak self] drawable in
+                    let presentedAt = drawable.presentedTime
+                    Task { @MainActor [weak self] in
+                        guard let self, token == generation, renderingAllowed,
+                              window != nil, !isHidden, presentedAt > 0 else { return }
+                        recordTiming(timestamp: timestamp, outputAt: presentedAt)
+                        presentedFrames += 1
+                        gpuPresentedFrames += 1
                     }
-                    #endif
-                    submission.command.present(submission.drawable)
-                    lastCommitWaitMilliseconds = max(0, CACurrentMediaTime() - submission.encodedAt) * 1000
-                    commitWaitTimes.append(lastCommitWaitMilliseconds)
-                    if commitWaitTimes.count > 120 { commitWaitTimes.removeFirst() }
-                    submission.command.commit()
+                }
+                #endif
+                if !commits.commit(submission, generation: token) {
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        inFlight -= 1
+                        if token == generation, export { captureOutput = true }
+                    }
                 }
                 return
             }
@@ -445,6 +494,7 @@ final class ImmersiveLiveBlurSurface: UIView {
 
     func stop() {
         generation = UUID()
+        _ = commits.reset(to: generation)
         amount = 0
         displayLink?.invalidate()
         displayLink = nil
@@ -454,7 +504,8 @@ final class ImmersiveLiveBlurSurface: UIView {
         hasOutput = false
         capturedOutput = nil
         captureOutput = false
-        renderer.context.clearCaches()
+        let renderer = renderer
+        renderer.queue.async { renderer.context.clearCaches() }
         mask = nil
     }
 }

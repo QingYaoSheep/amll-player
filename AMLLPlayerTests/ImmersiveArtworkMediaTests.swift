@@ -306,6 +306,10 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         }
         surface.requestOutputSnapshot()
         try await waitUntil { surface.gpuCompletedFrames > completed && surface.capturedOutput != nil }
+        let timing = XCTAttachment(string: "encodedToCommitMilliseconds=\(surface.lastCommitWaitMilliseconds)\nmaximumInFlight=\(surface.maximumInFlight)")
+        timing.name = "Blur GPU submission under main-actor load"
+        timing.lifetime = .keepAlways
+        add(timing)
         XCTAssertLessThan(surface.lastCommitWaitMilliseconds, 200,
             "An encoded blur must not wait behind a 300ms main-actor task before GPU submission")
         let output = try XCTUnwrap(surface.capturedOutput)

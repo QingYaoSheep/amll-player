@@ -55,6 +55,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         private var pendingConfiguration: PendingConfiguration?
         private var waitingForAttachment = false
         private var dismantled = false
+        private(set) var backgroundReadbacks = 0
 
         init(frames: ArtworkReflectionFrames) {
             self.frames = frames
@@ -293,6 +294,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                     layers.append(.solid(CIColor(color: color), frame: view.frame))
                     frames.blurInputs.append("暗度")
                 } else {
+                    if view === backgroundSurface { backgroundReadbacks += 1 }
                     let image = renderer.image { context in
                         context.cgContext.translateBy(x: view.frame.minX - region.minX, y: view.frame.minY - region.minY)
                         // Public hierarchy capture includes the hosting view's Metal backgrounds.

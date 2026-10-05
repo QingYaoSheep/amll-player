@@ -2,11 +2,49 @@
 import AVFoundation
 import CoreImage
 import MetalKit
+import SwiftUI
 import UIKit
 import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testImmersiveMeshFeedsLiveBlurWithoutRecurringBackgroundReadbacks() async throws {
+        _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let window = try playbackWindow()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = CGRect(x: 0, y: 0, width: 120, height: 240)
+        window.rootViewController?.view.addSubview(surface)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let cover = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+            UIColor.green.setFill(); context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        try XCTUnwrap(cover.pngData()).write(to: url)
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            try? FileManager.default.removeItem(at: url)
+        }
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.video, .reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
+        tuning.blurRadius = 24
+        surface.configure(video: AnimatedArtwork(url: URL(fileURLWithPath: "/unused.mp4"), active: false),
+            layout: .init(video: .zero, reflection: .zero, transition: surface.bounds, bottomFade: .zero,
+                tuning: tuning, presentsFrame: false, reflectionEnabled: false, reduceTransparency: false),
+            background: AMLLBackground(artworkURL: url, active: true, blur: 40, mode: .mesh))
+        surface.layoutIfNeeded()
+        try await Task.sleep(for: .seconds(1))
+        try await waitUntil { surface.transitionSurface.renderedFrames > 3 }
+        let before = surface.backgroundReadbacks
+        let completed = surface.transitionSurface.renderedFrames
+        try await waitUntil { surface.transitionSurface.renderedFrames > completed + 5 }
+        XCTAssertEqual(surface.backgroundReadbacks, before,
+            "A live native Mesh frame must enter blur on the GPU instead of reading the hosted background back every tick")
+        let pixel = try backdropPixel(window, at: CGPoint(x: 60, y: 200))
+        XCTAssertGreaterThan(pixel[1], pixel[0] + 20, "The actual blur drawable must still contain the green live Mesh cover")
+        XCTAssertGreaterThan(pixel[1], pixel[2] + 20)
+        XCTAssertLessThanOrEqual(surface.transitionSurface.maximumInFlight, 2)
+    }
+
     func testBlurTopFeatherHidesACloneColorSeamWithoutFadingTheWholeOutput() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let window = try playbackWindow()

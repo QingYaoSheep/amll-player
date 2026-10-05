@@ -82,7 +82,7 @@ final class AMLLBackgroundFrameSourceTests: XCTestCase {
         XCTAssertLessThan(bytes[1], 10)
         source.setEnabled(false)
         XCTAssertNil(source.current(viewport: viewport))
-        XCTAssertEqual(source.statistics.textures, 0)
+        XCTAssertGreaterThan(source.statistics.textures, 0, "Retired readers must remain visible in resource accounting")
         retained.removeAll()
     }
 
@@ -104,15 +104,46 @@ final class AMLLBackgroundFrameSourceTests: XCTestCase {
         source.setEnabled(false)
     }
 
-    private func makeTexture(_ device: any MTLDevice, top: [UInt8], bottom: [UInt8]) throws -> any MTLTexture {
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 8, height: 8, mipmapped: false)
+    func testRetiredReadersShareTheSameBudgetAcrossRepeatedResizesAndReactivation() throws {
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let source = AMLLBackgroundFrameSource()
+        source.setEnabled(true)
+        let viewport = CGSize(width: 8, height: 8)
+        let texture = try makeTexture(device, top: [0, 0, 255, 255], bottom: [0, 0, 255, 255])
+        var readers: [AMLLBackgroundTextureFrame] = []
+        for _ in 0 ..< 4 {
+            try copy(texture, through: source, viewport: viewport)
+            readers.append(try XCTUnwrap(source.current(viewport: viewport)))
+        }
+        source.setEnabled(false)
+        source.setEnabled(true)
+        for side in 12 ..< 20 {
+            let resized = try makeTexture(device, top: [0, 255, 0, 255], bottom: [0, 255, 0, 255], side: side)
+            let nextViewport = CGSize(width: CGFloat(side), height: CGFloat(side))
+            try copy(resized, through: source, viewport: nextViewport)
+            XCTAssertNil(source.current(viewport: nextViewport), "A new viewport cannot allocate beyond four retained input leases")
+            XCTAssertEqual(source.statistics.textures, 4)
+            XCTAssertEqual(source.statistics.bytes, 4 * 8 * 8 * 4)
+        }
+        readers.removeAll()
+        let nextViewport = CGSize(width: 16, height: 16)
+        let resized = try makeTexture(device, top: [0, 255, 0, 255], bottom: [0, 255, 0, 255], side: 16)
+        try copy(resized, through: source, viewport: nextViewport)
+        XCTAssertNotNil(source.current(viewport: nextViewport), "Released reader slots must become available to the current viewport")
+        XCTAssertLessThanOrEqual(source.statistics.textures, 4)
+        source.setEnabled(false)
+        XCTAssertEqual(source.statistics.textures, 0)
+    }
+
+    private func makeTexture(_ device: any MTLDevice, top: [UInt8], bottom: [UInt8], side: Int = 8) throws -> any MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
         descriptor.storageMode = .shared
         descriptor.usage = .shaderRead
         let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
         var bytes: [UInt8] = []
-        for y in 0 ..< 8 { for _ in 0 ..< 8 { bytes.append(contentsOf: y < 4 ? top : bottom) } }
-        bytes.withUnsafeBytes { texture.replace(region: MTLRegionMake2D(0, 0, 8, 8), mipmapLevel: 0,
-            withBytes: $0.baseAddress!, bytesPerRow: 32) }
+        for y in 0 ..< side { for _ in 0 ..< side { bytes.append(contentsOf: y < side / 2 ? top : bottom) } }
+        bytes.withUnsafeBytes { texture.replace(region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0,
+            withBytes: $0.baseAddress!, bytesPerRow: side * 4) }
         return texture
     }
 

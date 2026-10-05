@@ -24,46 +24,57 @@ final class AMLLBackgroundTextureFrame: @unchecked Sendable {
 /// Ordinary non-immersive backgrounds never enable this path.
 final class AMLLBackgroundFrameSource: @unchecked Sendable {
     private final class TexturePool: @unchecked Sendable {
-        private let lock = NSLock()
-        private var textures: [any MTLTexture] = []
-        private var leased = Set<Int>()
-        let width: Int
-        let height: Int
-        let format: MTLPixelFormat
-
-        init(_ texture: any MTLTexture) {
-            width = texture.width; height = texture.height; format = texture.pixelFormat
+        private struct Slot {
+            var texture: (any MTLTexture)?
+            var leased = false
         }
-        func acquire(device: any MTLDevice) -> (Int, any MTLTexture)? {
+        private let lock = NSLock()
+        private var slots = (0 ..< 4).map { _ in Slot() }
+        private var enabled = false
+
+        func setEnabled(_ value: Bool) {
             lock.lock(); defer { lock.unlock() }
-            if let index = textures.indices.first(where: { !leased.contains($0) }) {
-                leased.insert(index)
-                return (index, textures[index])
+            enabled = value
+            if !value {
+                for index in slots.indices where !slots[index].leased { slots[index].texture = nil }
             }
-            guard textures.count < 4 else { return nil }
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format,
-                width: width, height: height, mipmapped: false)
+        }
+        func acquire(matching source: any MTLTexture) -> (Int, any MTLTexture)? {
+            lock.lock(); defer { lock.unlock() }
+            guard enabled, let index = slots.indices.first(where: { !slots[$0].leased }) else { return nil }
+            if let texture = slots[index].texture, texture.width == source.width,
+               texture.height == source.height, texture.pixelFormat == source.pixelFormat {
+                slots[index].leased = true
+                return (index, texture)
+            }
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: source.pixelFormat,
+                width: source.width, height: source.height, mipmapped: false)
             descriptor.storageMode = .private
             descriptor.usage = [.shaderRead]
-            guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
-            let index = textures.count
-            textures.append(texture); leased.insert(index)
+            // One budget spans viewport generations. Retired readers keep
+            // their slots; only an unleased texture can change dimensions.
+            slots[index].texture = nil
+            guard let texture = source.device.makeTexture(descriptor: descriptor) else { return nil }
+            slots[index].texture = texture; slots[index].leased = true
             return (index, texture)
         }
         func release(_ index: Int) {
             lock.lock(); defer { lock.unlock() }
-            leased.remove(index)
+            slots[index].leased = false
+            if !enabled { slots[index].texture = nil }
         }
-        var allocatedCount: Int {
+        var statistics: (textures: Int, bytes: Int) {
             lock.lock(); defer { lock.unlock() }
-            return textures.count
+            let textures = slots.compactMap(\.texture)
+            return (textures.count, textures.reduce(0) { $0 + $1.width * $1.height * 4 })
         }
     }
 
     private let lock = NSLock()
     private var enabled = false
     private var generation = UUID()
-    private var pool: TexturePool?
+    private let pool = TexturePool()
+    private var dimensions: (width: Int, height: Int, format: MTLPixelFormat)?
     private var latest: AMLLBackgroundTextureFrame?
     private var sequence: UInt64 = 0
     private var copies = 0
@@ -74,7 +85,7 @@ final class AMLLBackgroundFrameSource: @unchecked Sendable {
         guard value != enabled else { return }
         enabled = value; generation = UUID()
         latest = nil
-        if !value { pool = nil }
+        pool.setEnabled(value)
     }
 
     /// Blit is appended to the background's existing render command. No CPU
@@ -83,14 +94,16 @@ final class AMLLBackgroundFrameSource: @unchecked Sendable {
                     command: any MTLCommandBuffer) {
         lock.lock()
         guard enabled, !texture.isFramebufferOnly else { lock.unlock(); return }
-        if pool?.width != texture.width || pool?.height != texture.height || pool?.format != texture.pixelFormat {
-            pool = TexturePool(texture); generation = UUID(); latest = nil
+        if dimensions?.width != texture.width || dimensions?.height != texture.height || dimensions?.format != texture.pixelFormat {
+            dimensions = (texture.width, texture.height, texture.pixelFormat)
+            generation = UUID(); latest = nil
         }
-        guard let pool, let (slot, output) = pool.acquire(device: texture.device) else {
+        guard let (slot, output) = pool.acquire(matching: texture) else {
             skipped += 1; lock.unlock(); return
         }
         sequence &+= 1
         let token = generation
+        let pool = pool
         let frame = AMLLBackgroundTextureFrame(texture: output, viewport: viewport, sequence: sequence,
             timestamp: timestamp, release: { pool.release(slot) })
         lock.unlock()
@@ -120,7 +133,7 @@ final class AMLLBackgroundFrameSource: @unchecked Sendable {
 
     var statistics: (copies: Int, skipped: Int, textures: Int, bytes: Int) {
         lock.lock(); defer { lock.unlock() }
-        let count = pool?.allocatedCount ?? 0
-        return (copies, skipped, count, count * (pool?.width ?? 0) * (pool?.height ?? 0) * 4)
+        let allocation = pool.statistics
+        return (copies, skipped, allocation.textures, allocation.bytes)
     }
 }

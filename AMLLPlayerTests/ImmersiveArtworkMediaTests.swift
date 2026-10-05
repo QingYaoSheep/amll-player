@@ -277,6 +277,49 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertFalse(surface.hasRenderedOutput)
     }
 
+    func testEncodedBlurDoesNotWaitForTheMainActorToSubmit() async throws {
+        _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let window = try playbackWindow()
+        let surface = ImmersiveLiveBlurSurface()
+        surface.frame = CGRect(x: 0, y: 0, width: 32, height: 64)
+        window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        let scale = min(1.5, window.screen.scale)
+        func input(_ color: CIColor) -> ImmersiveBlurInput {
+            .init(region: surface.frame, profile: .init(frame: surface.frame, fullStrengthY: 0),
+                scale: scale, planes: [.solid(color, frame: surface.frame)])
+        }
+        surface.capture = { input(.red) }
+        surface.configure(amount: 1 / 80.0, mask: nil)
+        surface.layoutIfNeeded()
+        try await waitUntil { surface.gpuCompletedFrames > 3 }
+        let completed = surface.gpuCompletedFrames
+        var sampled = false
+        surface.capture = {
+            guard !sampled else { return nil }
+            sampled = true
+            // Occupy the main actor only after the immutable input is captured.
+            // A tiny real GPU render must be able to submit on its serial worker,
+            // even while UIKit is temporarily busy with unrelated work.
+            DispatchQueue.main.async { Thread.sleep(forTimeInterval: 0.3) }
+            return input(.green)
+        }
+        surface.requestOutputSnapshot()
+        try await waitUntil { surface.gpuCompletedFrames > completed && surface.capturedOutput != nil }
+        XCTAssertLessThan(surface.lastCommitWaitMilliseconds, 200,
+            "An encoded blur must not wait behind a 300ms main-actor task before GPU submission")
+        let output = try XCTUnwrap(surface.capturedOutput)
+        var bytes = [UInt8](repeating: 0, count: 4)
+        bytes.withUnsafeMutableBytes {
+            CIContext().render(CIImage(cgImage: output), toBitmap: $0.baseAddress!, rowBytes: 4,
+                bounds: CGRect(x: 8, y: 8, width: 1, height: 1), format: .RGBA8,
+                colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        }
+        XCTAssertGreaterThan(bytes[1], 240, "Verify the actual submitted GPU frame, rather than only a timing counter")
+        XCTAssertLessThan(bytes[0], 10)
+        XCTAssertLessThanOrEqual(surface.maximumInFlight, 2)
+    }
+
     func testUnattachedConfigurationCannotRetireVisibleImmersivePlayer() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

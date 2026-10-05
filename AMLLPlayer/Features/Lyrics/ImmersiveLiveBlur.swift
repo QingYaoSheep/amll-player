@@ -120,6 +120,8 @@ final class ImmersiveLiveBlurSurface: UIView {
     private var inputAges: [Double] = []
     private var gpuTimes: [Double] = []
     private var captureTimes: [Double] = []
+    private var commitWaitTimes: [Double] = []
+    private(set) var lastCommitWaitMilliseconds = 0.0
     private var presentationTimes: [CFTimeInterval] = []
     private(set) var maximumInFlight = 0
     private(set) var gpuPresentedFrames = 0
@@ -138,8 +140,8 @@ final class ImmersiveLiveBlurSurface: UIView {
         #else
         let rateLabel = renderer.device == nil ? "图像提交率" : "FPS"
         #endif
-        return String(format: "模糊输出：%@；%@：%.1f；采样 P95：%.2f ms；GPU P95：%.2f ms；帧龄 P95：%.2f ms；在途：%d/2",
-            renderer.device == nil ? "图像回退" : "Metal 直出", rateLabel, fps, p95(captureTimes), p95(gpuTimes), p95(inputAges), inFlight)
+        return String(format: "模糊输出：%@；%@：%.1f；采样 P95：%.2f ms；GPU P95：%.2f ms；提交等待 P95：%.2f ms；帧龄 P95：%.2f ms；在途：%d/2",
+            renderer.device == nil ? "图像回退" : "Metal 直出", rateLabel, fps, p95(captureTimes), p95(gpuTimes), p95(commitWaitTimes), p95(inputAges), inFlight)
     }
 
     private final class OutputView: UIView {
@@ -153,6 +155,7 @@ final class ImmersiveLiveBlurSurface: UIView {
         let command: any MTLCommandBuffer
         let drawable: any CAMetalDrawable
         let readback: Readback?
+        let encodedAt = CACurrentMediaTime()
     }
 
     /// Allocated only by an explicit test export; ordinary display has no readback.
@@ -400,6 +403,9 @@ final class ImmersiveLiveBlurSurface: UIView {
                     }
                     #endif
                     submission.command.present(submission.drawable)
+                    lastCommitWaitMilliseconds = max(0, CACurrentMediaTime() - submission.encodedAt) * 1000
+                    commitWaitTimes.append(lastCommitWaitMilliseconds)
+                    if commitWaitTimes.count > 120 { commitWaitTimes.removeFirst() }
                     submission.command.commit()
                 }
                 return

@@ -8,6 +8,7 @@ import UIKit
 struct ImmersiveBlurInput: @unchecked Sendable {
     enum Plane {
         case bitmap(CGImage)
+        case background(AMLLBackgroundTextureFrame, frame: CGRect, opacity: Double)
         case solid(CIColor, frame: CGRect)
         case video(CVPixelBuffer, frame: CGRect, mask: CGImage?, opacity: Double)
         case reflection(CVPixelBuffer, frame: CGRect, mask: CGImage?, opacity: Double)
@@ -32,6 +33,22 @@ enum ImmersiveBlurImage {
             switch plane {
             case let .bitmap(bitmap):
                 image = CIImage(cgImage: bitmap).composited(over: image)
+            case let .background(frame, rect, opacity):
+                guard let source = CIImage(mtlTexture: frame.texture, options: [
+                    .colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+                ]) else { continue }
+                // Metal rows start at the top; the common CI canvas starts at
+                // the bottom. Preserve the hosting view's geometry and alpha.
+                let mapped = source.transformed(by: CGAffineTransform(scaleX: 1, y: -1))
+                    .transformed(by: CGAffineTransform(translationX: 0, y: source.extent.height))
+                    .transformed(by: CGAffineTransform(scaleX: rect.width * input.scale / source.extent.width,
+                        y: rect.height * input.scale / source.extent.height))
+                    .transformed(by: CGAffineTransform(translationX: (rect.minX - input.region.minX) * input.scale,
+                        y: (input.region.maxY - rect.maxY) * input.scale))
+                    .applyingFilter("CIColorMatrix", parameters: [
+                        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(opacity)),
+                    ])
+                image = mapped.composited(over: image)
             case let .solid(color, frame):
                 let rect = CGRect(x: (frame.minX - input.region.minX) * input.scale,
                     y: (input.region.maxY - frame.maxY) * input.scale,
@@ -108,7 +125,9 @@ final class ImmersiveLiveBlurSurface: UIView {
     private(set) var presentedFrames = 0
     private(set) var renderedFrames = 0
     private var generation = UUID()
-    private var inFlight = 0
+    private var admittedSubmissions = Set<UUID>()
+    var inFlightSubmissionCount: Int { admittedSubmissions.count }
+    private var inFlight: Int { inFlightSubmissionCount }
     private var hasOutput = false
     private var displayLink: CADisplayLink?
     private let renderer = Renderer()
@@ -379,13 +398,19 @@ final class ImmersiveLiveBlurSurface: UIView {
     private func sample() {
         guard renderingAllowed, inFlight < 2, !isHidden, window != nil, amount > 0,
               UIApplication.shared.applicationState == .active else { return }
+        // UIKit capture can process the run loop. Reserve before entering it
+        // so nested display callbacks cannot exceed the two-submission bound.
+        let workID = UUID()
+        let token = generation
+        admittedSubmissions.insert(workID)
+        maximumInFlight = max(maximumInFlight, inFlight)
         let timestamp = CACurrentMediaTime()
-        guard let input = capture?() else { return }
+        guard let input = capture?(), token == generation else {
+            admittedSubmissions.remove(workID)
+            return
+        }
         captureTimes.append((CACurrentMediaTime() - timestamp) * 1000)
         if captureTimes.count > 120 { captureTimes.removeFirst() }
-        inFlight += 1
-        maximumInFlight = max(maximumInFlight, inFlight)
-        let token = generation
         let radius = CGFloat(amount * 80)
         let renderer = renderer
         let commits = commits
@@ -399,8 +424,7 @@ final class ImmersiveLiveBlurSurface: UIView {
                 } : nil
                 guard let submission else {
                     Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        inFlight -= 1
+                        guard let self, admittedSubmissions.remove(workID) != nil else { return }
                         if token == generation, export { captureOutput = true }
                     }
                     return
@@ -411,15 +435,14 @@ final class ImmersiveLiveBlurSurface: UIView {
                 submission.command.addCompletedHandler { [weak self] command in
                     // Hold immutable input until the GPU completes. Only counters
                     // and UIKit visibility return to main, never submission.
-                    _ = retainedInput
+                    withExtendedLifetime(retainedInput) {}
                     let gpu = max(0, command.gpuEndTime - command.gpuStartTime) * 1000
                     let completedAt = CACurrentMediaTime()
                     let success = command.status == .completed
                     let snapshot = success ? readback?.image() : nil
                     Task { @MainActor [weak self] in
                         let commitWait = commits.complete(id)
-                        guard let self else { return }
-                        inFlight -= 1
+                        guard let self, admittedSubmissions.remove(workID) != nil else { return }
                         guard token == generation, renderingAllowed, window != nil, !isHidden, success else { return }
                         hasOutput = true
                         renderedFrames += 1
@@ -456,8 +479,7 @@ final class ImmersiveLiveBlurSurface: UIView {
                 #endif
                 if !commits.commit(submission, generation: token) {
                     Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        inFlight -= 1
+                        guard let self, admittedSubmissions.remove(workID) != nil else { return }
                         if token == generation, export { captureOutput = true }
                     }
                 }
@@ -465,8 +487,7 @@ final class ImmersiveLiveBlurSurface: UIView {
             }
             let image = autoreleasepool { renderer.render(input, radius: radius) }
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                inFlight -= 1
+                guard let self, admittedSubmissions.remove(workID) != nil else { return }
                 guard token == generation, renderingAllowed, window != nil, !isHidden else { return }
                 CATransaction.begin(); CATransaction.setDisableActions(true)
                 layer.contents = image

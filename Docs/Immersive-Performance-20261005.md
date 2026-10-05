@@ -12,6 +12,18 @@
 
 在现有 Xcode 27 工作流执行，完整指令及结果另行记录；Windows 不能运行 Apple Metal，不将源码观察标记为已复现的设备改善。
 
+原版本测试提交 `b9d59ee9`，运行 `37323090940`：新增测试实测暖机后读回次数从 22 增至 27，正好 1 项失败；其余 474 单元、8 UI 零失败。绿色实际输出和在途边界断言均通过。命令为工作流原有 `xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID" -resultBundlePath build/Xcode27-tests.xcresult CODE_SIGNING_ALLOWED=NO`。
+
+## 实现
+
+- Mesh 两种取色模式仅在沉浸模糊消费时导出完成帧的 GPU 纹理；同一背景渲染命令附加 blit，不增设播放器或背景绘制循环。普通 Mesh 仍保持 framebuffer-only。
+- 四个私有纹理以只读租约管理，完成帧才发布；模糊 GPU 完成前保持输入租约，忙时不覆盖旧帧。尺寸、停用和旧命令发布继续校验代次。原 Mesh 配色、网格、采样尺寸、刷新率及模糊分辨率均未修改。
+- 生产下层背景从 GPU 纹理进入同一 Core Image 合成；其他背景与附加层仍走原回退。启动尚无完成纹理时允许旧方式捕获，不按帧排队等待。
+- 模糊在进入 UIKit 采样前保留唯一提交身份与代次；各完成／取消路径幂等释放，不再扣减整数计数。已提交工作仍保留到 GPU 完成，维持后台调度保护。
+- 新增实际 drawable 上下方向／颜色检查、输入纹理不可覆盖、池预算、停用迟到命令和采样中配置更新的回归。羽化、倒影比例、暗度、层序和歌词页均保持现有行为。
+
+原生编译、上述回归及两路最终 IPA：已接线待验证。设备十五分钟帧率与发热：待设备验收。
+
 ## 验证顺序
 
 1. 背景 CPU 截图开销：共享原背景完成帧的只读 GPU 纹理，观察采样 P95 与读回次数。

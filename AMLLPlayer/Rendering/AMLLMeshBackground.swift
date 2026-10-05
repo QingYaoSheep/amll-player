@@ -16,6 +16,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
     var colorMode: ColorMode = .original
     /// Debug/reference playback can inject a seed; production seeds once per context.
     var seed: UInt32? = nil
+    var frameSource: AMLLBackgroundFrameSource? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -27,7 +28,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
         let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
         view.isOpaque = true
         view.backgroundColor = UIColor(white: 0.08, alpha: 1)
-        view.framebufferOnly = true
+        view.framebufferOnly = frameSource == nil
+        context.coordinator.frameSource = frameSource
         view.colorPixelFormat = .bgra8Unorm
         view.preferredFramesPerSecond = UIScreen.main.maximumFramesPerSecond
         context.coordinator.attach(to: view)
@@ -35,6 +37,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
+        if view.framebufferOnly != (frameSource == nil) { view.framebufferOnly = frameSource == nil }
+        context.coordinator.frameSource = frameSource
         context.coordinator.setProcessing(blur: blur, colorMode: colorMode)
         if active {
             context.coordinator.setArtwork(artworkURL)
@@ -69,6 +73,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
             var aspect: Float
         }
 
+        var frameSource: AMLLBackgroundFrameSource?
         private weak var view: MTKView?
         private var queue: MTLCommandQueue?
         private var pipeline: MTLRenderPipelineState?
@@ -182,6 +187,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
 
         func stop() {
             loadTask?.cancel(); loadTask = nil
+            frameSource = nil
         }
 
         func setRunning(_ value: Bool, staticMode: Bool) {
@@ -290,6 +296,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
             if states.isEmpty {
                 command.makeRenderCommandEncoder(descriptor: pass)?.endEncoding()
             }
+            frameSource?.encodeCopy(texture: drawable.texture, viewport: view.bounds.size,
+                timestamp: now, command: command)
             command.present(drawable)
             let semaphore = inFlight
             command.addCompletedHandler { _ in semaphore.signal() }

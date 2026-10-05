@@ -39,10 +39,53 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         try await waitUntil { surface.transitionSurface.renderedFrames > completed + 5 }
         XCTAssertEqual(surface.backgroundReadbacks, before,
             "A live native Mesh frame must enter blur on the GPU instead of reading the hosted background back every tick")
+        XCTAssertGreaterThan(surface.nativeBackgroundCaptures, 5)
+        XCTAssertLessThanOrEqual(surface.backgroundFrameStatistics.textures, 4)
+        let timing = XCTAttachment(string: "backgroundReadbacksAfterWarmup=\(surface.backgroundReadbacks - before)\nnativeCaptures=\(surface.nativeBackgroundCaptures)\ntextures=\(surface.backgroundFrameStatistics.textures)\n\(surface.transitionSurface.diagnosticText)")
+        timing.name = "Immersive Mesh background capture after warmup"
+        timing.lifetime = .keepAlways
+        add(timing)
         let pixel = try backdropPixel(window, at: CGPoint(x: 60, y: 200))
         XCTAssertGreaterThan(pixel[1], pixel[0] + 20, "The actual blur drawable must still contain the green live Mesh cover")
         XCTAssertGreaterThan(pixel[1], pixel[2] + 20)
         XCTAssertLessThanOrEqual(surface.transitionSurface.maximumInFlight, 2)
+    }
+
+    func testConfigurationChangedDuringCaptureCannotCommitRetiredInput() async throws {
+        _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let window = try playbackWindow()
+        let surface = ImmersiveLiveBlurSurface()
+        surface.frame = CGRect(x: 0, y: 0, width: 32, height: 64)
+        window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        let scale = min(1.5, window.screen.scale)
+        func input(_ color: CIColor) -> ImmersiveBlurInput {
+            .init(region: surface.frame, profile: .init(frame: surface.frame, fullStrengthY: 0),
+                scale: scale, planes: [.solid(color, frame: surface.frame)])
+        }
+        surface.capture = {
+            // Hierarchy capture may deliver UIKit changes before returning its
+            // image. That image belongs to the generation at capture entry.
+            surface.capture = { input(.blue) }
+            surface.configure(amount: 1 / 80.0, mask: nil)
+            return input(.red)
+        }
+        surface.configure(amount: 1 / 80.0, mask: nil)
+        surface.layoutIfNeeded()
+        surface.requestOutputSnapshot()
+        try await waitUntil { surface.capturedOutput != nil }
+        let output = try XCTUnwrap(surface.capturedOutput)
+        var bytes = [UInt8](repeating: 0, count: 4)
+        bytes.withUnsafeMutableBytes {
+            CIContext().render(CIImage(cgImage: output), toBitmap: $0.baseAddress!, rowBytes: 4,
+                bounds: CGRect(x: 8, y: 8, width: 1, height: 1), format: .RGBA8,
+                colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        }
+        XCTAssertGreaterThan(bytes[2], 240, "A capture retired during UIKit updates must never be presented")
+        XCTAssertLessThan(bytes[0], 10)
+        XCTAssertLessThanOrEqual(surface.maximumInFlight, 2)
+        surface.stop()
+        try await waitUntil { surface.inFlightSubmissionCount == 0 }
     }
 
     func testBlurTopFeatherHidesACloneColorSeamWithoutFadingTheWholeOutput() async throws {

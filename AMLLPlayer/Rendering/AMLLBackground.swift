@@ -12,6 +12,8 @@ struct AMLLBackground: View {
     var dimming: Double = 0
     /// Presentation override; never writes the user's background preferences.
     var suppressBlur = false
+    /// Optional completed GPU frames for the immersive backdrop only.
+    var frameSource: AMLLBackgroundFrameSource? = nil
     @State private var usedMesh = false
     @State private var usedPixi = false
     @State private var usedFlowing = false
@@ -33,7 +35,8 @@ struct AMLLBackground: View {
             }
             if usedMesh || mode.isMesh {
                 AMLLMeshBackground(artworkURL: artworkURL, active: active && mode.isMesh, blur: effectiveMeshBlur,
-                                   colorMode: mode == .meshColorMode2 ? .colorMode2 : .original)
+                                   colorMode: mode == .meshColorMode2 ? .colorMode2 : .original,
+                                   frameSource: mode.isMesh ? frameSource : nil)
                     .opacity(mode.isMesh ? 1 : 0)
             }
             if usedPixi || mode == .pixi {

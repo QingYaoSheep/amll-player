@@ -42,6 +42,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         private let frames: ArtworkReflectionFrames
         private let presentation: ArtworkFramePresentation
         private var backgroundHost: UIHostingController<AMLLBackground>?
+        private let backgroundFrames = AMLLBackgroundFrameSource()
+        private var usesNativeBackground = false
+        private(set) var nativeBackgroundCaptures = 0
+        var backgroundFrameStatistics: (copies: Int, skipped: Int, textures: Int, bytes: Int) { backgroundFrames.statistics }
         private var previousLayout: Layout?
         private var appliedLayout: Layout?
         private var appliedBounds: CGRect?
@@ -108,7 +112,13 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             }
             let video = pendingConfiguration.video
             let layout = pendingConfiguration.layout
-            let background = pendingConfiguration.background
+            var background = pendingConfiguration.background
+            usesNativeBackground = background?.mode.isMesh == true && background?.dimming == 0
+                && layout.tuning[.background].enabled && layout.tuning[.transition].enabled
+                && layout.tuning.isBelow(.background, .transition) && layout.tuning.validatedBlur > 0
+                && !layout.reduceTransparency
+            backgroundFrames.setEnabled(usesNativeBackground)
+            background?.frameSource = usesNativeBackground ? backgroundFrames : nil
             if let background {
                 if let backgroundHost { backgroundHost.rootView = background }
                 else {
@@ -293,6 +303,11 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 } else if view === dimmingSurface, let color = view.backgroundColor {
                     layers.append(.solid(CIColor(color: color), frame: view.frame))
                     frames.blurInputs.append("暗度")
+                } else if view === backgroundSurface, usesNativeBackground,
+                          let frame = backgroundFrames.current(viewport: view.bounds.size) {
+                    layers.append(.background(frame, frame: view.frame, opacity: Double(view.alpha)))
+                    nativeBackgroundCaptures += 1
+                    frames.blurInputs.append("背景（GPU 共享）")
                 } else {
                     if view === backgroundSurface { backgroundReadbacks += 1 }
                     let image = renderer.image { context in
@@ -318,6 +333,8 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             videoSurface.stop()
             reflectionSurface.clear()
             transitionSurface.stop()
+            backgroundFrames.setEnabled(false)
+            usesNativeBackground = false
             frames.release(presentation)
             if let host = backgroundHost {
                 host.willMove(toParent: nil)

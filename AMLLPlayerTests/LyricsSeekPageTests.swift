@@ -29,6 +29,8 @@ import XCTest
         let previous = player.currentTime().seconds, revision = model.lyricsSeekRevision
         var frames: [AMLLFrameState] = []
         canvas.frameObserver = { frames.append($0) }
+        try await wait("baseline production display frames") { frames.count > 5 }
+        frames.removeAll()
         presentation.open(reduceMotion: false)
         try await Task.sleep(for: .milliseconds(700))
         XCTAssertTrue(presentation.isPresented)

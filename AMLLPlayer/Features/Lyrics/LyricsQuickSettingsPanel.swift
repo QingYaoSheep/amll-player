@@ -165,11 +165,9 @@ struct LyricsQuickSettingsPanel: View {
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                header.background {
-                    GeometryReader { header in
-                        Color.clear.preference(key: QuickSettingsHeaderHeight.self, value: header.size.height)
-                    }
-                }
+                header
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         appearance
@@ -180,15 +178,15 @@ struct LyricsQuickSettingsPanel: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
-                    .background {
-                        GeometryReader { content in
-                            Color.clear.preference(key: QuickSettingsContentHeight.self, value: content.size.height)
-                        }
-                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
                 }
                 .scrollIndicators(.hidden)
                 .accessibilityIdentifier("lyricsQuickSettingsScroll")
-                .frame(height: max(0, min(contentHeight, geometry.size.height - headerHeight)))
+                // Bootstrap with the available viewport, so lazy contents can
+                // become visible before their first measurement arrives.
+                .frame(height: max(0, min(contentHeight > 0 ? contentHeight : geometry.size.height,
+                                          geometry.size.height - headerHeight)))
             }
             .frame(maxWidth: .infinity)
             .modifier(QuickSettingsGlassSurface())
@@ -196,8 +194,6 @@ struct LyricsQuickSettingsPanel: View {
             .offset(y: reduceMotion ? 0 : drag)
             .frame(maxHeight: .infinity, alignment: .bottom)
         }
-        .onPreferenceChange(QuickSettingsContentHeight.self) { contentHeight = $0 }
-        .onPreferenceChange(QuickSettingsHeaderHeight.self) { headerHeight = $0 }
         .foregroundStyle(.white)
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
@@ -383,16 +379,6 @@ struct LyricsQuickSettingsPanel: View {
             content()
         }.font(.subheadline).buttonStyle(.plain).tint(.green)
     }
-}
-
-private struct QuickSettingsContentHeight: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
-private struct QuickSettingsHeaderHeight: PreferenceKey {
-    static let defaultValue: CGFloat = 100
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 private struct QuickSettingsGlassSurface: ViewModifier {

@@ -91,6 +91,7 @@ jobs:
           -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -resultBundlePath build/Xcode27-tests.xcresult
+          -collect-test-diagnostics never
           CODE_SIGNING_ALLOWED=NO
 
       - name: Upload Xcode 27 test results

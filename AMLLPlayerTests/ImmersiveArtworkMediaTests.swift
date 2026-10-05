@@ -31,6 +31,13 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         tuning[.transition].enabled = false
         apply()
         try await waitUntil { frames.hasFrame && frames.primaryFrameReady }
+        // Decoder/layer readiness can precede the compositor's first visible
+        // frame. This fixture's red column must actually be on screen before
+        // recording an unfiltered baseline (the brown backdrop is only 102).
+        try await waitUntil {
+            guard let pixel = try? backdropPixel(window, at: CGPoint(x: 12, y: 180), attach: false) else { return false }
+            return pixel[0] > 180
+        }
         let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
         let originalCapture = try XCTUnwrap(surface.transitionSurface.capture)
         // A controlled clone-color mismatch makes a boundary discontinuity
@@ -1243,7 +1250,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         return values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count)
     }
 
-    private func backdropPixel(_ window: UIWindow, at point: CGPoint) throws -> [Int] {
+    private func backdropPixel(_ window: UIWindow, at point: CGPoint, attach: Bool = true) throws -> [Int] {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
@@ -1257,10 +1264,12 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
             context.draw(cg, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         }
-        let attachment = XCTAttachment(image: image)
-        attachment.name = "Live backdrop visibility and color"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        if attach {
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Live backdrop visibility and color"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         return bytes.map(Int.init)
     }
 

@@ -44,6 +44,12 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
             XCTAssertEqual(profile.topFeatherOpacity(at: 650, length: length), 1)
             XCTAssertLessThan(profile.topFeatherOpacity(at: 180 + length * 0.001, length: length), 0.00001)
             XCTAssertGreaterThan(profile.topFeatherOpacity(at: 180 + length * 0.999, length: length), 0.99999)
+            var previous: CGFloat = 0
+            for sample in 0 ... 256 {
+                let opacity = profile.topFeatherOpacity(at: 180 + length * CGFloat(sample) / 256, length: length)
+                XCTAssertGreaterThanOrEqual(opacity, previous)
+                previous = opacity
+            }
         }
         XCTAssertEqual(profile.topFeatherOpacity(at: 180, length: 0), 1)
         let short = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 390, width: 128, height: 260), fullStrengthY: 400)
@@ -64,7 +70,8 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
                 for topY in 0 ... Int(length) {
                     let alpha = pixel(image, x: 64, y: Int(profile.frame.height) - topY - 1)[3]
                     if topY == 0 { XCTAssertLessThanOrEqual(alpha, 2) }
-                    XCTAssertGreaterThanOrEqual(alpha, previous)
+                    XCTAssertGreaterThanOrEqual(alpha, previous - 1,
+                        "Core Animation's 8-bit gradient rasterization may dither by one alpha level; the mathematical curve is strictly monotonic")
                     previous = alpha
                 }
                 for topY in [Int(length) + 2, 200, 469] {

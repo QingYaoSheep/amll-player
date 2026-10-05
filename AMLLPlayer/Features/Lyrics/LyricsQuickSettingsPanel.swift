@@ -275,6 +275,7 @@ struct LyricsQuickSettingsPanel: View {
                     }
                 }
                 .frame(minHeight: 44).accessibilityIdentifier("quickSettingsSizePreset")
+                .accessibilityValue(Text(LocalizedStringKey("render.size." + (configuration.sizePreset ?? .medium).rawValue)))
             } else {
                 Picker("render.fontSize", selection: Binding(get: { configuration.fontSize }, set: {
                     model.renderPreferences.configuration.sizePreset = nil
@@ -287,6 +288,7 @@ struct LyricsQuickSettingsPanel: View {
                     Text("render.large").tag(40.0); Text("render.extraLarge").tag(48.0)
                 }
                 .frame(minHeight: 44).accessibilityIdentifier("quickSettingsFontSize")
+                .accessibilityValue(Text(String(format: "%.0f pt", configuration.fontSize)))
             }
             Picker("quickSettings.background", selection: Binding(get: { configuration.backgroundMode ?? .mesh }, set: {
                 model.renderPreferences.configuration.backgroundMode = $0
@@ -299,6 +301,7 @@ struct LyricsQuickSettingsPanel: View {
                 Text("双色渐变").tag(LyricsRenderConfiguration.BackgroundMode.gradient)
             }
             .frame(minHeight: 44).accessibilityIdentifier("quickSettingsBackground")
+            .accessibilityValue(Text(backgroundTitle))
         }
     }
 
@@ -317,6 +320,7 @@ struct LyricsQuickSettingsPanel: View {
                     ForEach(MusicRepeatMode.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.frame(minHeight: 44).disabled(model.isPerformingAction)
                     .accessibilityIdentifier("quickSettingsRepeat")
+                    .accessibilityValue(Text(snapshot.repeatMode.title))
             }
         }
     }
@@ -366,6 +370,17 @@ struct LyricsQuickSettingsPanel: View {
 
     private func setting(_ key: WritableKeyPath<LyricsRenderConfiguration, Bool>) -> Binding<Bool> {
         Binding(get: { model.renderPreferences.configuration[keyPath: key] }, set: { model.renderPreferences.configuration[keyPath: key] = $0 })
+    }
+
+    private var backgroundTitle: String {
+        switch configuration.backgroundMode ?? .mesh {
+        case .mesh: "Mesh 网格"
+        case .meshColorMode2: "Mesh网格（取色模式2）"
+        case .pixi: "Pixi 流动封面"
+        case .flowing: "流动背景"
+        case .solid: "纯色"
+        case .gradient: "双色渐变"
+        }
     }
 
     private func route(_ title: LocalizedStringKey, symbol: String, to target: LyricsQuickSettingsPresentation.Destination) -> some View {

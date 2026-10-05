@@ -27,17 +27,21 @@ import XCTest
         }
         let item = try XCTUnwrap(player.currentItem)
         let previous = player.currentTime().seconds, revision = model.lyricsSeekRevision
+        let viewport = canvas.bounds
         var frames: [AMLLFrameState] = []
         canvas.frameObserver = { frames.append($0) }
         try await wait("baseline production display frames") { frames.count > 5 }
         frames.removeAll()
-        print("[QUICK-FRAMES] before playing=\(model.lyricsPlaybackFrame().playing) window=\(canvas.window != nil) size=\(canvas.bounds.size)")
         presentation.open(reduceMotion: false)
-        try await Task.sleep(for: .milliseconds(700))
-        let canvasFields = Mirror(reflecting: canvas).children.filter { ["active", "link", "dirty"].contains($0.label ?? "") }
-        print("[QUICK-FRAMES] open count=\(frames.count) playing=\(model.lyricsPlaybackFrame().playing) size=\(canvas.bounds.size) state=\(canvasFields.map { "\($0.label ?? "?")=\($0.value)" })")
+        // Check continuing real frames, independent of a shared simulator's
+        // wall-clock rendering throughput. The bounded wait still fails if
+        // opening the menu stops the production display link.
+        try await wait("live display frames while quick settings are open") {
+            frames.count > 5 && (frames.last?.lyricTime ?? 0) - (frames.first?.lyricTime ?? 0) > 0.5
+        }
         XCTAssertTrue(presentation.isPresented)
         XCTAssertTrue(findCanvas(host.view) === canvas)
+        XCTAssertEqual(canvas.bounds, viewport)
         XCTAssertTrue(player.currentItem === item)
         XCTAssertGreaterThan(player.rate, 0)
         XCTAssertGreaterThan(player.currentTime().seconds - previous, 0.4)

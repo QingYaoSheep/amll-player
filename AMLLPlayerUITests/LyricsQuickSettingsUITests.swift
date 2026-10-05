@@ -54,7 +54,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         XCTAssertEqual(app.switches["quickSettingsTranslation"].value as? String, changed)
         XCTAssertEqual(app.switches["quickSettingsAutoSize"].value as? String, "0")
         let restoredFont = app.descendants(matching: .any)["quickSettingsFontSize"].firstMatch
-        XCTAssertTrue((restoredFont.value as? String ?? restoredFont.label).contains("Large"))
+        XCTAssertEqual(restoredFont.value as? String, "40 pt")
         app.buttons["closeLyricsQuickSettings"].tap()
     }
 
@@ -89,7 +89,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             openPanel(app)
             let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
             let appearance = app.buttons["quickSettingsRoute.appearance"]
-            for _ in 0 ..< 6 where !appearance.isHittable { scroll.swipeUp() }
+            reveal(appearance, in: app)
             XCTAssertTrue(appearance.isHittable)
             appearance.tap()
             XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForExistence(timeout: 4))
@@ -118,10 +118,10 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         app.buttons["Mesh网格（取色模式2）"].tap()
         XCTAssertTrue(panel(app).exists)
         let background = app.descendants(matching: .any)["quickSettingsBackground"].firstMatch
-        XCTAssertTrue((background.value as? String ?? background.label).contains("取色模式2"))
+        XCTAssertTrue(displayedText(background).contains("取色模式2"))
         let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
         let offset = app.buttons["quickSettingsOffsetPlus"]
-        for _ in 0 ..< 6 where !offset.isHittable { scroll.swipeUp() }
+        reveal(offset, in: app)
         XCTAssertTrue(offset.isHittable)
         offset.tap()
         XCTAssertTrue(panel(app).exists)
@@ -147,13 +147,13 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             let acknowledged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: shuffle)
             XCTAssertEqual(XCTWaiter.wait(for: [acknowledged], timeout: 4), .completed)
             let repeatPicker = app.descendants(matching: .any)["quickSettingsRepeat"].firstMatch
-            if !repeatPicker.isHittable { scroll.swipeUp() }
+            reveal(repeatPicker, in: app)
             repeatPicker.tap()
             app.buttons["单曲循环"].tap()
             XCTAssertTrue(panel(app).exists)
-            XCTAssertTrue((repeatPicker.value as? String ?? repeatPicker.label).contains("单曲循环"))
+            XCTAssertTrue(displayedText(repeatPicker).contains("单曲循环"))
             let queue = app.buttons["quickSettingsRoute.queue"]
-            for _ in 0 ..< 6 where !queue.isHittable { scroll.swipeDown() }
+            reveal(queue, in: app)
             queue.tap()
             let title = service == "netease" ? "网易云播放队列" : "系统播放队列"
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 4))
@@ -162,7 +162,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             app.buttons[service == "netease" ? "完成" : "Done"].tap()
             XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
             app.buttons["lyricsDisplayOptions"].tap()
-            for _ in 0 ..< 6 where !shuffle.isHittable { scroll.swipeUp() }
+            reveal(shuffle, in: app)
             XCTAssertEqual(shuffle.value as? String, "1", "Reopening controls must preserve the service's acknowledged state.")
             app.buttons["closeLyricsQuickSettings"].tap()
             app.terminate()
@@ -192,17 +192,26 @@ final class LyricsQuickSettingsUITests: XCTestCase {
 
     @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
-        for _ in 0 ..< 8 where !element.isHittable {
-            if element.exists, element.frame.maxY < scroll.frame.minY { scroll.swipeDown() }
-            else { scroll.swipeUp() }
+        for _ in 0 ..< 16 where !element.isHittable {
+            let viewport = scroll.frame
+            let direction = element.exists && element.frame.midY < viewport.midY ? 1.0 : -1.0
+            // A full inertial swipe can skip a row and oscillate between the
+            // two ends of a short viewport. Move a small, fixed distance.
+            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5 + direction * 0.22))
+            start.press(forDuration: 0.05, thenDragTo: end)
         }
-        XCTAssertTrue(element.isHittable)
+        XCTAssertTrue(element.isHittable, "Target: \(element.debugDescription), viewport: \(scroll.frame)")
     }
 
     @MainActor private func toggle(_ element: XCUIElement) {
         // Native switch accessibility includes the label. Tap the switch
         // itself rather than the label's center, which need not toggle it.
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+    }
+
+    @MainActor private func displayedText(_ element: XCUIElement) -> String {
+        element.label + " " + (element.value as? String ?? "")
     }
 
     @MainActor private func capture(_ app: XCUIApplication, name: String) {

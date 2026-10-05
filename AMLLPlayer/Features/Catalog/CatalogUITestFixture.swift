@@ -42,7 +42,7 @@
                         if model.netEaseState.connected { break }
                         try? await Task.sleep(for: .milliseconds(10))
                     }
-                    if let song = try? NetEaseDecoder.item(NetEaseFixtureAPI.song, kind: .track) { await model.playCatalog(song) }
+                    if let song = NetEaseDecoder.item(NetEaseFixtureAPI.song, kind: .track) { try? await model.playCatalog(song) }
                 }
             }
             return model

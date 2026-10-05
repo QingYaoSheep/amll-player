@@ -7,6 +7,61 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testBlurTopFeatherHidesACloneColorSeamWithoutFadingTheWholeOutput() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let window = try playbackWindow()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = CGRect(x: 0, y: 0, width: 200, height: 650)
+        window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        surface.backgroundSurface.backgroundColor = UIColor(red: 0.4, green: 0.23, blue: 0.12, alpha: 1)
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
+        tuning[.video].opacity = 0.65
+        tuning.blurRadius = 40
+        let video = AnimatedArtwork(url: url, active: false)
+        let profile = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 180, width: 200, height: 470), fullStrengthY: 400)
+        func apply() {
+            surface.configure(video: video, layout: .init(video: CGRect(x: 0, y: 0, width: 128, height: 400),
+                reflection: .zero, transition: profile.frame, bottomFade: .zero, tuning: tuning,
+                presentsFrame: true, reflectionEnabled: false, reduceTransparency: false, blurProfile: profile))
+            surface.layoutIfNeeded()
+        }
+        tuning[.transition].enabled = false
+        apply()
+        try await waitUntil { frames.hasFrame && frames.primaryFrameReady }
+        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        let originalCapture = try XCTUnwrap(surface.transitionSurface.capture)
+        // A controlled clone-color mismatch makes a boundary discontinuity
+        // reproducible regardless of the decoder's color tags. The independent
+        // color-parity tests still exercise the unmodified production input.
+        surface.transitionSurface.capture = {
+            guard let input = originalCapture() else { return nil }
+            return .init(region: input.region, profile: input.profile, scale: input.scale,
+                planes: input.planes + [.solid(CIColor(red: 1, green: 1, blue: 1, alpha: 0.12), frame: input.region)])
+        }
+        let beforeVideo = try backdropPixel(window, at: CGPoint(x: 12, y: 180))
+        let beforeBackground = try backdropPixel(window, at: CGPoint(x: 160, y: 180))
+        let beforeLower = try backdropPixel(window, at: CGPoint(x: 160, y: 220))
+        tuning[.transition].enabled = true
+        apply()
+        try await waitUntil { surface.transitionSurface.renderedFrames > 3 }
+        let afterVideo = try backdropPixel(window, at: CGPoint(x: 12, y: 180))
+        let afterBackground = try backdropPixel(window, at: CGPoint(x: 160, y: 180))
+        let afterLower = try backdropPixel(window, at: CGPoint(x: 160, y: 220))
+        for channel in 0 ..< 3 {
+            XCTAssertEqual(Double(afterVideo[channel]), Double(beforeVideo[channel]), accuracy: 1,
+                "The very top must reveal the real video instead of a mismatched clone")
+            XCTAssertEqual(Double(afterBackground[channel]), Double(beforeBackground[channel]), accuracy: 1,
+                "The feather must also join the real background without a horizontal brightness step")
+        }
+        XCTAssertGreaterThan(afterLower[1], beforeLower[1] + 12,
+            "The local feather must not fade away the entire filtered output")
+        XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player === player)
+        XCTAssertEqual(player.rate, 0, "Updating the effect cannot restart a paused video")
+    }
+
     func testBlurTopMatchesTheUnfilteredTranslucentVideo() async throws {
         try await checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: false)
     }

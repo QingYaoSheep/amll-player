@@ -88,7 +88,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         try await waitUntil { surface.inFlightSubmissionCount == 0 }
     }
 
-    func testSharedMeshColorsMatchTheUnfilteredActualBackdrop() async throws {
+    func testSharedMeshColorsMatchTheOriginalCaptureAtTheSameCoordinates() async throws {
         _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let window = try playbackWindow()
         let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
@@ -106,6 +106,11 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         for kind in [ImmersiveArtworkLayer.video, .reflection, .bottomFade] { tuning[kind].enabled = false }
         tuning.blurRadius = 24
         tuning.topFeatherLength = 0
+        let originalCapture = try XCTUnwrap(surface.transitionSurface.capture)
+        func meshView(in view: UIView) -> MTKView? {
+            if let mesh = view as? MTKView { return mesh }
+            return view.subviews.lazy.compactMap { meshView(in: $0) }.first
+        }
         for mode in [LyricsRenderConfiguration.BackgroundMode.mesh, .meshColorMode2] {
             for color in colors {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
@@ -113,22 +118,52 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
                     color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
                 }
                 try XCTUnwrap(image.pngData()).write(to: url); files.append(url)
+                surface.transitionSurface.capture = originalCapture
                 surface.configure(video: AnimatedArtwork(url: URL(fileURLWithPath: "/unused.mp4"), active: false),
                     layout: .init(video: .zero, reflection: .zero,
-                        transition: CGRect(x: 0, y: 0, width: 60, height: 240), bottomFade: .zero,
+                        transition: surface.bounds, bottomFade: .zero,
                         tuning: tuning, presentsFrame: false, reflectionEnabled: false, reduceTransparency: false),
                     background: AMLLBackground(artworkURL: url, active: true, blur: 40, mode: mode))
                 surface.layoutIfNeeded()
-                // Uniform covers remove animation phase as a color variable;
-                // wait for the existing artwork crossfade to finish.
+                // Keep the real shader's vignette and dither. Freeze its last
+                // completed drawable, then compare both capture paths at the
+                // same coordinates with identical blur, alpha and dimming.
                 try await Task.sleep(for: .milliseconds(1200))
-                let completed = surface.transitionSurface.renderedFrames
-                try await waitUntil { surface.transitionSurface.renderedFrames > completed + 3 }
-                let filtered = try backdropPixel(window, at: CGPoint(x: 30, y: 180))
-                let original = try backdropPixel(window, at: CGPoint(x: 90, y: 180))
-                for channel in 0 ..< 3 {
-                    XCTAssertEqual(Double(filtered[channel]), Double(original[channel]), accuracy: 3,
-                        "The actual shared Mesh frame must match the unfiltered hosted drawable; feather must not hide a color mismatch")
+                let mesh = try XCTUnwrap(meshView(in: surface.backgroundSurface))
+                mesh.isPaused = true
+                try await Task.sleep(for: .milliseconds(200))
+                let native = try XCTUnwrap(originalCapture())
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = native.scale; format.opaque = false
+                let legacy = UIGraphicsImageRenderer(size: native.region.size, format: format).image { context in
+                    context.cgContext.translateBy(x: surface.backgroundSurface.frame.minX - native.region.minX,
+                        y: surface.backgroundSurface.frame.minY - native.region.minY)
+                    surface.backgroundSurface.drawHierarchy(in: surface.backgroundSurface.bounds, afterScreenUpdates: false)
+                }
+                let bitmap = try XCTUnwrap(legacy.cgImage)
+                var sharedPlanes = 0
+                let planes = native.planes.map { plane -> ImmersiveBlurInput.Plane in
+                    if case .background = plane { sharedPlanes += 1; return .bitmap(bitmap) }
+                    return plane
+                }
+                XCTAssertEqual(sharedPlanes, 1, "The comparison must exercise the shared native Mesh frame")
+                let captured = ImmersiveBlurInput(region: native.region, profile: native.profile,
+                    scale: native.scale, planes: planes)
+                let points = [CGPoint(x: 24, y: 48), CGPoint(x: 60, y: 120), CGPoint(x: 96, y: 192)]
+                func pixels(for input: ImmersiveBlurInput) async throws -> [[Int]] {
+                    surface.transitionSurface.capture = { input }
+                    surface.transitionSurface.configure(amount: 24 / 80.0, mask: nil)
+                    let completed = surface.transitionSurface.renderedFrames
+                    try await waitUntil { surface.transitionSurface.renderedFrames > completed + 3 }
+                    return try points.map { try backdropPixel(window, at: $0) }
+                }
+                let filtered = try await pixels(for: native)
+                let original = try await pixels(for: captured)
+                for point in points.indices {
+                    for channel in 0 ..< 3 {
+                        XCTAssertEqual(Double(filtered[point][channel]), Double(original[point][channel]), accuracy: 3,
+                            "The shared frame must match original hierarchy capture at the same coordinate; feather must not hide a color mismatch")
+                    }
                 }
                 XCTAssertGreaterThan(surface.nativeBackgroundCaptures, 0)
             }

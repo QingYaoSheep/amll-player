@@ -87,10 +87,12 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        content
-            .allowsHitTesting(!presentation.isPresented)
-            .accessibilityHidden(presentation.isPresented)
-            .overlay {
+        ZStack {
+            content.accessibilityHidden(presentation.isPresented)
+            // The modal hit plane is a sibling of the live page. Disabling
+            // hit testing on the page before attaching an overlay can also
+            // disable SwiftUI controls installed by that overlay.
+            Group {
                 GeometryReader { geometry in
                     if presentation.isPresented {
                         ZStack(alignment: .bottom) {
@@ -113,6 +115,7 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
                     }
                 }
             }
+        }
             .sheet(item: $presentation.destination, onDismiss: { presentation.destinationDidDismiss() }) { target in
                 destination(target)
             }

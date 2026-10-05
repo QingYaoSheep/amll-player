@@ -32,16 +32,17 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         let translation = app.switches["quickSettingsTranslation"]
         XCTAssertTrue(translation.exists)
         let previous = translation.value as? String
-        translation.tap()
-        XCTAssertNotEqual(translation.value as? String, previous)
+        toggle(translation)
+        let changedValue = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != %@", previous ?? "1"), object: translation)
+        XCTAssertEqual(XCTWaiter.wait(for: [changedValue], timeout: 3), .completed)
         let changed = translation.value as? String
         XCTAssertTrue(panel(app).exists)
         let autoSize = app.switches["quickSettingsAutoSize"]
         reveal(autoSize, in: app)
         XCTAssertTrue(autoSize.exists)
-        autoSize.tap()
+        toggle(autoSize)
         XCTAssertTrue(app.descendants(matching: .any)["quickSettingsSizePreset"].firstMatch.exists)
-        autoSize.tap()
+        toggle(autoSize)
         let font = app.descendants(matching: .any)["quickSettingsFontSize"].firstMatch
         reveal(font, in: app)
         font.tap()
@@ -94,9 +95,10 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForExistence(timeout: 4))
             XCTAssertFalse(panel(app).exists)
             app.buttons["closeLyricsQuickSettingsDestination"].tap()
+            XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForNonExistence(timeout: 4))
             app.buttons["lyricsDisplayOptions"].tap()
             let search = app.buttons["quickSettingsRoute.lyricsSearch"]
-            for _ in 0 ..< 6 where !search.isHittable { scroll.swipeUp() }
+            reveal(search, in: app)
             XCTAssertTrue(search.isHittable)
             search.tap()
             XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 4))
@@ -138,10 +140,10 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             openPanel(app)
             let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
             let shuffle = app.switches["quickSettingsShuffle"]
-            for _ in 0 ..< 6 where !shuffle.isHittable { scroll.swipeUp() }
+            reveal(shuffle, in: app)
             XCTAssertTrue(shuffle.isHittable)
             XCTAssertEqual(shuffle.value as? String, "0")
-            shuffle.tap()
+            toggle(shuffle)
             let acknowledged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: shuffle)
             XCTAssertEqual(XCTWaiter.wait(for: [acknowledged], timeout: 4), .completed)
             let repeatPicker = app.descendants(matching: .any)["quickSettingsRepeat"].firstMatch
@@ -190,8 +192,17 @@ final class LyricsQuickSettingsUITests: XCTestCase {
 
     @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
-        for _ in 0 ..< 6 where !element.isHittable { scroll.swipeUp() }
+        for _ in 0 ..< 8 where !element.isHittable {
+            if element.exists, element.frame.maxY < scroll.frame.minY { scroll.swipeDown() }
+            else { scroll.swipeUp() }
+        }
         XCTAssertTrue(element.isHittable)
+    }
+
+    @MainActor private func toggle(_ element: XCUIElement) {
+        // Native switch accessibility includes the label. Tap the switch
+        // itself rather than the label's center, which need not toggle it.
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
     }
 
     @MainActor private func capture(_ app: XCUIApplication, name: String) {

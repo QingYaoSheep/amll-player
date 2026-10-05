@@ -126,6 +126,7 @@ final class ImmersiveLiveBlurSurface: UIView {
     private(set) var maximumInFlight = 0
     private(set) var gpuPresentedFrames = 0
     private(set) var gpuCompletedFrames = 0
+    private(set) var lastBackgroundScheduledSubmissionCount = 0
     var hasRenderedOutput: Bool { hasOutput }
     var preferredRefreshRate: Float? { displayLink?.preferredFrameRateRange.preferred }
     var diagnosticText: String {
@@ -172,9 +173,10 @@ final class ImmersiveLiveBlurSurface: UIView {
         func reset(to next: UUID) -> [any MTLCommandBuffer] {
             lock.lock(); defer { lock.unlock() }
             generation = next
-            let commands = entries.values.map(\.command)
-            entries.removeAll(keepingCapacity: true)
-            return commands
+            // Invalidation only rejects future commits. Already committed work
+            // must remain available to a later background scheduling barrier;
+            // completion owns its removal, even after the surface is stopped.
+            return entries.values.map(\.command)
         }
 
         func accepts(_ token: UUID) -> Bool {
@@ -317,7 +319,9 @@ final class ImmersiveLiveBlurSurface: UIView {
             // Prevent queued encodes from committing after deactivation, and
             // ensure already committed work is scheduled before backgrounding.
             generation = UUID()
-            for command in commits.reset(to: generation) { command.waitUntilScheduled() }
+            let commands = commits.reset(to: generation)
+            for command in commands { command.waitUntilScheduled() }
+            lastBackgroundScheduledSubmissionCount = commands.count
         }
         updateScheduler()
     }

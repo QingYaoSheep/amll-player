@@ -324,6 +324,58 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertLessThanOrEqual(surface.maximumInFlight, 2)
     }
 
+    func testReconfigurationKeepsSubmittedBlurAvailableWhenBackgrounding() async throws {
+        _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let window = try playbackWindow()
+        let surface = ImmersiveLiveBlurSurface()
+        surface.frame = CGRect(x: 0, y: 0, width: 32, height: 64)
+        window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        let scale = min(1.5, window.screen.scale)
+        func input(_ color: CIColor) -> ImmersiveBlurInput {
+            .init(region: surface.frame, profile: .init(frame: surface.frame, fullStrengthY: 0),
+                scale: scale, planes: [.solid(color, frame: surface.frame)])
+        }
+        surface.capture = { input(.red) }
+        surface.configure(amount: 1 / 80.0, mask: nil)
+        surface.layoutIfNeeded()
+        try await waitUntil { surface.gpuCompletedFrames > 3 }
+        var sampled = false
+        var backgrounded = false
+        surface.capture = {
+            guard !sampled else { return nil }
+            sampled = true
+            DispatchQueue.main.async {
+                // Let the real worker submit while completion delivery waits
+                // behind UIKit. Reconfiguration must not forget that command.
+                Thread.sleep(forTimeInterval: 0.3)
+                surface.configure(amount: 2 / 80.0, mask: nil)
+                NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: nil)
+                XCTAssertGreaterThan(surface.lastBackgroundScheduledSubmissionCount, 0,
+                    "Backgrounding must schedule committed work even after configuration invalidates its output")
+                XCTAssertFalse(surface.hasRenderedOutput, "Retired composition must stay hidden")
+                NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+                backgrounded = true
+            }
+            return input(.green)
+        }
+        try await waitUntil { backgrounded }
+        // Resume through the same production capture and GPU output boundary.
+        surface.capture = { input(.blue) }
+        surface.requestOutputSnapshot()
+        try await waitUntil { surface.capturedOutput != nil && surface.hasRenderedOutput }
+        let output = try XCTUnwrap(surface.capturedOutput)
+        var bytes = [UInt8](repeating: 0, count: 4)
+        bytes.withUnsafeMutableBytes {
+            CIContext().render(CIImage(cgImage: output), toBitmap: $0.baseAddress!, rowBytes: 4,
+                bounds: CGRect(x: 8, y: 8, width: 1, height: 1), format: .RGBA8,
+                colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        }
+        XCTAssertGreaterThan(bytes[2], 240, "Resume must present the current input, never the retired green frame")
+        XCTAssertLessThan(bytes[1], 10)
+        XCTAssertLessThanOrEqual(surface.maximumInFlight, 2)
+    }
+
     func testUnattachedConfigurationCannotRetireVisibleImmersivePlayer() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

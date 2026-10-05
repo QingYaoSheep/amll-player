@@ -37,11 +37,13 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         let changed = translation.value as? String
         XCTAssertTrue(panel(app).exists)
         let autoSize = app.switches["quickSettingsAutoSize"]
+        reveal(autoSize, in: app)
         XCTAssertTrue(autoSize.exists)
         autoSize.tap()
         XCTAssertTrue(app.descendants(matching: .any)["quickSettingsSizePreset"].firstMatch.exists)
         autoSize.tap()
         let font = app.descendants(matching: .any)["quickSettingsFontSize"].firstMatch
+        reveal(font, in: app)
         font.tap()
         app.buttons["Large"].tap()
         XCTAssertTrue(panel(app).exists)
@@ -58,8 +60,10 @@ final class LyricsQuickSettingsUITests: XCTestCase {
     @MainActor func testOutsideAndHandleCloseOnlyThePanelAndRotationKeepsItUsable() {
         let app = lyricsApp()
         openPanel(app)
-        XCTAssertGreaterThan(panel(app).frame.minY, app.frame.height * 0.3)
-        XCTAssertLessThanOrEqual(panel(app).frame.height, app.frame.height * 0.6 + 1)
+        let handle = app.descendants(matching: .any)["lyricsQuickSettingsHandle"].firstMatch
+        let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
+        XCTAssertGreaterThan(handle.frame.minY, app.frame.height * 0.3)
+        XCTAssertLessThanOrEqual(scroll.frame.maxY - handle.frame.minY, app.frame.height * 0.6 + 1)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         XCTAssertFalse(panel(app).exists)
         XCTAssertTrue(app.buttons["lyricsDisplayOptions"].exists)
@@ -106,7 +110,9 @@ final class LyricsQuickSettingsUITests: XCTestCase {
     @MainActor func testBackgroundAndOffsetApplyWithoutClosingTheMenu() {
         let app = lyricsApp()
         openPanel(app)
-        app.descendants(matching: .any)["quickSettingsBackground"].firstMatch.tap()
+        let selector = app.descendants(matching: .any)["quickSettingsBackground"].firstMatch
+        reveal(selector, in: app)
+        selector.tap()
         app.buttons["Mesh网格（取色模式2）"].tap()
         XCTAssertTrue(panel(app).exists)
         let background = app.descendants(matching: .any)["quickSettingsBackground"].firstMatch
@@ -178,6 +184,12 @@ final class LyricsQuickSettingsUITests: XCTestCase {
 
     @MainActor private func panel(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["lyricsQuickSettingsPanel"].firstMatch
+    }
+
+    @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
+        for _ in 0 ..< 6 where !element.isHittable { scroll.swipeUp() }
+        XCTAssertTrue(element.isHittable)
     }
 
     @MainActor private func capture(_ app: XCUIApplication, name: String) {

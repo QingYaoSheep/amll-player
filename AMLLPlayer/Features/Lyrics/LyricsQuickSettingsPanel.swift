@@ -197,8 +197,8 @@ struct LyricsQuickSettingsPanel: View {
         .onPreferenceChange(QuickSettingsHeaderHeight.self) { headerHeight = $0 }
         .foregroundStyle(.white)
         .preferredColorScheme(.dark)
-        .accessibilityIdentifier("lyricsQuickSettingsPanel")
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
         .onAppear { titleFocused = true }
         .accessibilityAction(.escape) { presentation.close(reduceMotion: reduceMotion) }
     }
@@ -224,6 +224,7 @@ struct LyricsQuickSettingsPanel: View {
             HStack {
                 Text("quickSettings.title").font(.title3.bold())
                     .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("lyricsQuickSettingsPanel")
                     .accessibilityFocused($titleFocused)
                 Spacer()
                 Button { presentation.close(reduceMotion: reduceMotion) } label: {

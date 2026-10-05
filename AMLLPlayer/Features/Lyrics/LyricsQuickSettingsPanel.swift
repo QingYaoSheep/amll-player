@@ -102,7 +102,10 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
                             LyricsQuickSettingsPanel(model: model, presentation: presentation, artworkStatus: artworkStatus)
                                 .frame(width: min(UIDevice.current.userInterfaceIdiom == .pad ? 560 : .infinity,
                                                   max(0, geometry.size.width - 40)))
-                                .frame(maxHeight: max(0, geometry.size.height - geometry.safeAreaInsets.top - geometry.safeAreaInsets.bottom) * 0.6)
+                                // GeometryReader needs a concrete proposal. A maxHeight
+                                // alone can collapse to the header's intrinsic height,
+                                // leaving the scroll viewport with zero height.
+                                .frame(height: max(0, geometry.size.height - geometry.safeAreaInsets.top - geometry.safeAreaInsets.bottom) * 0.6)
                                 .padding(.bottom, geometry.safeAreaInsets.bottom + 12)
                                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                         }

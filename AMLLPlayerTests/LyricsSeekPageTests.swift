@@ -19,6 +19,12 @@ import XCTest
         try await start(model, song)
         try await wait("native audio is advancing") { player.currentTime().seconds > 0.3 && model.playbackSnapshot?.isPlaying == true }
         let canvas = try await waitForCanvas(host.view)
+        // Finding a representable doesn't mean SwiftUI has assigned its
+        // viewport yet. Open controls only after the actual display loop is ready.
+        try await wait("production canvas is rendering") {
+            host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+            return canvas.frameState != nil && canvas.bounds.height > 0
+        }
         let item = try XCTUnwrap(player.currentItem)
         let previous = player.currentTime().seconds, revision = model.lyricsSeekRevision
         var frames: [AMLLFrameState] = []

@@ -180,6 +180,8 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
         app.buttons["lyricsDisplayOptions"].tap()
         XCTAssertTrue(panel(app).waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(app.scrollViews["lyricsQuickSettingsScroll"].frame.height, 100,
+                             "The real panel must provide a usable scroll viewport, not just a header.")
     }
 
     @MainActor private func panel(_ app: XCUIApplication) -> XCUIElement {

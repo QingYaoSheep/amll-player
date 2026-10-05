@@ -307,7 +307,7 @@ struct LyricsQuickSettingsPanel: View {
 
     private var playback: some View {
         section("quickSettings.playback") {
-            route("player.devices", symbol: "airplayaudio", to: .devices)
+            route(model.selectedMusicService == .spotify ? "player.devices" : "AirPlay", symbol: "airplayaudio", to: .devices)
             if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
                 route("quickSettings.queue", symbol: "list.bullet", to: .queue)
                 Toggle("quickSettings.shuffle", isOn: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
@@ -387,6 +387,7 @@ struct LyricsQuickSettingsPanel: View {
         Button { presentation.close(reduceMotion: reduceMotion, then: target) } label: {
             HStack { Label(title, systemImage: symbol); Spacer(); Image(systemName: "chevron.right").font(.caption) }
                 .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .accessibilityIdentifier("quickSettingsRoute." + target.rawValue)
     }

@@ -103,7 +103,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             search.tap()
             XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 4))
             XCTAssertFalse(panel(app).exists)
-            app.buttons["Done"].tap()
+            app.navigationBars["Find or correct lyrics"].buttons["Done"].tap()
             XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
             app.terminate()
         }
@@ -159,7 +159,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 4))
             XCTAssertTrue(app.staticTexts["Fixture Song"].exists)
             XCTAssertFalse(panel(app).exists)
-            app.buttons[service == "netease" ? "完成" : "Done"].tap()
+            app.navigationBars[title].buttons[service == "netease" ? "完成" : "Done"].tap()
             XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
             app.buttons["lyricsDisplayOptions"].tap()
             reveal(shuffle, in: app)

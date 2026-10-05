@@ -315,7 +315,9 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertTrue(frames.surface === visible.reflectionSurface)
         XCTAssertNotNil(player.currentItem, "The on-screen video must not be stopped by an unattached view")
         XCTAssertEqual(player.rate, 1)
-        try await waitUntil { frames.receivedFrames > received + 3 }
+        try await waitUntil {
+            frames.receivedFrames > received + 3 && visible.reflectionSurface.layer.contents != nil
+        }
         XCTAssertNotNil(visible.reflectionSurface.layer.contents)
     }
 

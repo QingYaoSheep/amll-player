@@ -144,15 +144,13 @@ struct AMLLLyricsPlayer: View {
                     .padding(.top, metrics.metadataToProgressGap)
                 transport(snapshot)
                     .padding(.top, metrics.transportTopGap)
-                if configuration.showVolume, let device = snapshot.device, device.supportsVolume,
+                if configuration.showVolume, model.selectedMusicService == .spotify,
+                   let device = snapshot.device, device.supportsVolume,
                    let volume = device.volumePercent
                 {
                     LyricsVolumeControl(model: model, device: device, volume: volume)
                         .padding(.horizontal, 8)
                         .padding(.top, metrics.volumeTopGap)
-                }
-                if configuration.showVolume, model.selectedMusicService != .spotify {
-                    SystemMusicVolumeView().frame(height: 44).padding(.top, metrics.volumeTopGap)
                 }
                 bottomActions
                     .padding(.top, metrics.bottomActionsTopGap)
@@ -170,12 +168,13 @@ struct AMLLLyricsPlayer: View {
                 if configuration.showControls {
                     LyricsProgressControl(model: model, snapshot: snapshot).padding(.top, 28)
                     transport(snapshot).padding(.top, 36)
-                    if configuration.showVolume, let device = snapshot.device, device.supportsVolume,
+                    if configuration.showVolume, configuration.showLyrics || model.selectedMusicService == .spotify,
+                       let device = snapshot.device, device.supportsVolume,
                        let volume = device.volumePercent
                     {
                         LyricsVolumeControl(model: model, device: device, volume: volume).padding(.top, 42)
                     }
-                    if configuration.showVolume, model.selectedMusicService != .spotify {
+                    if configuration.showVolume, configuration.showLyrics, model.selectedMusicService != .spotify {
                         SystemMusicVolumeView().frame(height: 44).padding(.top, 42)
                     }
                     bottomActions.padding(.top, 26)

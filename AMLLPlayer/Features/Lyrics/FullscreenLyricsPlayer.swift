@@ -255,10 +255,11 @@ struct FullscreenLyricsPlayer: View {
                 }
                 .disabled(!snapshot.restrictions.canSkipNext || model.isPerformingAction)
             }.labelStyle(.iconOnly).font(.title2).buttonStyle(.plain).frame(height: 48)
-            if configuration.showVolume, model.selectedMusicService != .spotify {
+            if configuration.showVolume, configuration.showLyrics, model.selectedMusicService != .spotify {
                 SystemMusicVolumeView().frame(height: 44)
             }
-            if configuration.showVolume, let device = snapshot.device, device.supportsVolume, let volume = device.volumePercent {
+            if configuration.showVolume, configuration.showLyrics || model.selectedMusicService == .spotify,
+               let device = snapshot.device, device.supportsVolume, let volume = device.volumePercent {
                 LyricsVolumeControl(model: model, device: device, volume: volume)
             }
         }

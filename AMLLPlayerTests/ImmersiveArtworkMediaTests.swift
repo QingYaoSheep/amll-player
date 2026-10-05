@@ -62,6 +62,84 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertEqual(player.rate, 0, "Updating the effect cannot restart a paused video")
     }
 
+    func testLiveFeatherTuningKeepsMediaOwnershipAndFullBlurBelowTheLocalBand() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let window = try playbackWindow()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = CGRect(x: 0, y: 0, width: 200, height: 650)
+        window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true }
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.dimming, .bottomFade] { tuning[kind].enabled = false }
+        tuning[.video].opacity = 0.65
+        tuning.blurRadius = 40
+        let video = AnimatedArtwork(url: url, active: false)
+        var profile = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 180, width: 200, height: 470), fullStrengthY: 400)
+        var reflects = false
+        func apply() {
+            surface.configure(video: video, layout: .init(video: CGRect(x: 0, y: 0, width: 128, height: 400),
+                reflection: CGRect(x: 0, y: 400, width: 128, height: 250), transition: profile.frame,
+                bottomFade: .zero, tuning: tuning, presentsFrame: true, reflectionEnabled: reflects,
+                reduceTransparency: false, blurProfile: profile))
+            surface.layoutIfNeeded()
+        }
+        tuning[.transition].enabled = false
+        apply()
+        try await waitUntil { frames.hasFrame && frames.primaryFrameReady }
+        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        let item = player.currentItem
+        let capture = try XCTUnwrap(surface.transitionSurface.capture)
+        surface.transitionSurface.capture = {
+            guard let input = capture() else { return nil }
+            return .init(region: input.region, profile: input.profile, scale: input.scale,
+                planes: input.planes + [.solid(CIColor(red: 1, green: 1, blue: 1, alpha: 0.12), frame: input.region)])
+        }
+        let colors: [UIColor] = [.white, .black, .blue, UIColor(red: 0.72, green: 0.45, blue: 0.3, alpha: 1)]
+        for (index, color) in colors.enumerated() {
+            reflects = index % 2 == 1
+            surface.backgroundSurface.backgroundColor = color
+            tuning[.transition].enabled = false
+            apply()
+            let before = try backdropPixel(window, at: CGPoint(x: 12, y: 180))
+            tuning[.transition].enabled = true
+            tuning.topFeatherLength = 0
+            var submitted = surface.transitionSurface.renderedFrames
+            apply()
+            try await waitUntil { surface.transitionSurface.renderedFrames > submitted + 3 }
+            let fullBlur = try backdropPixel(window, at: CGPoint(x: 160, y: 500))
+            for length in [24.0, 80.0] {
+                tuning.topFeatherLength = length
+                submitted = surface.transitionSurface.renderedFrames
+                apply()
+                try await waitUntil { surface.transitionSurface.renderedFrames > submitted + 3 }
+                let after = try backdropPixel(window, at: CGPoint(x: 12, y: 180))
+                let lower = try backdropPixel(window, at: CGPoint(x: 160, y: 500))
+                for channel in 0 ..< 3 {
+                    XCTAssertEqual(Double(after[channel]), Double(before[channel]), accuracy: 1)
+                    XCTAssertEqual(Double(lower[channel]), Double(fullBlur[channel]), accuracy: 1,
+                        "Changing only the local feather cannot change the filtered body")
+                }
+                let mask = try XCTUnwrap(surface.transitionSurface.mask)
+                apply()
+                XCTAssertTrue(surface.transitionSurface.mask === mask,
+                    "Identical layout updates must reuse the mask rather than allocate each video frame")
+                XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player === player)
+                XCTAssertTrue(player.currentItem === item)
+                XCTAssertEqual(player.rate, 0)
+            }
+        }
+        profile = .init(frame: CGRect(x: 0, y: 390, width: 200, height: 260), fullStrengthY: 400)
+        apply()
+        XCTAssertTrue(frames.blurLayoutDiagnostic.contains("实际 10.0 pt"))
+        XCTAssertEqual(surface.transitionSurface.mask?.bounds.size, profile.frame.size)
+        tuning[.video].enabled = false
+        apply()
+        XCTAssertNil(surface.transitionSurface.mask, "A full-background blur has no top junction feather")
+        XCTAssertTrue(frames.blurLayoutDiagnostic.contains("实际 0.0 pt"))
+        XCTAssertLessThanOrEqual(surface.transitionSurface.maximumInFlight, 2)
+    }
+
     func testBlurTopMatchesTheUnfilteredTranslucentVideo() async throws {
         try await checkBlurTopMatchesTheUnfilteredTranslucentVideo(playerLevel: false)
     }
@@ -91,6 +169,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         for kind in [ImmersiveArtworkLayer.reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
         tuning[.video].opacity = 0.65
         tuning.blurRadius = 80
+        tuning.topFeatherLength = 0 // Keep the independent color check unmasked.
         var video = AnimatedArtwork(url: url, active: playerLevel)
         let rect = CGRect(x: 0, y: 0, width: 128, height: 400)
         let profile = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 180, width: 200, height: 470), fullStrengthY: 400)
@@ -651,6 +730,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         var tuning = ImmersiveArtworkDebugConfiguration()
         for kind in [ImmersiveArtworkLayer.reflection, .dimming, .bottomFade] { tuning[kind].enabled = false }
         tuning.blurRadius = 40
+        tuning.topFeatherLength = 0 // This case isolates the radius-only gradient.
         let video = AnimatedArtwork(url: URL(fileURLWithPath: "/no-video-required.mp4"), active: false)
         func apply() {
             surface.configure(video: video, layout: .init(video: CGRect(x: 0, y: 0, width: 128, height: 400),
@@ -1014,11 +1094,11 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         surface.reflectionSurface.clear()
         let received = frames.receivedFrames
         frames.replayLatest() // Retains the frame while detached; no render yet.
+        XCTAssertEqual(frames.receivedFrames, received, "Replaying the retained frame does not acquire a new decoder frame")
         XCTAssertNil(surface.reflectionSurface.layer.contents)
         surface.reflectionPlane.addSubview(surface.reflectionSurface)
         surface.layoutIfNeeded()
         try await waitUntil { surface.reflectionSurface.layer.contents != nil }
-        XCTAssertEqual(frames.receivedFrames, received)
         XCTAssertEqual(player.rate, 0)
     }
 
@@ -1066,7 +1146,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertNil(surface.layer.mask, "A live backdrop must not be placed under an ancestor mask")
         XCTAssertNil(playerLayer.mask)
         XCTAssertNotNil(surface.videoPlane.mask)
-        XCTAssertNil(surface.transitionSurface.mask, "The live blur fade controls radius, not opacity")
+        XCTAssertNotNil(surface.transitionSurface.mask, "The local upper feather must be installed without changing media fades")
         XCTAssertEqual(surface.transitionSurface.alpha, 1)
         let player = playerLayer.player
         configure(reflects: true)

@@ -50,6 +50,12 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
     var blurRadius = 32.0
     /// Top to bottom, matching the editor's visible order. Optional for old saved tuning.
     var order: [ImmersiveArtworkLayer]?
+    /// Optional so existing calibration is retained when upgrading.
+    var topFeatherLength: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case layers, blurRadius, order, topFeatherLength
+    }
 
     var orderedLayers: [ImmersiveArtworkLayer] {
         var result: [ImmersiveArtworkLayer] = []
@@ -80,6 +86,26 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
         set { layers[layer.rawValue] = newValue.validated() }
     }
     var validatedBlur: Double { blurRadius.isFinite ? min(80, max(0, blurRadius)) : 32 }
+    var validatedTopFeatherLength: Double {
+        guard let value = topFeatherLength, value.isFinite else { return 24 }
+        return min(80, max(0, value))
+    }
+
+    mutating func resetLayer(_ layer: ImmersiveArtworkLayer) {
+        layers.removeValue(forKey: layer.rawValue)
+        if layer == .transition { topFeatherLength = nil }
+    }
+}
+
+extension ImmersiveArtworkDebugConfiguration {
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        layers = try values.decodeIfPresent([String: ImmersiveArtworkLayerAdjustment].self, forKey: .layers) ?? [:]
+        blurRadius = try values.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 32
+        order = try values.decodeIfPresent([ImmersiveArtworkLayer].self, forKey: .order)
+        // A malformed new field cannot discard otherwise valid layer tuning.
+        topFeatherLength = try? values.decode(Double.self, forKey: .topFeatherLength)
+    }
 }
 
 @MainActor @Observable
@@ -109,6 +135,7 @@ final class ImmersiveArtworkDebugStore {
         }
         for layer in ImmersiveArtworkLayer.allCases { complete[layer] = complete[layer] }
         complete.order = complete.orderedLayers
+        complete.topFeatherLength = complete.validatedTopFeatherLength
         return (try? encoder.encode(complete)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 }
@@ -134,7 +161,7 @@ struct ImmersiveArtworkDebugPanel: View {
                     }
                     Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数，模糊层的纵向参数只调整上方渐变。视频在调整后的容器内始终等比完整显示。倒影开关还需开启原有封面倒影设置。底部渐隐的不透明度表示渐隐强度。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("独立模糊层实时处理它下方所有可见内容，底部保持完整模糊，向上只减小模糊半径，不渐隐画面透明度。半径为 0–80pt，不叠加材质底色或暗度；不透明度仅控制整层手动混合比例。纵向调节只调整上方衔接，底边延伸到屏幕底部。")
+                    Text("独立模糊层实时处理它下方所有可见内容，底部保持完整模糊，向上减小模糊半径。顶部短距离另做透明羽化：最上沿透明，向下恢复整层混合比例，消除与原画面的硬分界。不叠加材质底色或暗度；羽化长度独立于半径和过渡高度，设为 0 可关闭。纯背景模糊不做顶部羽化。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
@@ -166,8 +193,9 @@ struct ImmersiveArtworkDebugPanel: View {
                         slider(layer == .bottomFade ? "渐隐强度" : "不透明度", value: binding(layer, \.opacity), range: 0 ... 1, step: 0.01, unit: "")
                         if layer == .transition {
                             slider("实时模糊强度", value: Binding(get: { store.configuration.validatedBlur }, set: { store.configuration.blurRadius = $0 }), range: 0 ... 80, step: 1, unit: "pt")
+                            slider("顶部透明羽化长度", value: Binding(get: { store.configuration.validatedTopFeatherLength }, set: { store.configuration.topFeatherLength = $0 }), range: 0 ... 80, step: 1, unit: "pt")
                         }
-                        Button("重置此层") { store.configuration.layers.removeValue(forKey: layer.rawValue) }
+                        Button("重置此层") { store.configuration.resetLayer(layer) }
                     }
                 }
                 Section {

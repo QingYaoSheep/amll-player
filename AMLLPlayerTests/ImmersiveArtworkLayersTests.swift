@@ -33,6 +33,92 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
+    func testTopFeatherIsLocalSmoothAndClippedToTheUpperExtension() {
+        let profile = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 180, width: 128, height: 470), fullStrengthY: 400)
+        for length: CGFloat in [24, 80] {
+            XCTAssertEqual(profile.effectiveTopFeatherLength(length), length)
+            XCTAssertEqual(profile.topFeatherOpacity(at: 180, length: length), 0)
+            XCTAssertEqual(profile.topFeatherOpacity(at: 180 + length / 4, length: length), 0.15625, accuracy: 0.000001)
+            XCTAssertEqual(profile.topFeatherOpacity(at: 180 + length / 2, length: length), 0.5, accuracy: 0.000001)
+            XCTAssertEqual(profile.topFeatherOpacity(at: 180 + length, length: length), 1)
+            XCTAssertEqual(profile.topFeatherOpacity(at: 650, length: length), 1)
+            XCTAssertLessThan(profile.topFeatherOpacity(at: 180 + length * 0.001, length: length), 0.00001)
+            XCTAssertGreaterThan(profile.topFeatherOpacity(at: 180 + length * 0.999, length: length), 0.99999)
+        }
+        XCTAssertEqual(profile.topFeatherOpacity(at: 180, length: 0), 1)
+        let short = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 390, width: 128, height: 260), fullStrengthY: 400)
+        XCTAssertEqual(short.effectiveTopFeatherLength(80), 10)
+        XCTAssertEqual(short.topFeatherOpacity(at: 400, length: 80), 1)
+        let background = profile.backgroundOnly(viewportHeight: 650)
+        XCTAssertEqual(background.effectiveTopFeatherLength(24), 0)
+        XCTAssertEqual(background.topFeatherOpacity(at: 0, length: 24), 1)
+    }
+
+    func testVisibleBlurMaskFeathersOnlyTheTopAndAppliesOverallOpacityOnce() throws {
+        let profile = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 180, width: 128, height: 470), fullStrengthY: 400)
+        for opacity in [1.0, 0.4] {
+            for length: CGFloat in [24, 80] {
+                let view = try XCTUnwrap(ImmersiveArtworkVisibility.blurMask(profile: profile, topFeatherLength: length, opacity: opacity))
+                let image = try nativeMaskImage(view.layer, size: profile.frame.size)
+                var previous = 0
+                for topY in 0 ... Int(length) {
+                    let alpha = pixel(image, x: 64, y: Int(profile.frame.height) - topY - 1)[3]
+                    if topY == 0 { XCTAssertLessThanOrEqual(alpha, 2) }
+                    XCTAssertGreaterThanOrEqual(alpha, previous)
+                    previous = alpha
+                }
+                for topY in [Int(length) + 2, 200, 469] {
+                    XCTAssertEqual(Double(pixel(image, x: 64, y: 469 - topY)[3]), 255 * opacity, accuracy: 1,
+                        "Below the local feather the mask must retain the original opacity, including the screen bottom")
+                }
+            }
+        }
+        XCTAssertNil(ImmersiveArtworkVisibility.blurMask(profile: profile, topFeatherLength: 0))
+        XCTAssertNil(ImmersiveArtworkVisibility.blurMask(profile: profile.backgroundOnly(viewportHeight: 650), topFeatherLength: 24))
+        let short = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 390, width: 128, height: 260), fullStrengthY: 400)
+        let clipped = try XCTUnwrap(ImmersiveArtworkVisibility.blurMask(profile: short, topFeatherLength: 80))
+        let image = try nativeMaskImage(clipped.layer, size: short.frame.size)
+        XCTAssertEqual(pixel(image, x: 64, y: 247)[3], 255)
+    }
+
+    func testTopFeatherConfigurationKeepsOldTuningAndSurvivesRoundTripAndReset() throws {
+        let old = Data(#"{"layers":{"transition":{"enabled":true,"x":17,"y":9,"width":1.2,"height":0.8,"opacity":0.7}},"blurRadius":55}"#.utf8)
+        var settings = try JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: old)
+        XCTAssertEqual(settings.validatedTopFeatherLength, 24)
+        XCTAssertEqual(settings[.transition].x, 17)
+        XCTAssertEqual(settings.validatedBlur, 55)
+        settings.topFeatherLength = 80
+        let roundTrip = try JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(roundTrip, settings)
+        for invalid in [Double.nan, .infinity, -.infinity] {
+            settings.topFeatherLength = invalid
+            XCTAssertEqual(settings.validatedTopFeatherLength, 24)
+        }
+        settings.topFeatherLength = -10
+        XCTAssertEqual(settings.validatedTopFeatherLength, 0)
+        settings.topFeatherLength = 120
+        XCTAssertEqual(settings.validatedTopFeatherLength, 80)
+        let malformed = Data(#"{"layers":{},"blurRadius":55,"order":["video"],"topFeatherLength":"broken"}"#.utf8)
+        let recovered = try JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: malformed)
+        XCTAssertEqual(recovered.validatedTopFeatherLength, 24)
+        XCTAssertEqual(recovered.validatedBlur, 55)
+        XCTAssertEqual(recovered.order, [.video])
+        settings.topFeatherLength = 60
+        settings.resetLayer(.reflection)
+        XCTAssertEqual(settings.validatedTopFeatherLength, 60)
+        settings.resetLayer(.transition)
+        XCTAssertEqual(settings.validatedTopFeatherLength, 24)
+        XCTAssertEqual(settings.validatedBlur, 55, "Do not expand the existing blur-radius reset behavior")
+        XCTAssertEqual(ImmersiveArtworkDebugConfiguration().validatedTopFeatherLength, 24)
+        let store = ImmersiveArtworkDebugStore.shared
+        let original = store.configuration
+        defer { store.configuration = original }
+        store.configuration = settings
+        let exported = try JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: Data(store.exportedValues(backgroundDimming: 0.16).utf8))
+        XCTAssertEqual(exported.topFeatherLength, 24)
+        XCTAssertEqual(exported[.transition], settings[.transition])
+    }
+
     func testBlurFadesUpwardButRemainsStrongAtTheScreenBottom() throws {
         let source = try XCTUnwrap(CIFilter(name: "CIStripesGenerator", parameters: [
             "inputCenter": CIVector(x: 0, y: 0), "inputColor0": CIColor.white,

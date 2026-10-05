@@ -108,7 +108,26 @@ struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
     func strength(at y: CGFloat) -> CGFloat {
         let end = min(frame.maxY, max(frame.minY, fullStrengthY))
         guard end > frame.minY else { return 1 }
-        let t = min(1, max(0, (y - frame.minY) / (end - frame.minY)))
+        return Self.smoothstep((y - frame.minY) / (end - frame.minY))
+    }
+
+    /// Only the short upper extension feathers. A full-background blur has no
+    /// video junction to reveal and must retain its original opacity.
+    func effectiveTopFeatherLength(_ requested: CGFloat) -> CGFloat {
+        guard requested.isFinite, requested > 0, frame.minY.isFinite,
+              frame.maxY.isFinite, fullStrengthY.isFinite else { return 0 }
+        let extensionHeight = max(0, min(frame.maxY, fullStrengthY) - frame.minY)
+        return min(requested, extensionHeight)
+    }
+
+    func topFeatherOpacity(at y: CGFloat, length requested: CGFloat) -> CGFloat {
+        let length = effectiveTopFeatherLength(requested)
+        guard length > 0 else { return 1 }
+        return Self.smoothstep((y - frame.minY) / length)
+    }
+
+    private static func smoothstep(_ progress: CGFloat) -> CGFloat {
+        let t = min(1, max(0, progress))
         return t * t * (3 - 2 * t)
     }
 }

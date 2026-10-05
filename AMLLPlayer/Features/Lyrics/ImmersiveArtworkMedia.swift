@@ -222,10 +222,11 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             reflectionPlane.mask = ImmersiveArtworkVisibility.mask(frame: layout.reflection,
                 fade: bottomFade(for: .reflection), strength: tuning[.bottomFade].opacity)
             transitionSurface.configure(amount: tuning.validatedBlur / 80,
-                mask: ImmersiveArtworkVisibility.mask(frame: profile.frame,
-                    fade: nil, strength: 0,
+                mask: ImmersiveArtworkVisibility.blurMask(profile: profile,
+                    topFeatherLength: CGFloat(tuning.validatedTopFeatherLength),
                     opacity: tuning[.transition].opacity * layout.pageOpacity))
-            frames.blurLayoutDiagnostic = "模糊 Y=\(Int(profile.frame.minY))–\(Int(profile.frame.maxY)) pt；半径：\(tuning.validatedBlur) pt；显示：\(transitionSurface.isHidden ? "关闭" : "开启")；混合比例：\(tuning[.transition].opacity)"
+            let actualFeather = profile.effectiveTopFeatherLength(CGFloat(tuning.validatedTopFeatherLength))
+            frames.blurLayoutDiagnostic = "模糊 Y=\(Int(profile.frame.minY))–\(Int(profile.frame.maxY)) pt；半径：\(tuning.validatedBlur) pt；显示：\(transitionSurface.isHidden ? "关闭" : "开启")；混合比例：\(tuning[.transition].opacity)；顶部羽化：\(tuning.validatedTopFeatherLength) pt（实际 \(actualFeather) pt）"
             CATransaction.commit()
             let visible = bounds.intersection(layout.reflection)
             let covered = [.background, .dimming, .video].filter {
@@ -333,6 +334,36 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
 
 @MainActor
 enum ImmersiveArtworkVisibility {
+    /// A reusable display mask, outside the video/blur color pipeline. It is
+    /// rebuilt only with layout/tuning, never captured back into the blur input.
+    static func blurMask(profile: ImmersiveBackgroundBlurProfile, topFeatherLength: CGFloat,
+                         opacity: Double = 1) -> UIView? {
+        let opacity = opacity.isFinite ? min(1, max(0, opacity)) : 1
+        let length = profile.effectiveTopFeatherLength(topFeatherLength)
+        guard length > 0, profile.frame.width > 0, profile.frame.height > 0 else {
+            return mask(frame: profile.frame, fade: nil, strength: 0, opacity: opacity)
+        }
+        let view = UIView(frame: CGRect(origin: .zero, size: profile.frame.size))
+        view.isOpaque = false
+        let gradient = CAGradientLayer()
+        gradient.frame = view.bounds
+        gradient.startPoint = CGPoint(x: 0.5, y: 0)
+        gradient.endPoint = CGPoint(x: 0.5, y: 1)
+        var locations = (0 ... 16).map { NSNumber(value: Double(length * CGFloat($0) / 16 / profile.frame.height)) }
+        var colors = (0 ... 16).map { sample in
+            UIColor(white: 1, alpha: CGFloat(opacity) * profile.topFeatherOpacity(
+                at: profile.frame.minY + length * CGFloat(sample) / 16, length: length)).cgColor
+        }
+        if length < profile.frame.height {
+            locations.append(1)
+            colors.append(UIColor(white: 1, alpha: CGFloat(opacity)).cgColor)
+        }
+        gradient.locations = locations
+        gradient.colors = colors
+        view.layer.addSublayer(gradient)
+        return view
+    }
+
     /// Media fading is independent of the continuous background blur profile.
     static func mask(frame: CGRect, fade: CGRect?, strength: Double,
                      opacity: Double = 1) -> UIView? {

@@ -95,7 +95,8 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         apply()
         try await waitUntil { frames.hasFrame && frames.primaryFrameReady }
         let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
-        let item = player.currentItem
+        let source = frames.sessionDiagnostic
+        let producer = try XCTUnwrap(frames.producerIdentifier)
         let capture = try XCTUnwrap(surface.transitionSurface.capture)
         surface.transitionSurface.capture = {
             guard let input = capture() else { return nil }
@@ -118,7 +119,10 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             for length in [24.0, 80.0] {
                 tuning.topFeatherLength = length
                 submitted = surface.transitionSurface.renderedFrames
+                let itemBeforeAdjustment = player.currentItem
                 apply()
+                XCTAssertTrue(player.currentItem === itemBeforeAdjustment,
+                    "A tuning update cannot replace the current item; the looper may replace its initial replica asynchronously")
                 try await waitUntil { surface.transitionSurface.renderedFrames > submitted + 3 }
                 let after = try backdropPixel(window, at: CGPoint(x: 12, y: 180))
                 let lower = try backdropPixel(window, at: CGPoint(x: 160, y: 500))
@@ -132,7 +136,9 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
                 XCTAssertTrue(surface.transitionSurface.mask === mask,
                     "Identical layout updates must reuse the mask rather than allocate each video frame")
                 XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player === player)
-                XCTAssertTrue(player.currentItem === item)
+                XCTAssertEqual(frames.producerIdentifier, producer)
+                XCTAssertEqual(frames.sessionDiagnostic, source,
+                    "Ordinary tuning must preserve the resource and frame-source session, including asynchronous loop-item preparation")
                 XCTAssertEqual(player.rate, 0)
             }
         }

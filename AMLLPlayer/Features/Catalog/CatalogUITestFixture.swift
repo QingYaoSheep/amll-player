@@ -5,13 +5,21 @@
     @MainActor
     enum CatalogUITestFixture {
         static func makeModel(includeLyrics: Bool = false) -> AppModel {
+            let arguments = ProcessInfo.processInfo.arguments
+            let defaultsName: String
+            if let index = arguments.firstIndex(of: "--quick-settings-preferences-suite"), index + 1 < arguments.count,
+               arguments[index + 1].hasPrefix("quick-settings-ui-") {
+                defaultsName = arguments[index + 1]
+            } else { defaultsName = "render-ui-" + UUID().uuidString }
+            let preferences = LyricsRenderPreferences(defaults: UserDefaults(suiteName: defaultsName)!)
+            if arguments.contains("--lyrics-custom-profile-ui-testing") { preferences.activate(.custom) }
             let lyrics = LyricsCoordinator(providers: includeLyrics ? [LyricsFixtureProvider()] : [], cache: MemoryLyricsCache(),
                                            settingsStore: LyricsSettingsStore(defaults: UserDefaults(suiteName: "lyrics-ui-" + UUID().uuidString)!))
             return AppModel(environment: AppEnvironment(
                 configuration: .preview, diagnostics: DiagnosticsStore(),
                 spotifySession: Session(), spotifyPlayback: Playback(includeLyrics: includeLyrics)
             ), catalogProvider: Provider(), lyrics: lyrics,
-            renderPreferences: LyricsRenderPreferences(defaults: UserDefaults(suiteName: "render-ui-" + UUID().uuidString)!))
+            renderPreferences: preferences)
         }
 
         private static func item(_ id: String, kind: SpotifyCatalogKind = .track, name: String = "Test Song") -> SpotifyCatalogItem {

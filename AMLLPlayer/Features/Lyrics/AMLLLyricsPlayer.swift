@@ -13,7 +13,7 @@ struct AMLLLyricsPlayer: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var search = false
     @State private var devices = false
-    @State private var showingQueue = false
+    @State private var quickSettings = LyricsQuickSettingsPresentation()
     @State private var browsing = false
     @State private var resumeToken = 0
     @State private var shellMotion = LyricsMotionModel()
@@ -89,11 +89,10 @@ struct AMLLLyricsPlayer: View {
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .statusBarHidden(false)
+        .modifier(LyricsQuickSettingsPresenter(model: model, presentation: quickSettings,
+            artworkStatus: configuration.animatedArtwork?.enabled == true ? artworkStatus : nil))
         .sheet(isPresented: $search) { LyricsSearchView(coordinator: model.lyrics) }
         .sheet(isPresented: $devices) { DevicePickerView(model: model) }
-        .sheet(isPresented: $showingQueue) {
-            if model.selectedMusicService == .netease { NetEaseQueueView(model: model) } else { AppleMusicQueueView(model: model) }
-        }
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }
         .task(id: artworkRequestKey) { await loadAnimatedArtwork() }
         .alert("error.title", isPresented: Binding(get: { model.presentedError != nil }, set: {
@@ -196,7 +195,7 @@ struct AMLLLyricsPlayer: View {
                     model: model,
                     snapshot: snapshot,
                     configuration: configuration,
-                    active: scenePhase == .active && !search && !devices,
+                    active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                     resumeToken: resumeToken,
                     fadeTop: fadeTop,
                     browsing: { browsing = $0 }
@@ -325,7 +324,7 @@ struct AMLLLyricsPlayer: View {
                     let url = artworkLoader.playbackURL
                 {
                     let token = artworkLoader.requestToken
-                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices && model.playbackSnapshot?.isPlaying == true, allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
+                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage && model.playbackSnapshot?.isPlaying == true, allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
                                     onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
                                     onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) })
                         .id(token)
@@ -341,7 +340,7 @@ struct AMLLLyricsPlayer: View {
         let url = artworkLoader.playbackURL!
         let token = artworkLoader.requestToken
         return AnimatedArtwork(url: url,
-                               active: scenePhase == .active && !search && !devices && model.playbackSnapshot?.isPlaying == true,
+                               active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage && model.playbackSnapshot?.isPlaying == true,
                                allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
                                reflectionFrames: artworkReflectionFrames,
                                onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
@@ -377,7 +376,7 @@ struct AMLLLyricsPlayer: View {
 
     private var artworkBackground: AMLLBackground {
         AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
-            active: scenePhase == .active && !search && !devices,
+            active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
             blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
             color: configuration.backgroundColor ?? .sourceDefault,
             gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
@@ -477,48 +476,7 @@ struct AMLLLyricsPlayer: View {
     }
 
     private var optionsMenu: some View {
-        Menu {
-            Button(configuration.showLyrics ? "render.hideLyrics" : "render.showLyrics", systemImage: "text.quote") {
-                model.renderPreferences.configuration.showLyrics.toggle()
-            }
-            .accessibilityIdentifier("toggleLyricsVisibility")
-            if configuration.animatedArtwork?.enabled == true {
-                Text(artworkStatus)
-            }
-            Button("player.devices", systemImage: "airplayaudio") { devices = true; Task { await model.loadDevices() } }
-            Button("lyrics.find", systemImage: "magnifyingglass") { search = true }
-            if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
-                Section("\(model.selectedMusicService.title) 播放") {
-                    Button("播放队列", systemImage: "list.bullet") { showingQueue = true }
-                    Button(snapshot.shuffleEnabled ? "关闭随机" : "随机播放", systemImage: "shuffle") {
-                        Task { await model.setShuffle(!snapshot.shuffleEnabled) }
-                    }
-                    ForEach(MusicRepeatMode.allCases, id: \.self) { mode in
-                        Button(mode.title) { Task { await model.setRepeat(mode) } }
-                    }
-                }
-                Section("歌词操作") {
-                    Button("lyrics.refresh", systemImage: "arrow.clockwise") { model.lyrics.reload(force: true) }
-                    Button("lyrics.automatic", systemImage: "arrow.uturn.backward") { model.lyrics.restoreAutomatic() }
-                    Button("lyrics.offset.minus") { model.lyrics.setOffset(model.lyrics.selection.offset - 0.1) }
-                    Button("lyrics.offset.plus") { model.lyrics.setOffset(model.lyrics.selection.offset + 0.1) }
-                    Button("lyrics.offset.zero") { model.lyrics.setOffset(0) }
-                }
-            }
-            if let document = model.lyrics.document, let credit = configuration.credits.content(in: document) {
-                Section {
-                    Text(credit.names.joined(separator: " · "))
-                } header: {
-                    Text(LocalizedStringKey("render.creditLabel." + credit.kind.rawValue))
-                }
-            }
-        } label: {
-            Label("render.options", systemImage: "ellipsis")
-                .labelStyle(.iconOnly)
-                .font(.system(size: 22, weight: .bold))
-                .frame(width: 44, height: 44)
-        }
-        .accessibilityIdentifier("lyricsDisplayOptions")
+        LyricsQuickSettingsButton(presentation: quickSettings)
     }
 
     private var artworkStatus: String {

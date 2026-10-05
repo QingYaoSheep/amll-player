@@ -130,9 +130,9 @@ final class AMLLPlayerUITests: XCTestCase {
         resume.tap()
         app.buttons["lyricsDisplayOptions"].tap()
         app.buttons["toggleLyricsVisibility"].tap()
-        app.buttons["lyricsDisplayOptions"].tap()
         XCTAssertTrue(app.buttons["toggleLyricsVisibility"].waitForExistence(timeout: 3))
         app.buttons["toggleLyricsVisibility"].tap()
+        app.buttons["closeLyricsQuickSettings"].tap()
         XCTAssertTrue(lyrics.waitForExistence(timeout: 3))
         capture(app, name: "Product-lyrics-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft

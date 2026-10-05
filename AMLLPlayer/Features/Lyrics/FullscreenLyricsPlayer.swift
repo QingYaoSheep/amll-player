@@ -42,7 +42,7 @@ struct FullscreenLyricsPlayer: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var search = false
     @State private var devices = false
-    @State private var showingQueue = false
+    @State private var quickSettings = LyricsQuickSettingsPresentation()
     @State private var browsing = false
     @State private var resumeToken = 0
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.3, dampingFraction: 1))) private var drag: CGFloat = 0
@@ -100,38 +100,16 @@ struct FullscreenLyricsPlayer: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     LyricsQuickMenu(coordinator: model.lyrics) { search = true }
-                    Menu {
-                        if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
-                            Button("播放队列", systemImage: "list.bullet") { showingQueue = true }
-                            Button(snapshot.shuffleEnabled ? "关闭随机" : "随机播放", systemImage: "shuffle") {
-                                Task { await model.setShuffle(!snapshot.shuffleEnabled) }
-                            }
-                            ForEach(MusicRepeatMode.allCases, id: \.self) { mode in
-                                Button(mode.title) { Task { await model.setRepeat(mode) } }
-                            }
-                        }
-                        Button(configuration.showLyrics ? "render.hideLyrics" : "render.showLyrics", systemImage: "text.quote") {
-                            model.renderPreferences.configuration.showLyrics.toggle()
-                        }
-                        Button("player.devices", systemImage: "airplayaudio") {
-                            devices = true; Task { await model.loadDevices() }
-                        }
-                        NavigationLink("render.settings") { LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics) }
-                        NavigationLink("lyrics.settings") { LyricsSettingsView(coordinator: model.lyrics) }
-                    } label: { Label("render.options", systemImage: "ellipsis.circle") }
-                        .accessibilityIdentifier("lyricsDisplayOptions")
+                    LyricsQuickSettingsButton(presentation: quickSettings, systemImage: "ellipsis.circle")
                     NavigationLink { SettingsView(model: model) } label: { Label("settings.open", systemImage: "gearshape") }
                         .accessibilityIdentifier("openSettings")
                 }
             }
             .sheet(isPresented: $search) { LyricsSearchView(coordinator: model.lyrics) }
             .sheet(isPresented: $devices) { DevicePickerView(model: model) }
-            .sheet(isPresented: $showingQueue) {
-                if model.selectedMusicService == .netease { NetEaseQueueView(model: model) }
-                else { AppleMusicQueueView(model: model) }
-            }
         }
         .preferredColorScheme(.dark)
+        .modifier(LyricsQuickSettingsPresenter(model: model, presentation: quickSettings))
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }
         .alert("error.title", isPresented: Binding(get: { model.presentedError != nil }, set: {
             if !$0 {
@@ -175,11 +153,11 @@ struct FullscreenLyricsPlayer: View {
                     .accessibilityHidden(true)
             }
             if configuration.showTitle {
-                MarqueeText(text: item.title, fontSize: 22, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !reduceMotion)
+                MarqueeText(text: item.title, fontSize: 22, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !quickSettings.suspendsPage && !reduceMotion)
                     .frame(height: typeSize.isAccessibilitySize ? 80 : 32)
             }
             if configuration.showArtist {
-                MarqueeText(text: item.artistLine, fontSize: 16, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !reduceMotion)
+                MarqueeText(text: item.artistLine, fontSize: 16, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !quickSettings.suspendsPage && !reduceMotion)
                     .frame(height: typeSize.isAccessibilitySize ? 64 : 26).opacity(0.75)
             }
             if configuration.showAlbum, let album = item.albumTitle {
@@ -203,7 +181,7 @@ struct FullscreenLyricsPlayer: View {
         } else if let document = model.lyrics.document, !document.lines.isEmpty {
             VStack(spacing: 0) {
                 NativeLyricsView(document: document, configuration: configuration, offset: model.lyrics.selection.offset,
-                                 duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices,
+                                 duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                                  canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
                                  position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
                                  resumeToken: resumeToken, browsing: { browsing = $0 })

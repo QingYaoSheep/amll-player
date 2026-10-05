@@ -88,6 +88,53 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         try await waitUntil { surface.inFlightSubmissionCount == 0 }
     }
 
+    func testSharedMeshColorsMatchTheUnfilteredActualBackdrop() async throws {
+        _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let window = try playbackWindow()
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = CGRect(x: 0, y: 0, width: 120, height: 240)
+        window.rootViewController?.view.addSubview(surface)
+        var files: [URL] = []
+        defer {
+            surface.stop(); surface.removeFromSuperview(); window.isHidden = true
+            for file in files { try? FileManager.default.removeItem(at: file) }
+        }
+        let colors = [UIColor(red: 0.72, green: 0.42, blue: 0.28, alpha: 1),
+                      UIColor(red: 0.12, green: 0.55, blue: 0.63, alpha: 1),
+                      UIColor(red: 0.42, green: 0.37, blue: 0.62, alpha: 1)]
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        for kind in [ImmersiveArtworkLayer.video, .reflection, .bottomFade] { tuning[kind].enabled = false }
+        tuning.blurRadius = 24
+        tuning.topFeatherLength = 0
+        for mode in [LyricsRenderConfiguration.BackgroundMode.mesh, .meshColorMode2] {
+            for color in colors {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+                let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+                    color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+                }
+                try XCTUnwrap(image.pngData()).write(to: url); files.append(url)
+                surface.configure(video: AnimatedArtwork(url: URL(fileURLWithPath: "/unused.mp4"), active: false),
+                    layout: .init(video: .zero, reflection: .zero,
+                        transition: CGRect(x: 0, y: 0, width: 60, height: 240), bottomFade: .zero,
+                        tuning: tuning, presentsFrame: false, reflectionEnabled: false, reduceTransparency: false),
+                    background: AMLLBackground(artworkURL: url, active: true, blur: 40, mode: mode))
+                surface.layoutIfNeeded()
+                // Uniform covers remove animation phase as a color variable;
+                // wait for the existing artwork crossfade to finish.
+                try await Task.sleep(for: .milliseconds(1200))
+                let completed = surface.transitionSurface.renderedFrames
+                try await waitUntil { surface.transitionSurface.renderedFrames > completed + 3 }
+                let filtered = try backdropPixel(window, at: CGPoint(x: 30, y: 180))
+                let original = try backdropPixel(window, at: CGPoint(x: 90, y: 180))
+                for channel in 0 ..< 3 {
+                    XCTAssertEqual(Double(filtered[channel]), Double(original[channel]), accuracy: 3,
+                        "The actual shared Mesh frame must match the unfiltered hosted drawable; feather must not hide a color mismatch")
+                }
+                XCTAssertGreaterThan(surface.nativeBackgroundCaptures, 0)
+            }
+        }
+    }
+
     func testBlurTopFeatherHidesACloneColorSeamWithoutFadingTheWholeOutput() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let window = try playbackWindow()

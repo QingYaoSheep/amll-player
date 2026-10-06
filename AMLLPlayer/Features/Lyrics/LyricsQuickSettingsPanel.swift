@@ -225,7 +225,9 @@ struct LyricsQuickSettingsPanel: View {
                 .accessibilityLabel(Text("quickSettings.closeHint"))
                 .accessibilityIdentifier("lyricsQuickSettingsHandle")
                 .accessibilityAction { presentation.close(reduceMotion: reduceMotion) }
-                .gesture(DragGesture(minimumDistance: 8)
+                // Measure against the screen, not the handle that moves with
+                // this gesture, so following the finger cannot reduce its delta.
+                .gesture(DragGesture(minimumDistance: 8, coordinateSpace: .global)
                     .updating($dragIsActive) { _, active, _ in active = true }
                     .onChanged { value in
                         if value.translation.height > abs(value.translation.width) || drag > 0 {
@@ -270,7 +272,7 @@ struct LyricsQuickSettingsPanel: View {
     }
 
     private var appearance: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 12) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 12) {
             appearanceButton("render.showLyrics", symbol: "text.quote", id: "toggleLyricsVisibility", value: setting(\.showLyrics))
             appearanceButton("render.translation", symbol: "character.bubble", id: "quickSettingsTranslation", value: setting(\.translation))
             appearanceButton("render.romanization", symbol: "abc", id: "quickSettingsRomanization", value: setting(\.romanization))

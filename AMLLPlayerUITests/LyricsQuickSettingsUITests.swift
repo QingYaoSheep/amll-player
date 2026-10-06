@@ -121,7 +121,9 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         openPanel(app)
         let handle = app.descendants(matching: .any)["lyricsQuickSettingsHandle"].firstMatch
         let originalY = handle.frame.minY
-        let start = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let screen = app.coordinate(withNormalizedOffset: .zero)
+        let start = screen.withOffset(CGVector(dx: handle.frame.midX - app.frame.minX,
+                                              dy: handle.frame.midY - app.frame.minY))
         // Release slowly below the dismissal threshold: the panel must spring
         // back, preserving its controls and the underlying lyric page.
         start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 26)),
@@ -133,7 +135,8 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 3), .completed)
         XCTAssertTrue(app.buttons["quickSettingsTranslation"].isHittable)
         capture(app, name: "Quick-settings-icon-buttons")
-        let release = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let release = screen.withOffset(CGVector(dx: handle.frame.midX - app.frame.minX,
+                                                dy: handle.frame.midY - app.frame.minY))
         release.press(forDuration: 0.05, thenDragTo: release.withOffset(CGVector(dx: 0, dy: 100)),
                       withVelocity: .slow, thenHoldForDuration: 0.1)
         XCTAssertTrue(panel(app).waitForNonExistence(timeout: 3))
@@ -181,7 +184,10 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             let repeatPicker = app.descendants(matching: .any)["quickSettingsRepeat"].firstMatch
             reveal(repeatPicker, in: app)
             repeatPicker.tap()
-            app.buttons["单曲循环"].tap()
+            let repeatOne = app.buttons["单曲循环"]
+            let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: repeatOne)
+            XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 4), .completed)
+            repeatOne.tap()
             XCTAssertTrue(panel(app).exists)
             XCTAssertTrue(displayedText(repeatPicker).contains("单曲循环"))
             let queue = app.buttons["quickSettingsRoute.queue"]

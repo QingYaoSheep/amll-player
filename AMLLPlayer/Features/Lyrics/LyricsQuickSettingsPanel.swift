@@ -6,6 +6,7 @@ import UIKit
 /// Opening controls does not suspend the lyric or artwork display clocks.
 @MainActor @Observable
 final class LyricsQuickSettingsPresentation {
+    static let motionAnimation = Animation.spring(response: 0.32, dampingFraction: 0.9)
     enum Destination: String, Identifiable {
         case devices, queue, lyricsSearch, appearance, lyricsSources
         var id: String { rawValue }
@@ -26,7 +27,7 @@ final class LyricsQuickSettingsPresentation {
     func open(reduceMotion: Bool) {
         guard destination == nil, !destinationIsDismissing else { return }
         revision += 1
-        withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.9)) {
+        withAnimation(reduceMotion ? nil : Self.motionAnimation) {
             isPresented = true
         }
     }
@@ -34,7 +35,7 @@ final class LyricsQuickSettingsPresentation {
     func close(reduceMotion: Bool, then target: Destination? = nil) {
         revision += 1
         let transaction = revision
-        withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.9), completionCriteria: .removed) {
+        withAnimation(reduceMotion ? nil : Self.motionAnimation, completionCriteria: .removed) {
             isPresented = false
         } completion: { [weak self] in
             guard let self, self.revision == transaction else { return }
@@ -94,8 +95,11 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
             // disable SwiftUI controls installed by that overlay.
             Group {
                 GeometryReader { geometry in
-                    if presentation.isPresented {
-                        ZStack(alignment: .bottom) {
+                    // Keep the transition's parent mounted. Otherwise the
+                    // conditional container can remove the panel before its
+                    // own insertion/removal transition gets to run.
+                    ZStack(alignment: .bottom) {
+                        if presentation.isPresented {
                             Color.clear
                                 .contentShape(Rectangle())
                                 .onTapGesture { presentation.close(reduceMotion: reduceMotion) }
@@ -109,10 +113,10 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
                                 // leaving the scroll viewport with zero height.
                                 .frame(height: max(0, geometry.size.height - geometry.safeAreaInsets.top - geometry.safeAreaInsets.bottom) * 0.6)
                                 .padding(.bottom, geometry.safeAreaInsets.bottom + 12)
-                                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                                .transition(reduceMotion ? .opacity : .offset(y: geometry.size.height))
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 }
             }
         }
@@ -159,7 +163,7 @@ struct LyricsQuickSettingsPanel: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var contentHeight: CGFloat = 0
     @State private var headerHeight: CGFloat = 100
-    @GestureState private var drag: CGFloat = 0
+    @State private var drag: CGFloat = 0
     @AccessibilityFocusState private var titleFocused: Bool
 
     private var configuration: LyricsRenderConfiguration { model.renderPreferences.configuration }
@@ -215,13 +219,28 @@ struct LyricsQuickSettingsPanel: View {
                 .accessibilityIdentifier("lyricsQuickSettingsHandle")
                 .accessibilityAction { presentation.close(reduceMotion: reduceMotion) }
                 .gesture(DragGesture(minimumDistance: 8)
-                    .updating($drag) { value, state, _ in
-                        if value.translation.height > abs(value.translation.width) { state = max(0, value.translation.height) }
+                    .onChanged { value in
+                        if value.translation.height > abs(value.translation.width) || drag > 0 {
+                            // Follow the finger directly, including a reversal.
+                            // Do not interpolate between gesture samples.
+                            withTransaction(Transaction(animation: nil)) {
+                                drag = max(0, value.translation.height)
+                            }
+                        }
                     }
                     .onEnded { value in
                         if value.translation.height > abs(value.translation.width),
                            value.translation.height > 60 || value.predictedEndTranslation.height > 120
-                        { presentation.close(reduceMotion: reduceMotion) }
+                        {
+                            // Keep the released position through removal so
+                            // the exit continues downward instead of snapping
+                            // back when GestureState would reset to zero.
+                            presentation.close(reduceMotion: reduceMotion)
+                        } else {
+                            withAnimation(reduceMotion ? nil : LyricsQuickSettingsPresentation.motionAnimation) {
+                                drag = 0
+                            }
+                        }
                     })
             HStack {
                 Text("quickSettings.title").font(.title3.bold())
@@ -241,31 +260,55 @@ struct LyricsQuickSettingsPanel: View {
     }
 
     private var appearance: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: typeSize.isAccessibilitySize ? 1 : 2), spacing: 12) {
-            Button {
-                model.renderPreferences.configuration.showLyrics.toggle()
-            } label: {
-                Label(configuration.showLyrics ? "render.hideLyrics" : "render.showLyrics", systemImage: "text.quote")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }
-            .accessibilityValue(Text(LocalizedStringKey(configuration.showLyrics ? "quickSettings.on" : "quickSettings.off")))
-            .accessibilityIdentifier("toggleLyricsVisibility")
-            Toggle("render.translation", isOn: setting(\.translation)).frame(minHeight: 44).accessibilityIdentifier("quickSettingsTranslation")
-            Toggle("render.romanization", isOn: setting(\.romanization)).frame(minHeight: 44).accessibilityIdentifier("quickSettingsRomanization")
-            Toggle("quickSettings.hdr", isOn: Binding(get: { configuration.hdr?.enabled ?? false }, set: {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 12) {
+            appearanceButton("render.showLyrics", symbol: "text.quote", id: "toggleLyricsVisibility", value: setting(\.showLyrics))
+            appearanceButton("render.translation", symbol: "character.bubble", id: "quickSettingsTranslation", value: setting(\.translation))
+            appearanceButton("render.romanization", symbol: "abc", id: "quickSettingsRomanization", value: setting(\.romanization))
+            appearanceButton("quickSettings.hdr", symbol: "sun.max.fill", id: "quickSettingsHDR", value: Binding(get: { configuration.hdr?.enabled ?? false }, set: {
                 model.renderPreferences.configuration.hdr = .init(enabled: $0)
-            })).frame(minHeight: 44).accessibilityIdentifier("quickSettingsHDR")
+            }))
         }
-        .font(.subheadline.weight(.medium))
-        .tint(.green)
+    }
+
+    private func appearanceButton(_ title: LocalizedStringKey, symbol: String, id: String, value: Binding<Bool>) -> some View {
+        VStack(spacing: 6) {
+            iconToggle(title, symbol: symbol, id: id, value: value)
+            Text(title).font(.caption2.weight(.medium)).lineLimit(2)
+                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
+        }.frame(maxWidth: .infinity)
+    }
+
+    private func iconToggle(_ title: LocalizedStringKey, symbol: String, id: String, value: Binding<Bool>) -> some View {
+        Button { value.wrappedValue.toggle() } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 22, weight: .semibold))
+                .frame(width: 54, height: 54)
+                .foregroundStyle(.white)
+                .background(value.wrappedValue ? MusicProductStyle.accent : Color(uiColor: .systemGray3),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(LocalizedStringKey(value.wrappedValue ? "quickSettings.on" : "quickSettings.off")))
+        .accessibilityAddTraits(value.wrappedValue ? .isSelected : [])
+        .accessibilityIdentifier(id)
+    }
+
+    private func iconToggleRow(_ title: LocalizedStringKey, symbol: String, id: String, value: Binding<Bool>) -> some View {
+        HStack {
+            Text(title).fixedSize(horizontal: false, vertical: true).accessibilityHidden(true)
+            Spacer(minLength: 12)
+            iconToggle(title, symbol: symbol, id: id, value: value)
+        }
     }
 
     private var typography: some View {
         section("quickSettings.appearance") {
-            Toggle("appearance.autoSize", isOn: Binding(get: { configuration.sizePreset != nil }, set: {
+            iconToggleRow("appearance.autoSize", symbol: "textformat.size", id: "quickSettingsAutoSize", value: Binding(get: { configuration.sizePreset != nil }, set: {
                 model.renderPreferences.configuration.sizePreset = $0 ? .medium : nil
-            })).frame(minHeight: 44).accessibilityIdentifier("quickSettingsAutoSize")
+            }))
             if configuration.sizePreset != nil {
                 Picker("render.sizePreset", selection: Binding(get: { configuration.sizePreset ?? .medium }, set: {
                     model.renderPreferences.configuration.sizePreset = $0
@@ -310,10 +353,9 @@ struct LyricsQuickSettingsPanel: View {
             route(model.selectedMusicService == .spotify ? "player.devices" : "AirPlay", symbol: "airplayaudio", to: .devices)
             if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
                 route("quickSettings.queue", symbol: "list.bullet", to: .queue)
-                Toggle("quickSettings.shuffle", isOn: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
+                iconToggleRow("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle", value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                     Task { await model.setShuffle(enabled) }
-                })).frame(minHeight: 44).disabled(model.isPerformingAction)
-                    .accessibilityIdentifier("quickSettingsShuffle")
+                })).disabled(model.isPerformingAction)
                 Picker("quickSettings.repeat", selection: Binding(get: { snapshot.repeatMode }, set: { mode in
                     Task { await model.setRepeat(mode) }
                 })) {

@@ -188,19 +188,28 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             // The native menu's visible button has a valid screen frame, but
             // Xcode 27 can expose its collection cell as {{inf, inf}, {0, 0}}.
             // Tap the visible frame, then verify the real acknowledged state.
+            var menuPoint: CGVector?
             let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
                 guard repeatOne.exists else { return false }
                 let frame = repeatOne.frame
-                return !frame.isEmpty && frame.minX.isFinite && frame.minY.isFinite
-                    && app.frame.contains(frame)
+                let window = app.frame
+                guard !frame.isEmpty, !window.isEmpty,
+                      frame.minX.isFinite, frame.minY.isFinite, frame.width.isFinite, frame.height.isFinite,
+                      window.minX.isFinite, window.minY.isFinite, window.width.isFinite, window.height.isFinite,
+                      window.contains(frame) else { return false }
+                // Preserve the exact snapshot that passed validation. A fresh
+                // accessibility query can return the invalid cell again.
+                menuPoint = CGVector(dx: frame.midX - window.minX, dy: frame.midY - window.minY)
+                return true
             }, object: nil)
             XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 4), .completed)
-            let repeatFrame = repeatOne.frame
-            app.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: repeatFrame.midX - app.frame.minX,
-                                     dy: repeatFrame.midY - app.frame.minY)).tap()
+            guard let menuPoint else { XCTFail("No valid on-screen repeat option"); return }
+            app.coordinate(withNormalizedOffset: .zero).withOffset(menuPoint).tap()
             XCTAssertTrue(panel(app).exists)
-            XCTAssertTrue(displayedText(repeatPicker).contains("单曲循环"))
+            let repeatAcknowledged = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                self.displayedText(repeatPicker).contains("单曲循环")
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [repeatAcknowledged], timeout: 4), .completed)
             let queue = app.buttons["quickSettingsRoute.queue"]
             reveal(queue, in: app)
             queue.tap()

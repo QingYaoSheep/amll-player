@@ -368,13 +368,10 @@ struct LyricsQuickSettingsPanel: View {
                 iconToggleRow("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle", value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                     Task { await model.setShuffle(enabled) }
                 })).disabled(model.isPerformingAction)
-                Picker("quickSettings.repeat", selection: Binding(get: { snapshot.repeatMode }, set: { mode in
+                QuickSettingsRepeatPicker(owner: ObjectIdentifier(model), service: model.selectedMusicService,
+                                          mode: snapshot.repeatMode, busy: model.isPerformingAction) { mode in
                     Task { await model.setRepeat(mode) }
-                })) {
-                    ForEach(MusicRepeatMode.allCases, id: \.self) { Text($0.title).tag($0) }
-                }.frame(minHeight: 44).disabled(model.isPerformingAction)
-                    .accessibilityIdentifier("quickSettingsRepeat")
-                    .accessibilityValue(Text(snapshot.repeatMode.title))
+                }.equatable()
             }
         }
     }
@@ -451,6 +448,30 @@ struct LyricsQuickSettingsPanel: View {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).accessibilityAddTraits(.isHeader)
             content()
         }.font(.subheadline).buttonStyle(.plain).tint(.green)
+    }
+}
+
+// Progress snapshots update while this native menu is open. Only control state
+// changes may rebuild its binding and presentation, not the advancing clock.
+private struct QuickSettingsRepeatPicker: View, Equatable {
+    let owner: ObjectIdentifier
+    let service: MusicServiceID
+    let mode: MusicRepeatMode
+    let busy: Bool
+    let select: (MusicRepeatMode) -> Void
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.owner == rhs.owner && lhs.service == rhs.service && lhs.mode == rhs.mode && lhs.busy == rhs.busy
+    }
+
+    var body: some View {
+        Picker("quickSettings.repeat", selection: Binding(get: { mode }, set: select)) {
+            ForEach(MusicRepeatMode.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
+        .frame(minHeight: 44)
+        .disabled(busy)
+        .accessibilityIdentifier("quickSettingsRepeat")
+        .accessibilityValue(Text(mode.title))
     }
 }
 

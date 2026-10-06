@@ -27,7 +27,7 @@ final class LyricsQuickSettingsPresentation {
     func open(reduceMotion: Bool) {
         guard destination == nil, !destinationIsDismissing else { return }
         revision += 1
-        withAnimation(reduceMotion ? nil : Self.motionAnimation) {
+        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Self.motionAnimation) {
             isPresented = true
         }
     }
@@ -35,7 +35,7 @@ final class LyricsQuickSettingsPresentation {
     func close(reduceMotion: Bool, then target: Destination? = nil) {
         revision += 1
         let transaction = revision
-        withAnimation(reduceMotion ? nil : Self.motionAnimation, completionCriteria: .removed) {
+        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Self.motionAnimation, completionCriteria: .removed) {
             isPresented = false
         } completion: { [weak self] in
             guard let self, self.revision == transaction else { return }
@@ -164,6 +164,7 @@ struct LyricsQuickSettingsPanel: View {
     @State private var contentHeight: CGFloat = 0
     @State private var headerHeight: CGFloat = 100
     @State private var drag: CGFloat = 0
+    @GestureState private var dragIsActive = false
     @AccessibilityFocusState private var titleFocused: Bool
 
     private var configuration: LyricsRenderConfiguration { model.renderPreferences.configuration }
@@ -206,6 +207,12 @@ struct LyricsQuickSettingsPanel: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .onAppear { titleFocused = true }
+        .onChange(of: dragIsActive) { _, active in
+            // onEnded is not called for a system-cancelled gesture. Gesture
+            // activity resets on cancellation, but the released offset must
+            // remain intact if a successful dismissal is already underway.
+            if !active, presentation.isPresented, drag > 0 { returnToRest() }
+        }
         .accessibilityAction(.escape) { presentation.close(reduceMotion: reduceMotion) }
     }
 
@@ -219,6 +226,7 @@ struct LyricsQuickSettingsPanel: View {
                 .accessibilityIdentifier("lyricsQuickSettingsHandle")
                 .accessibilityAction { presentation.close(reduceMotion: reduceMotion) }
                 .gesture(DragGesture(minimumDistance: 8)
+                    .updating($dragIsActive) { _, active, _ in active = true }
                     .onChanged { value in
                         if value.translation.height > abs(value.translation.width) || drag > 0 {
                             // Follow the finger directly, including a reversal.
@@ -237,9 +245,7 @@ struct LyricsQuickSettingsPanel: View {
                             // back when GestureState would reset to zero.
                             presentation.close(reduceMotion: reduceMotion)
                         } else {
-                            withAnimation(reduceMotion ? nil : LyricsQuickSettingsPresentation.motionAnimation) {
-                                drag = 0
-                            }
+                            returnToRest()
                         }
                     })
             HStack {
@@ -257,6 +263,10 @@ struct LyricsQuickSettingsPanel: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
         }
+    }
+
+    private func returnToRest() {
+        withAnimation(reduceMotion ? nil : LyricsQuickSettingsPresentation.motionAnimation) { drag = 0 }
     }
 
     private var appearance: some View {

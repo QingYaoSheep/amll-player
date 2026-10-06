@@ -185,9 +185,20 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             reveal(repeatPicker, in: app)
             repeatPicker.tap()
             let repeatOne = app.buttons["单曲循环"]
-            let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: repeatOne)
+            // The native menu's visible button has a valid screen frame, but
+            // Xcode 27 can expose its collection cell as {{inf, inf}, {0, 0}}.
+            // Tap the visible frame, then verify the real acknowledged state.
+            let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                guard repeatOne.exists else { return false }
+                let frame = repeatOne.frame
+                return !frame.isEmpty && frame.minX.isFinite && frame.minY.isFinite
+                    && app.frame.contains(frame)
+            }, object: nil)
             XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 4), .completed)
-            repeatOne.tap()
+            let repeatFrame = repeatOne.frame
+            app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: repeatFrame.midX - app.frame.minX,
+                                     dy: repeatFrame.midY - app.frame.minY)).tap()
             XCTAssertTrue(panel(app).exists)
             XCTAssertTrue(displayedText(repeatPicker).contains("单曲循环"))
             let queue = app.buttons["quickSettingsRoute.queue"]

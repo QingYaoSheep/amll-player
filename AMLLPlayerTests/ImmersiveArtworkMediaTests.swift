@@ -369,6 +369,14 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             apply()
             try await Task.sleep(for: .milliseconds(100))
         }
+        // Layer readiness precedes the first screen composite on some runs.
+        // Do not compare the purple fallback against the later video frame.
+        // The fixture's red column must be visible before capturing its color;
+        // the unmodified color-parity assertion below still uses accuracy 3.
+        try await waitUntil {
+            guard let pixel = try? backdropPixel(window, at: CGPoint(x: 12, y: 181), attach: false) else { return false }
+            return pixel[0] > 180
+        }
         let before = try backdropPixel(window, at: CGPoint(x: 12, y: 181))
         tuning[.transition].enabled = true
         apply()

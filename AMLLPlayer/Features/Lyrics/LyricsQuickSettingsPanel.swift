@@ -458,7 +458,7 @@ private struct QuickSettingsRepeatPicker: View, Equatable {
     let service: MusicServiceID
     let mode: MusicRepeatMode
     let busy: Bool
-    let select: (MusicRepeatMode) -> Void
+    let select: @MainActor @Sendable (MusicRepeatMode) -> Void
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.owner == rhs.owner && lhs.service == rhs.service && lhs.mode == rhs.mode && lhs.busy == rhs.busy

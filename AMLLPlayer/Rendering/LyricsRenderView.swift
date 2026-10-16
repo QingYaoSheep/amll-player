@@ -49,6 +49,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     private var proxy: DisplayLinkProxy?
     private var previousTick = 0.0
     private var previousTime: Double?
+    private var preserveNextResize = false
     private var lastSize = CGSize.zero
     private var frames: [CGRect] = []
     private var rows: [Int: LyricRowView] = [:]
@@ -112,6 +113,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             scroll.setContentOffset(scroll.contentOffset, animated: false)
             DispatchQueue.main.async { [weak self] in self?.browsing(false) }
         }
+        preserveNextResize = preserveNextResize || (self.configuration.immersiveLyrics == true) != (configuration.immersiveLyrics == true)
         if self.configuration != configuration || self.reduceMotion != reduceMotion {
             needsRebuild = true
         }
@@ -138,15 +140,16 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             lastSize = bounds.size; needsRebuild = false
             rows.values.forEach { $0.removeFromSuperview() }; rows.removeAll(); pool.removeAll()
             layouts.removeAll(); layoutOrder.removeAll(); frames.removeAll()
-            if resized {
+            if resized, configuration.immersiveLyrics != true, !preserveNextResize {
                 follow.reset(); previousTime = nil
                 scroll.setContentOffset(scroll.contentOffset, animated: false)
                 DispatchQueue.main.async { [weak self] in self?.browsing(false) }
             }
+            preserveNextResize = false
             var y = bounds.height * configuration.anchor
             for index in timeline.lines.indices {
                 let layout = makeLayout(index)
-                let inset: CGFloat = timeline.lines[index].isBackground ? 32 : 20
+                let inset = lineInset(background: timeline.lines[index].isBackground)
                 frames.append(CGRect(x: inset, y: y, width: bounds.width - inset * 2, height: layout.size.height))
                 y += layout.size.height + (timeline.lines[index].isBackground ? 14 : 28)
             }
@@ -268,12 +271,19 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         }
     }
 
+    private func lineInset(background: Bool) -> CGFloat {
+        if configuration.immersiveLyrics == true {
+            return CGFloat(configuration.horizontalPadding ?? 30) + (background ? 12 : 0)
+        }
+        return background ? 32 : 20
+    }
+
     private func makeLayout(_ index: Int) -> LyricTextLayout {
         if let layout = layouts[index] {
             return layout
         }
         let line = timeline.lines[index]
-        let width = bounds.width - (line.isBackground ? 64 : 40)
+        let width = bounds.width - lineInset(background: line.isBackground) * 2
         let layout = LyricTextLayout(line: line, width: width, configuration: configuration, traits: traitCollection)
         layouts[index] = layout; layoutOrder.append(index)
         if layoutOrder.count > 48 {

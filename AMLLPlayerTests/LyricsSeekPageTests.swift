@@ -5,6 +5,33 @@ import UIKit
 import XCTest
 
 @MainActor final class LyricsSeekPageTests: XCTestCase {
+    func testCompatibilityImmersiveSwitchRetainsItsOriginalRenderer() async throws {
+        let (model, player, song) = try await makeModel()
+        model.renderPreferences.activate(.custom)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        let host = UIHostingController(rootView: FullscreenLyricsPlayer(model: model).environment(\.scenePhase, .active))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
+        defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
+        try await start(model, song)
+        func renderer() -> LyricsRenderView? { descendants(host.view).compactMap { $0 as? LyricsRenderView }.first }
+        try await wait("compatibility canvas") { renderer() != nil }
+        let original = try XCTUnwrap(renderer())
+        let revision = model.lyricsSeekRevision, item = player.currentItem
+        for enabled in [true, false] {
+            model.renderPreferences.configuration.immersiveLyrics = enabled
+            try await Task.sleep(for: .milliseconds(400))
+            host.view.layoutIfNeeded()
+            XCTAssertTrue(renderer() === original)
+            XCTAssertTrue(original.isDisplayLinkRunning)
+            XCTAssertTrue(player.currentItem === item)
+            XCTAssertEqual(model.lyricsSeekRevision, revision)
+        }
+        XCTAssertGreaterThan(player.rate, 0)
+    }
+
     func testImmersiveLyricsSwitchRetainsCanvasAndActualAudioTime() async throws {
         let (model, player, song) = try await makeModel()
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)

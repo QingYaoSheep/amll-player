@@ -20,11 +20,14 @@ actor ImmersiveStillArtworkCache {
             return value.1
         }
         if let request = pending[url] { return await request.task.value }
-        // Fast track changes cannot leave an unbounded set of background decodes.
-        if pending.count >= 2, let retired = pending.first {
-            retired.value.task.cancel()
-            pending.removeValue(forKey: retired.key)
+        // A canceled synchronous ImageIO/CI operation still owns its slot until
+        // it actually finishes. Waiting here suspends the actor, never the UI.
+        while pending.count >= 2, let oldest = pending.first {
+            _ = await oldest.value.task.value
+            if pending[oldest.key]?.id == oldest.value.id { pending.removeValue(forKey: oldest.key) }
         }
+        guard !Task.isCancelled else { return nil }
+        if let request = pending[url] { return await request.task.value }
         let id = UUID()
         let task = Task.detached(priority: .userInitiated) { () -> ImmersiveStillFrame? in
             guard let data = try? await ArtworkImageData.load(url), !Task.isCancelled,
@@ -35,6 +38,7 @@ actor ImmersiveStillArtworkCache {
                     kCGImageSourceThumbnailMaxPixelSize: 1600,
                     kCGImageSourceShouldCacheImmediately: true,
                   ] as CFDictionary) else { return nil }
+            guard !Task.isCancelled else { return nil }
             var buffer: CVPixelBuffer?
             guard CVPixelBufferCreate(kCFAllocatorDefault, image.width, image.height, kCVPixelFormatType_32BGRA,
                 [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer) == kCVReturnSuccess,
@@ -47,8 +51,7 @@ actor ImmersiveStillArtworkCache {
         }
         pending[url] = (id, task)
         let frame = await task.value
-        guard pending[url]?.id == id else { return nil }
-        pending[url] = nil
+        if pending[url]?.id == id { pending[url] = nil }
         if let frame {
             cached.append((url, frame))
             if cached.count > 2 { cached.removeFirst(cached.count - 2) }

@@ -39,7 +39,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             if let storedVideoSurface { return storedVideoSurface }
             let view = AnimatedArtwork.Surface()
             storedVideoSurface = view
-            videoPlane.addSubview(view)
+            videoPlane.insertSubview(view, belowSubview: stillSurface)
             return view
         }
         let reflectionSurface = ArtworkReflection.Surface()
@@ -241,7 +241,9 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             storedVideoSurface?.frame = videoPlane.bounds
             stillSurface.frame = videoPlane.bounds
             stillSurface.isHidden = hasVideo && layout.presentsFrame
-            storedVideoSurface?.isHidden = !hasVideo || (!layout.presentsFrame && stillFrame != nil)
+            // Keep the real layer drawing beneath its still fallback so its
+            // first-frame readiness cannot depend on unhiding that same layer.
+            storedVideoSurface?.isHidden = !hasVideo
             videoPlane.isHidden = !tuning[.video].enabled
             videoPlane.alpha = tuning[.video].opacity * layout.pageOpacity
             reflectionPlane.frame = layout.reflection

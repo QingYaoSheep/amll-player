@@ -16,7 +16,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             app.buttons["closeLyricsQuickSettings"].tap()
             let information = app.descendants(matching: .any)["immersiveLyricsInformation"].firstMatch
             XCTAssertTrue(information.waitForExistence(timeout: 4))
-            let canvas = app.descendants(matching: .any)["amllNativeLyricsDisplay"].firstMatch
+            let canvas = app.descendants(matching: .any)[legacy ? "nativeLyricsScroll" : "amllNativeLyricsDisplay"].firstMatch
             XCTAssertTrue(canvas.exists)
             XCTAssertGreaterThanOrEqual(canvas.frame.minY, information.frame.maxY + 20)
             XCTAssertTrue(app.buttons["immersiveLyricsPlayPause"].isHittable)

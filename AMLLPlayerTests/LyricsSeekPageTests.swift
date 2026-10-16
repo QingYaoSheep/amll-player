@@ -17,13 +17,19 @@ import XCTest
         defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
         try await start(model, song)
         func renderer() -> LyricsRenderView? { descendants(host.view).compactMap { $0 as? LyricsRenderView }.first }
-        try await wait("compatibility canvas") { renderer() != nil }
+        try await wait("compatibility canvas and real audio are running") {
+            renderer()?.isDisplayLinkRunning == true && (renderer()?.bounds.height ?? 0) > 0
+                && model.playbackSnapshot?.isPlaying == true && player.currentTime().seconds > 0.3
+        }
         let original = try XCTUnwrap(renderer())
         let revision = model.lyricsSeekRevision, item = player.currentItem
         for enabled in [true, false] {
+            let previousHeight = original.bounds.height
             model.renderPreferences.configuration.immersiveLyrics = enabled
-            try await Task.sleep(for: .milliseconds(400))
-            host.view.layoutIfNeeded()
+            try await wait("resized compatibility canvas continues drawing") {
+                host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+                return abs(original.bounds.height - previousHeight) > 20 && original.isDisplayLinkRunning
+            }
             XCTAssertTrue(renderer() === original)
             XCTAssertTrue(original.isDisplayLinkRunning)
             XCTAssertTrue(player.currentItem === item)

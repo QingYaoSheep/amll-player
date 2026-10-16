@@ -3,6 +3,24 @@ import XCTest
 
 @MainActor
 final class LyricsRenderPreferencesTests: XCTestCase {
+    func testImmersiveLyricsUpgradesOffAndPersistsIndependentlyOfVideo() throws {
+        let name = "immersive-lyrics-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let encoded = try JSONEncoder().encode(LyricsRenderConfiguration())
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        old.removeValue(forKey: "immersiveLyrics")
+        let decoded = try JSONDecoder().decode(LyricsRenderConfiguration.self, from: JSONSerialization.data(withJSONObject: old))
+        XCTAssertNotEqual(decoded.immersiveLyrics, true)
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        preferences.configuration.immersiveLyrics = true
+        let restored = LyricsRenderPreferences(defaults: defaults)
+        XCTAssertEqual(restored.configuration.immersiveLyrics, true)
+        XCTAssertNil(restored.configuration.animatedArtwork)
+        restored.restoreAMLLDefaults()
+        XCTAssertNotEqual(LyricsRenderPreferences(defaults: defaults).configuration.immersiveLyrics, true)
+    }
+
     func testPageAdjustmentsDecodeOlderConfigurationAndPersist() throws {
         let original = LyricsRenderConfiguration()
         let oldData = try JSONEncoder().encode(original)

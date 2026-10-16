@@ -95,6 +95,19 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
         layers.removeValue(forKey: layer.rawValue)
         if layer == .transition { topFeatherLength = nil }
     }
+
+    /// The lyrics layout owns spatial placement. Keep only the calibrated
+    /// appearance values, leaving the original page's saved geometry intact.
+    func forImmersiveLyrics() -> Self {
+        var value = Self()
+        value.blurRadius = validatedBlur
+        value.topFeatherLength = validatedTopFeatherLength
+        for layer in [ImmersiveArtworkLayer.reflection, .transition, .bottomFade] {
+            value[layer].opacity = self[layer].opacity
+            value[layer].enabled = self[layer].enabled
+        }
+        return value
+    }
 }
 
 extension ImmersiveArtworkDebugConfiguration {

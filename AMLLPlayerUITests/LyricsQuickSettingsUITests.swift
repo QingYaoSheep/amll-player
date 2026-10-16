@@ -1,6 +1,42 @@
 import XCTest
 
 final class LyricsQuickSettingsUITests: XCTestCase {
+    @MainActor func testImmersiveLyricsModeStaysOpenPersistsAndFallsBackInLandscape() {
+        for legacy in [false, true] {
+            let app = lyricsApp()
+            app.launchArguments += ["--immersive-lyrics-ui-testing", "--quick-settings-preferences-suite", "quick-settings-ui-" + UUID().uuidString]
+            if legacy { app.launchArguments += ["--lyrics-custom-profile-ui-testing"] }
+            openPanel(app)
+            let toggle = app.buttons["quickSettingsImmersiveLyrics"]
+            reveal(toggle, in: app)
+            XCTAssertEqual(toggle.value as? String, "Off")
+            toggle.tap()
+            XCTAssertTrue(panel(app).exists)
+            XCTAssertEqual(toggle.value as? String, "On")
+            app.buttons["closeLyricsQuickSettings"].tap()
+            let information = app.descendants(matching: .any)["immersiveLyricsInformation"].firstMatch
+            XCTAssertTrue(information.waitForExistence(timeout: 4))
+            let canvas = app.descendants(matching: .any)["amllNativeLyricsDisplay"].firstMatch
+            XCTAssertTrue(canvas.exists)
+            XCTAssertGreaterThanOrEqual(canvas.frame.minY, information.frame.maxY + 20)
+            XCTAssertTrue(app.buttons["immersiveLyricsPlayPause"].isHittable)
+            capture(app, name: legacy ? "Immersive-lyrics-custom" : "Immersive-lyrics-native")
+            XCUIDevice.shared.orientation = .landscapeLeft
+            XCTAssertTrue(information.waitForNonExistence(timeout: 4))
+            XCUIDevice.shared.orientation = .portrait
+            XCTAssertTrue(information.waitForExistence(timeout: 4))
+            app.terminate()
+            openPanel(app)
+            reveal(app.buttons["quickSettingsImmersiveLyrics"], in: app)
+            XCTAssertEqual(app.buttons["quickSettingsImmersiveLyrics"].value as? String, "On")
+            app.buttons["quickSettingsImmersiveLyrics"].tap()
+            XCTAssertTrue(panel(app).exists)
+            app.buttons["closeLyricsQuickSettings"].tap()
+            XCTAssertTrue(information.waitForNonExistence(timeout: 4))
+            app.terminate()
+        }
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

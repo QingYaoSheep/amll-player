@@ -279,6 +279,9 @@ struct LyricsQuickSettingsPanel: View {
             appearanceButton("quickSettings.hdr", symbol: "sun.max.fill", id: "quickSettingsHDR", value: Binding(get: { configuration.hdr?.enabled ?? false }, set: {
                 model.renderPreferences.configuration.hdr = .init(enabled: $0)
             }))
+            appearanceButton("quickSettings.immersiveLyrics", symbol: "rectangle.topthird.inset.filled", id: "quickSettingsImmersiveLyrics", value: Binding(get: { configuration.immersiveLyrics == true }, set: {
+                model.renderPreferences.configuration.immersiveLyrics = $0
+            }))
         }
     }
 

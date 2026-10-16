@@ -11,6 +11,11 @@ struct AMLLLyricsPlayer: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .headline) private var immersiveTitleSize = 18.0
+    @ScaledMetric(relativeTo: .subheadline) private var immersiveArtistSize = 15.0
+    @State private var immersiveInformationHeight: CGFloat = 64
+    @State private var stillArtwork = ImmersiveStillArtwork()
     @State private var search = false
     @State private var devices = false
     @State private var quickSettings: LyricsQuickSettingsPresentation
@@ -39,10 +44,14 @@ struct AMLLLyricsPlayer: View {
         GeometryReader { geometry in
             let metrics = AppleMusicLyricsLayoutMetrics.responsive(in: geometry.size)
             let drag = dismissalTransform(height: geometry.size.height)
-            let immersive = model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false
+            let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
+            let immersive = lyricLayout != nil || (model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false)
             ZStack {
                 Color(white: 0.08)
-                if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
+                if let item = model.playbackSnapshot?.item, let lyricLayout {
+                    immersiveLyricsArtwork(item, layout: lyricLayout, size: geometry.size,
+                                           cornerRadius: drag.radius, opacity: drag.opacity)
+                } else if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                     immersiveArtworkLayers(item, size: geometry.size, cornerRadius: drag.radius, opacity: drag.opacity)
                 } else {
                     artworkBackground
@@ -50,7 +59,7 @@ struct AMLLLyricsPlayer: View {
                 }
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
-                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size)
+                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: lyricLayout)
                     } else {
                         ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                     }
@@ -75,7 +84,7 @@ struct AMLLLyricsPlayer: View {
             .opacity(immersive ? 1 : drag.opacity)
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
             .overlay(alignment: .topTrailing) {
-                if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
+                if lyricLayout == nil, let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                     Button { showingArtworkDebug = true } label: {
                         Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44)
                     }
@@ -101,6 +110,9 @@ struct AMLLLyricsPlayer: View {
         .sheet(isPresented: $devices) { DevicePickerView(model: model) }
         .onChange(of: model.playbackSnapshot?.item?.uri) { browsing = false }
         .task(id: artworkRequestKey) { await loadAnimatedArtwork() }
+        .task(id: stillArtworkRequestKey) {
+            await stillArtwork.load(stillArtworkRequestKey == nil ? nil : model.playbackSnapshot?.item?.artworkURL)
+        }
         .alert("error.title", isPresented: Binding(get: { model.presentedError != nil }, set: {
             if !$0 {
                 model.presentedError = nil
@@ -111,27 +123,96 @@ struct AMLLLyricsPlayer: View {
     }
 
     @ViewBuilder
-    private func player(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics, size: CGSize) -> some View {
+    private func player(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics, size: CGSize,
+                        lyricLayout: ImmersiveLyricsLayout?) -> some View {
         if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
             tabletPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
         } else if configuration.showLyrics {
-            lyricsPlayer(snapshot: snapshot, item: item, metrics: metrics)
+            lyricsPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size, layout: lyricLayout)
         } else {
             artworkPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
         }
     }
 
-    private func lyricsPlayer(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics) -> some View {
-        ZStack(alignment: .top) {
-            lyricCanvas(snapshot, fadeTop: (configuration.showMetadata ?? true)
-                ? metrics.compactArtworkTop + metrics.compactArtworkSize : 44)
-                .padding(.horizontal, max(0, metrics.horizontalInset - 20))
-            if configuration.showMetadata ?? true {
-                compactMetadata(item: item, metrics: metrics)
-                    .padding(.horizontal, metrics.horizontalInset)
-                    .padding(.top, metrics.compactArtworkTop)
+    private func lyricsPlayer(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics,
+                              size: CGSize, layout: ImmersiveLyricsLayout?) -> some View {
+        let rect = layout?.lyrics ?? CGRect(origin: .zero, size: size)
+        // Keep the same canvas identity while switching modes. Only its viewport
+        // changes; seek state, source timing and the live frame engine persist.
+        return ScrollView(.vertical) {
+            ZStack(alignment: .topLeading) {
+                lyricCanvas(snapshot, fadeTop: layout != nil ? 0 : (configuration.showMetadata ?? true)
+                    ? metrics.compactArtworkTop + metrics.compactArtworkSize : 44,
+                    renderConfiguration: lyricConfiguration(layout: layout, page: size))
+                    .padding(.horizontal, layout == nil ? max(0, metrics.horizontalInset - 20) : 0)
+                    .frame(width: rect.width, height: rect.height)
+                    .offset(x: rect.minX, y: rect.minY)
+                if let layout {
+                    immersiveLyricsInformation(snapshot: snapshot, item: item)
+                        .frame(width: layout.information.width)
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: ImmersiveInformationHeightKey.self, value: proxy.size.height)
+                            }
+                        }
+                        .offset(x: layout.information.minX, y: layout.information.minY)
+                        .accessibilityIdentifier("immersiveLyricsInformation")
+                } else if configuration.showMetadata ?? true {
+                    compactMetadata(item: item, metrics: metrics)
+                        .padding(.horizontal, metrics.horizontalInset)
+                        .padding(.top, metrics.compactArtworkTop)
+                }
             }
+            .frame(width: size.width, height: layout?.contentHeight ?? size.height, alignment: .topLeading)
         }
+        .scrollDisabled(layout?.requiresScrolling != true)
+        .scrollIndicators(.hidden)
+        .onPreferenceChange(ImmersiveInformationHeightKey.self) { height in
+            if height > 0, abs(immersiveInformationHeight - height) > 0.5 { immersiveInformationHeight = height }
+        }
+    }
+
+    private func immersiveLyricsInformation(snapshot: PlaybackSnapshot, item: PlaybackItem) -> some View {
+        HStack(alignment: .center, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
+                if configuration.showTitle {
+                    Text(item.title).font(.system(size: immersiveTitleSize, weight: .bold))
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                }
+                if configuration.showArtist {
+                    Text(item.artistLine).font(.system(size: immersiveArtistSize)).foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            if configuration.showControls {
+                Button { Task { await model.togglePlayPause() } } label: {
+                    Image(systemName: snapshot.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22, weight: .semibold)).frame(width: 44, height: 44)
+                }
+                .disabled(model.isPerformingAction || (snapshot.isPlaying ? !snapshot.restrictions.canPause : !snapshot.restrictions.canResume))
+                .accessibilityLabel(Text(snapshot.isPlaying ? "player.pause" : "player.play"))
+                .accessibilityIdentifier("immersiveLyricsPlayPause")
+            }
+            if model.selectedMusicService == .appleMusic { AppleMusicCurrentFavorite(model: model) }
+            else if model.selectedMusicService == .netease { NetEaseCurrentFavorite(model: model) }
+            optionsMenu
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 44)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func lyricConfiguration(layout: ImmersiveLyricsLayout?, page: CGSize) -> LyricsRenderConfiguration {
+        var value = configuration
+        if let layout {
+            value.horizontalPadding = layout.horizontalInset
+            // Responsive presets retain their original page-derived point size.
+            value.fontSize = configuration.resolvedFontSize(width: page.width, height: page.height)
+            value.sizePreset = nil
+        }
+        return value
     }
 
     private func artworkPlayer(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics, size: CGSize) -> some View {
@@ -194,13 +275,14 @@ struct AMLLLyricsPlayer: View {
     }
 
     @ViewBuilder
-    private func lyricCanvas(_ snapshot: PlaybackSnapshot, fadeTop: CGFloat? = nil) -> some View {
+    private func lyricCanvas(_ snapshot: PlaybackSnapshot, fadeTop: CGFloat? = nil,
+                             renderConfiguration: LyricsRenderConfiguration? = nil) -> some View {
         if let document = model.lyrics.document, !document.lines.isEmpty {
             ZStack(alignment: .bottom) {
                 AMLLLyricsDisplay(
                     model: model,
                     snapshot: snapshot,
-                    configuration: configuration,
+                    configuration: renderConfiguration ?? configuration,
                     active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                     resumeToken: resumeToken,
                     fadeTop: fadeTop,
@@ -302,7 +384,57 @@ struct AMLLLyricsPlayer: View {
 
     private var phoneLyricsUsesStaticArtwork: Bool {
         AMLLArtworkDisplayPolicy.usesStaticLyricsCover(isPhone: UIDevice.current.userInterfaceIdiom == .phone,
-                                                       showsLyrics: configuration.showLyrics)
+                                                       showsLyrics: configuration.showLyrics) && !usesImmersiveLyrics
+    }
+
+    private var usesImmersiveLyrics: Bool {
+        configuration.immersiveLyrics == true && configuration.showLyrics && artworkPortraitViewport
+            && UIDevice.current.userInterfaceIdiom == .phone
+    }
+
+    private var stillArtworkRequestKey: String? {
+        guard usesImmersiveLyrics, let item = model.playbackSnapshot?.item else { return nil }
+        return item.uri + "|" + (item.artworkURL?.absoluteString ?? "")
+    }
+
+    private var currentStillFrame: ImmersiveStillFrame? {
+        stillArtwork.frame(for: model.playbackSnapshot?.item?.artworkURL)
+    }
+
+    private func immersiveLyricsLayout(size: CGSize, bottomInset: CGFloat) -> ImmersiveLyricsLayout? {
+        guard ImmersiveLyricsLayout.isEnabled(configuration, isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+                                              viewport: size) else { return nil }
+        let source: CGSize
+        if immersiveLyricsHasVideo, artworkLoader.hasPresentedFrame, let actual = artworkLoader.videoSize { source = actual }
+        else { source = currentStillFrame?.size ?? CGSize(width: 1, height: 1) }
+        return .resolve(viewport: size, artwork: source, informationHeight: immersiveInformationHeight, bottomInset: bottomInset)
+    }
+
+    private var immersiveLyricsHasVideo: Bool {
+        configuration.animatedArtwork?.enabled == true && !reduceMotion
+            && artworkNetwork.permits(allowCellular: configuration.animatedArtwork?.allowCellular ?? false)
+            && artworkLoader.trackID == model.playbackSnapshot?.item?.uri && artworkLoader.playbackURL != nil
+    }
+
+    private func immersiveLyricsArtwork(_ item: PlaybackItem, layout: ImmersiveLyricsLayout, size: CGSize,
+                                        cornerRadius: CGFloat, opacity: Double) -> some View {
+        // Reuse appearance controls, but never legacy absolute geometry/layer ordering.
+        let tuning = artworkDebug.configuration.forImmersiveLyrics()
+        let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: layout.cover, viewport: size)
+        return ImmersiveArtworkMedia(video: immersiveLyricsHasVideo ? immersiveVideo(item) : nil,
+            frames: artworkReflectionFrames,
+            layout: .init(video: layout.cover,
+                reflection: ArtworkReflectionGeometry.frame(cover: layout.cover, viewportHeight: size.height),
+                transition: profile.frame,
+                bottomFade: AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: layout.cover, viewport: size),
+                tuning: tuning, presentsFrame: immersiveLyricsHasVideo && artworkLoader.hasPresentedFrame,
+                reflectionEnabled: configuration.animatedArtwork?.reflection == true,
+                reduceTransparency: reduceTransparency, backgroundDimming: configuration.backgroundDimming ?? 0.16,
+                cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: profile),
+            background: artworkBackground, still: currentStillFrame)
+            .id(artworkLoader.requestToken)
+            .frame(width: size.width, height: size.height)
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private func mountsImmersiveArtwork(_ item: PlaybackItem, size: CGSize) -> Bool {
@@ -393,6 +525,7 @@ struct AMLLLyricsPlayer: View {
         let settings = configuration.animatedArtwork ?? .init()
         return [model.playbackSnapshot?.item?.uri ?? "", String(settings.enabled), String(settings.allowCellular),
                 (settings.presentation ?? .square).rawValue, String(artworkPortraitViewport), String(reduceMotion),
+                String(usesImmersiveLyrics),
                 String(artworkNetwork.permits(allowCellular: settings.allowCellular)),
                 model.lyrics.settings.storefront, model.lyrics.settings.language,
                 model.lyrics.selection.candidate?.id ?? ""].joined(separator: "|")
@@ -406,7 +539,7 @@ struct AMLLLyricsPlayer: View {
               let provider = model.lyrics.apple else { artworkLoader.reset(); return }
         let candidate = model.lyrics.selection.candidate
         let lyricsSettings = model.lyrics.settings
-        let prefersPortrait = settings.presentation == .immersive && artworkPortraitViewport
+        let prefersPortrait = (settings.presentation == .immersive || usesImmersiveLyrics) && artworkPortraitViewport
         let kind: ArtworkAsset.Kind = prefersPortrait ? .portraitVideo : .squareVideo
         await artworkLoader.load(trackID: item.uri, kind: kind,
                                  fallbackKind: prefersPortrait ? .squareVideo : nil,
@@ -591,6 +724,11 @@ struct AMLLLyricsPlayer: View {
         let progress = min(1, max(0, offset / height))
         return (offset, 1 - min(0.038, progress * 0.065), min(30, progress * 70), 1 - min(0.055, progress * 0.09))
     }
+}
+
+private struct ImmersiveInformationHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 64
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 /// Allow the floating Metal lyric layers to retain extended values through

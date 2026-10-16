@@ -5,6 +5,42 @@ import UIKit
 import XCTest
 
 @MainActor final class LyricsSeekPageTests: XCTestCase {
+    func testImmersiveLyricsSwitchRetainsCanvasAndActualAudioTime() async throws {
+        let (model, player, song) = try await makeModel()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
+        defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
+        try await start(model, song)
+        let canvas = try await waitForCanvas(host.view)
+        try await wait("initial canvas frames") { canvas.frameState != nil && canvas.bounds.height > 500 }
+        let revision = model.lyricsSeekRevision
+        let item = try XCTUnwrap(player.currentItem)
+        let originalTime = player.currentTime().seconds
+        model.renderPreferences.configuration.immersiveLyrics = true
+        try await wait("smaller immersive canvas") {
+            host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+            return canvas.bounds.height > 0 && canvas.bounds.height < 500
+        }
+        XCTAssertTrue(findCanvas(host.view) === canvas)
+        XCTAssertEqual(model.lyricsSeekRevision, revision)
+        XCTAssertTrue(player.currentItem === item)
+        try await wait("audio and native lyric clock continue") { player.currentTime().seconds > originalTime + 0.4 }
+        XCTAssertGreaterThan(player.rate, 0)
+        XCTAssertEqual(model.progress(), player.currentTime().seconds, accuracy: 0.4)
+        let state = try XCTUnwrap(canvas.frameState)
+        XCTAssertEqual(state.lyricTime, model.progress(), accuracy: 0.5)
+        XCTAssertNil(model.renderPreferences.configuration.animatedArtwork)
+        model.renderPreferences.configuration.immersiveLyrics = false
+        try await wait("restored canvas bounds") { canvas.bounds.height > 500 }
+        XCTAssertTrue(findCanvas(host.view) === canvas)
+        XCTAssertEqual(model.lyricsSeekRevision, revision)
+        XCTAssertTrue(player.currentItem === item)
+    }
+
     func testQuickSettingsKeepNativeAudioClockAndProductionCanvasRunning() async throws {
         let (model, player, song) = try await makeModel()
         let presentation = LyricsQuickSettingsPresentation()

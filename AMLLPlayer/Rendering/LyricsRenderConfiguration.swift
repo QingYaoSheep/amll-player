@@ -108,6 +108,8 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var anchor: Double = 0.28
     var advance: Double = 0.3
     var showLyrics = true
+    /// Independent of animated artwork; absent in installed preferences means off.
+    var immersiveLyrics: Bool?
     var coverLayout: CoverLayout = .automatic
     var showTitle = true
     var showArtist = true

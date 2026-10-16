@@ -52,6 +52,17 @@ struct FullscreenLyricsPlayer: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
+            if ImmersiveLyricsLayout.isEnabled(configuration, isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+                                               viewport: geometry.size) {
+                AMLLLyricsPlayer(model: model, presentation: quickSettings)
+            } else {
+                compatibilityBody
+            }
+        }
+    }
+
+    private var compatibilityBody: some View {
         NavigationStack {
             GeometryReader { geometry in
                 ZStack {

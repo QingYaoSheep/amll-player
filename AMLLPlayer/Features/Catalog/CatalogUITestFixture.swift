@@ -1,6 +1,7 @@
 #if DEBUG
     import AVFoundation
     import Foundation
+    import UIKit
 
     /// Explicit opt-in, in-memory fixtures. Release builds have no mock account or launch bypass.
     @MainActor
@@ -22,6 +23,7 @@
             let sources = MusicSourcePreferences(defaults: defaults); sources.selected = service
             let lyrics = LyricsCoordinator(providers: includeLyrics ? [LyricsFixtureProvider()] : [], cache: MemoryLyricsCache(),
                                            settingsStore: LyricsSettingsStore(defaults: UserDefaults(suiteName: "lyrics-ui-" + UUID().uuidString)!))
+            let artworkURL = arguments.contains("--immersive-lyrics-ui-testing") ? try? makeCover() : nil
             let session = NetEaseSession(api: NetEaseFixtureAPI(), store: FixtureStore())
             let nativePlayback: NetEasePlayback?
             if service == .netease, let audio = try? makeSilentAudio() {
@@ -30,10 +32,10 @@
             } else { nativePlayback = nil }
             let model = AppModel(environment: AppEnvironment(
                 configuration: .preview, diagnostics: DiagnosticsStore(),
-                spotifySession: Session(), spotifyPlayback: Playback(includeLyrics: includeLyrics)
+                spotifySession: Session(), spotifyPlayback: Playback(includeLyrics: includeLyrics, artworkURL: artworkURL)
             ), catalogProvider: Provider(), lyrics: lyrics,
             renderPreferences: preferences, appleSession: AppleSession(),
-            applePlayback: Playback(includeLyrics: includeLyrics, service: .appleMusic), appleCatalog: Provider(),
+            applePlayback: Playback(includeLyrics: includeLyrics, service: .appleMusic, artworkURL: artworkURL), appleCatalog: Provider(),
             netEaseSession: session, netEasePlayback: nativePlayback, musicPreferences: sources)
             if service == .netease {
                 Task {
@@ -49,6 +51,16 @@
         }
 
         // Generated only for opt-in UI tests; never bundled, streamed or fetched from a service.
+        private static func makeCover() throws -> URL {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("immersive-cover-" + UUID().uuidString + ".png")
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256)).image { context in
+                UIColor.systemIndigo.setFill(); context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+                UIColor.systemOrange.setFill(); context.fill(CGRect(x: 128, y: 0, width: 128, height: 256))
+            }
+            try image.pngData()?.write(to: url)
+            return url
+        }
+
         private static func makeSilentAudio() throws -> URL {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("quick-settings-" + UUID().uuidString + ".caf")
             let format = AVAudioFormat(standardFormatWithSampleRate: 8000, channels: 1)!
@@ -149,13 +161,15 @@
         private final class Playback: SpotifyPlaybackProviding {
             let includeLyrics: Bool
             let service: MusicServiceID
+            let artworkURL: URL?
             var shuffle = false
             var repeatMode: MusicRepeatMode = .off
             let playbackSnapshots: AsyncStream<PlaybackSnapshot>
             private let continuation: AsyncStream<PlaybackSnapshot>.Continuation
-            init(includeLyrics: Bool, service: MusicServiceID = .spotify) {
+            init(includeLyrics: Bool, service: MusicServiceID = .spotify, artworkURL: URL? = nil) {
                 self.includeLyrics = includeLyrics
                 self.service = service
+                self.artworkURL = artworkURL
                 let stream = AsyncStream<PlaybackSnapshot>.makeStream(bufferingPolicy: .bufferingNewest(1))
                 playbackSnapshots = stream.stream; continuation = stream.continuation
             }
@@ -168,7 +182,7 @@
             private func publish() {
                 if includeLyrics {
                     let item = PlaybackItem(id: "fixture", uri: service == .spotify ? "spotify:track:fixture" : "applemusic:catalog:track:fixture",
-                                            title: "Fixture Song", artists: ["Fixture Artist"], albumTitle: nil, artworkURL: nil,
+                                            title: "Fixture Song", artists: ["Fixture Artist"], albumTitle: nil, artworkURL: artworkURL,
                                             duration: 10, isEpisode: false, isAdvertisement: false, isrc: "FIXTURE", service: service)
                     var snapshot = PlaybackSnapshot(item: item, isPlaying: false, position: 1, duration: 10, device: nil,
                                                     restrictions: .unrestricted, source: service == .spotify ? .webAPI : .musicKit,

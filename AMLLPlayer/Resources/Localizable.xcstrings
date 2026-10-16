@@ -1,6 +1,7 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "quickSettings.immersiveLyrics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Immersive lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"沉浸式歌词"}}}},
     "quickSettings.title" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Quick Settings"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"快捷设置"}}}},
     "quickSettings.closeHint" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Close quick settings"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"关闭快捷设置"}}}},
     "quickSettings.appearance" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text and background"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"字号与背景"}}}},

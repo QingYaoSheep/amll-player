@@ -6,6 +6,8 @@ import SwiftUI
 import UIKit
 import XCTest
 
+// The static path uses the same visible surfaces and blur compositor as video.
+
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
     func testImmersiveMeshFeedsLiveBlurWithoutRecurringBackgroundReadbacks() async throws {
@@ -49,6 +51,49 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertGreaterThan(pixel[1], pixel[0] + 20, "The actual blur drawable must still contain the green live Mesh cover")
         XCTAssertGreaterThan(pixel[1], pixel[2] + 20)
         XCTAssertLessThanOrEqual(surface.transitionSurface.maximumInFlight, 2)
+    }
+
+    func testStaticCoverSuppliesReflectionAndLiveBlurWithoutCreatingAPlayer() async throws {
+        let window = try playbackWindow()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        surface.frame = CGRect(x: 0, y: 0, width: 120, height: 320)
+        window.rootViewController?.view.addSubview(surface)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 32, width: 64, height: 32))
+        }
+        try XCTUnwrap(image.pngData()).write(to: url)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true; try? FileManager.default.removeItem(at: url) }
+        let cache = ImmersiveStillArtworkCache()
+        let loaded = await cache.load(url)
+        let still = try XCTUnwrap(loaded)
+        let cached = await cache.load(url)
+        XCTAssertTrue(still.image === cached?.image, "Repeated updates reuse the decoded cover")
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.bottomFade].enabled = false
+        tuning.blurRadius = 12
+        let cover = CGRect(x: 0, y: 0, width: 120, height: 120)
+        let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: cover, viewport: surface.bounds.size)
+        let layout = ImmersiveArtworkMedia.Layout(video: cover,
+            reflection: ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: 320),
+            transition: profile.frame, bottomFade: .zero, tuning: tuning, presentsFrame: false,
+            reflectionEnabled: true, reduceTransparency: false, blurProfile: profile)
+        surface.configure(video: nil, layout: layout, still: still)
+        surface.layoutIfNeeded()
+        try await waitUntil { surface.reflectionSurface.layer.contents != nil && surface.transitionSurface.renderedFrames > 0 }
+        XCTAssertFalse(surface.hasVideoPlayer)
+        XCTAssertNotNil(surface.stillSurface.image)
+        XCTAssertFalse(surface.reflectionPlane.isHidden)
+        XCTAssertTrue(frames.blurInputs.contains("完整视频"), "The static cover pixels enter the common media blur plane")
+        let upper = try backdropPixel(window, at: CGPoint(x: 60, y: 20))
+        XCTAssertGreaterThan(upper[0], upper[2] + 100)
+        let lower = try backdropPixel(window, at: CGPoint(x: 60, y: 100))
+        XCTAssertGreaterThan(lower[2], lower[0] + 40)
+        surface.configure(video: nil, layout: layout, still: still)
+        XCTAssertFalse(surface.hasVideoPlayer)
+        XCTAssertTrue(surface.stillSurface.image?.cgImage === still.image)
     }
 
     func testConfigurationChangedDuringCaptureCannotCommitRetiredInput() async throws {

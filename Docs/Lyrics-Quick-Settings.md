@@ -6,9 +6,17 @@
 
 歌词、翻译、音译和 HDR 改为 54pt 图标按钮，默认四列，辅助功能大字体两列；图标下保留短标题，图标顶部对齐。自动字号和随机播放使用相同图标按钮。开启采用现有 `MusicAccent` 音乐红，关闭采用系统灰，VoiceOver 提供名称、开启／关闭值和选中状态。按钮继续使用原配置与来源操作，不新增设置字段，也不把红色应用到歌词画布。
 
-状态：`132effd6bb62bfdeb5a7fd80cc68f57b665e2a82` 自动验证通过，真机待验收。[两路 CI](https://github.com/QingYaoSheep/amll-player/actions/runs/37416998523) 成功，482 单元／15 UI 零失败，涵盖长短拖动、图标按钮、持久化、Apple Music／网易云循环与队列。iPad／通用模拟器编译、设备归档及包检查通过；两包内嵌提交一致。日志中的循环回调并发转换警告另以明确的 `@MainActor @Sendable` 约束清理，等待最终构建。
+状态：`132effd6bb62bfdeb5a7fd80cc68f57b665e2a82` 自动验证通过，真机待验收。[两路 CI](https://github.com/QingYaoSheep/amll-player/actions/runs/37416998523) 成功，482 单元／15 UI 零失败，涵盖长短拖动、图标按钮、持久化、Apple Music／网易云循环与队列。iPad／通用模拟器编译、设备归档及包检查通过；两包内嵌提交一致。
 
 `132effd6` 直接及测试后 IPA 均为 22,246,376 字节，SHA-256 分别为 `dc2c9827b690a46e6dc8e088afd1501b5a33451ccfba915732b7f3479ce09929` 与 `701afbe3556b81835ff5b6fed37859c92bde2784db5aa766e2c0aaeb2a0b9add`。真实页面图标截图已检查，原 13 份工作区文件哈希不变。保留首次失败、修正坐标快照及首帧等待的证据；不以模拟器通过替代设备玻璃、手势观感或性能验收。
+
+### 2026-10-16 交付核对与构建阻塞
+
+- 已下载测试结果、最终日志及两路 IPA，核对 Bundle ID `net.stevexmh.amllplayer`、内嵌提交及哈希。CI 的 Node 比较回归为 14 项零失败，模拟器准备脚本另有 2 项通过。真实 AVPlayer／歌词画布连续性、独立颜色检查及暂停帧恢复均通过。
+- 最终图标截图：`E:/AMLL-Swift/Builds/Lyrics-Quick-Settings-20261006/Quick-Settings-132effd6.png`。只作为模拟器布局证据；真机玻璃、手势观感、系统取消手势、VoiceOver、大字体、横屏最终构图及持续性能仍待验收。
+- 后续 `ae355985a80bd2f3d2dc0b8064a754448ff5692a` 仅为循环选择回调增加 `@MainActor @Sendable` 类型约束，以处理新编译器警告；状态为**已接线待验证**，尚无此提交的 IPA。不能将 `132effd6` 的通过结果算到该提交。
+- 新提交已推送，但没有自动运行；手动调度两次均返回 HTTP 422：`Actions has been disabled for this repository.`。只读检查显示仓库 `enabled: true`、工作流 `active`，仍无法调度。未更改 Actions 策略；此调度阻塞需由 GitHub 环境恢复，交付继续使用已通过的 `132effd6`。
+- 用户已取消关机及退出 Clash Verge；不执行这两项操作。
 
 ## 上次交付状态
 

@@ -96,6 +96,44 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertTrue(surface.stillSurface.image?.cgImage === still.image)
     }
 
+    func testVideoFirstFrameReplacesStillFallbackWithoutRestartingPlayer() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let window = try playbackWindow()
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = CGRect(x: 0, y: 0, width: 128, height: 400)
+        window.rootViewController?.view.addSubview(surface)
+        let stillURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+            UIColor.green.setFill(); context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        try XCTUnwrap(image.pngData()).write(to: stillURL)
+        defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true; try? FileManager.default.removeItem(at: stillURL) }
+        let decoded = await ImmersiveStillArtworkCache().load(stillURL)
+        let still = try XCTUnwrap(decoded)
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.transition].enabled = false
+        tuning[.bottomFade].enabled = false
+        func layout(_ ready: Bool) -> ImmersiveArtworkMedia.Layout {
+            .init(video: CGRect(x: 0, y: 0, width: 128, height: 200),
+                reflection: CGRect(x: 0, y: 200, width: 128, height: 200), transition: .zero, bottomFade: .zero,
+                tuning: tuning, presentsFrame: ready, reflectionEnabled: true, reduceTransparency: false)
+        }
+        var presented = false
+        let video = AnimatedArtwork(url: url, active: true, onFirstFrame: { _, _ in presented = true })
+        surface.configure(video: video, layout: layout(false), still: still)
+        surface.layoutIfNeeded()
+        XCTAssertFalse(surface.stillSurface.isHidden)
+        try await waitUntil { presented }
+        let item = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player?.currentItem)
+        surface.configure(video: video, layout: layout(true), still: still)
+        XCTAssertTrue(surface.stillSurface.isHidden)
+        XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player?.currentItem === item)
+        surface.configure(video: nil, layout: layout(false), still: still)
+        XCTAssertFalse(surface.hasVideoPlayer)
+        XCTAssertFalse(surface.stillSurface.isHidden)
+        try await waitUntil { surface.reflectionSurface.layer.contents != nil }
+    }
+
     func testConfigurationChangedDuringCaptureCannotCommitRetiredInput() async throws {
         _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let window = try playbackWindow()

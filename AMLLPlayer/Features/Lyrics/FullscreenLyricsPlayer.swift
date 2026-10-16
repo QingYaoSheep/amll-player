@@ -162,7 +162,7 @@ struct FullscreenLyricsPlayer: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .scrollDisabled(layout?.requiresScrolling != true)
+            .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
         }
     }
@@ -187,7 +187,9 @@ struct FullscreenLyricsPlayer: View {
                         dismiss()
                     }
                 })
-            .accessibilityHidden(true)
+            .accessibilityHidden(!immersiveViewport)
+            .accessibilityAddTraits(immersiveViewport ? .isButton : [])
+            .accessibilityAction(.escape) { dismiss() }
     }
 
     @ViewBuilder private func metadata(_ item: PlaybackItem, wide: Bool) -> some View {

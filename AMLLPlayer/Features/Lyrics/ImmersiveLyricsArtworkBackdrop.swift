@@ -33,6 +33,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
          model.lyrics.selection.candidate?.id ?? "", model.lyrics.settings.storefront, model.lyrics.settings.language].joined(separator: "|")
     }
     var body: some View {
+        ZStack {
         ImmersiveArtworkMedia(video: video, frames: frames,
             layout: .lyrics(cover: layout.cover, viewport: viewport, configuration: configuration,
                 tuning: debug.configuration, presentsFrame: hasVideo && loader.hasPresentedFrame,
@@ -44,6 +45,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
                 flowing: configuration.flowingBackground ?? .init(), dimming: 0),
             still: still.frame(for: item.artworkURL))
             .id(loader.requestToken)
+        }
             .onChange(of: displayedSize, initial: true) { _, size in artworkSize(size) }
             .task(id: item.uri + "|" + (item.artworkURL?.absoluteString ?? "")) { await still.load(item.artworkURL) }
             .task(id: requestKey) {

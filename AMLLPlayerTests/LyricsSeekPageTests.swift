@@ -50,7 +50,8 @@ import XCTest
         model.renderPreferences.configuration.immersiveLyrics = true
         try await wait("smaller immersive canvas") {
             host.view.setNeedsLayout(); host.view.layoutIfNeeded()
-            return canvas.bounds.height > 0 && canvas.bounds.height < 500
+            guard let mounted = findCanvas(host.view) else { return false }
+            return mounted.bounds.height > 0 && mounted.bounds.height < 500
         }
         XCTAssertTrue(findCanvas(host.view) === canvas)
         XCTAssertEqual(model.lyricsSeekRevision, revision)

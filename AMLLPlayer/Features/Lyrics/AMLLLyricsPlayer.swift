@@ -54,6 +54,12 @@ struct AMLLLyricsPlayer: View {
                     artworkBackground
                     Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
                 }
+            }
+            // Background-only composition may change its native hierarchy;
+            // the foreground overlay stays at one stable structural location.
+            .modifier(LyricsBackdropComposition(immersive: immersive))
+            .modifier(LyricsShellClipping(immersive: immersive, radius: drag.radius))
+            .overlay {
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: lyricLayout)
@@ -61,12 +67,9 @@ struct AMLLLyricsPlayer: View {
                         ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                     }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
                 .opacity(immersive ? drag.opacity : 1)
             }
-            // Keep text blending inside the same backdrop group at rest and
-            // during the system zoom. The transition must not be the operation
-            // that first establishes a compositing boundary for this page.
-            .modifier(LyricsBackdropComposition(immersive: immersive))
             .modifier(LyricsPageDynamicRange())
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
@@ -75,7 +78,6 @@ struct AMLLLyricsPlayer: View {
                 artworkReflectionFrames.pageDiagnostic = diagnostic
             }
             .foregroundStyle(.white)
-            .modifier(LyricsShellClipping(immersive: immersive, radius: drag.radius))
             .scaleEffect(drag.scale)
             .offset(y: drag.offset)
             .opacity(immersive ? 1 : drag.opacity)

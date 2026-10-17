@@ -13,23 +13,12 @@ final class LyricsQuickSettingsPresentation {
     }
 
     private(set) var isPresented = false
-    var compositingProbe = LyricsQuickSettingsPresentation.initialProbe()
     var destination: Destination? {
         didSet { if oldValue != nil, destination == nil { destinationIsDismissing = true } }
     }
     private(set) var focusRevision = 0
     @ObservationIgnored private var revision = 0
     private var destinationIsDismissing = false
-
-    private static func initialProbe() -> LyricsCompositingProbe {
-#if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--lyrics-blending-ui-testing"), arguments.contains("--lyrics-transparent-surface-ui-testing") {
-            return .transparentMesh
-        }
-#endif
-        return .none
-    }
 
     var suspendsPage: Bool {
         destination == .devices || destination == .lyricsSearch
@@ -66,7 +55,6 @@ final class LyricsQuickSettingsPresentation {
         isPresented = false
         destination = nil
         destinationIsDismissing = false
-        compositingProbe = .none
     }
 }
 
@@ -439,27 +427,11 @@ struct LyricsQuickSettingsPanel: View {
             Button(LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
                    systemImage: "doc.on.doc") {
                 UIPasteboard.general.string = LyricsCompositingDiagnostics.text(configuration: configuration,
-                    profile: model.renderPreferences.profile, probe: presentation.compositingProbe)
+                    profile: model.renderPreferences.profile)
                 compositingDiagnosticCopied = true
             }
             .frame(minHeight: 44)
             .accessibilityIdentifier("quickSettingsCopyCompositingDiagnostics")
-            if model.renderPreferences.profile == .amll {
-                DisclosureGroup("quickSettings.compositingProbes") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("quickSettings.compositingProbesHint").font(.caption).foregroundStyle(.secondary)
-                        iconToggleRow("quickSettings.transparentMesh", symbol: "square.dashed", id: "quickSettingsTransparentMesh",
-                            value: Binding(get: { presentation.compositingProbe == .transparentMesh }, set: {
-                                presentation.compositingProbe = $0 ? .transparentMesh : .none
-                            }))
-                        iconToggleRow("quickSettings.pageGroup", symbol: "square.stack.3d.up", id: "quickSettingsPageGroup",
-                            value: Binding(get: { presentation.compositingProbe == .pageGroup }, set: {
-                                presentation.compositingProbe = $0 ? .pageGroup : .none
-                            }))
-                    }.padding(.top, 8)
-                }
-                .accessibilityIdentifier("quickSettingsCompositingProbes")
-            }
         }
     }
 

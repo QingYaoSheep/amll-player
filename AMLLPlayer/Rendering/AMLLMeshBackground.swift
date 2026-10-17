@@ -17,7 +17,9 @@ struct AMLLMeshBackground: UIViewRepresentable {
     /// Debug/reference playback can inject a seed; production seeds once per context.
     var seed: UInt32? = nil
     var frameSource: AMLLBackgroundFrameSource? = nil
-    var transparentSurface = false
+    /// Core Animation must composite this surface with the lyric foreground.
+    /// This changes surface classification, never shader colors or pixel alpha.
+    var allowsForegroundBlending = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -27,9 +29,9 @@ struct AMLLMeshBackground: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MTKView {
         let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
-        view.isOpaque = !transparentSurface
-        view.layer.isOpaque = !transparentSurface
-        view.backgroundColor = transparentSurface ? .clear : UIColor(white: 0.08, alpha: 1)
+        view.isOpaque = !allowsForegroundBlending
+        view.layer.isOpaque = !allowsForegroundBlending
+        view.backgroundColor = allowsForegroundBlending ? .clear : UIColor(white: 0.08, alpha: 1)
         view.framebufferOnly = frameSource == nil
         context.coordinator.frameSource = frameSource
         view.colorPixelFormat = .bgra8Unorm
@@ -42,11 +44,11 @@ struct AMLLMeshBackground: UIViewRepresentable {
         let framebufferOnly = frameSource == nil
         if view.framebufferOnly != framebufferOnly { view.framebufferOnly = framebufferOnly }
         context.coordinator.frameSource = frameSource
-        let opaque = !transparentSurface
+        let opaque = !allowsForegroundBlending
         if view.isOpaque != opaque || view.layer.isOpaque != opaque {
             view.isOpaque = opaque
             view.layer.isOpaque = opaque
-            view.backgroundColor = transparentSurface ? .clear : UIColor(white: 0.08, alpha: 1)
+            view.backgroundColor = allowsForegroundBlending ? .clear : UIColor(white: 0.08, alpha: 1)
         }
         context.coordinator.setProcessing(blur: blur, colorMode: colorMode)
         if active {

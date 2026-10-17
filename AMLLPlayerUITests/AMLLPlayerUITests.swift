@@ -22,12 +22,12 @@ final class AMLLPlayerUITests: XCTestCase {
         try assertActualLyricBlending(forceMetal: true, mesh: true, meshColorMode2: true)
     }
 
-    @MainActor func testTransparentMeshSurfacePreservesActualMetalLyricBlendingAtFullOpacity() throws {
-        try assertActualLyricBlending(forceMetal: true, mesh: true, meshColorMode2: true, transparentSurface: true)
+    @MainActor func testActualMeshColorMode2SDRLyricsAddLightAtRestThroughTheProductionZoomPresentation() throws {
+        try assertActualLyricBlending(forceMetal: false, mesh: true, meshColorMode2: true)
     }
 
     @MainActor private func assertActualLyricBlending(forceMetal: Bool, mesh: Bool = false,
-        meshColorMode2: Bool = false, transparentSurface: Bool = false) throws {
+        meshColorMode2: Bool = false) throws {
         var captures: [[UInt8]] = []
         var rowFrames: [CGRect] = []
         var pixelSizes: [CGSize] = []
@@ -40,7 +40,6 @@ final class AMLLPlayerUITests: XCTestCase {
             if forceMetal { app.launchArguments += ["--lyrics-blending-metal-ui-testing"] }
             if mesh { app.launchArguments += ["--lyrics-blending-mesh-ui-testing"] }
             if meshColorMode2 { app.launchArguments += ["--lyrics-blending-mesh2-ui-testing"] }
-            if transparentSurface { app.launchArguments += ["--lyrics-transparent-surface-ui-testing"] }
             app.launch()
             waitForLyricsEntry(app)
             app.buttons["openNowPlaying"].tap()
@@ -49,11 +48,11 @@ final class AMLLPlayerUITests: XCTestCase {
             if forceMetal {
                 let metalReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH 'HDR_METAL_READY:'"), object: row)
                 XCTAssertEqual(XCTWaiter.wait(for: [metalReady], timeout: 15), .completed)
-                if transparentSurface {
+                if mesh {
                     let state = row.value as? String ?? ""
-                    XCTAssertTrue(state.contains("surfaceOpaque:false/false"), "Probe C must change the real view and Metal layer flags")
-                    XCTAssertTrue(state.contains("surfaceAlpha:1.000"), "Probe C must retain the background's full opacity")
-                    XCTAssertTrue(state.contains("framebufferOnly:true"), "Probe C must not enable the rejected sampling change")
+                    XCTAssertTrue(state.contains("surfaceOpaque:false/false"), "Ordinary Mesh must participate in foreground composition by default")
+                    XCTAssertTrue(state.contains("surfaceAlpha:1.000"), "The background must retain its full opacity")
+                    XCTAssertTrue(state.contains("framebufferOnly:true"), "Foreground blending must not enable the rejected sampling change")
                 }
             }
             // A full AX frame query can itself take seconds under the GPU

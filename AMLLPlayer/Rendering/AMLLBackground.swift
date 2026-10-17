@@ -10,8 +10,9 @@ struct AMLLBackground: View {
     var gradientEnd: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
     var flowing: FlowingBackgroundConfiguration = .init()
     var dimming: Double = 0
-    /// Hardware probe only; the renderer still writes opaque pixels.
-    var transparentMesh = false
+    /// Allow ordinary lyric Plus Lighter to include the Mesh surface. Pixel
+    /// output remains opaque; immersive backgrounds retain their existing path.
+    var meshForegroundBlending = false
     /// Presentation override; never writes the user's background preferences.
     var suppressBlur = false
     /// Optional completed GPU frames for the immersive backdrop only.
@@ -40,7 +41,7 @@ struct AMLLBackground: View {
                                    colorMode: mode == .meshColorMode2 ? .colorMode2 : .original,
                                    seed: blendProbeSeed,
                                    frameSource: mode.isMesh ? frameSource : nil,
-                                   transparentSurface: transparentMesh)
+                                   allowsForegroundBlending: meshForegroundBlending)
                     .opacity(mode.isMesh ? 1 : 0)
             }
             if usedPixi || mode == .pixi {

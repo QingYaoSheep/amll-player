@@ -37,6 +37,9 @@ struct AMLLLyricsDisplay: View {
                 browsing: browsing
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Resolve the canvas's SDR, auxiliary and EDR glyph surfaces as
+            // one source before applying its backdrop blend operation.
+            .compositingGroup()
             .blendMode(textBlendMode)
             .accessibilityIdentifier("amllNativeLyricsDisplay")
         } else {

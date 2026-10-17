@@ -42,10 +42,6 @@ struct AMLLLyricsPlayer: View {
             let metrics = AppleMusicLyricsLayoutMetrics.responsive(in: geometry.size)
             let drag = dismissalTransform(height: geometry.size.height)
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
-            let inlineLyricsBackground = UIDevice.current.userInterfaceIdiom == .phone
-                && configuration.showLyrics && lyricLayout == nil
-                && !AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: geometry.size)
-                && model.playbackSnapshot?.item != nil
             let immersive = lyricLayout != nil || (model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false)
             ZStack {
                 ZStack {
@@ -55,7 +51,7 @@ struct AMLLLyricsPlayer: View {
                                                cornerRadius: drag.radius, opacity: drag.opacity)
                     } else if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                         immersiveArtworkLayers(item, size: geometry.size, cornerRadius: drag.radius, opacity: drag.opacity)
-                    } else if !inlineLyricsBackground {
+                    } else {
                         artworkBackground
                         Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
                     }
@@ -64,8 +60,7 @@ struct AMLLLyricsPlayer: View {
                 // the conditional background's identity.
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
-                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size,
-                               lyricLayout: lyricLayout, inlineBackground: inlineLyricsBackground)
+                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: lyricLayout)
                     } else {
                         ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                     }
@@ -129,35 +124,23 @@ struct AMLLLyricsPlayer: View {
 
     @ViewBuilder
     private func player(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics, size: CGSize,
-                        lyricLayout: ImmersiveLyricsLayout?, inlineBackground: Bool) -> some View {
+                        lyricLayout: ImmersiveLyricsLayout?) -> some View {
         if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
             tabletPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
         } else if configuration.showLyrics {
-            lyricsPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size, layout: lyricLayout,
-                         inlineBackground: inlineBackground)
+            lyricsPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size, layout: lyricLayout)
         } else {
             artworkPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
         }
     }
 
     private func lyricsPlayer(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics,
-                              size: CGSize, layout: ImmersiveLyricsLayout?, inlineBackground: Bool) -> some View {
+                              size: CGSize, layout: ImmersiveLyricsLayout?) -> some View {
         let rect = layout?.lyrics ?? CGRect(origin: .zero, size: size)
         // Keep the same canvas identity while switching modes. Only its viewport
         // changes; seek state, source timing and the live frame engine persist.
         return ScrollView(.vertical) {
             ZStack(alignment: .topLeading) {
-                // Keep native Metal backgrounds inside the same scroll-content
-                // destination as additive lyrics. The outer sibling can be
-                // isolated by HostingScrollView even when scrolling is disabled.
-                ZStack {
-                    if inlineBackground {
-                        artworkBackground
-                        Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
-                    }
-                }
-                .frame(width: size.width, height: size.height)
-                .allowsHitTesting(false)
                 lyricCanvas(snapshot, fadeTop: layout != nil ? 0 : (configuration.showMetadata ?? true)
                     ? metrics.compactArtworkTop + metrics.compactArtworkSize : 44,
                     renderConfiguration: lyricConfiguration(layout: layout, page: size))

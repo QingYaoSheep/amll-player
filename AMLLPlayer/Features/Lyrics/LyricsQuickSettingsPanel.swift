@@ -168,6 +168,7 @@ struct LyricsQuickSettingsPanel: View {
     @State private var contentHeight: CGFloat = 0
     @State private var headerHeight: CGFloat = 100
     @State private var drag: CGFloat = 0
+    @State private var compositingDiagnosticCopied = false
     @GestureState private var dragIsActive = false
     @AccessibilityFocusState private var titleFocused: Bool
 
@@ -423,6 +424,14 @@ struct LyricsQuickSettingsPanel: View {
                     Text(credit.names.joined(separator: " · "))
                 }.font(.footnote).foregroundStyle(.secondary)
             }
+            Button(LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
+                   systemImage: "doc.on.doc") {
+                UIPasteboard.general.string = LyricsCompositingDiagnostics.text(configuration: configuration,
+                    profile: model.renderPreferences.profile)
+                compositingDiagnosticCopied = true
+            }
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("quickSettingsCopyCompositingDiagnostics")
         }
     }
 

@@ -14,7 +14,11 @@ final class AMLLPlayerUITests: XCTestCase {
         try assertActualLyricBlending(forceMetal: true)
     }
 
-    @MainActor private func assertActualLyricBlending(forceMetal: Bool) throws {
+    @MainActor func testActualMeshBackedMetalLyricsAddLightAtRestThroughTheProductionZoomPresentation() throws {
+        try assertActualLyricBlending(forceMetal: true, mesh: true)
+    }
+
+    @MainActor private func assertActualLyricBlending(forceMetal: Bool, mesh: Bool = false) throws {
         var captures: [[UInt8]] = []
         var rowFrames: [CGRect] = []
         var pixelSizes: [CGSize] = []
@@ -25,6 +29,7 @@ final class AMLLPlayerUITests: XCTestCase {
                                     "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
             if normal { app.launchArguments += ["--lyrics-blend-normal-ui-testing"] }
             if forceMetal { app.launchArguments += ["--lyrics-blending-metal-ui-testing"] }
+            if mesh { app.launchArguments += ["--lyrics-blending-mesh-ui-testing"] }
             app.launch()
             waitForLyricsEntry(app)
             app.buttons["openNowPlaying"].tap()
@@ -83,8 +88,8 @@ final class AMLLPlayerUITests: XCTestCase {
         let normalBackground = stride(from: 0, to: normal.count, by: 4).map { Int(normal[$0]) }.min() ?? 0
         let additiveBackground = stride(from: 0, to: additive.count, by: 4).map { Int(additive[$0]) }.min() ?? 0
         XCTAssertLessThanOrEqual(abs(normalBackground - additiveBackground), 2)
-        XCTAssertGreaterThan(normalBackground, 100)
-        XCTAssertLessThan(normalBackground, 160)
+        XCTAssertGreaterThan(normalBackground, mesh ? 30 : 100)
+        XCTAssertLessThan(normalBackground, mesh ? 230 : 160)
         // Only actual semi-transparent glyph pixels, excluding the middle-gray
         // backdrop and the already-white filled edge. No synthetic color tile.
         let deltas = stride(from: 0, to: normal.count, by: 4).compactMap { index -> Int? in

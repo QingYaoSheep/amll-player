@@ -36,6 +36,7 @@ struct AMLLBackground: View {
             if usedMesh || mode.isMesh {
                 AMLLMeshBackground(artworkURL: artworkURL, active: active && mode.isMesh, blur: effectiveMeshBlur,
                                    colorMode: mode == .meshColorMode2 ? .colorMode2 : .original,
+                                   seed: blendProbeSeed,
                                    frameSource: mode.isMesh ? frameSource : nil)
                     .opacity(mode.isMesh ? 1 : 0)
             }
@@ -61,6 +62,13 @@ struct AMLLBackground: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private var blendProbeSeed: UInt32? {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--lyrics-blending-mesh-ui-testing") { return 0x626C656E }
+        #endif
+        return nil
     }
 }
 

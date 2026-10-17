@@ -16,7 +16,7 @@
             } else { defaultsName = "render-ui-" + UUID().uuidString }
             let preferences = LyricsRenderPreferences(defaults: UserDefaults(suiteName: defaultsName)!)
             if arguments.contains("--lyrics-blending-ui-testing") {
-                preferences.configuration.backgroundMode = .solid
+                preferences.configuration.backgroundMode = arguments.contains("--lyrics-blending-mesh-ui-testing") ? .mesh : .solid
                 preferences.configuration.backgroundColor = .init(red: 0.5, green: 0.5, blue: 0.5)
                 preferences.configuration.backgroundDimming = 0
                 preferences.configuration.hdr = .init(enabled: arguments.contains("--lyrics-blending-metal-ui-testing"))
@@ -36,7 +36,8 @@
             let sources = MusicSourcePreferences(defaults: defaults); sources.selected = service
             let lyrics = LyricsCoordinator(providers: includeLyrics ? [LyricsFixtureProvider()] : [], cache: MemoryLyricsCache(),
                                            settingsStore: LyricsSettingsStore(defaults: UserDefaults(suiteName: "lyrics-ui-" + UUID().uuidString)!))
-            let artworkURL = arguments.contains("--immersive-lyrics-ui-testing") ? try? makeCover() : nil
+            let artworkURL = arguments.contains("--lyrics-blending-mesh-ui-testing") ? try? makeBlendCover()
+                : arguments.contains("--immersive-lyrics-ui-testing") ? try? makeCover() : nil
             let session = NetEaseSession(api: NetEaseFixtureAPI(), store: FixtureStore())
             let nativePlayback: NetEasePlayback?
             if service == .netease, let audio = try? makeSilentAudio() {
@@ -64,6 +65,16 @@
                 Task { await prepareActualMetalLyricsForProbe() }
             }
             return model
+        }
+
+        private static func makeBlendCover() throws -> URL {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("blend-cover-" + UUID().uuidString + ".png")
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+                UIColor(white: 160.0 / 255.0, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+            }
+            try image.pngData()?.write(to: url)
+            return url
         }
 
         // Simulator-only capabilities exercise the existing production glyph

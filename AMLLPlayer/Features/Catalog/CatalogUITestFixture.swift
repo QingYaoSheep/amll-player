@@ -1,6 +1,7 @@
 #if DEBUG
     import AVFoundation
     import Foundation
+    import MetalKit
     import UIKit
 
     /// Explicit opt-in, in-memory fixtures. Release builds have no mock account or launch bypass.
@@ -18,7 +19,7 @@
                 preferences.configuration.backgroundMode = .solid
                 preferences.configuration.backgroundColor = .init(red: 0.5, green: 0.5, blue: 0.5)
                 preferences.configuration.backgroundDimming = 0
-                preferences.configuration.hdr = .init(enabled: false)
+                preferences.configuration.hdr = .init(enabled: arguments.contains("--lyrics-blending-metal-ui-testing"))
                 preferences.configuration.showMetadata = false
                 preferences.configuration.blurInactive = false
                 preferences.configuration.emphasizeWords = false
@@ -59,7 +60,34 @@
                     if let song = NetEaseDecoder.item(NetEaseFixtureAPI.song, kind: .track) { try? await model.playCatalog(song) }
                 }
             }
+            if arguments.contains("--lyrics-blending-metal-ui-testing") {
+                Task { await prepareActualMetalLyricsForProbe() }
+            }
             return model
+        }
+
+        // Simulator-only capabilities exercise the existing production glyph
+        // renderer. The test measures SDR composition, never physical HDR nits.
+        private static func prepareActualMetalLyricsForProbe() async {
+            func descendants(_ root: UIView) -> [UIView] { [root] + root.subviews.flatMap(descendants) }
+            func metalLayers(_ root: CALayer) -> [CAMetalLayer] {
+                (root as? CAMetalLayer).map { [$0] } ?? (root.sublayers ?? []).flatMap(metalLayers)
+            }
+            for _ in 0 ..< 500 {
+                let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+                if let canvas = windows.flatMap(descendants).compactMap({ $0 as? AMLLNativeCanvas }).first,
+                   canvas.frameState != nil {
+                    canvas.hdrCapabilitiesOverride = .init(supportsEDR: true, headroom: 2)
+                    canvas.advanceFrame(delta: 0)
+                    let layers = metalLayers(canvas.layer)
+                    if !layers.isEmpty, layers.allSatisfy({ $0.pixelFormat == .rgba16Float && $0.wantsExtendedDynamicRangeContent }),
+                       let row = descendants(canvas).first(where: { $0.isAccessibilityElement && $0.accessibilityLabel?.contains("MMMMWWWW") == true }) {
+                        row.accessibilityValue = "HDR_METAL_READY:\(layers.count)"
+                        return
+                    }
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
         }
 
         // Generated only for opt-in UI tests; never bundled, streamed or fetched from a service.

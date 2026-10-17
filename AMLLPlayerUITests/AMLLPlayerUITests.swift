@@ -7,6 +7,14 @@ final class AMLLPlayerUITests: XCTestCase {
     }
 
     @MainActor func testActualLyricsAddLightAtRestThroughTheProductionZoomPresentation() throws {
+        try assertActualLyricBlending(forceMetal: false)
+    }
+
+    @MainActor func testActualMetalLyricsAddLightAtRestThroughTheProductionZoomPresentation() throws {
+        try assertActualLyricBlending(forceMetal: true)
+    }
+
+    @MainActor private func assertActualLyricBlending(forceMetal: Bool) throws {
         var captures: [[UInt8]] = []
         var rowFrames: [CGRect] = []
         var pixelSizes: [CGSize] = []
@@ -16,11 +24,16 @@ final class AMLLPlayerUITests: XCTestCase {
             app.launchArguments += ["--lyrics-ui-testing", "--lyrics-blending-ui-testing", "--skip-welcome-ui-testing",
                                     "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
             if normal { app.launchArguments += ["--lyrics-blend-normal-ui-testing"] }
+            if forceMetal { app.launchArguments += ["--lyrics-blending-metal-ui-testing"] }
             app.launch()
             waitForLyricsEntry(app)
             app.buttons["openNowPlaying"].tap()
             let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "MMMMWWWW")).firstMatch
             XCTAssertTrue(row.waitForExistence(timeout: 5))
+            if forceMetal {
+                let metalReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH 'HDR_METAL_READY:'"), object: row)
+                XCTAssertEqual(XCTWaiter.wait(for: [metalReady], timeout: 15), .completed)
+            }
             let screen = app.frame
             var previousFrame: CGRect?
             let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -35,7 +48,7 @@ final class AMLLPlayerUITests: XCTestCase {
             let image = app.screenshot().image
             let screenshot = try XCTUnwrap(image.cgImage)
             let attachment = XCTAttachment(image: image)
-            attachment.name = normal ? "Actual lyrics normal blend at rest" : "Actual lyrics Plus Lighter at rest"
+            attachment.name = "\(forceMetal ? "Metal" : "SDR") " + (normal ? "Actual lyrics normal blend at rest" : "Actual lyrics Plus Lighter at rest")
             attachment.lifetime = .keepAlways
             add(attachment)
             let scaleX = CGFloat(screenshot.width) / screen.width

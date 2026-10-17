@@ -107,7 +107,9 @@
                         let sharedBackdrop = backdrops.count == 1
                             && (backdrops.first.map { scrollAncestor($0) === scrollAncestor(canvas) } ?? false)
                         let sampling = backdrops.count == 1 ? String(backdrops[0].framebufferOnly) : "unavailable"
-                        row.accessibilityValue = "HDR_METAL_READY:\(layers.count); sharedBackdrop:\(sharedBackdrop); framebufferOnly:\(sampling)"
+                        let surface = backdrops.first.map { "\($0.isOpaque)/\($0.layer.isOpaque)" } ?? "unavailable"
+                        let alpha = backdrops.first.map { String(format: "%.3f", $0.alpha) } ?? "unavailable"
+                        row.accessibilityValue = "HDR_METAL_READY:\(layers.count); sharedBackdrop:\(sharedBackdrop); framebufferOnly:\(sampling); surfaceOpaque:\(surface); surfaceAlpha:\(alpha)"
                         return
                     }
                 }

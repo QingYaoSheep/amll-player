@@ -44,18 +44,17 @@ final class AMLLPlayerUITests: XCTestCase {
                 let metalReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH 'HDR_METAL_READY:'"), object: row)
                 XCTAssertEqual(XCTWaiter.wait(for: [metalReady], timeout: 15), .completed)
             }
-            let screen = app.frame
-            var previousFrame: CGRect?
-            let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                guard row.exists else { previousFrame = nil; return false }
-                let frame = row.frame
-                guard frame.width > 20, frame.height > 10, screen.intersects(frame) else { previousFrame = nil; return false }
-                defer { previousFrame = frame }
-                return frame == previousFrame
-            }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 15), .completed, row.debugDescription)
+            // A full AX frame query can itself take seconds under the GPU
+            // simulator. Verify geometry across the actual capture instead of
+            // requiring two costly queries inside a polling timeout.
+            let screen = app.windows.firstMatch.frame
             let rowFrame = row.frame
+            XCTAssertGreaterThan(rowFrame.width, 20)
+            XCTAssertGreaterThan(rowFrame.height, 10)
+            XCTAssertTrue(screen.contains(rowFrame))
             let image = app.screenshot().image
+            XCTAssertEqual(row.frame, rowFrame, "The lyric must not move during its pixel capture")
+            XCTAssertEqual(app.windows.firstMatch.frame, screen)
             let screenshot = try XCTUnwrap(image.cgImage)
             let attachment = XCTAttachment(image: image)
             attachment.name = "\(forceMetal ? "Metal" : "SDR") " + (normal ? "Actual lyrics normal blend at rest" : "Actual lyrics Plus Lighter at rest")

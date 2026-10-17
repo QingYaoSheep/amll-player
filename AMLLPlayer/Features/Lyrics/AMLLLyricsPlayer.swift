@@ -58,7 +58,6 @@ struct AMLLLyricsPlayer: View {
                 }
                 // A stable sibling, not an overlay whose identity inherits
                 // the conditional background's identity.
-                .modifier(LyricsShellClipping(immersive: immersive, radius: drag.radius))
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: lyricLayout)
@@ -66,7 +65,6 @@ struct AMLLLyricsPlayer: View {
                         ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
                 .opacity(immersive ? drag.opacity : 1)
             }
             .modifier(LyricsPageCompositing())
@@ -78,6 +76,9 @@ struct AMLLLyricsPlayer: View {
                 artworkReflectionFrames.pageDiagnostic = diagnostic
             }
             .foregroundStyle(.white)
+            // Clip the already-composited page, never the transparent lyric
+            // foreground separately from the backdrop it must blend with.
+            .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
             .scaleEffect(drag.scale)
             .offset(y: drag.offset)
             .opacity(immersive ? 1 : drag.opacity)
@@ -164,6 +165,9 @@ struct AMLLLyricsPlayer: View {
             .frame(width: size.width, height: layout?.contentHeight ?? size.height, alignment: .topLeading)
         }
         .scrollDisabled(layout?.requiresScrolling != true)
+        // The native canvas owns its viewport mask. A second transparent
+        // scroll clip can isolate its additive/EDR layers from the backdrop.
+        .scrollClipDisabled()
         .scrollIndicators(.hidden)
         .onPreferenceChange(ImmersiveInformationHeightKey.self) { height in
             if height > 0, abs(immersiveInformationHeight - height) > 0.5 { immersiveInformationHeight = height }
@@ -688,15 +692,5 @@ private struct LyricsPageDynamicRange: ViewModifier {
 struct LyricsPageCompositing: ViewModifier {
     func body(content: Content) -> some View {
         content.compositingGroup()
-    }
-}
-
-private struct LyricsShellClipping: ViewModifier {
-    let immersive: Bool
-    let radius: CGFloat
-    @ViewBuilder func body(content: Content) -> some View {
-        // Immersive media owns clipping for its video, reflection and Metal
-        // output. Keep this background-only SwiftUI mask on the ordinary path.
-        if immersive { content } else { content.clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous)) }
     }
 }

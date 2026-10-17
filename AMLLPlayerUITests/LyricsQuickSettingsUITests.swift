@@ -233,7 +233,8 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             repeatPicker.tap()
             let repeatOne = app.buttons["quickSettingsRepeatOption.one"]
             XCTAssertTrue(repeatOne.waitForExistence(timeout: 4))
-            XCTAssertTrue(repeatOne.isHittable)
+            let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in repeatOne.isHittable }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 4), .completed)
             repeatOne.tap()
             XCTAssertTrue(repeatOne.waitForNonExistence(timeout: 4))
             XCTAssertTrue(panel(app).exists)

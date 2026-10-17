@@ -1730,9 +1730,10 @@ private struct PageCompositingMediaProbe: View {
                     NativeRedBlendProbe().frame(width: 30, height: 30).offset(x: 160, y: 80)
                 }.frame(width: 200, height: 650, alignment: .topLeading)
             }.frame(width: 200, height: 650).scrollDisabled(true)
-                .clipShape(RoundedRectangle(cornerRadius: 0, style: .continuous))
+                .scrollClipDisabled()
         }
         .modifier(LyricsPageCompositing())
+        .clipShape(RoundedRectangle(cornerRadius: 0, style: .continuous))
         .ignoresSafeArea()
     }
 }

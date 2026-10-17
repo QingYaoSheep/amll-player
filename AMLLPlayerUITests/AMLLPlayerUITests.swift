@@ -18,7 +18,11 @@ final class AMLLPlayerUITests: XCTestCase {
         try assertActualLyricBlending(forceMetal: true, mesh: true)
     }
 
-    @MainActor private func assertActualLyricBlending(forceMetal: Bool, mesh: Bool = false) throws {
+    @MainActor func testActualMeshColorMode2MetalLyricsAddLightAtRestThroughTheProductionZoomPresentation() throws {
+        try assertActualLyricBlending(forceMetal: true, mesh: true, meshColorMode2: true)
+    }
+
+    @MainActor private func assertActualLyricBlending(forceMetal: Bool, mesh: Bool = false, meshColorMode2: Bool = false) throws {
         var captures: [[UInt8]] = []
         var rowFrames: [CGRect] = []
         var pixelSizes: [CGSize] = []
@@ -30,6 +34,7 @@ final class AMLLPlayerUITests: XCTestCase {
             if normal { app.launchArguments += ["--lyrics-blend-normal-ui-testing"] }
             if forceMetal { app.launchArguments += ["--lyrics-blending-metal-ui-testing"] }
             if mesh { app.launchArguments += ["--lyrics-blending-mesh-ui-testing"] }
+            if meshColorMode2 { app.launchArguments += ["--lyrics-blending-mesh2-ui-testing"] }
             app.launch()
             waitForLyricsEntry(app)
             app.buttons["openNowPlaying"].tap()

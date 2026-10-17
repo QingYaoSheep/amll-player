@@ -16,7 +16,8 @@
             } else { defaultsName = "render-ui-" + UUID().uuidString }
             let preferences = LyricsRenderPreferences(defaults: UserDefaults(suiteName: defaultsName)!)
             if arguments.contains("--lyrics-blending-ui-testing") {
-                preferences.configuration.backgroundMode = arguments.contains("--lyrics-blending-mesh-ui-testing") ? .mesh : .solid
+                preferences.configuration.backgroundMode = arguments.contains("--lyrics-blending-mesh2-ui-testing") ? .meshColorMode2
+                    : arguments.contains("--lyrics-blending-mesh-ui-testing") ? .mesh : .solid
                 preferences.configuration.backgroundColor = .init(red: 0.5, green: 0.5, blue: 0.5)
                 preferences.configuration.backgroundDimming = 0
                 preferences.configuration.hdr = .init(enabled: arguments.contains("--lyrics-blending-metal-ui-testing"))
@@ -70,7 +71,7 @@
         private static func makeBlendCover() throws -> URL {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("blend-cover-" + UUID().uuidString + ".png")
             let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
-                UIColor(white: 160.0 / 255.0, alpha: 1).setFill()
+                UIColor(white: 128.0 / 255.0, alpha: 1).setFill()
                 context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
             }
             try image.pngData()?.write(to: url)

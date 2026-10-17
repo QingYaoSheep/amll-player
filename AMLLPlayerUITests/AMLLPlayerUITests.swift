@@ -129,9 +129,25 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(resume.waitForExistence(timeout: 3))
         resume.tap()
         app.buttons["lyricsDisplayOptions"].tap()
-        app.buttons["toggleLyricsVisibility"].tap()
-        XCTAssertTrue(app.buttons["toggleLyricsVisibility"].waitForExistence(timeout: 3))
-        app.buttons["toggleLyricsVisibility"].tap()
+        let visibility = app.buttons["toggleLyricsVisibility"]
+        XCTAssertTrue(visibility.waitForExistence(timeout: 3))
+        // Existence/hittability alone does not mean the bottom panel has
+        // finished moving. A tap calculated mid-transition can miss its row.
+        var previousFrame: CGRect?
+        let panelReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard visibility.isHittable else { previousFrame = nil; return false }
+            let frame = visibility.frame
+            defer { previousFrame = frame }
+            return frame == previousFrame
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [panelReady], timeout: 5), .completed)
+        XCTAssertEqual(visibility.value as? String, "On")
+        visibility.tap()
+        let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'Off'"), object: visibility)
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 3), .completed)
+        visibility.tap()
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'On'"), object: visibility)
+        XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: 3), .completed)
         app.buttons["closeLyricsQuickSettings"].tap()
         XCTAssertTrue(lyrics.waitForExistence(timeout: 3))
         capture(app, name: "Product-lyrics-portrait")

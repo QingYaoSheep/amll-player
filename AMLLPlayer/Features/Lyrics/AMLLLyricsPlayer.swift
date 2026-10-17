@@ -42,6 +42,9 @@ struct AMLLLyricsPlayer: View {
             let metrics = AppleMusicLyricsLayoutMetrics.responsive(in: geometry.size)
             let drag = dismissalTransform(height: geometry.size.height)
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
+            let inlineLyricsBackground = configuration.showLyrics && lyricLayout == nil
+                && !AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: geometry.size)
+                && model.playbackSnapshot?.item != nil
             let immersive = lyricLayout != nil || (model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false)
             ZStack {
                 ZStack {
@@ -51,7 +54,7 @@ struct AMLLLyricsPlayer: View {
                                                cornerRadius: drag.radius, opacity: drag.opacity)
                     } else if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                         immersiveArtworkLayers(item, size: geometry.size, cornerRadius: drag.radius, opacity: drag.opacity)
-                    } else {
+                    } else if !inlineLyricsBackground {
                         artworkBackground
                         Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
                     }
@@ -141,6 +144,17 @@ struct AMLLLyricsPlayer: View {
         // changes; seek state, source timing and the live frame engine persist.
         return ScrollView(.vertical) {
             ZStack(alignment: .topLeading) {
+                // Keep native Metal backgrounds inside the same scroll-content
+                // destination as additive lyrics. The outer sibling can be
+                // isolated by HostingScrollView even when scrolling is disabled.
+                ZStack {
+                    if layout == nil {
+                        artworkBackground
+                        Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
+                    }
+                }
+                .frame(width: size.width, height: size.height)
+                .allowsHitTesting(false)
                 lyricCanvas(snapshot, fadeTop: layout != nil ? 0 : (configuration.showMetadata ?? true)
                     ? metrics.compactArtworkTop + metrics.compactArtworkSize : 44,
                     renderConfiguration: lyricConfiguration(layout: layout, page: size))

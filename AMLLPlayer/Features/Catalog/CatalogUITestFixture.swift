@@ -103,8 +103,9 @@
                             return nil
                         }
                         let allViews = windows.flatMap(descendants)
-                        let backdrop = allViews.compactMap { $0 as? MTKView }.first
-                        let sharedBackdrop = backdrop.map { scrollAncestor($0) === scrollAncestor(canvas) } ?? false
+                        let backdrops = allViews.compactMap { $0 as? MTKView }
+                        let sharedBackdrop = backdrops.count == 1
+                            && (backdrops.first.map { scrollAncestor($0) === scrollAncestor(canvas) } ?? false)
                         row.accessibilityValue = "HDR_METAL_READY:\(layers.count); sharedBackdrop:\(sharedBackdrop)"
                         return
                     }

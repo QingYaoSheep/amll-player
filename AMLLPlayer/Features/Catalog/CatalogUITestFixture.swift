@@ -14,6 +14,18 @@
                 defaultsName = arguments[index + 1]
             } else { defaultsName = "render-ui-" + UUID().uuidString }
             let preferences = LyricsRenderPreferences(defaults: UserDefaults(suiteName: defaultsName)!)
+            if arguments.contains("--lyrics-blending-ui-testing") {
+                preferences.configuration.backgroundMode = .solid
+                preferences.configuration.backgroundColor = .init(red: 0.5, green: 0.5, blue: 0.5)
+                preferences.configuration.backgroundDimming = 0
+                preferences.configuration.hdr = .init(enabled: false)
+                preferences.configuration.showMetadata = false
+                preferences.configuration.blurInactive = false
+                preferences.configuration.emphasizeWords = false
+                preferences.configuration.advance = 0
+                preferences.configuration.fontSize = 40
+                preferences.configuration.sizePreset = nil
+            }
             if arguments.contains("--lyrics-custom-profile-ui-testing") { preferences.activate(.custom) }
             let service: MusicServiceID
             if let index = arguments.firstIndex(of: "--quick-settings-service"), index + 1 < arguments.count {
@@ -221,7 +233,14 @@
             }
 
             func lyrics(candidate: LyricCandidate, settings _: LyricsSettings) async throws -> LyricsAssetBundle {
-                LyricsAssetBundle(format: .lrc, original: candidate.sourceID == "manual" ? "[00:01]Corrected fixture line" : "[00:01]Original fixture line")
+                if ProcessInfo.processInfo.arguments.contains("--lyrics-blending-ui-testing") {
+                    return LyricsAssetBundle(format: .ttml, original: """
+                    <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+                    <p begin="0s" end="20s"><span begin="0s" end="20s">MMMMWWWW</span></p>
+                    </div></body></tt>
+                    """)
+                }
+                return LyricsAssetBundle(format: .lrc, original: candidate.sourceID == "manual" ? "[00:01]Corrected fixture line" : "[00:01]Original fixture line")
             }
         }
     }

@@ -1,8 +1,68 @@
+import UIKit
 import XCTest
 
 final class AMLLPlayerUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
+    }
+
+    @MainActor func testActualLyricsAddLightAtRestThroughTheProductionZoomPresentation() throws {
+        var captures: [[UInt8]] = []
+        for normal in [true, false] {
+            let app = XCUIApplication()
+            app.launchArguments += ["--lyrics-ui-testing", "--lyrics-blending-ui-testing", "--skip-welcome-ui-testing",
+                                    "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+            if normal { app.launchArguments += ["--lyrics-blend-normal-ui-testing"] }
+            app.launch()
+            waitForLyricsEntry(app)
+            app.buttons["openNowPlaying"].tap()
+            let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "MMMMWWWW")).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            var previousFrame: CGRect?
+            let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                guard row.isHittable else { previousFrame = nil; return false }
+                let frame = row.frame
+                defer { previousFrame = frame }
+                return frame == previousFrame
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 5), .completed)
+            let image = app.screenshot().image
+            let attachment = XCTAttachment(image: image)
+            attachment.name = normal ? "Actual lyrics normal blend at rest" : "Actual lyrics Plus Lighter at rest"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let scale = image.scale
+            let region = CGRect(x: row.frame.minX * scale, y: row.frame.minY * scale,
+                                width: row.frame.width * scale, height: row.frame.height * scale).integral
+            let cropped = try XCTUnwrap(image.cgImage?.cropping(to: region))
+            var pixels = [UInt8](repeating: 0, count: cropped.width * cropped.height * 4)
+            try pixels.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: cropped.width, height: cropped.height,
+                    bitsPerComponent: 8, bytesPerRow: cropped.width * 4,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
+            }
+            captures.append(pixels)
+            app.terminate()
+        }
+        let normal = captures[0], additive = captures[1]
+        XCTAssertEqual(normal.count, additive.count, "The same paused production lyric must keep identical geometry")
+        guard normal.count == additive.count else { return }
+        // Only actual semi-transparent glyph pixels, excluding the middle-gray
+        // backdrop and the already-white filled edge. No synthetic color tile.
+        let deltas = stride(from: 0, to: normal.count, by: 4).compactMap { index -> Int? in
+            let value = Int(normal[index])
+            guard value > 140, value < 245 else { return nil }
+            return Int(additive[index]) - value
+        }.sorted()
+        XCTAssertGreaterThan(deltas.count, 100)
+        guard !deltas.isEmpty else { return }
+        let median = deltas[deltas.count / 2]
+        let metrics = XCTAttachment(string: "glyphSamples=\(deltas.count)\nSDRLighteningMedian=\(median)\n")
+        metrics.name = "Production native lyric additive contribution at rest"
+        metrics.lifetime = .keepAlways
+        add(metrics)
+        XCTAssertGreaterThan(median, 8, "Plus Lighter must add light to the real backdrop at rest, before any dismissal gesture")
     }
 
     @MainActor func testPlayerAndSettingsAreReachable() {

@@ -9,6 +9,14 @@ import UIKit
         func metalLayers(_ layer: CALayer) -> [CAMetalLayer] {
             (layer as? CAMetalLayer).map { [$0] } ?? (layer.sublayers ?? []).flatMap(metalLayers)
         }
+        func scrollAncestor(_ view: UIView) -> UIScrollView? {
+            var ancestor = view.superview
+            while let current = ancestor {
+                if let scroll = current as? UIScrollView { return scroll }
+                ancestor = current.superview
+            }
+            return nil
+        }
         func number(_ value: Double) -> String { String(format: "%.3f", value) }
         let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows).filter { !$0.isHidden }
@@ -48,7 +56,11 @@ import UIKit
         }
         for view in views.compactMap({ $0 as? MTKView }).prefix(4) {
             lines.append("背景 Metal：\(view.bounds)；alpha：\(number(Double(view.alpha)))；暂停：\(view.isPaused)；目标帧率：\(view.preferredFramesPerSecond)")
+            if let canvas = canvases.first {
+                lines.append("背景与歌词共享滚动容器：\(scrollAncestor(view) === scrollAncestor(canvas))")
+            }
         }
+        lines.append("父层混色字段仅表示对应 CALayer 属性；单独为无不代表 SwiftUI 混色未生效。")
         return lines.joined(separator: "\n")
     }
 }

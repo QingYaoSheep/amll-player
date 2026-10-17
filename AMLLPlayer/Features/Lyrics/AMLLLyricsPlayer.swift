@@ -72,6 +72,12 @@ struct AMLLLyricsPlayer: View {
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
             }
+            .onChange(of: compositingRecoveryContext(size: geometry.size, immersive: immersive), initial: true) { _, context in
+                quickSettings.compositingRecovery.configure(context: context)
+            }
+            .onAppear {
+                quickSettings.compositingRecovery.configure(context: compositingRecoveryContext(size: geometry.size, immersive: immersive))
+            }
             .onChange(of: artworkPresentationDiagnostic(size: geometry.size), initial: true) { _, diagnostic in
                 artworkReflectionFrames.pageDiagnostic = diagnostic
             }
@@ -82,8 +88,8 @@ struct AMLLLyricsPlayer: View {
             .scaleEffect(drag.scale)
             .offset(y: drag.offset)
             .opacity((immersive ? 1 : drag.opacity)
-                * (UIDevice.current.userInterfaceIdiom == .phone && configuration.showLyrics && !immersive
-                    ? quickSettings.compositingExperiment.pageOpacityMultiplier : 1))
+                * (compositingRecoveryContext(size: geometry.size, immersive: immersive) != nil
+                    ? quickSettings.compositingRecovery.opacity : 1))
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
             .overlay(alignment: .topTrailing) {
                 if lyricLayout == nil, let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
@@ -485,9 +491,15 @@ struct AMLLLyricsPlayer: View {
             color: configuration.backgroundColor ?? .sourceDefault,
             gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
             flowing: configuration.flowingBackground ?? .init(), dimming: 0,
-            sampleableMeshOutput: UIDevice.current.userInterfaceIdiom == .phone
-                && configuration.showLyrics && !usesImmersiveLyrics
-                && quickSettings.compositingExperiment == .sampleableMesh)
+            presentation: quickSettings.compositingRecovery.backgroundPresentation)
+    }
+
+    private func compositingRecoveryContext(size: CGSize, immersive: Bool) -> String? {
+        guard #available(iOS 27.0, *), UIDevice.current.userInterfaceIdiom == .phone,
+              configuration.showLyrics, !immersive, !reduceTransparency, scenePhase == .active,
+              size.width > 0, size.height > 0, model.playbackSnapshot?.item != nil, model.lyrics.document != nil,
+              (configuration.backgroundMode ?? .mesh).isMesh else { return nil }
+        return "\((configuration.backgroundMode ?? .mesh).rawValue)|\(size.width)|\(size.height)"
     }
 
     private var artworkRequestKey: String {

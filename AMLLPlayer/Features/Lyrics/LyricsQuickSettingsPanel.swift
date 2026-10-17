@@ -13,25 +13,13 @@ final class LyricsQuickSettingsPresentation {
     }
 
     private(set) var isPresented = false
-    var compositingExperiment = LyricsQuickSettingsPresentation.initialCompositingExperiment()
+    let compositingRecovery = LyricsCompositingRecovery()
     var destination: Destination? {
         didSet { if oldValue != nil, destination == nil { destinationIsDismissing = true } }
     }
     private(set) var focusRevision = 0
     @ObservationIgnored private var revision = 0
     private var destinationIsDismissing = false
-
-    private static func initialCompositingExperiment() -> LyricsCompositingExperiment {
-#if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--lyrics-blending-ui-testing"),
-           let flag = arguments.firstIndex(of: "--lyrics-compositing-experiment-ui-testing"),
-           arguments.indices.contains(flag + 1) {
-            return LyricsCompositingExperiment(rawValue: arguments[flag + 1]) ?? .normal
-        }
-#endif
-        return .normal
-    }
 
     var suspendsPage: Bool {
         destination == .devices || destination == .lyricsSearch
@@ -68,7 +56,7 @@ final class LyricsQuickSettingsPresentation {
         isPresented = false
         destination = nil
         destinationIsDismissing = false
-        compositingExperiment = .normal
+        compositingRecovery.reset()
     }
 }
 
@@ -441,27 +429,11 @@ struct LyricsQuickSettingsPanel: View {
             Button(LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
                    systemImage: "doc.on.doc") {
                 UIPasteboard.general.string = LyricsCompositingDiagnostics.text(configuration: configuration,
-                    profile: model.renderPreferences.profile, experiment: presentation.compositingExperiment)
+                    profile: model.renderPreferences.profile, recovery: presentation.compositingRecovery)
                 compositingDiagnosticCopied = true
             }
             .frame(minHeight: 44)
             .accessibilityIdentifier("quickSettingsCopyCompositingDiagnostics")
-            if model.renderPreferences.profile == .amll {
-                DisclosureGroup("quickSettings.compositingExperiments") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("quickSettings.compositingExperimentsHint").font(.caption).foregroundStyle(.secondary)
-                        iconToggleRow("quickSettings.forcePageGroup", symbol: "square.stack.3d.up", id: "quickSettingsForcePageGroup",
-                            value: Binding(get: { presentation.compositingExperiment == .pageGroup }, set: {
-                                presentation.compositingExperiment = $0 ? .pageGroup : .normal
-                            }))
-                        iconToggleRow("quickSettings.sampleableMesh", symbol: "square.on.square", id: "quickSettingsSampleableMesh",
-                            value: Binding(get: { presentation.compositingExperiment == .sampleableMesh }, set: {
-                                presentation.compositingExperiment = $0 ? .sampleableMesh : .normal
-                            }))
-                    }.padding(.top, 8)
-                }
-                .accessibilityIdentifier("quickSettingsCompositingExperiments")
-            }
         }
     }
 

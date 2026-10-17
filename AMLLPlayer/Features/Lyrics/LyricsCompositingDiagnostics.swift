@@ -1,21 +1,11 @@
 import MetalKit
 import UIKit
 
-/// Temporary, session-only A/B probes. Never encoded in user preferences.
-enum LyricsCompositingExperiment: String, Sendable {
-    case normal, pageGroup, sampleableMesh
-
-    // Probe group-opacity composition at an explicit, non-unit opacity.
-    // Whether this follows the healthy dismissal path requires device evidence;
-    // this remains an opt-in diagnostic, not the production fix.
-    var pageOpacityMultiplier: Double { self == .pageGroup ? 0.99 : 1 }
-}
-
 /// A user-requested, one-shot inspection. No screenshots, URLs, lyric text,
 /// playback changes or recurring sampling are involved.
 @MainActor enum LyricsCompositingDiagnostics {
     static func text(configuration: LyricsRenderConfiguration, profile: LyricsPresentationProfile,
-                     experiment: LyricsCompositingExperiment = .normal) -> String {
+                     recovery: LyricsCompositingRecovery? = nil) -> String {
         func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
         func metalLayers(_ layer: CALayer) -> [CAMetalLayer] {
             (layer as? CAMetalLayer).map { [$0] } ?? (layer.sublayers ?? []).flatMap(metalLayers)
@@ -35,7 +25,7 @@ enum LyricsCompositingExperiment: String, Sendable {
         let canvases = views.compactMap { $0 as? AMLLNativeCanvas }.filter { $0.window != nil }
         let build = Bundle.main.object(forInfoDictionaryKey: "AMLLBuildCommit") as? String ?? "unknown"
         var lines = ["歌词混色诊断：\(build.prefix(8))", "系统：\(UIDevice.current.systemVersion)；布局：\(profile.rawValue)",
-            "临时对照选择：\(experiment.rawValue)；A 请求透明度乘数：\(String(format: "%.8f", experiment.pageOpacityMultiplier))（仅普通手机歌词页生效）",
+            "自动混色刷新：\(recovery?.phase.rawValue ?? "无")；完成次数：\(recovery?.completedRefreshes ?? 0)；当前透明度乘数：\(String(format: "%.8f", recovery?.opacity ?? 1))",
             "背景：\((configuration.backgroundMode ?? .mesh).rawValue)；沉浸歌词：\(configuration.immersiveLyrics == true)",
             "HDR 设置：\(configuration.hdr?.enabled == true)；减少透明度：\(UIAccessibility.isReduceTransparencyEnabled)",
             "原生画布：\(canvases.count)"]

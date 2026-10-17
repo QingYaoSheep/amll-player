@@ -123,7 +123,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         let start = app.coordinate(withNormalizedOffset: .zero).withOffset(
             CGVector(dx: handle.frame.midX - app.frame.minX, dy: handle.frame.midY - app.frame.minY))
         start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 100)),
-                    withVelocity: .slow, thenHoldForDuration: 0.1)
+                    withVelocity: .fast, thenHoldForDuration: 0.1)
         XCTAssertTrue(panel(app).waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
         app.buttons["lyricsDisplayOptions"].tap()

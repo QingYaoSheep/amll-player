@@ -17,7 +17,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
     /// Debug/reference playback can inject a seed; production seeds once per context.
     var seed: UInt32? = nil
     var frameSource: AMLLBackgroundFrameSource? = nil
-    var sampleableOutput = false
+    var presentation: AMLLBackgroundPresentation? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -29,8 +29,9 @@ struct AMLLMeshBackground: UIViewRepresentable {
         let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
         view.isOpaque = true
         view.backgroundColor = UIColor(white: 0.08, alpha: 1)
-        view.framebufferOnly = frameSource == nil && !sampleableOutput
+        view.framebufferOnly = frameSource == nil
         context.coordinator.frameSource = frameSource
+        context.coordinator.setPresentation(presentation)
         view.colorPixelFormat = .bgra8Unorm
         view.preferredFramesPerSecond = UIScreen.main.maximumFramesPerSecond
         context.coordinator.attach(to: view)
@@ -38,9 +39,10 @@ struct AMLLMeshBackground: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
-        let framebufferOnly = frameSource == nil && !sampleableOutput
+        let framebufferOnly = frameSource == nil
         if view.framebufferOnly != framebufferOnly { view.framebufferOnly = framebufferOnly }
         context.coordinator.frameSource = frameSource
+        context.coordinator.setPresentation(presentation)
         context.coordinator.setProcessing(blur: blur, colorMode: colorMode)
         if active {
             context.coordinator.setArtwork(artworkURL)
@@ -76,6 +78,9 @@ struct AMLLMeshBackground: UIViewRepresentable {
         }
 
         var frameSource: AMLLBackgroundFrameSource?
+        private var presentation: AMLLBackgroundPresentation?
+        private var pendingPresentation: UUID?
+        private var deliveredPresentation: UUID?
         private weak var view: MTKView?
         private var queue: MTLCommandQueue?
         private var pipeline: MTLRenderPipelineState?
@@ -190,6 +195,23 @@ struct AMLLMeshBackground: UIViewRepresentable {
         func stop() {
             loadTask?.cancel(); loadTask = nil
             frameSource = nil
+            setPresentation(nil)
+        }
+
+        func setPresentation(_ value: AMLLBackgroundPresentation?) {
+            if value?.id != presentation?.id {
+                pendingPresentation = nil
+                deliveredPresentation = nil
+            }
+            presentation = value
+        }
+
+        private func reportPresentation(_ id: UUID) {
+            guard presentation?.id == id, pendingPresentation == id else { return }
+            pendingPresentation = nil
+            guard let window = view?.window else { return }
+            deliveredPresentation = id
+            presentation?.didPresent(id, window)
         }
 
         func setRunning(_ value: Bool, staticMode: Bool) {
@@ -300,6 +322,12 @@ struct AMLLMeshBackground: UIViewRepresentable {
             }
             frameSource?.encodeCopy(texture: drawable.texture, viewport: view.bounds.size,
                 timestamp: now, command: command)
+            if let id = presentation?.id, id != deliveredPresentation, id != pendingPresentation {
+                pendingPresentation = id
+                drawable.addPresentedHandler { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.reportPresentation(id) }
+                }
+            }
             command.present(drawable)
             let semaphore = inFlight
             command.addCompletedHandler { _ in semaphore.signal() }

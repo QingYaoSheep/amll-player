@@ -5,10 +5,10 @@ import UIKit
 enum LyricsCompositingExperiment: String, Sendable {
     case normal, pageGroup, sampleableMesh
 
-    // A non-unit group opacity requests the same group-compositing path used
-    // during dismissal. The change is below one SDR or half-float code step;
+    // Probe group-opacity composition at an explicit, non-unit opacity.
+    // Whether this follows the healthy dismissal path requires device evidence;
     // this remains an opt-in diagnostic, not the production fix.
-    var pageOpacityMultiplier: Double { self == .pageGroup ? 1 - 1.0 / 65536 : 1 }
+    var pageOpacityMultiplier: Double { self == .pageGroup ? 0.99 : 1 }
 }
 
 /// A user-requested, one-shot inspection. No screenshots, URLs, lyric text,
@@ -35,7 +35,7 @@ enum LyricsCompositingExperiment: String, Sendable {
         let canvases = views.compactMap { $0 as? AMLLNativeCanvas }.filter { $0.window != nil }
         let build = Bundle.main.object(forInfoDictionaryKey: "AMLLBuildCommit") as? String ?? "unknown"
         var lines = ["歌词混色诊断：\(build.prefix(8))", "系统：\(UIDevice.current.systemVersion)；布局：\(profile.rawValue)",
-            "临时对照：\(experiment.rawValue)；整页透明度乘数：\(String(format: "%.8f", experiment.pageOpacityMultiplier))",
+            "临时对照选择：\(experiment.rawValue)；A 请求透明度乘数：\(String(format: "%.8f", experiment.pageOpacityMultiplier))（仅普通手机歌词页生效）",
             "背景：\((configuration.backgroundMode ?? .mesh).rawValue)；沉浸歌词：\(configuration.immersiveLyrics == true)",
             "HDR 设置：\(configuration.hdr?.enabled == true)；减少透明度：\(UIAccessibility.isReduceTransparencyEnabled)",
             "原生画布：\(canvases.count)"]
@@ -58,7 +58,7 @@ enum LyricsCompositingExperiment: String, Sendable {
             for depth in 0 ..< 14 {
                 guard let view = ancestor else { break }
                 let layer = view.layer
-                var description = "父层\(depth)：\(String(describing: type(of: view)).prefix(96))；alpha：\(number(Double(view.alpha)))；opaque：\(view.isOpaque)；裁剪：\(layer.masksToBounds)；遮罩：\(layer.mask != nil)；组透明：\(layer.allowsGroupOpacity)"
+                var description = "父层\(depth)：\(String(describing: type(of: view)).prefix(96))；alpha：\(String(format: "%.8f", Double(view.alpha)))；opaque：\(view.isOpaque)；裁剪：\(layer.masksToBounds)；遮罩：\(layer.mask != nil)；组透明：\(layer.allowsGroupOpacity)"
                 description += "；混色：\(String(describing: layer.compositingFilter ?? "无"))"
                 if #available(iOS 26.0, *) { description += "；动态范围：\(layer.preferredDynamicRange)" }
                 if let scroll = view as? UIScrollView { description += "；滚动：\(scroll.isScrollEnabled)；偏移：\(scroll.contentOffset)" }

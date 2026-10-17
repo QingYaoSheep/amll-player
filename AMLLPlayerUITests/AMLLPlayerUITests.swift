@@ -22,7 +22,16 @@ final class AMLLPlayerUITests: XCTestCase {
         try assertActualLyricBlending(forceMetal: true, mesh: true, meshColorMode2: true)
     }
 
-    @MainActor private func assertActualLyricBlending(forceMetal: Bool, mesh: Bool = false, meshColorMode2: Bool = false) throws {
+    @MainActor func testMeshColorMode2PageGroupProbePreservesActualLyricBlending() throws {
+        try assertActualLyricBlending(forceMetal: true, mesh: true, meshColorMode2: true, experiment: "pageGroup")
+    }
+
+    @MainActor func testMeshColorMode2SampleableProbePreservesActualLyricBlending() throws {
+        try assertActualLyricBlending(forceMetal: true, mesh: true, meshColorMode2: true, experiment: "sampleableMesh")
+    }
+
+    @MainActor private func assertActualLyricBlending(forceMetal: Bool, mesh: Bool = false,
+        meshColorMode2: Bool = false, experiment: String? = nil) throws {
         var captures: [[UInt8]] = []
         var rowFrames: [CGRect] = []
         var pixelSizes: [CGSize] = []
@@ -35,6 +44,7 @@ final class AMLLPlayerUITests: XCTestCase {
             if forceMetal { app.launchArguments += ["--lyrics-blending-metal-ui-testing"] }
             if mesh { app.launchArguments += ["--lyrics-blending-mesh-ui-testing"] }
             if meshColorMode2 { app.launchArguments += ["--lyrics-blending-mesh2-ui-testing"] }
+            if let experiment { app.launchArguments += ["--lyrics-compositing-experiment-ui-testing", experiment] }
             app.launch()
             waitForLyricsEntry(app)
             app.buttons["openNowPlaying"].tap()
@@ -43,6 +53,10 @@ final class AMLLPlayerUITests: XCTestCase {
             if forceMetal {
                 let metalReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH 'HDR_METAL_READY:'"), object: row)
                 XCTAssertEqual(XCTWaiter.wait(for: [metalReady], timeout: 15), .completed)
+                if experiment == "sampleableMesh" {
+                    XCTAssertTrue((row.value as? String)?.contains("framebufferOnly:false") == true,
+                                  "Probe B must use an actual sampleable Mesh drawable")
+                }
             }
             // A full AX frame query can itself take seconds under the GPU
             // simulator. Verify geometry across the actual capture instead of
@@ -81,6 +95,23 @@ final class AMLLPlayerUITests: XCTestCase {
                 context.draw(cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
             }
             captures.append(pixels)
+            if let experiment {
+                // Check the live session after capturing, so opening the panel
+                // cannot change the composition measured by the pixel test.
+                app.buttons["lyricsDisplayOptions"].tap()
+                let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
+                let comparison = app.buttons["quickSettingsCompositingExperiments"]
+                XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+                for _ in 0 ..< 6 {
+                    if comparison.isHittable { break }
+                    scroll.swipeUp()
+                }
+                XCTAssertTrue(comparison.isHittable)
+                comparison.tap()
+                let selected = app.buttons[experiment == "pageGroup" ? "quickSettingsForcePageGroup" : "quickSettingsSampleableMesh"]
+                XCTAssertTrue(selected.waitForExistence(timeout: 3))
+                XCTAssertEqual(selected.value as? String, "On", "A launch argument alone must not make this probe pass")
+            }
             app.terminate()
         }
         let normal = captures[0], additive = captures[1]
@@ -104,7 +135,7 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertGreaterThan(deltas.count, 100)
         guard !deltas.isEmpty else { return }
         let median = deltas[deltas.count / 2]
-        let metrics = XCTAttachment(string: "glyphSamples=\(deltas.count)\nSDRLighteningMedian=\(median)\n")
+        let metrics = XCTAttachment(string: "experiment=\(experiment ?? "normal")\nglyphSamples=\(deltas.count)\nSDRLighteningMedian=\(median)\n")
         metrics.name = "Production native lyric additive contribution at rest"
         metrics.lifetime = .keepAlways
         add(metrics)

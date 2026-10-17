@@ -108,13 +108,24 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
         XCTAssertGreaterThan(handle.frame.minY, app.frame.height * 0.3)
         XCTAssertLessThanOrEqual(scroll.frame.maxY - handle.frame.minY, app.frame.height * 0.6 + 1)
+        let restingHandleY = handle.frame.minY
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
-        XCTAssertFalse(panel(app).exists)
+        XCTAssertTrue(panel(app).waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.buttons["lyricsDisplayOptions"].exists)
         app.buttons["lyricsDisplayOptions"].tap()
-        app.descendants(matching: .any)["lyricsQuickSettingsHandle"].firstMatch.swipeDown()
-        XCTAssertFalse(panel(app).exists)
-        XCTAssertTrue(app.buttons["lyricsDisplayOptions"].exists)
+        XCTAssertTrue(panel(app).waitForExistence(timeout: 3))
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            handle.isHittable && abs(handle.frame.minY - restingHandleY) < 2
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 3), .completed)
+        // Use an actual downward finger travel instead of swipeDown's path
+        // constrained to the 44pt handle, and retain the page-dismissal check.
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(
+            CGVector(dx: handle.frame.midX - app.frame.minX, dy: handle.frame.midY - app.frame.minY))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 100)),
+                    withVelocity: .slow, thenHoldForDuration: 0.1)
+        XCTAssertTrue(panel(app).waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
         app.buttons["lyricsDisplayOptions"].tap()
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -220,36 +231,14 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             let repeatPicker = app.descendants(matching: .any)["quickSettingsRepeat"].firstMatch
             reveal(repeatPicker, in: app)
             repeatPicker.tap()
-            let repeatOne = app.buttons["单曲循环"]
-            // The native menu's visible button has a valid screen frame, but
-            // Xcode 27 can expose its collection cell as {{inf, inf}, {0, 0}}.
-            // Tap the visible frame, then verify the real acknowledged state.
-            var menuPoint: CGVector?
-            let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                guard repeatOne.exists else { return false }
-                let frame = repeatOne.frame
-                let window = app.frame
-                guard !frame.isEmpty, !window.isEmpty,
-                      frame.minX.isFinite, frame.minY.isFinite, frame.width.isFinite, frame.height.isFinite,
-                      window.minX.isFinite, window.minY.isFinite, window.width.isFinite, window.height.isFinite,
-                      window.contains(frame) else { return false }
-                // Preserve the exact snapshot that passed validation. A fresh
-                // accessibility query can return the invalid cell again.
-                menuPoint = CGVector(dx: frame.midX - window.minX, dy: frame.midY - window.minY)
-                return true
-            }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 4), .completed)
-            guard let menuPoint else { XCTFail("No valid on-screen repeat option"); return }
-            app.coordinate(withNormalizedOffset: .zero).withOffset(menuPoint).tap()
+            let repeatOne = app.buttons["quickSettingsRepeatOption.one"]
+            XCTAssertTrue(repeatOne.waitForExistence(timeout: 4))
+            XCTAssertTrue(repeatOne.isHittable)
+            repeatOne.tap()
+            XCTAssertTrue(repeatOne.waitForNonExistence(timeout: 4))
             XCTAssertTrue(panel(app).exists)
-            let repeatAcknowledged = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                // The native picker can replace its accessibility node after
-                // selection. Observe the real selected label once its option
-                // menu is gone, rather than a retired identifier query.
-                let selected = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "单曲循环", "单曲循环")
-                return !app.buttons["全部循环"].exists
-                    && (app.buttons.matching(selected).firstMatch.exists || app.staticTexts.matching(selected).firstMatch.exists)
-            }, object: nil)
+            let repeatAcknowledged = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "单曲循环"), object: repeatPicker)
             XCTAssertEqual(XCTWaiter.wait(for: [repeatAcknowledged], timeout: 4), .completed)
             let queue = app.buttons["quickSettingsRoute.queue"]
             reveal(queue, in: app)

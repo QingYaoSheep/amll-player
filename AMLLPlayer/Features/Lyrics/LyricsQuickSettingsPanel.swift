@@ -90,6 +90,7 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
     func body(content: Content) -> some View {
         ZStack {
             content.accessibilityHidden(presentation.isPresented)
+                .allowsHitTesting(!presentation.isPresented)
             // The modal hit plane is a sibling of the live page. Disabling
             // hit testing on the page before attaching an overlay can also
             // disable SwiftUI controls installed by that overlay.
@@ -120,6 +121,9 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
                 }
             }
         }
+            // A drag on our floating handle belongs to this panel, not the
+            // full-screen player's system zoom dismissal underneath it.
+            .interactiveDismissDisabled(presentation.isPresented)
             .sheet(item: $presentation.destination, onDismiss: { presentation.destinationDidDismiss() }) { target in
                 destination(target)
             }
@@ -371,7 +375,7 @@ struct LyricsQuickSettingsPanel: View {
                 iconToggleRow("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle", value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                     Task { await model.setShuffle(enabled) }
                 })).disabled(model.isPerformingAction)
-                QuickSettingsRepeatPicker(owner: ObjectIdentifier(model), service: model.selectedMusicService,
+                QuickSettingsRepeatMenu(owner: ObjectIdentifier(model), service: model.selectedMusicService,
                                           mode: snapshot.repeatMode, busy: model.isPerformingAction) { mode in
                     Task { await model.setRepeat(mode) }
                 }.equatable()
@@ -456,7 +460,7 @@ struct LyricsQuickSettingsPanel: View {
 
 // Progress snapshots update while this native menu is open. Only control state
 // changes may rebuild its binding and presentation, not the advancing clock.
-private struct QuickSettingsRepeatPicker: View, Equatable {
+private struct QuickSettingsRepeatMenu: View, Equatable {
     let owner: ObjectIdentifier
     let service: MusicServiceID
     let mode: MusicRepeatMode
@@ -468,11 +472,26 @@ private struct QuickSettingsRepeatPicker: View, Equatable {
     }
 
     var body: some View {
-        Picker("quickSettings.repeat", selection: Binding(get: { mode }, set: select)) {
-            ForEach(MusicRepeatMode.allCases, id: \.self) { Text($0.title).tag($0) }
+        Menu {
+            ForEach(MusicRepeatMode.allCases, id: \.self) { option in
+                Button { select(option) } label: {
+                    if mode == option { Label(option.title, systemImage: "checkmark") }
+                    else { Text(option.title) }
+                }
+                .accessibilityIdentifier("quickSettingsRepeatOption." + option.rawValue)
+            }
+        } label: {
+            HStack {
+                Text("quickSettings.repeat")
+                Spacer()
+                Text(mode.title)
+                Image(systemName: "chevron.up.chevron.down").font(.caption)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .frame(minHeight: 44)
         .disabled(busy)
+        .accessibilityLabel(Text("quickSettings.repeat"))
         .accessibilityIdentifier("quickSettingsRepeat")
         .accessibilityValue(Text(mode.title))
     }

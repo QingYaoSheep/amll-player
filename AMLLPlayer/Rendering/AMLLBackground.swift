@@ -1,12 +1,4 @@
 import SwiftUI
-import UIKit
-
-/// Optional, one-shot notification from a drawable that actually reached the
-/// display. The request identity rejects callbacks from a replaced surface.
-struct AMLLBackgroundPresentation {
-    let id: UUID
-    let didPresent: @MainActor (UUID, UIWindow) -> Void
-}
 
 /// Once selected, each renderer keeps its context until the lyric page closes.
 struct AMLLBackground: View {
@@ -18,7 +10,8 @@ struct AMLLBackground: View {
     var gradientEnd: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
     var flowing: FlowingBackgroundConfiguration = .init()
     var dimming: Double = 0
-    var presentation: AMLLBackgroundPresentation? = nil
+    /// Hardware probe only; the renderer still writes opaque pixels.
+    var transparentMesh = false
     /// Presentation override; never writes the user's background preferences.
     var suppressBlur = false
     /// Optional completed GPU frames for the immersive backdrop only.
@@ -47,7 +40,7 @@ struct AMLLBackground: View {
                                    colorMode: mode == .meshColorMode2 ? .colorMode2 : .original,
                                    seed: blendProbeSeed,
                                    frameSource: mode.isMesh ? frameSource : nil,
-                                   presentation: mode.isMesh ? presentation : nil)
+                                   transparentSurface: transparentMesh)
                     .opacity(mode.isMesh ? 1 : 0)
             }
             if usedPixi || mode == .pixi {

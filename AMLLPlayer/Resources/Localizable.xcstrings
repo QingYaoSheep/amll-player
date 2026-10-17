@@ -1,6 +1,10 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "quickSettings.compositingProbes" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Temporary blending comparison"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"临时混色对照"}}}},
+    "quickSettings.compositingProbesHint" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Ordinary iPhone Mesh lyrics only. Try C first, close this panel, and observe. C keeps full pixel opacity. A uses 99% page opacity as the previous control. Mutually exclusive; reset when leaving the page."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"仅普通 iPhone Mesh 歌词页生效。先单独测试 C，关闭菜单后观察；C 保留完整像素不透明度，A 是此前的 99% 整页透明度对照。两项互斥，退出页面重置。"}}}},
+    "quickSettings.transparentMesh" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"C · Transparent surface flag"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"C · 透明合成标记"}}}},
+    "quickSettings.pageGroup" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"A · Page group comparison"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"A · 整页合成对照"}}}},
     "quickSettings.copyCompositingDiagnostics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Copy lyric blending diagnostics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"复制歌词混色诊断"}}}},
     "quickSettings.diagnosticCopied" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Diagnostics copied"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"诊断已复制"}}}},
     "quickSettings.immersiveLyrics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Immersive lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"沉浸式歌词"}}}},

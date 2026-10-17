@@ -5,79 +5,6 @@ import UIKit
 import XCTest
 
 @MainActor final class LyricsSeekPageTests: XCTestCase {
-    func testOrdinaryMeshRefreshUsesTheRealPresentedDrawableAndRetainsThePlayingCanvas() async throws {
-        let (model, player, song) = try await makeModel()
-        model.renderPreferences.configuration.backgroundMode = .meshColorMode2
-        try await start(model, song)
-        let presentation = LyricsQuickSettingsPresentation()
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
-        let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model, presentation: presentation)
-            .environment(\.scenePhase, .active))
-        let container = UIViewController()
-        window.rootViewController = container; window.makeKeyAndVisible()
-        let transition = HeldLyricsPresentation()
-        host.modalPresentationStyle = .fullScreen
-        host.transitioningDelegate = transition
-        container.present(host, animated: true)
-        defer { transition.finish(); player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
-        let recovery = presentation.compositingRecovery
-        try await wait("real drawable arrived during held entry transition") { recovery.phase == .awaitingTransition }
-        let canvas = try await waitForCanvas(host.view)
-        let item = player.currentItem, revision = model.lyricsSeekRevision
-        XCTAssertEqual(recovery.opacity, 1)
-        XCTAssertEqual(recovery.completedRefreshes, 0, "The actual entry transition must finish before changing opacity")
-        transition.finish()
-        try await wait("real Mesh drawable and bounded automatic recovery") { recovery.completedRefreshes == 1 }
-        XCTAssertEqual(recovery.opacity, 1)
-        XCTAssertNil(recovery.backgroundPresentation)
-        let startTime = player.currentTime().seconds
-        model.renderPreferences.configuration.fontSize += 1
-        try await wait("normal frames and audio after recovery") { player.currentTime().seconds > startTime + 0.3 }
-        XCTAssertEqual(recovery.completedRefreshes, 1)
-        XCTAssertTrue(findCanvas(host.view) === canvas)
-        XCTAssertTrue(player.currentItem === item)
-        XCTAssertEqual(model.lyricsSeekRevision, revision)
-        model.renderPreferences.configuration.immersiveLyrics = true
-        try await wait("healthy immersive mode does not apply recovery") { recovery.phase == .inactive }
-        XCTAssertEqual(recovery.opacity, 1)
-        XCTAssertEqual(recovery.completedRefreshes, 1)
-        model.renderPreferences.configuration.immersiveLyrics = false
-        try await wait("a newly entered ordinary surface refreshes once") { recovery.completedRefreshes == 2 }
-        XCTAssertEqual(recovery.opacity, 1)
-        XCTAssertTrue(findCanvas(host.view) === canvas)
-        XCTAssertTrue(player.currentItem === item)
-        XCTAssertEqual(model.lyricsSeekRevision, revision)
-    }
-
-    func testLeavingOrdinaryLyricsDuringEntryRejectsTheLateTransitionCompletion() async throws {
-        let (model, player, song) = try await makeModel()
-        model.renderPreferences.configuration.backgroundMode = .meshColorMode2
-        try await start(model, song)
-        let presentation = LyricsQuickSettingsPresentation()
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
-        let container = UIViewController()
-        window.rootViewController = container; window.makeKeyAndVisible()
-        let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model, presentation: presentation)
-            .environment(\.scenePhase, .active))
-        let transition = HeldLyricsPresentation()
-        host.modalPresentationStyle = .fullScreen; host.transitioningDelegate = transition
-        container.present(host, animated: true)
-        defer { transition.finish(); player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
-        let recovery = presentation.compositingRecovery
-        try await wait("entry is waiting for real transition completion") { recovery.phase == .awaitingTransition }
-        model.renderPreferences.configuration.immersiveLyrics = true
-        try await wait("ordinary recovery cancelled") { recovery.phase == .inactive }
-        transition.finish()
-        try await Task.sleep(for: .milliseconds(250))
-        XCTAssertEqual(recovery.opacity, 1)
-        XCTAssertEqual(recovery.completedRefreshes, 0)
-        XCTAssertNil(recovery.backgroundPresentation)
-    }
-
     func testCompatibilityImmersiveSwitchRetainsItsOriginalRenderer() async throws {
         let (model, player, song) = try await makeModel()
         model.renderPreferences.activate(.custom)
@@ -331,24 +258,6 @@ import XCTest
     }
     private func findCanvas(_ root: UIView) -> AMLLNativeCanvas? { descendants(root).compactMap { $0 as? AMLLNativeCanvas }.first }
     private func descendants(_ root: UIView) -> [UIView] { [root] + root.subviews.flatMap(descendants) }
-}
-
-/// UIKit owns the real transition coordinator. Hold its completion so the test
-/// can verify a presented Metal drawable cannot refresh an entering page early.
-@MainActor private final class HeldLyricsPresentation: NSObject, UIViewControllerTransitioningDelegate, UIViewControllerAnimatedTransitioning {
-    private var context: (any UIViewControllerContextTransitioning)?
-    func animationController(forPresented presented: UIViewController, presenting: UIViewController,
-                             source: UIViewController) -> (any UIViewControllerAnimatedTransitioning)? { self }
-    func transitionDuration(using transitionContext: (any UIViewControllerContextTransitioning)?) -> TimeInterval { 30 }
-    func animateTransition(using transitionContext: any UIViewControllerContextTransitioning) {
-        context = transitionContext
-        guard let controller = transitionContext.viewController(forKey: .to),
-              let view = transitionContext.view(forKey: .to) else { transitionContext.completeTransition(false); return }
-        view.frame = transitionContext.finalFrame(for: controller)
-        transitionContext.containerView.addSubview(view)
-        view.setNeedsLayout(); view.layoutIfNeeded()
-    }
-    func finish() { context?.completeTransition(true); context = nil }
 }
 
 @MainActor private final class SeekFixtureAPI: NetEaseRequesting {

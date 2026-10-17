@@ -1,10 +1,21 @@
 import MetalKit
 import UIKit
 
+/// Temporary, session-only A/B probes. Never encoded in user preferences.
+enum LyricsCompositingExperiment: String, Sendable {
+    case normal, pageGroup, sampleableMesh
+
+    // A non-unit group opacity requests the same group-compositing path used
+    // during dismissal. The change is below one SDR or half-float code step;
+    // this remains an opt-in diagnostic, not the production fix.
+    var pageOpacityMultiplier: Double { self == .pageGroup ? 1 - 1.0 / 65536 : 1 }
+}
+
 /// A user-requested, one-shot inspection. No screenshots, URLs, lyric text,
 /// playback changes or recurring sampling are involved.
 @MainActor enum LyricsCompositingDiagnostics {
-    static func text(configuration: LyricsRenderConfiguration, profile: LyricsPresentationProfile) -> String {
+    static func text(configuration: LyricsRenderConfiguration, profile: LyricsPresentationProfile,
+                     experiment: LyricsCompositingExperiment = .normal) -> String {
         func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
         func metalLayers(_ layer: CALayer) -> [CAMetalLayer] {
             (layer as? CAMetalLayer).map { [$0] } ?? (layer.sublayers ?? []).flatMap(metalLayers)
@@ -24,6 +35,7 @@ import UIKit
         let canvases = views.compactMap { $0 as? AMLLNativeCanvas }.filter { $0.window != nil }
         let build = Bundle.main.object(forInfoDictionaryKey: "AMLLBuildCommit") as? String ?? "unknown"
         var lines = ["歌词混色诊断：\(build.prefix(8))", "系统：\(UIDevice.current.systemVersion)；布局：\(profile.rawValue)",
+            "临时对照：\(experiment.rawValue)；整页透明度乘数：\(String(format: "%.8f", experiment.pageOpacityMultiplier))",
             "背景：\((configuration.backgroundMode ?? .mesh).rawValue)；沉浸歌词：\(configuration.immersiveLyrics == true)",
             "HDR 设置：\(configuration.hdr?.enabled == true)；减少透明度：\(UIAccessibility.isReduceTransparencyEnabled)",
             "原生画布：\(canvases.count)"]
@@ -55,7 +67,7 @@ import UIKit
             }
         }
         for view in views.compactMap({ $0 as? MTKView }).prefix(4) {
-            lines.append("背景 Metal：\(view.bounds)；alpha：\(number(Double(view.alpha)))；暂停：\(view.isPaused)；目标帧率：\(view.preferredFramesPerSecond)")
+            lines.append("背景 Metal：\(view.bounds)；alpha：\(number(Double(view.alpha)))；暂停：\(view.isPaused)；目标帧率：\(view.preferredFramesPerSecond)；framebufferOnly：\(view.framebufferOnly)")
             if let canvas = canvases.first {
                 lines.append("背景与歌词共享滚动容器：\(scrollAncestor(view) === scrollAncestor(canvas))")
             }

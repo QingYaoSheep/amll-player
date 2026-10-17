@@ -81,7 +81,8 @@ struct AMLLLyricsPlayer: View {
             .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
             .scaleEffect(drag.scale)
             .offset(y: drag.offset)
-            .opacity(immersive ? 1 : drag.opacity)
+            .opacity((immersive ? 1 : drag.opacity)
+                * (configuration.showLyrics && lyricLayout == nil ? quickSettings.compositingExperiment.pageOpacityMultiplier : 1))
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
             .overlay(alignment: .topTrailing) {
                 if lyricLayout == nil, let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
@@ -482,7 +483,9 @@ struct AMLLLyricsPlayer: View {
             blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
             color: configuration.backgroundColor ?? .sourceDefault,
             gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
-            flowing: configuration.flowingBackground ?? .init(), dimming: 0)
+            flowing: configuration.flowingBackground ?? .init(), dimming: 0,
+            sampleableMeshOutput: configuration.showLyrics && !usesImmersiveLyrics
+                && quickSettings.compositingExperiment == .sampleableMesh)
     }
 
     private var artworkRequestKey: String {

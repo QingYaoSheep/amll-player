@@ -13,6 +13,7 @@ final class LyricsQuickSettingsPresentation {
     }
 
     private(set) var isPresented = false
+    var compositingExperiment: LyricsCompositingExperiment = .normal
     var destination: Destination? {
         didSet { if oldValue != nil, destination == nil { destinationIsDismissing = true } }
     }
@@ -55,6 +56,7 @@ final class LyricsQuickSettingsPresentation {
         isPresented = false
         destination = nil
         destinationIsDismissing = false
+        compositingExperiment = .normal
     }
 }
 
@@ -427,11 +429,27 @@ struct LyricsQuickSettingsPanel: View {
             Button(LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
                    systemImage: "doc.on.doc") {
                 UIPasteboard.general.string = LyricsCompositingDiagnostics.text(configuration: configuration,
-                    profile: model.renderPreferences.profile)
+                    profile: model.renderPreferences.profile, experiment: presentation.compositingExperiment)
                 compositingDiagnosticCopied = true
             }
             .frame(minHeight: 44)
             .accessibilityIdentifier("quickSettingsCopyCompositingDiagnostics")
+            if model.renderPreferences.profile == .amll {
+                DisclosureGroup("quickSettings.compositingExperiments") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("quickSettings.compositingExperimentsHint").font(.caption).foregroundStyle(.secondary)
+                        iconToggleRow("quickSettings.forcePageGroup", symbol: "square.stack.3d.up", id: "quickSettingsForcePageGroup",
+                            value: Binding(get: { presentation.compositingExperiment == .pageGroup }, set: {
+                                presentation.compositingExperiment = $0 ? .pageGroup : .normal
+                            }))
+                        iconToggleRow("quickSettings.sampleableMesh", symbol: "square.on.square", id: "quickSettingsSampleableMesh",
+                            value: Binding(get: { presentation.compositingExperiment == .sampleableMesh }, set: {
+                                presentation.compositingExperiment = $0 ? .sampleableMesh : .normal
+                            }))
+                    }.padding(.top, 8)
+                }
+                .accessibilityIdentifier("quickSettingsCompositingExperiments")
+            }
         }
     }
 

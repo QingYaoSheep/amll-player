@@ -17,6 +17,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
     /// Debug/reference playback can inject a seed; production seeds once per context.
     var seed: UInt32? = nil
     var frameSource: AMLLBackgroundFrameSource? = nil
+    var sampleableOutput = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -28,7 +29,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
         let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
         view.isOpaque = true
         view.backgroundColor = UIColor(white: 0.08, alpha: 1)
-        view.framebufferOnly = frameSource == nil
+        view.framebufferOnly = frameSource == nil && !sampleableOutput
         context.coordinator.frameSource = frameSource
         view.colorPixelFormat = .bgra8Unorm
         view.preferredFramesPerSecond = UIScreen.main.maximumFramesPerSecond
@@ -37,7 +38,8 @@ struct AMLLMeshBackground: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
-        if view.framebufferOnly != (frameSource == nil) { view.framebufferOnly = frameSource == nil }
+        let framebufferOnly = frameSource == nil && !sampleableOutput
+        if view.framebufferOnly != framebufferOnly { view.framebufferOnly = framebufferOnly }
         context.coordinator.frameSource = frameSource
         context.coordinator.setProcessing(blur: blur, colorMode: colorMode)
         if active {

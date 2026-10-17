@@ -13,7 +13,7 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         XCTAssertFalse(layout.requiresScrolling)
     }
 
-    func testTallVideoFitsCompletelyAboveInformationAndReservesOneThirdForLyrics() {
+    func testTallStillFitsCompletelyAboveInformationAndReservesOneThirdForLyrics() {
         for viewport in [CGSize(width: 320, height: 568), CGSize(width: 402, height: 874), CGSize(width: 440, height: 956)] {
             let layout = ImmersiveLyricsLayout.resolve(viewport: viewport,
                 artwork: CGSize(width: 1080, height: 1920), informationHeight: 64, bottomInset: 34)
@@ -25,6 +25,32 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(layout.lyrics.height, viewport.height / 3 - 0.01)
             XCTAssertLessThanOrEqual(layout.lyrics.maxY, viewport.height - 34 + 0.01)
         }
+    }
+
+    func testPlayingVideoUsesTheSameFullWidthAsTheLyricsHiddenImmersivePage() {
+        for viewport in [CGSize(width: 320, height: 568), CGSize(width: 402, height: 874), CGSize(width: 440, height: 956)] {
+            for source in [CGSize(width: 1080, height: 1440), CGSize(width: 1080, height: 1920), CGSize(width: 1, height: 1)] {
+                let layout = ImmersiveLyricsLayout.resolve(viewport: viewport, artwork: source,
+                    informationHeight: 64, bottomInset: 34, isVideo: true)
+                XCTAssertEqual(layout.cover, AMLLImmersiveArtworkGeometry.frame(viewport: viewport, video: source))
+                XCTAssertEqual(layout.cover.width, viewport.width, accuracy: 0.51)
+                XCTAssertEqual(layout.cover.width / layout.cover.height, source.width / source.height, accuracy: 0.0001)
+                XCTAssertEqual(layout.information.minY, layout.cover.maxY + 16)
+                XCTAssertEqual(layout.lyrics.minY, layout.information.maxY + 24)
+                XCTAssertGreaterThanOrEqual(layout.lyrics.height, viewport.height / 3 - 0.01)
+            }
+        }
+    }
+
+    func testArtworkGeometryBelongsToTheCurrentTrackEvenWhenTwoTracksShareTheSameImage() {
+        let size = CGSize(width: 1080, height: 1440)
+        let old = ImmersiveLyricsArtworkSource(trackID: "a", size: size, isVideo: false)
+        let current = ImmersiveLyricsArtworkSource(trackID: "b", size: size, isVideo: false)
+        XCTAssertNotEqual(old, current)
+        XCTAssertEqual(old.forTrack("b"), .placeholder)
+        XCTAssertEqual(current.forTrack("b"), current)
+        XCTAssertEqual(current.forTrack(nil), .placeholder)
+        XCTAssertNotEqual(current, ImmersiveLyricsArtworkSource(trackID: "b", size: size, isVideo: true))
     }
 
     func testSquareMovesAllJunctionCoordinatesAboveTheTallVideoJunction() {

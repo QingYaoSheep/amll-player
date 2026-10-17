@@ -8,7 +8,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     let layout: ImmersiveLyricsLayout
     let viewport: CGSize
     let active: Bool
-    let artworkSize: (CGSize) -> Void
+    let artworkSource: (ImmersiveLyricsArtworkSource) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var loader = AnimatedArtworkLoader()
@@ -22,9 +22,11 @@ struct ImmersiveLyricsArtworkBackdrop: View {
             && network.permits(allowCellular: configuration.animatedArtwork?.allowCellular ?? false)
             && loader.trackID == item.uri && loader.playbackURL != nil
     }
-    private var displayedSize: CGSize {
-        if hasVideo, loader.hasPresentedFrame, let size = loader.videoSize { return size }
-        return still.frame(for: item.artworkURL)?.size ?? CGSize(width: 1, height: 1)
+    private var displayedSource: ImmersiveLyricsArtworkSource {
+        if hasVideo, loader.hasPresentedFrame, let size = loader.videoSize {
+            return .init(trackID: item.uri, size: size, isVideo: true)
+        }
+        return .init(trackID: item.uri, size: still.frame(for: item.artworkURL)?.size ?? CGSize(width: 1, height: 1), isVideo: false)
     }
     private var requestKey: String {
         [item.uri, String(configuration.animatedArtwork?.enabled == true), String(reduceMotion),
@@ -46,7 +48,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
             still: still.frame(for: item.artworkURL))
             .id(loader.requestToken)
         }
-            .onChange(of: displayedSize, initial: true) { _, size in artworkSize(size) }
+            .onChange(of: displayedSource, initial: true) { _, source in artworkSource(source) }
             .task(id: item.uri + "|" + (item.artworkURL?.absoluteString ?? "")) { await still.load(item.artworkURL) }
             .task(id: requestKey) {
                 let settings = configuration.animatedArtwork ?? .init()

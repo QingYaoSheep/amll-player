@@ -47,7 +47,7 @@ struct FullscreenLyricsPlayer: View {
     @State private var resumeToken = 0
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.3, dampingFraction: 1))) private var drag: CGFloat = 0
     @State private var pageVisible = false
-    @State private var immersiveArtworkSize = CGSize(width: 1, height: 1)
+    @State private var immersiveArtworkSource = ImmersiveLyricsArtworkSource.placeholder
     @State private var immersiveInformationHeight: CGFloat = 64
     @State private var immersiveViewport = false
     private var configuration: LyricsRenderConfiguration {
@@ -57,15 +57,18 @@ struct FullscreenLyricsPlayer: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
+                let source = immersiveArtworkSource.forTrack(model.playbackSnapshot?.item?.uri)
                 let layout = ImmersiveLyricsLayout.isEnabled(configuration, isPhone: UIDevice.current.userInterfaceIdiom == .phone,
                     viewport: geometry.size) ? ImmersiveLyricsLayout.resolve(viewport: geometry.size,
-                        artwork: immersiveArtworkSize, informationHeight: immersiveInformationHeight,
-                        bottomInset: geometry.safeAreaInsets.bottom) : nil
+                        artwork: source.size, informationHeight: immersiveInformationHeight,
+                        bottomInset: geometry.safeAreaInsets.bottom, isVideo: source.isVideo) : nil
                 ZStack {
                     if let layout, let item = model.playbackSnapshot?.item {
                         ImmersiveLyricsArtworkBackdrop(model: model, item: item, layout: layout, viewport: geometry.size,
                             active: pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
-                            artworkSize: { immersiveArtworkSize = $0 })
+                            artworkSource: { source in
+                                if source.trackID == model.playbackSnapshot?.item?.uri { immersiveArtworkSource = source }
+                            })
                     } else {
                         AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
                                                blur: configuration.backgroundBlur)

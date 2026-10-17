@@ -371,9 +371,11 @@ struct AMLLLyricsPlayer: View {
         guard ImmersiveLyricsLayout.isEnabled(configuration, isPhone: UIDevice.current.userInterfaceIdiom == .phone,
                                               viewport: size) else { return nil }
         let source: CGSize
-        if immersiveLyricsHasVideo, artworkLoader.hasPresentedFrame, let actual = artworkLoader.videoSize { source = actual }
+        let presentsVideo = immersiveLyricsHasVideo && artworkLoader.hasPresentedFrame && artworkLoader.videoSize != nil
+        if presentsVideo, let actual = artworkLoader.videoSize { source = actual }
         else { source = currentStillFrame?.size ?? CGSize(width: 1, height: 1) }
-        return .resolve(viewport: size, artwork: source, informationHeight: immersiveInformationHeight, bottomInset: bottomInset)
+        return .resolve(viewport: size, artwork: source, informationHeight: immersiveInformationHeight,
+                        bottomInset: bottomInset, isVideo: presentsVideo)
     }
 
     private var immersiveLyricsHasVideo: Bool {

@@ -1,3 +1,4 @@
+import Metal
 import MetalKit
 import SwiftUI
 import UIKit

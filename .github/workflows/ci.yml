@@ -31,7 +31,9 @@ jobs:
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testActualMeshColorMode2MetalLyricsAddLightAtRestThroughTheProductionZoomPresentation
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testTransparentMeshSurfacePreservesActualMetalLyricBlendingAtFullOpacity
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testActualMeshBackedMetalLyricsAddLightAtRestThroughTheProductionZoomPresentation
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testActualMeshColorMode2SDRLyricsAddLightAtRestThroughTheProductionZoomPresentation
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testOrdinaryMeshForegroundBlendingSurvivesReentryAndLayoutChanges
           -only-testing:AMLLPlayerTests/LyricsHDRRendererTests
           -resultBundlePath build/LyricsBlend.xcresult
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO

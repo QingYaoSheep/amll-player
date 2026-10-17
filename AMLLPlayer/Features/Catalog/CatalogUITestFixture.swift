@@ -94,7 +94,18 @@
                     let layers = metalLayers(canvas.layer)
                     if !layers.isEmpty, layers.allSatisfy({ $0.pixelFormat == .rgba16Float && $0.wantsExtendedDynamicRangeContent }),
                        let row = descendants(canvas).first(where: { $0.isAccessibilityElement && $0.accessibilityLabel?.contains("MMMMWWWW") == true }) {
-                        row.accessibilityValue = "HDR_METAL_READY:\(layers.count)"
+                        func scrollAncestor(_ view: UIView) -> UIScrollView? {
+                            var ancestor = view.superview
+                            while let current = ancestor {
+                                if let scroll = current as? UIScrollView { return scroll }
+                                ancestor = current.superview
+                            }
+                            return nil
+                        }
+                        let allViews = windows.flatMap(descendants)
+                        let backdrop = allViews.compactMap { $0 as? MTKView }.first
+                        let sharedBackdrop = backdrop.map { scrollAncestor($0) === scrollAncestor(canvas) } ?? false
+                        row.accessibilityValue = "HDR_METAL_READY:\(layers.count); sharedBackdrop:\(sharedBackdrop)"
                         return
                     }
                 }

@@ -31,6 +31,7 @@ jobs:
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testActualLyricsAddLightAtRestThroughTheProductionZoomPresentation
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testActualMetalLyricsAddLightAtRestThroughTheProductionZoomPresentation
           -only-testing:AMLLPlayerTests/LyricsHDRRendererTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testPageCompositingPreservesActualVideoReflectionAndLiveBlurAtRest
           -resultBundlePath build/LyricsBlend.xcresult

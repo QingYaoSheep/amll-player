@@ -82,7 +82,8 @@ struct AMLLLyricsPlayer: View {
             .scaleEffect(drag.scale)
             .offset(y: drag.offset)
             .opacity((immersive ? 1 : drag.opacity)
-                * (configuration.showLyrics && lyricLayout == nil ? quickSettings.compositingExperiment.pageOpacityMultiplier : 1))
+                * (UIDevice.current.userInterfaceIdiom == .phone && configuration.showLyrics && !immersive
+                    ? quickSettings.compositingExperiment.pageOpacityMultiplier : 1))
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
             .overlay(alignment: .topTrailing) {
                 if lyricLayout == nil, let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
@@ -484,7 +485,8 @@ struct AMLLLyricsPlayer: View {
             color: configuration.backgroundColor ?? .sourceDefault,
             gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
             flowing: configuration.flowingBackground ?? .init(), dimming: 0,
-            sampleableMeshOutput: configuration.showLyrics && !usesImmersiveLyrics
+            sampleableMeshOutput: UIDevice.current.userInterfaceIdiom == .phone
+                && configuration.showLyrics && !usesImmersiveLyrics
                 && quickSettings.compositingExperiment == .sampleableMesh)
     }
 

@@ -13,13 +13,25 @@ final class LyricsQuickSettingsPresentation {
     }
 
     private(set) var isPresented = false
-    var compositingExperiment: LyricsCompositingExperiment = .normal
+    var compositingExperiment = LyricsQuickSettingsPresentation.initialCompositingExperiment()
     var destination: Destination? {
         didSet { if oldValue != nil, destination == nil { destinationIsDismissing = true } }
     }
     private(set) var focusRevision = 0
     @ObservationIgnored private var revision = 0
     private var destinationIsDismissing = false
+
+    private static func initialCompositingExperiment() -> LyricsCompositingExperiment {
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--lyrics-blending-ui-testing"),
+           let flag = arguments.firstIndex(of: "--lyrics-compositing-experiment-ui-testing"),
+           arguments.indices.contains(flag + 1) {
+            return LyricsCompositingExperiment(rawValue: arguments[flag + 1]) ?? .normal
+        }
+#endif
+        return .normal
+    }
 
     var suspendsPage: Bool {
         destination == .devices || destination == .lyricsSearch

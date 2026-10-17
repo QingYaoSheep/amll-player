@@ -2,7 +2,7 @@
   "sourceLanguage" : "en",
   "strings" : {
     "quickSettings.compositingExperiments" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Temporary blending comparison"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"临时混色对照"}}}},
-    "quickSettings.compositingExperimentsHint" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Ordinary native lyrics only. Test A and B separately, then close this panel. These mutually exclusive probes reset when leaving this page."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"仅普通原生歌词页生效。分别测试 A、B，关闭菜单后观察；两项互斥，退出歌词页后重置。"}}}},
+    "quickSettings.compositingExperimentsHint" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Ordinary iPhone lyrics only. Test A and B separately, then close this panel. A temporarily uses 99% page opacity to test group composition. These mutually exclusive probes reset when leaving this page."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"仅普通 iPhone 歌词页生效。分别测试 A、B，关闭菜单后观察；A 临时使用 99% 整页不透明度检查合成。两项互斥，退出歌词页后重置。"}}}},
     "quickSettings.forcePageGroup" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"A · Force page group"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"A · 整页合成对照"}}}},
     "quickSettings.sampleableMesh" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"B · Sampleable Mesh output"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"B · 背景采样对照"}}}},
     "quickSettings.copyCompositingDiagnostics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Copy lyric blending diagnostics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"复制歌词混色诊断"}}}},

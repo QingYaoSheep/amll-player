@@ -231,12 +231,23 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             let repeatPicker = app.descendants(matching: .any)["quickSettingsRepeat"].firstMatch
             reveal(repeatPicker, in: app)
             repeatPicker.tap()
-            let repeatOne = app.buttons["quickSettingsRepeatOption.one"]
-            XCTAssertTrue(repeatOne.waitForExistence(timeout: 4))
-            let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in repeatOne.isHittable }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 4), .completed)
-            repeatOne.tap()
-            XCTAssertTrue(repeatOne.waitForNonExistence(timeout: 4))
+            // Select the visible native menu action. Its accessible label can
+            // identify the UIKit action when an identifier resolves to a
+            // separate, non-hittable SwiftUI menu description.
+            let options = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@",
+                "quickSettingsRepeatOption.one", "单曲循环"))
+            var visibleOption: XCUIElement?
+            let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                visibleOption = options.allElementsBoundByIndex.first { $0.isHittable }
+                return visibleOption != nil
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 8), .completed, app.debugDescription)
+            guard let visibleOption else { return }
+            visibleOption.tap()
+            let menuClosed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                !options.allElementsBoundByIndex.contains { $0.isHittable }
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [menuClosed], timeout: 4), .completed)
             XCTAssertTrue(panel(app).exists)
             let repeatAcknowledged = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == %@", "单曲循环"), object: repeatPicker)

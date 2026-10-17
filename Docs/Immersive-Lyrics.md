@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-2026-10-17：已接线待验证。设备确认沉浸视频宽度、HDR 及沉浸式歌词的 Plus Lighter 正常。手动 `8107fd1a` 为仅 A 恢复、关闭后持续正常、B 无效；自动 `a5b8129c` 被设备否定。实机诊断为 `ready / 完成次数 1 / 透明度 1`，排除完全未启动，但不能证明 99% 状态实际呈现或形成与手动 A 相同的合成路径。自动短脉冲及其帧观察代码已撤下，当前继续 A／C 单变量诊断，故障仍未解决。
+2026-10-17：生产修正已接线待验证。设备确认沉浸视频宽度、HDR 及沉浸式歌词的 Plus Lighter 正常。最新 `04884a3e` 设备反馈：单独打开 A 或 C 均可恢复普通歌词的 Plus Lighter；关闭 C 后立即失效，退出歌词页再进入也失效。临时探针退出会重置，因此当前将 C 的透明表面合成标记按页面资格持续启用，不再使用短脉冲或 99% 整页透明度；移除 A／C 菜单。生产默认状态及退出重进仍须新包真机验证，尚不标记故障解决。
 
-当前诊断提交 `04884a3e534774d15a23385b881d60248234810f`：[两路构建 39027836968](https://github.com/QingYaoSheep/amll-player/actions/runs/39027836968)。直接 IPA 已成功并核对，完整回归、隔离像素测试及设备 A／C 对照进行中。历史自动版 [39026075123](https://github.com/QingYaoSheep/amll-player/actions/runs/39026075123) 在设备否定后取消完整测试，不标记通过。构建、自动回归与真机效果分别记录。
+当前代码 `a654bb36ab35d020ea704e5e2e5d695d0303a86c`：[两路构建 39031032816](https://github.com/QingYaoSheep/amll-player/actions/runs/39031032816)，另以相同生产源码运行针对性像素／重进回归 [39031088620](https://github.com/QingYaoSheep/amll-player/actions/runs/39031088620)。历史诊断 `04884a3e`：直接 IPA 成功，496 单元零失败，21 UI 中 1 项循环菜单选择等待超时，未生成测试后 IPA；隔离 12 项通过。历史自动版 `a5b8129c` 设备否定后取消完整测试，失败短脉冲已撤下。构建、自动回归与真机效果分别记录。
 
 ## 显示与兼容
 
@@ -108,7 +108,7 @@
 
 隔离运行 [39026080172](https://github.com/QingYaoSheep/amll-player/actions/runs/39026080172)（`8aaf4613`）成功：14 单元／集成（2 恢复状态、2 真实转场窗口、10 原 HDR）和 1 项 Mesh2 生产画布真实字形像素测试，全部零失败。日志保存在外层 `Builds/LyricsBlend/a5b8129c-recovery-probe.log`。测试专用工作流不合并至主分支；此结果不代替主分支完整回归或设备验收。双轴源码审查无未解决阻断。
 
-### 透明合成标记 C 对照（待设备验证）
+### 透明合成标记 C 对照（设备对照完成，临时控件已移除）
 
 - 临时会话菜单仅 A／C，默认关闭、互斥、不保存，退出或切换来源重置。A 为已验证的整页 99% 对照；不把它当作维持完整亮度的最终修复。
 - C 只在普通 iPhone 歌词的 Mesh 输出上将 MTKView 和 CAMetalLayer 的 opaque 标志设为 false、UIKit 底色设为 clear；页透明度和视图 alpha 仍为 1。GPU clear 的 alpha 1、原着色器／颜色／网格／纹理以及 framebufferOnly 均不改。
@@ -119,6 +119,18 @@
 双轴源码审查无未解决阻断；Windows 15 项回放／比较测试通过。Xcode 当前分支两路构建和隔离 [39027864258](https://github.com/QingYaoSheep/amll-player/actions/runs/39027864258) 分别记录，原 13 份工作区修改哈希不变。
 
 隔离运行 `39027864258`（`73247f15`）成功：10 项原 HDR 单元测试、默认 Mesh2 和透明合成 C 的两项真实页面像素测试全部通过。C 用例同时确认实际 false／false 标志、alpha 1 与 framebufferOnly true。日志：外层 `Builds/LyricsBlend/04884a3e-surface-probe.log`。它说明候选已实际启用且模拟器未发现视觉回归，不说明已修复设备故障；主分支完整回归仍在运行。
+
+设备随后确认单独启用 C 可恢复，关闭 C 即失效；A 也有效，但整页 99% 不符合维持完整亮度的目标。临时开关在退出时重置，不应作为正式功能保留。这是持续 C 策略的依据，不等于已证实 iOS 内部故障机制，亦不能证明初始化时直接应用 C 与手动切换必然相同。
+
+### 持续透明表面合成（生产候选，待真机重进验收）
+
+- 只在 iOS 27+、iPhone、普通原生歌词、Mesh／取色模式2、非减少透明度时启用。使用根视图当前实际布局分支判断；两个沉浸路径明确使用原默认设置，避免首次比例计算前误影响健康路径。
+- MTKView 与 Metal layer 的 opaque 标志为 false、UIKit 底色 clear；实际背景像素、清屏 alpha、视图及静止整页透明度均为 1。原 shader、颜色、HDR 亮度、framebufferOnly 和显示循环保持不变。
+- 每次创建和更新表面都按当前资格设置，不依赖会话菜单、不持久化额外参数、不创建刷新脉冲。背景标记随歌词显隐及沉浸切换恢复，不重建播放器或修改 seek／歌词时钟。
+- 新真实窗口测试两次销毁并重建页面，重置同一快捷面板 owner，核对普通／沉浸／隐藏歌词的实际表面标记及真实 AVPlayer 播放连续性。生产默认 Mesh 原模式／模式2的 Metal 字形用例核对 false／false、alpha 1、framebufferOnly true；补充 Mesh2 SDR 像素回归，保留全部原几何和亮度阈值，不用启动参数打开 C。
+- 双轴审查无未解决阻断；Windows 15 项回放／比较、固定词典校验通过。原有 13 份工作区修改哈希保持不变。针对性和完整 Xcode 结果另记；模拟器尚未复现真实设备故障，不能以截图通过代替真机验收。
+
+`a654bb36` 首次完整任务在解析 Spotify SDK 时遇到构建机 SwiftPM 缓存目录缺失，退出 74，未执行测试；直接 IPA 同次成功，已仅重跑失败任务。当前针对性回归继续执行，不把环境故障记为源码测试通过。
 
 当前实时模糊自行采集背景／视频／倒影像素并输出 Metal，旧 `UIVisualEffectView` 限制不作为禁用整页合成的依据。新增真实窗口用例验证普通背景和真实视频状态下的加亮／普通合成、视图身份、视频首帧、倒影和模糊输出；红色透明探针用于区分加亮与普通控件合成。截图验证 SDR 混色，不能证明设备实际 HDR 亮度；HDR 2 倍目标、字形遮罩及计时均不改动。
 
@@ -136,6 +148,8 @@
 
 历史自动刷新直接包：`Builds/Immersive-Lyrics-20261016/a5b8129c-direct/AMLLPlayer-Xcode27-direct-unsigned.ipa`（外层工作区）。22,346,749 字节；SHA-256 `870678b34a18558bb1ab8b449a6577aee0aeda04f0ae6bea00c6d5e3df65a501`；内嵌完整提交已核对，但设备仍只有下拉时恢复，停止推荐为修复版。
 
-当前 A／C 诊断直接包：`Builds/Immersive-Lyrics-20261016/04884a3e-direct/AMLLPlayer-Xcode27-direct-unsigned.ipa`（外层工作区）。22,337,217 字节；SHA-256 `8e0b28df0a722ce2af1d73f6bc8af4d87f3fc3c02bea80bf430300d8cf596321`；已核对内嵌完整提交、Bundle ID、A／C 诊断存在及失败自动刷新诊断消失。默认不改变显示，先在冷启动后的普通 Mesh2 页面只开 C，避免 A 先行恢复干扰对照；C 无效才单独开 A。尚未标记修复。
+历史 A／C 诊断直接包：`Builds/Immersive-Lyrics-20261016/04884a3e-direct/AMLLPlayer-Xcode27-direct-unsigned.ipa`（外层工作区）。22,337,217 字节；SHA-256 `8e0b28df0a722ce2af1d73f6bc8af4d87f3fc3c02bea80bf430300d8cf596321`；已核对内嵌完整提交、Bundle ID、A／C 诊断存在及失败自动刷新诊断消失。设备对照已完成，改用持续 C 生产候选进行下一次冷启动及重进验收。
+
+当前持续合成直接包：`Builds/Immersive-Lyrics-20261016/a654bb36-direct/AMLLPlayer-Xcode27-direct-unsigned.ipa`（外层工作区）。22,329,492 字节；SHA-256 `9fdebf21092eafccdd10d6c219e6397b050237ae7e2d881d172febeabf5c4f16`。已核对内嵌完整提交、Bundle ID、生产策略诊断存在及 A／C／失败自动刷新诊断消失。待设备检查首次进入、关闭重进及沉浸切回普通，不能因编译和包核对完成就标记故障已解决。
 
 原有 13 份未提交回放／文档修改保持不变，按任务开始前快照逐项核对 SHA-256。

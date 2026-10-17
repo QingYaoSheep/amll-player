@@ -8,6 +8,9 @@ final class AMLLPlayerUITests: XCTestCase {
 
     @MainActor func testActualLyricsAddLightAtRestThroughTheProductionZoomPresentation() throws {
         var captures: [[UInt8]] = []
+        var rowFrames: [CGRect] = []
+        var pixelSizes: [CGSize] = []
+        var screenshotSizes: [CGSize] = []
         for normal in [true, false] {
             let app = XCUIApplication()
             app.launchArguments += ["--lyrics-ui-testing", "--lyrics-blending-ui-testing", "--skip-welcome-ui-testing",
@@ -18,23 +21,36 @@ final class AMLLPlayerUITests: XCTestCase {
             app.buttons["openNowPlaying"].tap()
             let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "MMMMWWWW")).firstMatch
             XCTAssertTrue(row.waitForExistence(timeout: 5))
+            let screen = app.frame
             var previousFrame: CGRect?
             let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                guard row.isHittable else { previousFrame = nil; return false }
+                guard row.exists else { previousFrame = nil; return false }
                 let frame = row.frame
+                guard frame.width > 20, frame.height > 10, screen.intersects(frame) else { previousFrame = nil; return false }
                 defer { previousFrame = frame }
                 return frame == previousFrame
             }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 5), .completed)
+            XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 15), .completed, row.debugDescription)
+            let rowFrame = row.frame
             let image = app.screenshot().image
+            let screenshot = try XCTUnwrap(image.cgImage)
             let attachment = XCTAttachment(image: image)
             attachment.name = normal ? "Actual lyrics normal blend at rest" : "Actual lyrics Plus Lighter at rest"
             attachment.lifetime = .keepAlways
             add(attachment)
-            let scale = image.scale
-            let region = CGRect(x: row.frame.minX * scale, y: row.frame.minY * scale,
-                                width: row.frame.width * scale, height: row.frame.height * scale).integral
-            let cropped = try XCTUnwrap(image.cgImage?.cropping(to: region))
+            let scaleX = CGFloat(screenshot.width) / screen.width
+            let scaleY = CGFloat(screenshot.height) / screen.height
+            XCTAssertEqual(scaleX, scaleY, accuracy: 0.001)
+            let region = CGRect(x: (rowFrame.minX - screen.minX) * scaleX, y: (rowFrame.minY - screen.minY) * scaleY,
+                                width: rowFrame.width * scaleX, height: rowFrame.height * scaleY).integral
+            let cropped = try XCTUnwrap(screenshot.cropping(to: region))
+            rowFrames.append(rowFrame)
+            pixelSizes.append(CGSize(width: CGFloat(cropped.width), height: CGFloat(cropped.height)))
+            screenshotSizes.append(CGSize(width: CGFloat(screenshot.width), height: CGFloat(screenshot.height)))
+            let geometry = XCTAttachment(string: "screen=\(screen)\nrow=\(rowFrame)\nROI=\(region)\npixels=\(screenshot.width)x\(screenshot.height)\nUIImageScale=\(image.scale)\nactualScale=\(scaleX),\(scaleY)\n")
+            geometry.name = normal ? "Normal glyph geometry" : "Additive glyph geometry"
+            geometry.lifetime = .keepAlways
+            add(geometry)
             var pixels = [UInt8](repeating: 0, count: cropped.width * cropped.height * 4)
             try pixels.withUnsafeMutableBytes { bytes in
                 let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: cropped.width, height: cropped.height,
@@ -46,8 +62,16 @@ final class AMLLPlayerUITests: XCTestCase {
             app.terminate()
         }
         let normal = captures[0], additive = captures[1]
+        XCTAssertEqual(rowFrames[0], rowFrames[1])
+        XCTAssertEqual(pixelSizes[0], pixelSizes[1])
+        XCTAssertEqual(screenshotSizes[0], screenshotSizes[1])
         XCTAssertEqual(normal.count, additive.count, "The same paused production lyric must keep identical geometry")
         guard normal.count == additive.count else { return }
+        let normalBackground = stride(from: 0, to: normal.count, by: 4).map { Int(normal[$0]) }.min() ?? 0
+        let additiveBackground = stride(from: 0, to: additive.count, by: 4).map { Int(additive[$0]) }.min() ?? 0
+        XCTAssertLessThanOrEqual(abs(normalBackground - additiveBackground), 2)
+        XCTAssertGreaterThan(normalBackground, 100)
+        XCTAssertLessThan(normalBackground, 160)
         // Only actual semi-transparent glyph pixels, excluding the middle-gray
         // backdrop and the already-white filled edge. No synthetic color tile.
         let deltas = stride(from: 0, to: normal.count, by: 4).compactMap { index -> Int? in

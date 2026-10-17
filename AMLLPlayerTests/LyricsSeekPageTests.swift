@@ -1,10 +1,63 @@
 @testable import AMLLPlayer
 import AVFoundation
+import MetalKit
 import SwiftUI
 import UIKit
 import XCTest
 
 @MainActor final class LyricsSeekPageTests: XCTestCase {
+    func testOrdinaryMeshForegroundBlendingSurvivesReentryAndLayoutChanges() async throws {
+        let (model, player, song) = try await makeModel()
+        model.renderPreferences.configuration.backgroundMode = .meshColorMode2
+        try await start(model, song)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        let presentation = LyricsQuickSettingsPresentation()
+        let item = player.currentItem, revision = model.lyricsSeekRevision
+        defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
+        for entry in 0 ..< 2 {
+            let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model, presentation: presentation)
+                .environment(\.scenePhase, .active))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
+            _ = try await waitForCanvas(host.view)
+            try await assertMeshSurface(host.view, opaque: false)
+            if entry == 0 {
+                model.renderPreferences.configuration.immersiveLyrics = true
+                try await assertMeshSurface(host.view, opaque: true)
+                model.renderPreferences.configuration.immersiveLyrics = false
+                try await assertMeshSurface(host.view, opaque: false)
+                model.renderPreferences.configuration.showLyrics = false
+                try await assertMeshSurface(host.view, opaque: true)
+                model.renderPreferences.configuration.showLyrics = true
+                try await assertMeshSurface(host.view, opaque: false)
+            }
+            XCTAssertTrue(player.currentItem === item)
+            XCTAssertEqual(model.lyricsSeekRevision, revision)
+            let previousTime = player.currentTime().seconds
+            try await wait("audio continues through surface changes") { player.currentTime().seconds > previousTime + 0.3 }
+            XCTAssertEqual(model.progress(), player.currentTime().seconds, accuracy: 0.4)
+            // Discard the real host; the next entry constructs a fresh surface,
+            // with the same presentation owner reset as on the production page.
+            window.rootViewController = nil
+            presentation.reset()
+        }
+    }
+
+    private func assertMeshSurface(_ root: UIView, opaque: Bool) async throws {
+        try await wait("Mesh surface opaque=\(opaque)") {
+            root.setNeedsLayout(); root.layoutIfNeeded()
+            let surfaces = descendants(root).compactMap { $0 as? MTKView }
+            return surfaces.count == 1 && surfaces[0].window != nil
+                && surfaces[0].isOpaque == opaque && surfaces[0].layer.isOpaque == opaque
+        }
+        let surface = try XCTUnwrap(descendants(root).compactMap { $0 as? MTKView }.first)
+        XCTAssertEqual(surface.alpha, 1, "Foreground blending must preserve full background opacity")
+        XCTAssertEqual(surface.colorPixelFormat, .bgra8Unorm)
+        if !opaque { XCTAssertTrue(surface.framebufferOnly) }
+    }
+
     func testCompatibilityImmersiveSwitchRetainsItsOriginalRenderer() async throws {
         let (model, player, song) = try await makeModel()
         model.renderPreferences.activate(.custom)

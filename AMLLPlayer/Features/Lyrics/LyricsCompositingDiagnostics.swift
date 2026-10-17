@@ -1,17 +1,10 @@
 import MetalKit
 import UIKit
 
-/// Temporary, mutually exclusive hardware probes; never persisted.
-enum LyricsCompositingProbe: String, Sendable {
-    case none, pageGroup, transparentMesh
-    var pageOpacity: Double { self == .pageGroup ? 0.99 : 1 }
-}
-
 /// A user-requested, one-shot inspection. No screenshots, URLs, lyric text,
 /// playback changes or recurring sampling are involved.
 @MainActor enum LyricsCompositingDiagnostics {
-    static func text(configuration: LyricsRenderConfiguration, profile: LyricsPresentationProfile,
-                     probe: LyricsCompositingProbe = .none) -> String {
+    static func text(configuration: LyricsRenderConfiguration, profile: LyricsPresentationProfile) -> String {
         func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
         func metalLayers(_ layer: CALayer) -> [CAMetalLayer] {
             (layer as? CAMetalLayer).map { [$0] } ?? (layer.sublayers ?? []).flatMap(metalLayers)
@@ -31,7 +24,7 @@ enum LyricsCompositingProbe: String, Sendable {
         let canvases = views.compactMap { $0 as? AMLLNativeCanvas }.filter { $0.window != nil }
         let build = Bundle.main.object(forInfoDictionaryKey: "AMLLBuildCommit") as? String ?? "unknown"
         var lines = ["歌词混色诊断：\(build.prefix(8))", "系统：\(UIDevice.current.systemVersion)；布局：\(profile.rawValue)",
-            "混色对照选择：\(probe.rawValue)；请求整页透明度：\(String(format: "%.8f", probe.pageOpacity))（仅普通手机 Mesh 歌词页生效）",
+            "Mesh 混色策略：iOS 27+ 普通 iPhone 歌词使用透明合成；实际见背景 Metal 的 opaque／alpha 字段",
             "背景：\((configuration.backgroundMode ?? .mesh).rawValue)；沉浸歌词：\(configuration.immersiveLyrics == true)",
             "HDR 设置：\(configuration.hdr?.enabled == true)；减少透明度：\(UIAccessibility.isReduceTransparencyEnabled)",
             "原生画布：\(canvases.count)"]

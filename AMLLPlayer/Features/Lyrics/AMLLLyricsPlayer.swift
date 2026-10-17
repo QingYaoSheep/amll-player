@@ -43,8 +43,6 @@ struct AMLLLyricsPlayer: View {
             let drag = dismissalTransform(height: geometry.size.height)
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
             let immersive = lyricLayout != nil || (model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false)
-            let probesEnabled = UIDevice.current.userInterfaceIdiom == .phone && configuration.showLyrics
-                && !immersive && (configuration.backgroundMode ?? .mesh).isMesh
             ZStack {
                 ZStack {
                     Color(white: 0.08)
@@ -54,7 +52,7 @@ struct AMLLLyricsPlayer: View {
                     } else if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
                         immersiveArtworkLayers(item, size: geometry.size, cornerRadius: drag.radius, opacity: drag.opacity)
                     } else {
-                        artworkBackground
+                        artworkBackground(meshForegroundBlending: needsMeshForegroundBlending(immersive: immersive))
                         Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
                     }
                 }
@@ -83,8 +81,7 @@ struct AMLLLyricsPlayer: View {
             .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
             .scaleEffect(drag.scale)
             .offset(y: drag.offset)
-            .opacity((immersive ? 1 : drag.opacity)
-                * (probesEnabled ? quickSettings.compositingProbe.pageOpacity : 1))
+            .opacity(immersive ? 1 : drag.opacity)
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
             .overlay(alignment: .topTrailing) {
                 if lyricLayout == nil, let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
@@ -398,7 +395,7 @@ struct AMLLLyricsPlayer: View {
             layout: .lyrics(cover: layout.cover, viewport: size, configuration: configuration,
                 tuning: artworkDebug.configuration, presentsFrame: immersiveLyricsHasVideo && artworkLoader.hasPresentedFrame,
                 reduceTransparency: reduceTransparency, cornerRadius: cornerRadius, opacity: opacity),
-            background: artworkBackground, still: currentStillFrame)
+            background: artworkBackground(), still: currentStillFrame)
             .id(artworkLoader.requestToken)
             .frame(width: size.width, height: size.height)
             .allowsHitTesting(false).accessibilityHidden(true)
@@ -473,21 +470,26 @@ struct AMLLLyricsPlayer: View {
                 dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: size)),
                 backgroundDimming: configuration.backgroundDimming ?? 0.16,
                 cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: blurProfile),
-            background: artworkBackground)
+            background: artworkBackground())
         .id(artworkLoader.requestToken)
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 
-    private var artworkBackground: AMLLBackground {
+    private func artworkBackground(meshForegroundBlending: Bool = false) -> AMLLBackground {
         AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
             active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
             blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
             color: configuration.backgroundColor ?? .sourceDefault,
             gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
             flowing: configuration.flowingBackground ?? .init(), dimming: 0,
-            transparentMesh: UIDevice.current.userInterfaceIdiom == .phone && configuration.showLyrics && !usesImmersiveLyrics
-                && quickSettings.compositingProbe == .transparentMesh)
+            meshForegroundBlending: meshForegroundBlending)
+    }
+
+    private func needsMeshForegroundBlending(immersive: Bool) -> Bool {
+        guard #available(iOS 27.0, *) else { return false }
+        return UIDevice.current.userInterfaceIdiom == .phone && configuration.showLyrics && !immersive
+            && !reduceTransparency && (configuration.backgroundMode ?? .mesh).isMesh
     }
 
     private var artworkRequestKey: String {

@@ -37,11 +37,20 @@ struct AMLLLyricsDisplay: View {
                 browsing: browsing
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .blendMode(reduceTransparency ? .normal : .plusLighter)
+            .blendMode(textBlendMode)
             .accessibilityIdentifier("amllNativeLyricsDisplay")
         } else {
             Color.clear.accessibilityHidden(true)
         }
+    }
+
+    private var textBlendMode: BlendMode {
+        #if DEBUG
+        // Counterfactual for the real-page compositing regression. This does
+        // not change accessibility settings, glyph alpha or the background.
+        if ProcessInfo.processInfo.arguments.contains("--lyrics-blend-normal-ui-testing") { return .normal }
+        #endif
+        return reduceTransparency ? .normal : .plusLighter
     }
 
     private func input(for document: LyricsDocument) -> AMLLPlayerInput {

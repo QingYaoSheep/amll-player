@@ -10,6 +10,8 @@ struct AMLLBackground: View {
     var gradientEnd: LyricsRenderConfiguration.BackgroundColor = .sourceDefault
     var flowing: FlowingBackgroundConfiguration = .init()
     var dimming: Double = 0
+    /// Temporary compositing experiment; no readback or extra render loop.
+    var sampleableMeshOutput = false
     /// Presentation override; never writes the user's background preferences.
     var suppressBlur = false
     /// Optional completed GPU frames for the immersive backdrop only.
@@ -37,7 +39,8 @@ struct AMLLBackground: View {
                 AMLLMeshBackground(artworkURL: artworkURL, active: active && mode.isMesh, blur: effectiveMeshBlur,
                                    colorMode: mode == .meshColorMode2 ? .colorMode2 : .original,
                                    seed: blendProbeSeed,
-                                   frameSource: mode.isMesh ? frameSource : nil)
+                                   frameSource: mode.isMesh ? frameSource : nil,
+                                   sampleableOutput: sampleableMeshOutput)
                     .opacity(mode.isMesh ? 1 : 0)
             }
             if usedPixi || mode == .pixi {

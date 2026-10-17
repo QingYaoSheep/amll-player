@@ -243,7 +243,12 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             app.coordinate(withNormalizedOffset: .zero).withOffset(menuPoint).tap()
             XCTAssertTrue(panel(app).exists)
             let repeatAcknowledged = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                self.displayedText(repeatPicker).contains("单曲循环")
+                // The native picker can replace its accessibility node after
+                // selection. Observe the real selected label once its option
+                // menu is gone, rather than a retired identifier query.
+                let selected = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "单曲循环", "单曲循环")
+                return !app.buttons["全部循环"].exists
+                    && (app.buttons.matching(selected).firstMatch.exists || app.staticTexts.matching(selected).firstMatch.exists)
             }, object: nil)
             XCTAssertEqual(XCTWaiter.wait(for: [repeatAcknowledged], timeout: 4), .completed)
             let queue = app.buttons["quickSettingsRoute.queue"]

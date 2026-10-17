@@ -44,22 +44,22 @@ struct AMLLLyricsPlayer: View {
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
             let immersive = lyricLayout != nil || (model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false)
             ZStack {
-                Color(white: 0.08)
-                if let item = model.playbackSnapshot?.item, let lyricLayout {
-                    immersiveLyricsArtwork(item, layout: lyricLayout, size: geometry.size,
-                                           cornerRadius: drag.radius, opacity: drag.opacity)
-                } else if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
-                    immersiveArtworkLayers(item, size: geometry.size, cornerRadius: drag.radius, opacity: drag.opacity)
-                } else {
-                    artworkBackground
-                    Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
+                ZStack {
+                    Color(white: 0.08)
+                    if let item = model.playbackSnapshot?.item, let lyricLayout {
+                        immersiveLyricsArtwork(item, layout: lyricLayout, size: geometry.size,
+                                               cornerRadius: drag.radius, opacity: drag.opacity)
+                    } else if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
+                        immersiveArtworkLayers(item, size: geometry.size, cornerRadius: drag.radius, opacity: drag.opacity)
+                    } else {
+                        artworkBackground
+                        Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
+                    }
                 }
-            }
-            // Background-only composition may change its native hierarchy;
-            // the foreground overlay stays at one stable structural location.
-            .modifier(LyricsBackdropComposition(immersive: immersive))
-            .modifier(LyricsShellClipping(immersive: immersive, radius: drag.radius))
-            .overlay {
+                // A stable sibling, not an overlay whose identity inherits
+                // the conditional background's identity.
+                .modifier(LyricsBackdropComposition(immersive: immersive))
+                .modifier(LyricsShellClipping(immersive: immersive, radius: drag.radius))
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: lyricLayout)
@@ -155,7 +155,6 @@ struct AMLLLyricsPlayer: View {
                             }
                         }
                         .offset(x: layout.information.minX, y: layout.information.minY)
-                        .accessibilityIdentifier("immersiveLyricsInformation")
                 } else if configuration.showMetadata ?? true {
                     compactMetadata(item: item, metrics: metrics)
                         .padding(.horizontal, metrics.horizontalInset)

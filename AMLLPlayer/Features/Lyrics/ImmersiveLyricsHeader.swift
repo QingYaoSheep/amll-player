@@ -40,6 +40,7 @@ struct ImmersiveLyricsHeader: View {
         .buttonStyle(.plain)
         .frame(minHeight: 44)
         .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("immersiveLyricsInformation")
     }
 }

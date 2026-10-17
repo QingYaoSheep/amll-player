@@ -58,7 +58,6 @@ struct AMLLLyricsPlayer: View {
                 }
                 // A stable sibling, not an overlay whose identity inherits
                 // the conditional background's identity.
-                .modifier(LyricsBackdropComposition(immersive: immersive))
                 .modifier(LyricsShellClipping(immersive: immersive, radius: drag.radius))
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
@@ -70,6 +69,7 @@ struct AMLLLyricsPlayer: View {
                 .clipShape(RoundedRectangle(cornerRadius: drag.radius, style: .continuous))
                 .opacity(immersive ? drag.opacity : 1)
             }
+            .modifier(LyricsPageCompositing())
             .modifier(LyricsPageDynamicRange())
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
@@ -682,12 +682,12 @@ private struct LyricsPageDynamicRange: ViewModifier {
     }
 }
 
-private struct LyricsBackdropComposition: ViewModifier {
-    let immersive: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        // A live UIKit backdrop must sample the original layers, not a SwiftUI
-        // offscreen copy. The lyric-visible path keeps its existing HDR group.
-        if immersive { content } else { content.compositingGroup() }
+/// Keep the backdrop and lyric blend in one stable boundary at rest and during
+/// zoom. This modifier must not branch on presentation: doing so rebuilds the
+/// native canvas when switching modes. Live blur uses its own pixel inputs.
+struct LyricsPageCompositing: ViewModifier {
+    func body(content: Content) -> some View {
+        content.compositingGroup()
     }
 }
 
@@ -695,8 +695,8 @@ private struct LyricsShellClipping: ViewModifier {
     let immersive: Bool
     let radius: CGFloat
     @ViewBuilder func body(content: Content) -> some View {
-        // The immersive native surface clips its own bounds/corner radius. A
-        // SwiftUI ancestor mask would invalidate its live UIVisualEffectView.
+        // Immersive media owns clipping for its video, reflection and Metal
+        // output. Keep this background-only SwiftUI mask on the ordinary path.
         if immersive { content } else { content.clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous)) }
     }
 }

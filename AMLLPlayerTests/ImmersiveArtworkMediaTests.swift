@@ -10,6 +10,64 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testPageCompositingPreservesActualVideoReflectionAndLiveBlurAtRest() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
+        let window = try playbackWindow()
+        let frames = ArtworkReflectionFrames()
+        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        let host = UIHostingController(rootView: PageCompositingMediaProbe(surface: surface, immersive: false))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
+        defer { surface.stop(); window.isHidden = true; window.rootViewController = nil }
+        func probes(in view: UIView) -> [UIView] {
+            (view is NativeRedBlendProbeSurface ? [view] : []) + view.subviews.flatMap { probes(in: $0) }
+        }
+        try await waitUntil {
+            let views = probes(in: host.view)
+            return views.count == 2 && views.allSatisfy { $0.window === window && $0.bounds.width >= 29 && $0.bounds.height >= 29 }
+        }
+        let originalProbes = probes(in: host.view)
+        let normalAdditive = try backdropPixel(window, at: CGPoint(x: 170, y: 50))
+        let normalControl = try backdropPixel(window, at: CGPoint(x: 170, y: 90))
+        XCTAssertGreaterThan(normalAdditive[0], 40)
+        XCTAssertGreaterThan(normalAdditive[2], 245)
+        XCTAssertLessThan(normalControl[2], 240)
+        host.rootView = PageCompositingMediaProbe(surface: surface, immersive: true)
+        host.view.layoutIfNeeded()
+        surface.backgroundSurface.backgroundColor = .blue
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.bottomFade].enabled = false
+        tuning[.dimming].enabled = false
+        tuning.blurRadius = 24
+        let cover = CGRect(x: 0, y: 0, width: 128, height: 400)
+        var presented = false
+        surface.configure(video: AnimatedArtwork(url: url, active: false,
+            onFirstFrame: { _, _ in presented = true }),
+            layout: .init(video: cover,
+                reflection: ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: 650),
+                transition: AMLLImmersiveArtworkGeometry.transitionFrame(video: cover, viewportHeight: 650),
+                bottomFade: .zero, tuning: tuning, presentsFrame: true,
+                reflectionEnabled: true, reduceTransparency: false))
+        surface.layoutIfNeeded()
+        try await waitUntil {
+            presented && frames.hasFrame && surface.reflectionSurface.layer.contents != nil
+                && surface.transitionSurface.renderedFrames > 3
+        }
+        let videoPixel = try backdropPixel(window, at: CGPoint(x: 12, y: 360))
+        let backgroundPixel = try backdropPixel(window, at: CGPoint(x: 12, y: 620))
+        let additivePixel = try backdropPixel(window, at: CGPoint(x: 170, y: 50))
+        let controlPixel = try backdropPixel(window, at: CGPoint(x: 170, y: 90))
+        XCTAssertGreaterThan(videoPixel[0], 60, "The page blend group must not hide the real video or its blur output")
+        XCTAssertGreaterThan(backgroundPixel[2], backgroundPixel[0] + 30)
+        XCTAssertGreaterThan(additivePixel[0], 40)
+        XCTAssertGreaterThan(additivePixel[2], 245, "Additive red preserves the blue destination at rest, before a zoom establishes another boundary")
+        XCTAssertLessThan(controlPixel[2], 240, "Ordinary controls must keep source-over rather than receive page-wide additive blending")
+        XCTAssertNotNil(surface.reflectionSurface.layer.contents)
+        XCTAssertLessThanOrEqual(surface.transitionSurface.maximumInFlight, 2)
+        XCTAssertEqual(Set(probes(in: host.view).map(ObjectIdentifier.init)), Set(originalProbes.map(ObjectIdentifier.init)))
+    }
+
     func testImmersiveMeshFeedsLiveBlurWithoutRecurringBackgroundReadbacks() async throws {
         _ = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let window = try playbackWindow()
@@ -1652,3 +1710,47 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         return window
     }
 }
+
+/// Use the production page's stable compositing boundary around an actual
+/// AVPlayerLayer, reflection and Metal blur, not an image-only substitute.
+private struct PageCompositingMediaProbe: View {
+    let surface: ImmersiveArtworkMedia.Surface
+    let immersive: Bool
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.black
+            if immersive { MediaProbeSurface(surface: surface).frame(width: 200, height: 650) }
+            else { Color.blue.frame(width: 200, height: 650) }
+            // Mirror the native canvas's transparent ScrollView ancestry.
+            ScrollView {
+                ZStack(alignment: .topLeading) {
+                    NativeRedBlendProbe().frame(width: 30, height: 30)
+                        .blendMode(.plusLighter).offset(x: 160, y: 40)
+                    NativeRedBlendProbe().frame(width: 30, height: 30).offset(x: 160, y: 80)
+                }.frame(width: 200, height: 650, alignment: .topLeading)
+            }.frame(width: 200, height: 650).scrollDisabled(true)
+                .clipShape(RoundedRectangle(cornerRadius: 0, style: .continuous))
+        }
+        .modifier(LyricsPageCompositing())
+        .ignoresSafeArea()
+    }
+}
+
+private struct MediaProbeSurface: UIViewRepresentable {
+    let surface: ImmersiveArtworkMedia.Surface
+    func makeUIView(context: Context) -> ImmersiveArtworkMedia.Surface { surface }
+    func updateUIView(_ view: ImmersiveArtworkMedia.Surface, context: Context) {}
+}
+
+private struct NativeRedBlendProbe: UIViewRepresentable {
+    func makeUIView(context: Context) -> NativeRedBlendProbeSurface {
+        let view = NativeRedBlendProbeSurface()
+        view.isOpaque = false
+        view.backgroundColor = UIColor.red.withAlphaComponent(0.25)
+        return view
+    }
+    func updateUIView(_ view: NativeRedBlendProbeSurface, context: Context) {}
+}
+
+private final class NativeRedBlendProbeSurface: UIView {}

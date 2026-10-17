@@ -22,7 +22,12 @@ final class AMLLPlayerUITests: XCTestCase {
         try assertActualLyricBlending(forceMetal: true, mesh: true, meshColorMode2: true)
     }
 
-    @MainActor private func assertActualLyricBlending(forceMetal: Bool, mesh: Bool = false, meshColorMode2: Bool = false) throws {
+    @MainActor func testMetalBackgroundSharesTheLyricScrollCompositingDestination() throws {
+        try assertActualLyricBlending(forceMetal: true, mesh: true, meshColorMode2: true, requireSharedBackdrop: true)
+    }
+
+    @MainActor private func assertActualLyricBlending(forceMetal: Bool, mesh: Bool = false, meshColorMode2: Bool = false,
+                                                    requireSharedBackdrop: Bool = false) throws {
         var captures: [[UInt8]] = []
         var rowFrames: [CGRect] = []
         var pixelSizes: [CGSize] = []
@@ -43,6 +48,10 @@ final class AMLLPlayerUITests: XCTestCase {
             if forceMetal {
                 let metalReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH 'HDR_METAL_READY:'"), object: row)
                 XCTAssertEqual(XCTWaiter.wait(for: [metalReady], timeout: 15), .completed)
+                if requireSharedBackdrop {
+                    XCTAssertTrue((row.value as? String)?.contains("sharedBackdrop:true") == true,
+                                  "The real Metal backdrop and lyrics must share the native scrolling destination: \(row.value ?? "missing")")
+                }
             }
             let screen = app.frame
             var previousFrame: CGRect?

@@ -325,9 +325,18 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 timestamp: now, command: command)
             if let id = presentation?.id, id != deliveredPresentation, id != pendingPresentation {
                 pendingPresentation = id
+                #if targetEnvironment(simulator)
+                // The simulator SDK has no drawable presentation handler.
+                // The real command includes present(drawable); its completion
+                // is only a scheduling seam, not physical-display evidence.
+                command.addCompletedHandler { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.reportPresentation(id) }
+                }
+                #else
                 drawable.addPresentedHandler { [weak self] _ in
                     Task { @MainActor [weak self] in self?.reportPresentation(id) }
                 }
+                #endif
             }
             command.present(drawable)
             let semaphore = inFlight

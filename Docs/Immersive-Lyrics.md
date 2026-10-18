@@ -10,6 +10,8 @@
 
 `0d3ddfaf` 首次完整结果：497 单元中既有 `testExplicitConfigurationPreservesItemOutputAfterProlongedReceiverLoss` 的两条媒体身份断言失败；21 UI 中既有循环菜单等待一项失败。新增重进／时钟用例及混色用例通过。保留日志 `Builds/LyricsBlend/0d3ddfaf-full-tests.log`，未生成测试后 IPA；在原断言、原提交上重跑一次，不把这些失败改记为通过，也不通过改变已验收的生产代码消除测试信号。
 
+同提交第二次完整结果：497 单元零失败，21 UI 中 1 项失败。首次失败的媒体恢复和循环菜单本次通过；失败改为 `testQuickSettingsRoutesToExistingPagesFromBothLyricsLayouts` 的完整外观设置入口。录屏与辅助功能快照确认面板已关闭、目标设置页未出现，不能仅凭等待超时认定测试驱动问题；该导航回归保留待排查，不改等待时限或删断言。日志为 `Builds/LyricsBlend/0d3ddfaf-full-attempt2.log`，录屏／快照为同目录 `0d3ddfaf-full-attempt2-visuals/`，提取末帧为 `0d3ddfaf-route-failure.png`。**直接 IPA 成功；测试后 IPA 未生成，不能标记两路通过。** 普通 Mesh Plus Lighter 三条真机路径已验收，与此独立导航问题分开记录。
+
 ## 显示与兼容
 
 - 快捷菜单新增红／灰图标按钮“沉浸式歌词”，升级默认关闭，独立保存；不打开动态视频、蜂窝网络或倒影开关。

@@ -10,6 +10,12 @@ import XCTest
         let (model, player, song) = try await makeModel()
         model.renderPreferences.configuration.backgroundMode = .meshColorMode2
         try await start(model, song)
+        // An item and lyric document can be ready while AVPlayer is still
+        // buffering. Establish a live clock before testing layout continuity.
+        try await wait("initial audio and playback clock are running") {
+            model.playbackSnapshot?.isPlaying == true && player.currentTime().seconds > 0.3
+                && abs(model.progress() - player.currentTime().seconds) < 0.4
+        }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)

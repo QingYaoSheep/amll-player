@@ -72,6 +72,28 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor func testGlobalLyricDelayCanBeAdjustedAndRestoredThroughThePanel() {
+        let app = lyricsApp()
+        openPanel(app)
+        let reset = app.buttons["quickSettingsGlobalDelayReset"]
+        reveal(reset, in: app)
+        reset.tap()
+        app.buttons["quickSettingsGlobalDelayPlus"].tap()
+        app.buttons["quickSettingsGlobalDelayPlus"].tap()
+        XCTAssertTrue(panel(app).exists)
+        let value = app.staticTexts["quickSettingsGlobalDelayValue"]
+        XCTAssertEqual(value.label, "+0.2 s")
+        app.buttons["closeLyricsQuickSettings"].tap()
+        app.terminate()
+        openPanel(app)
+        reveal(reset, in: app)
+        XCTAssertEqual(value.label, "+0.2 s", "Global delay survives relaunch")
+        app.buttons["quickSettingsGlobalDelayMinus"].tap()
+        XCTAssertEqual(value.label, "+0.1 s")
+        reset.tap()
+        XCTAssertEqual(value.label, "+0.0 s")
+    }
+
     @MainActor func testQuickSettingsStayOpenAcrossLyricVisibilityChanges() {
         let app = XCUIApplication()
         app.launchArguments += ["--lyrics-ui-testing", "--skip-welcome-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]

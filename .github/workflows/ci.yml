@@ -1,4 +1,4 @@
-name: Lyrics blending diagnosis
+name: Catalog design verification
 on:
   push:
     branches: [codex/lyrics-blend-probe]
@@ -6,11 +6,11 @@ permissions:
   contents: read
 jobs:
   probe:
-    name: Xcode 27 / Actual lyric blending
+    name: Xcode 27 / Catalog experience
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 40
     concurrency:
-      group: lyrics-blend-probe
+      group: catalog-design-probe
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -22,45 +22,51 @@ jobs:
         run: |
           if xcrun --sdk iphoneos metal --version; then exit 0; fi
           xcodebuild -downloadComponent MetalToolchain
-      - name: Generate project
-        run: bash Scripts/generate-project.sh
-      - name: Prepare reference simulators
+      - name: Generate project and simulators
         run: |
+          bash Scripts/generate-project.sh
           node Scripts/prepare-ci-simulators.cjs
-      - name: Test actual production lyrics
+      - name: Test actual catalog pages on iPhone
         run: >-
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -only-testing:AMLLPlayerTests/ImmersiveLyricsLayoutTests
-          -only-testing:AMLLPlayerTests/ImmersiveArtworkDebugStoreTests
-          -only-testing:AMLLPlayerTests/LyricsHDRStateTests
-          -only-testing:AMLLPlayerTests/LyricsHDRRendererTests
-          -only-testing:AMLLPlayerTests/LyricsCoordinatorTests/testGlobalDelayPersistsAcrossTracksWithoutReloadingOrChangingSongOffsets
-          -only-testing:AMLLPlayerTests/LyricsCoordinatorTests/testOldLyricsSettingsDecodeWithoutA_GlobalDelay
-          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testGlobalDelayUpdatesTheLiveCanvasAndLyricSeekUsesTheCombinedOffset
-          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testImmersiveFocusUsesEighteenPercentAndRestoresTheOrdinaryAnchor
-          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testImmersiveLyricsSwitchRetainsCanvasAndActualAudioTime
-          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testCompatibilityImmersiveSwitchRetainsItsOriginalRenderer
-          -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testImmersiveLyricsModeStaysOpenPersistsAndFallsBackInLandscape
-          -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testGlobalLyricDelayCanBeAdjustedAndRestoredThroughThePanel
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testActualMeshColorMode2MetalLyricsAddLightAtRestThroughTheProductionZoomPresentation
-          -resultBundlePath build/LyricsBlend.xcresult
+          -only-testing:AMLLPlayerTests/MusicExperienceTests
+          -only-testing:AMLLPlayerTests/NetEaseIntegrationTests
+          -only-testing:AMLLPlayerTests/CatalogArtworkTests
+          -only-testing:AMLLPlayerTests/SpotifyCatalogStoreTests
+          -only-testing:AMLLPlayerTests/SpotifyCatalogDecoderTests
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testProductPagesAndSearchHistory
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testCatalogNavigationAndMetadataOnlyPlaylist
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testSearchSurvivesDetailNavigation
+          -resultBundlePath build/Catalog-iPhone.xcresult
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
-      - name: Export actual rendering evidence
+      - name: Test actual catalog pages on iPad
+        if: always()
+        run: >-
+          xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testPlaylistNavigationPlaybackAndRepeatedEntries
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testArtistHighlightsAndAlbumNavigation
+          -resultBundlePath build/Catalog-iPad.xcresult
+          -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
+      - name: Export actual page screenshots
         if: always()
         run: |
-          if [[ -d build/LyricsBlend.xcresult ]]; then
-            xcrun xcresulttool export attachments --path build/LyricsBlend.xcresult --output-path build/Blend-images
-          fi
+          for device in iPhone iPad; do
+            if [[ -d "build/Catalog-$device.xcresult" ]]; then
+              xcrun xcresulttool export attachments --path "build/Catalog-$device.xcresult" --output-path "build/Catalog-images/$device"
+            fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Lyrics-blend-probe-visuals
-          path: build/Blend-images
+          name: Catalog-design-visuals
+          path: build/Catalog-images
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Lyrics-blend-probe-results
-          path: build/LyricsBlend.xcresult
+          name: Catalog-design-results
+          path: build/Catalog-*.xcresult
           if-no-files-found: ignore

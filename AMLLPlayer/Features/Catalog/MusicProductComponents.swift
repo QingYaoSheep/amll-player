@@ -97,7 +97,7 @@ struct MusicSectionHeading: View {
     var route: CatalogRoute?
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.title2.bold()).foregroundStyle(.primary)
+            Text(title).font(.title2.bold()).foregroundStyle(.primary).accessibilityAddTraits(.isHeader)
             Spacer(minLength: 12)
             if let route {
                 NavigationLink(value: route) {

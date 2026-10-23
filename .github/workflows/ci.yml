@@ -26,6 +26,11 @@ jobs:
         run: |
           bash Scripts/generate-project.sh
           node Scripts/prepare-ci-simulators.cjs
+      - name: Warm iPhone and set light appearance
+        run: |
+          xcrun simctl boot "$CI_IPHONE_UDID" || true
+          xcrun simctl bootstatus "$CI_IPHONE_UDID" -b
+          xcrun simctl ui "$CI_IPHONE_UDID" appearance light
       - name: Test actual catalog pages on iPhone
         run: >-
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
@@ -43,12 +48,16 @@ jobs:
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Test actual catalog pages on iPad
         if: always()
-        run: >-
-          xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
-          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testPlaylistNavigationPlaybackAndRepeatedEntries
-          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testArtistHighlightsAndAlbumNavigation
-          -resultBundlePath build/Catalog-iPad.xcresult
+        run: |
+          xcrun simctl shutdown "$CI_IPHONE_UDID" || true
+          xcrun simctl boot "$CI_IPAD_UDID" || true
+          xcrun simctl bootstatus "$CI_IPAD_UDID" -b
+          xcrun simctl ui "$CI_IPAD_UDID" appearance dark
+          xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer \
+          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID" \
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testPlaylistNavigationPlaybackAndRepeatedEntries \
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testArtistHighlightsAndAlbumNavigation \
+          -resultBundlePath build/Catalog-iPad.xcresult \
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Export actual page screenshots
         if: always()

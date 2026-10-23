@@ -9,6 +9,8 @@ import XCTest
     func testImmersiveFocusUsesEighteenPercentAndRestoresTheOrdinaryAnchor() async throws {
         let (model, player, song) = try await makeModel()
         model.renderPreferences.configuration.anchor = 0.62
+        model.renderPreferences.configuration.sizePreset = nil
+        model.renderPreferences.configuration.fontSize = 40
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
@@ -29,7 +31,10 @@ import XCTest
                 host.view.setNeedsLayout(); host.view.layoutIfNeeded()
                 guard let frame = canvas.frameState, frame.settled, let row = frame.rows.first,
                       (canvas.bounds.height < 500) == immersive else { return false }
-                return abs(row.y - Double(canvas.bounds.height) * expected) < 1
+                // The engine aligns the row container, then adds its existing
+                // 0.4em text inset. Check the anchor without removing that inset.
+                let inset = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 40, compatibleWith: canvas.traitCollection) * 0.4
+                return abs(row.y - inset - Double(canvas.bounds.height) * expected) < 1
             }
             XCTAssertTrue(findCanvas(host.view) === canvas)
             XCTAssertEqual(model.renderPreferences.configuration.anchor, 0.62)

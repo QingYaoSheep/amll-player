@@ -57,7 +57,7 @@ struct MusicFilterPill: View {
             .font(.subheadline.weight(.semibold))
             .padding(.horizontal, 16).frame(minHeight: 44)
             .foregroundStyle(selected ? .white : .primary)
-            .background(selected ? MusicProductStyle.accent : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+            .background(selected ? MusicProductStyle.filledAccent : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(MusicContentButtonStyle())
@@ -86,12 +86,11 @@ struct MusicDetailDescription: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(text).font(.subheadline).foregroundStyle(.secondary)
                 .lineLimit(expanded ? nil : 3).fixedSize(horizontal: false, vertical: true)
-            if text.count > 100 || text.contains("\n") {
-                Button(expanded ? "收起介绍" : "显示完整介绍") { expanded.toggle() }
-                    .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
-                    .buttonStyle(MusicContentButtonStyle())
-                    .accessibilityIdentifier("catalogExpandDescription")
-            }
+            // Character counts cannot predict wrapping with Dynamic Type.
+            Button(expanded ? "收起介绍" : "显示完整介绍") { expanded.toggle() }
+                .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
+                .buttonStyle(MusicContentButtonStyle())
+                .accessibilityIdentifier("catalogExpandDescription")
         }
     }
 }

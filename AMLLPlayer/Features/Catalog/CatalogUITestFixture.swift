@@ -177,6 +177,9 @@
             }
 
             func page(_ query: SpotifyCatalogQuery, next _: URL?) async throws -> SpotifyPage<SpotifyCatalogRow> {
+                if ProcessInfo.processInfo.arguments.contains("--catalog-design-ui-testing") {
+                    return ProductCatalogUITestFixture.page(query)
+                }
                 let value: SpotifyCatalogItem = switch query {
                 case .collection(.playlists): CatalogUITestFixture.item("list1", kind: .playlist, name: "Test Playlist")
                 case .collection(.savedAlbums), .artistAlbums: CatalogUITestFixture.item("album1", kind: .album, name: "Test Album")
@@ -188,6 +191,10 @@
             }
 
             func detail(kind: SpotifyCatalogKind, id: String) async throws -> SpotifyCatalogDetail {
+                if ProcessInfo.processInfo.arguments.contains("--catalog-design-ui-testing") {
+                    if id == "unavailable" { throw MusicCatalogError.forbidden }
+                    return ProductCatalogUITestFixture.detail(kind: kind, id: id)
+                }
                 let name = kind == .playlist ? "Test Playlist" : kind == .album ? "Test Album" : kind == .artist ? "Test Artist" : "Test Song"
                 let children: SpotifyCatalogQuery? = switch kind {
                 case .track, .playlist, .station, .musicVideo: nil

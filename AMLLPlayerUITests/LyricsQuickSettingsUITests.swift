@@ -25,10 +25,13 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertTrue(app.buttons["immersiveLyricsPlayPause"].isHittable)
             capture(app, name: legacy ? "Immersive-lyrics-custom" : "Immersive-lyrics-native")
             let debugButton = app.buttons["immersiveArtworkDebug"]
-            let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: debugButton)
-            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 4), .completed,
-                "Debug button: \(debugButton.debugDescription)\n\(app.debugDescription)")
-            app.buttons["immersiveArtworkDebug"].tap()
+            XCTAssertTrue(debugButton.exists)
+            XCTAssertGreaterThanOrEqual(debugButton.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(debugButton.frame.height, 44)
+            // The dismissal handle's AX rectangle spans the screen width and
+            // overlaps this control. Verify the physical center hit and the
+            // resulting sheet rather than AX's overlapping-rectangle heuristic.
+            debugButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             XCTAssertTrue(app.buttons["closeImmersiveArtworkDebug"].waitForExistence(timeout: 5))
             XCTAssertTrue(app.staticTexts["层级顺序（最上层 → 最下层）"].exists)
             app.buttons["closeImmersiveArtworkDebug"].tap()

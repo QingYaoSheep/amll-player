@@ -230,7 +230,6 @@ struct MusicLibraryView: View {
             }
         }
         .navigationTitle("catalog.library")
-        .accessibilityIdentifier("catalogLibrary")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if model.currentServiceConnected {

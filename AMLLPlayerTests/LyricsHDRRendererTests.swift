@@ -40,7 +40,7 @@ final class LyricsHDRRendererTests: XCTestCase {
                 XCTAssertGreaterThan(row.blur, 0)
                 let gain = try XCTUnwrap(canvas.hdrFrameState).brightness(for: row)
                 XCTAssertGreaterThan(gain, 1)
-                XCTAssertLessThan(gain, 2)
+                XCTAssertLessThan(gain, LyricsHDRConfiguration.targetBrightness)
                 XCTAssertEqual(row.wordClock.time, time, accuracy: 0.001)
                 XCTAssertFalse(try XCTUnwrap(canvas.frameState?.rows.last).active)
                 moved = true
@@ -79,7 +79,7 @@ final class LyricsHDRRendererTests: XCTestCase {
         let hdr = try XCTUnwrap(canvas.hdrFrameState)
         XCTAssertEqual(hdr.activeLineIndexes, [0])
         XCTAssertGreaterThan(hdr.brightness(for: row), 1)
-        XCTAssertLessThan(hdr.brightness(for: row), 2)
+        XCTAssertLessThan(hdr.brightness(for: row), LyricsHDRConfiguration.targetBrightness)
         XCTAssertGreaterThan(row.blur, 0)
         XCTAssertLessThan(row.scale, 1)
         XCTAssertGreaterThan(row.scale, 0.97)

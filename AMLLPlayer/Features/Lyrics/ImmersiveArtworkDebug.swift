@@ -53,6 +53,21 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
     /// Optional so existing calibration is retained when upgrading.
     var topFeatherLength: Double?
 
+    /// The approved product preset. The decoder retains legacy fallbacks so
+    /// upgrading cannot reinterpret an existing partial calibration.
+    static var calibratedDefault: Self {
+        var value = Self()
+        value.blurRadius = 12
+        value.topFeatherLength = 66
+        value[.dimming].opacity = 0
+        value[.bottomFade] = .init(enabled: false, x: 0, y: -119, width: 1, height: 0.14, opacity: 1)
+        value[.reflection] = .init(enabled: true, x: 0, y: -53, width: 1, height: 0.6, opacity: 1)
+        value[.transition] = .init(enabled: true, x: 0, y: 206, width: 1, height: 2, opacity: 0.99)
+        for layer in ImmersiveArtworkLayer.allCases { value[layer] = value[layer] }
+        value.order = [.transition, .reflection, .bottomFade, .video, .dimming, .background]
+        return value
+    }
+
     private enum CodingKeys: String, CodingKey {
         case layers, blurRadius, order, topFeatherLength
     }
@@ -129,9 +144,9 @@ final class ImmersiveArtworkDebugStore {
         self.defaults = defaults
         showsButton = defaults.object(forKey: Self.buttonKey) as? Bool ?? true
         configuration = defaults.data(forKey: Self.key)
-            .flatMap { try? JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: $0) } ?? .init()
+            .flatMap { try? JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: $0) } ?? .calibratedDefault
     }
-    func reset() { configuration = .init() }
+    func reset() { configuration = .calibratedDefault }
     func exportedValues(backgroundDimming: Double) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

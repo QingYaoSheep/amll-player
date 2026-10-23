@@ -3,7 +3,7 @@ import Foundation
 /// Brightness is relative to linear SDR white, independently of word glow.
 struct LyricsHDRConfiguration: Codable, Equatable, Sendable {
     var enabled = false
-    static let targetBrightness = 2.0
+    static let targetBrightness = 1.2
 }
 
 struct LyricsHDRCapabilities: Equatable, Sendable {

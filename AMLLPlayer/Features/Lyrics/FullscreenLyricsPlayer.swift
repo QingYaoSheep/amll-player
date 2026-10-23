@@ -115,7 +115,7 @@ struct FullscreenLyricsPlayer: View {
                     if let bottom, abs((immersiveInformationTextBottom ?? -1) - bottom) > 0.5 { immersiveInformationTextBottom = bottom }
                 }
                 .overlay(alignment: .topTrailing) {
-                    if layout != nil {
+                    if layout != nil, artworkDebug.showsButton {
                         ImmersiveArtworkDebugButton { showingArtworkDebug = true }
                             .padding(.top, geometry.safeAreaInsets.top + 48).padding(.trailing, 16)
                     }

@@ -113,15 +113,22 @@ extension ImmersiveArtworkDebugConfiguration {
 final class ImmersiveArtworkDebugStore {
     static let shared = ImmersiveArtworkDebugStore()
     private static let key = "AMLL.temporaryImmersiveLayerTuning.v1"
+    private static let buttonKey = "AMLL.showsImmersiveArtworkDebugButton.v1"
+    @ObservationIgnored private let defaults: UserDefaults
+    var showsButton: Bool {
+        didSet { defaults.set(showsButton, forKey: Self.buttonKey) }
+    }
     var configuration: ImmersiveArtworkDebugConfiguration {
         didSet {
             if let data = try? JSONEncoder().encode(configuration) {
-                UserDefaults.standard.set(data, forKey: Self.key)
+                defaults.set(data, forKey: Self.key)
             }
         }
     }
-    private init() {
-        configuration = UserDefaults.standard.data(forKey: Self.key)
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        showsButton = defaults.object(forKey: Self.buttonKey) as? Bool ?? true
+        configuration = defaults.data(forKey: Self.key)
             .flatMap { try? JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: $0) } ?? .init()
     }
     func reset() { configuration = .init() }

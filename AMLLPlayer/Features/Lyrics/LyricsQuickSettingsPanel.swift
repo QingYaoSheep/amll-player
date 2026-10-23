@@ -169,6 +169,7 @@ struct LyricsQuickSettingsPanel: View {
     @State private var headerHeight: CGFloat = 100
     @State private var drag: CGFloat = 0
     @State private var compositingDiagnosticCopied = false
+    @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
     @GestureState private var dragIsActive = false
     @AccessibilityFocusState private var titleFocused: Bool
 
@@ -415,6 +416,8 @@ struct LyricsQuickSettingsPanel: View {
 
     private var more: some View {
         section("quickSettings.more") {
+            iconToggleRow("quickSettings.artworkDebugButton", symbol: "slider.horizontal.3", id: "quickSettingsArtworkDebugButton",
+                value: Binding(get: { artworkDebug.showsButton }, set: { artworkDebug.showsButton = $0 }))
             route("render.settings", symbol: "slider.horizontal.3", to: .appearance)
             route("lyrics.settings", symbol: "text.badge.checkmark", to: .lyricsSources)
             if let artworkStatus { Text(artworkStatus).font(.footnote).foregroundStyle(.secondary) }

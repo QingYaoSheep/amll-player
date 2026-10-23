@@ -1,6 +1,7 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "quickSettings.artworkDebugButton" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show artwork layer debug button"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示封面层级调试按钮"}}}},
     "quickSettings.copyCompositingDiagnostics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Copy lyric blending diagnostics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"复制歌词混色诊断"}}}},
     "quickSettings.diagnosticCopied" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Diagnostics copied"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"诊断已复制"}}}},
     "quickSettings.immersiveLyrics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Immersive lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"沉浸式歌词"}}}},

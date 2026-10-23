@@ -4,7 +4,7 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     var body: some View {
         Form {
-            Section {
+            Section("音乐") {
                 NavigationLink { MusicAccountsView(model: model) } label: {
                     SettingsItem(title: "账号与音乐来源", subtitle: model.selectedMusicService.title + " · " + model.connectionSummary(model.selectedMusicService), symbol: "person.crop.circle", color: .red)
                 }.accessibilityIdentifier("musicAccountsLink")
@@ -12,26 +12,32 @@ struct SettingsView: View {
                     SettingsItem(title: "播放", subtitle: "音质、设备与播放方式", symbol: "play.fill", color: .pink)
                 }
             }
-            Section {
+            Section("个性化") {
                 NavigationLink { LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics) } label: {
                     SettingsItem(title: "歌词与外观", subtitle: "字号、背景与显示效果", symbol: "textformat.size", color: .purple)
                 }
                 NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
                     SettingsItem(title: "歌词来源与匹配", subtitle: "来源顺序、匹配与时间偏移", symbol: "quote.bubble", color: .indigo)
                 }
+            }
+            Section("存储") {
                 NavigationLink { MusicStorageView(model: model) } label: {
                     SettingsItem(title: "存储与缓存", subtitle: "管理歌词、封面与音译缓存", symbol: "internaldrive", color: .orange)
                 }
             }
-            Section {
+            Section("支持") {
                 NavigationLink { MusicHelpView(model: model) } label: {
                     SettingsItem(title: "帮助与故障排查", subtitle: "使用说明与连接检查", symbol: "questionmark.circle", color: .blue)
                 }
-                NavigationLink { ImmersiveArtworkDebugPanel(backgroundDimming: model.renderPreferences.configuration.validated().backgroundDimming ?? 0.16) } label: {
-                    SettingsItem(title: "沉浸封面层级调试（临时）", subtitle: "各层开关、位置、大小、透明度与模糊", symbol: "slider.horizontal.3", color: .orange)
-                }
                 NavigationLink { MusicAboutView() } label: {
                     SettingsItem(title: "关于 AMLL", subtitle: "版本、更新记录与开源许可", symbol: "info.circle", color: .gray)
+                }
+            }
+            Section {
+                DisclosureGroup("开发与调试") {
+                    NavigationLink { ImmersiveArtworkDebugPanel(backgroundDimming: model.renderPreferences.configuration.validated().backgroundDimming ?? 0.16) } label: {
+                        SettingsItem(title: "沉浸封面层级调试（临时）", subtitle: "各层开关、位置、大小、透明度与模糊", symbol: "slider.horizontal.3", color: .orange)
+                    }
                 }
             }
         }

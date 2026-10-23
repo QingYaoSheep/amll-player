@@ -12,7 +12,9 @@ struct CatalogArtwork: View {
     var size: CGFloat = 52
     var isArtist = false
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var image: UIImage?
+    @State private var loadedURL: URL?
 
     var body: some View {
         ZStack {
@@ -20,18 +22,18 @@ struct CatalogArtwork: View {
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
-                Image(systemName: "music.note").foregroundStyle(.secondary)
+                Image(systemName: isArtist ? "person.crop.circle.fill" : "music.note").foregroundStyle(.secondary)
             }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: isArtist ? size / 2 : min(16, size / 6)))
         .accessibilityHidden(true)
         .task(id: "\(url?.absoluteString ?? ""):\(Int(size * displayScale))") {
-            image = nil
+            if loadedURL != url { image = nil; loadedURL = url }
             guard let url else { return }
             let loaded = await CatalogImageCache.shared.image(url, pixels: Int(size * displayScale))
             if !Task.isCancelled {
-                image = loaded
+                withAnimation(reduceMotion ? nil : MusicProductMotion.change) { image = loaded }
             }
         }
     }
@@ -217,6 +219,7 @@ struct CatalogRowView: View {
     var tapToPlay = false
     var onSelect: (() -> Void)? = nil
     var parentPlaylist: MusicCatalogItem?
+    var showsPosition = false
     @State private var showingLogin = false
     @State private var netEasePlaylistItem: MusicCatalogItem?
     @State private var playlistItem: MusicCatalogItem?
@@ -232,11 +235,11 @@ struct CatalogRowView: View {
                         do { try await model.playCatalog(row.item, contextURI: contextURI, position: row.position) }
                         catch is CancellationError {} catch { failure = error.localizedDescription }
                     }
-                } label: { label }.buttonStyle(.plain)
+                } label: { label }.buttonStyle(MusicContentButtonStyle())
             } else if let kind = row.item.kind, row.item.availability != .unsupported {
                 NavigationLink(value: row.item.service != .spotify
                     ? CatalogRoute.resource(row.item.resource!) : CatalogRoute.detail(kind, row.item.spotifyID)) { label }
-                    .buttonStyle(.plain)
+                    .buttonStyle(MusicContentButtonStyle())
                     .simultaneousGesture(TapGesture().onEnded { onSelect?() })
             } else {
                 label
@@ -275,11 +278,19 @@ struct CatalogRowView: View {
 
     private var label: some View {
         HStack(spacing: 12) {
+            if showsPosition, let position = row.position {
+                Text(position + 1, format: .number).font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary).frame(minWidth: 24)
+            }
             CatalogArtwork(url: row.item.artworkURL)
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.item.name).font(.body.weight(.medium)).lineLimit(2)
                 if !row.item.subtitle.isEmpty {
                     Text(row.item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if let track = row.item.track, track.durationMS > 0 {
+                    Text(String(format: "%d:%02d", track.durationMS / 60000, track.durationMS / 1000 % 60))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
                 }
                 if row.item.availability == .unsupported {
                     Text("catalog.unsupported").font(.caption).foregroundStyle(.secondary)

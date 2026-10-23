@@ -125,19 +125,23 @@ struct MusicCatalogCard: View {
                         do { try await model.playCatalog(row.item) }
                         catch is CancellationError {} catch { failure = error.localizedDescription }
                     }
-                } label: { label }.buttonStyle(.plain)
+                } label: { label }.buttonStyle(MusicContentButtonStyle())
             } else if let resource = row.item.resource {
                 NavigationLink(value: CatalogRoute.resource(resource)) { label }
-                    .buttonStyle(.plain).simultaneousGesture(TapGesture().onEnded { onSelect?() })
+                    .buttonStyle(MusicContentButtonStyle()).simultaneousGesture(TapGesture().onEnded { onSelect?() })
             } else { label }
-            if row.item.canPlay {
-                CatalogPlayButton(model: model, item: row.item)
-                    .accessibilityLabel("播放 " + row.item.name)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if row.item.availability == .restricted {
+            if row.item.availability == .restricted {
                 Text("catalog.restricted").font(.caption).foregroundStyle(.secondary)
             } else if row.item.availability == .unsupported {
                 Text("catalog.unsupported").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if row.item.canPlay {
+                CatalogPlayButton(model: model, item: row.item)
+                    .modifier(MusicArtworkPlaySurface())
+                    .padding(10)
+                    .offset(y: max(0, width - 64))
             }
         }
         .frame(width: width, alignment: .topLeading)
@@ -150,7 +154,9 @@ struct MusicCatalogCard: View {
         VStack(alignment: .leading, spacing: 8) {
             CatalogArtwork(url: row.item.artworkURL, size: width, isArtist: row.item.kind == .artist)
             Text(row.item.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
-            Text(row.item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if !row.item.subtitle.isEmpty {
+                Text(row.item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
         }
     }
 }

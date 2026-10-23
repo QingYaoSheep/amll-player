@@ -62,6 +62,7 @@ import Foundation
     }
     func detail(kind: MusicCatalogKind, id: String) async throws -> MusicCatalogDetail {
         var v: [String: Any]
+        var highlights: [MusicCatalogRow] = []
         let children: MusicCatalogQuery?
         switch kind {
         case .playlist: v = try await playlist(id, force: true); children = .playlistItems(id)
@@ -69,6 +70,10 @@ import Foundation
             let r = try await call("/v1/album/" + id, privateData: false); v = r["album"] as? [String: Any] ?? [:]; children = .albumTracks(id)
         case .artist:
             let r = try await call("/v1/artist/" + id, privateData: false); v = r["artist"] as? [String: Any] ?? [:]; children = .artistAlbums(id)
+            highlights = (r["hotSongs"] as? [[String: Any]] ?? []).prefix(10).enumerated().compactMap { index, value in
+                guard let song = NetEaseDecoder.item(value, kind: .track) else { return nil }
+                return .init(id: "artist:\(id):highlight:\(index):\(song.id)", item: song, position: nil)
+            }
         case .track:
             guard let item = try await songs([id]).first else { throw NetEaseError.invalidResponse }
             return .init(item: item, children: nil, availability: item.availability)
@@ -77,7 +82,8 @@ import Foundation
         // Ownership must be established from the response, never from navigation scope.
         v["id"] = id
         guard let item = NetEaseDecoder.item(v, kind: kind, owner: session.profile?.id) else { throw NetEaseError.invalidResponse }
-        return .init(item: item, children: children, availability: item.availability)
+        return .init(item: item, children: children, availability: item.availability,
+                     highlights: highlights, about: kind == .artist ? v["briefDesc"] as? String : nil)
     }
     func suggestions(_ term: String) async throws -> [String] {
         let r = try await call("/search/suggest/keyword", ["s": term], privateData: false)

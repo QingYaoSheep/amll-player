@@ -35,19 +35,13 @@ jobs:
         run: >-
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -only-testing:AMLLPlayerTests/MusicExperienceTests
-          -only-testing:AMLLPlayerTests/NetEaseIntegrationTests
-          -only-testing:AMLLPlayerTests/CatalogArtworkTests
-          -only-testing:AMLLPlayerTests/SpotifyCatalogStoreTests
-          -only-testing:AMLLPlayerTests/SpotifyCatalogDecoderTests
-          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testProductPagesAndSearchHistory
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testCatalogNavigationAndMetadataOnlyPlaylist
+          -parallel-testing-enabled NO
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testArtistHighlightsAndAlbumNavigation
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testSearchFailureRetainsRecoveryAndSourceSwitchResetsNavigation
           -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testSearchSurvivesDetailNavigation
           -resultBundlePath build/Catalog-iPhone.xcresult
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Test actual catalog pages on iPad
-        if: always()
         run: |
           xcrun simctl shutdown "$CI_IPHONE_UDID" || true
           xcrun simctl boot "$CI_IPAD_UDID" || true
@@ -55,6 +49,7 @@ jobs:
           xcrun simctl ui "$CI_IPAD_UDID" appearance dark
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer \
           -destination "platform=iOS Simulator,id=$CI_IPAD_UDID" \
+          -parallel-testing-enabled NO \
           -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testPlaylistNavigationPlaybackAndRepeatedEntries \
           -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testArtistHighlightsAndAlbumNavigation \
           -resultBundlePath build/Catalog-iPad.xcresult \

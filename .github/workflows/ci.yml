@@ -33,6 +33,8 @@ jobs:
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerTests/ImmersiveLyricsLayoutTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkDebugStoreTests
+          -only-testing:AMLLPlayerTests/LyricsHDRStateTests
+          -only-testing:AMLLPlayerTests/LyricsHDRRendererTests
           -only-testing:AMLLPlayerTests/LyricsCoordinatorTests/testGlobalDelayPersistsAcrossTracksWithoutReloadingOrChangingSongOffsets
           -only-testing:AMLLPlayerTests/LyricsCoordinatorTests/testOldLyricsSettingsDecodeWithoutA_GlobalDelay
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testGlobalDelayUpdatesTheLiveCanvasAndLyricSeekUsesTheCombinedOffset

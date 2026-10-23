@@ -2,6 +2,27 @@
 import XCTest
 
 final class ImmersiveLyricsLayoutTests: XCTestCase {
+    @MainActor func testLyricsBackdropKeepsTheCalibratedArtworkPageJunction() {
+        let viewport = CGSize(width: 402, height: 874)
+        let cover = AMLLImmersiveArtworkGeometry.frame(viewport: viewport, video: CGSize(width: 3, height: 4))
+        var tuning = ImmersiveArtworkDebugConfiguration()
+        tuning[.video].y = 18
+        tuning[.transition].y = 36
+        tuning[.transition].height = 0.8
+        tuning[.reflection].y = 12
+        tuning[.background].width = 1.2
+        let visible = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(cover), source: cover.size)
+        let expected = ImmersiveBackgroundBlurProfile.extendingBackground(video: visible, viewport: viewport,
+            adjustment: tuning[.transition])
+        let actual = ImmersiveArtworkMedia.Layout.lyrics(cover: cover, viewport: viewport,
+            configuration: .init(), tuning: tuning, presentsFrame: true, reduceTransparency: false)
+        XCTAssertEqual(actual.video, visible)
+        XCTAssertEqual(actual.transition, expected.frame, "Opening lyrics must not lift the calibrated blur region")
+        XCTAssertEqual(actual.blurProfile, expected)
+        XCTAssertEqual(actual.reflection, tuning[.reflection].frame(ArtworkReflectionGeometry.frame(cover: visible, viewportHeight: viewport.height)))
+        XCTAssertEqual(actual.background, tuning[.background].frame(CGRect(origin: .zero, size: viewport)))
+    }
+
     func testSquareCoverAndInformationLeaveAnIndependentLyricViewport() {
         let layout = ImmersiveLyricsLayout.resolve(viewport: CGSize(width: 402, height: 874),
             artwork: CGSize(width: 1000, height: 1000), informationHeight: 64, bottomInset: 34)

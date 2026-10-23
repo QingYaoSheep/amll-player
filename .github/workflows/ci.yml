@@ -25,7 +25,10 @@ jobs:
       - name: Generate project
         run: bash Scripts/generate-project.sh
       - name: Prepare reference simulators
-        run: node Scripts/prepare-ci-simulators.cjs
+        run: |
+          xcrun simctl list runtimes --json
+          xcrun simctl list devicetypes --json
+          node Scripts/prepare-ci-simulators.cjs
       - name: Test actual production lyrics
         run: >-
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer

@@ -36,7 +36,7 @@
             let defaults = UserDefaults(suiteName: defaultsName)!
             let sources = MusicSourcePreferences(defaults: defaults); sources.selected = service
             let lyrics = LyricsCoordinator(providers: includeLyrics ? [LyricsFixtureProvider()] : [], cache: MemoryLyricsCache(),
-                                           settingsStore: LyricsSettingsStore(defaults: UserDefaults(suiteName: "lyrics-ui-" + UUID().uuidString)!))
+                                           settingsStore: LyricsSettingsStore(defaults: defaults))
             let artworkURL = arguments.contains("--lyrics-blending-mesh-ui-testing") ? try? makeBlendCover()
                 : arguments.contains("--immersive-lyrics-ui-testing") ? try? makeCover() : nil
             let session = NetEaseSession(api: NetEaseFixtureAPI(), store: FixtureStore())

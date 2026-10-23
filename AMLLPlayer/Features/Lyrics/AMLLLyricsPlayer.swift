@@ -12,6 +12,7 @@ struct AMLLLyricsPlayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var immersiveInformationHeight: CGFloat = 64
+    @State private var immersiveInformationTextBottom: CGFloat?
     @State private var stillArtwork = ImmersiveStillArtwork()
     @State private var search = false
     @State private var devices = false
@@ -84,18 +85,18 @@ struct AMLLLyricsPlayer: View {
             .opacity(immersive ? 1 : drag.opacity)
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
             .overlay(alignment: .topTrailing) {
-                if lyricLayout == nil, let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
-                    Button { showingArtworkDebug = true } label: {
-                        Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44)
-                    }
-                    .background(.ultraThinMaterial, in: Circle())
+                if let item = model.playbackSnapshot?.item,
+                   lyricLayout != nil || mountsImmersiveArtwork(item, size: geometry.size) {
+                    ImmersiveArtworkDebugButton { showingArtworkDebug = true }
                     .padding(.top, geometry.safeAreaInsets.top + 48).padding(.trailing, 16)
-                    .accessibilityLabel("沉浸封面层级调试")
                 }
             }
             .sheet(isPresented: $showingArtworkDebug) {
                 ImmersiveArtworkDebugPanel(viewport: geometry.size,
-                    video: AMLLImmersiveArtworkGeometry.frame(viewport: geometry.size, video: artworkLoader.videoSize ?? .zero),
+                    video: lyricLayout?.visibleCover ?? AMLLImmersiveArtworkGeometry.fittedFrame(
+                        container: artworkDebug.configuration[.video].frame(AMLLImmersiveArtworkGeometry.frame(
+                            viewport: geometry.size, video: artworkLoader.videoSize ?? .zero)),
+                        source: artworkLoader.videoSize ?? CGSize(width: 9, height: 16)),
                     backgroundDimming: configuration.backgroundDimming ?? 0.16,
                     frames: artworkReflectionFrames)
                     .presentationDetents([.medium, .large])
@@ -148,7 +149,8 @@ struct AMLLLyricsPlayer: View {
                     .frame(width: rect.width, height: rect.height)
                     .offset(x: rect.minX, y: rect.minY)
                 if let layout {
-                    ImmersiveLyricsHeader(model: model, snapshot: snapshot, item: item, presentation: quickSettings)
+                    ImmersiveLyricsHeader(model: model, snapshot: snapshot, item: item, presentation: quickSettings,
+                        additive: layout.overlaysArtwork)
                         .frame(width: layout.information.width)
                         .background {
                             GeometryReader { proxy in
@@ -172,16 +174,15 @@ struct AMLLLyricsPlayer: View {
         .onPreferenceChange(ImmersiveInformationHeightKey.self) { height in
             if height > 0, abs(immersiveInformationHeight - height) > 0.5 { immersiveInformationHeight = height }
         }
+        .onPreferenceChange(ImmersiveInformationTextBottomKey.self) { bottom in
+            if let bottom, abs((immersiveInformationTextBottom ?? -1) - bottom) > 0.5 { immersiveInformationTextBottom = bottom }
+        }
     }
 
     private func lyricConfiguration(layout: ImmersiveLyricsLayout?, page: CGSize) -> LyricsRenderConfiguration {
+        if let layout { return layout.lyricConfiguration(configuration, page: page) }
         var value = configuration
-        if let layout {
-            value.horizontalPadding = layout.horizontalInset
-            // Responsive presets retain their original page-derived point size.
-            value.fontSize = configuration.resolvedFontSize(width: page.width, height: page.height)
-            value.sizePreset = nil
-        }
+        value.immersiveLyrics = false
         return value
     }
 
@@ -379,7 +380,9 @@ struct AMLLLyricsPlayer: View {
         if presentsVideo, let actual = artworkLoader.videoSize { source = actual }
         else { source = currentStillFrame?.size ?? CGSize(width: 1, height: 1) }
         return .resolve(viewport: size, artwork: source, informationHeight: immersiveInformationHeight,
-                        bottomInset: bottomInset, isVideo: presentsVideo)
+                        bottomInset: bottomInset, isVideo: presentsVideo,
+                        informationTextBottom: immersiveInformationTextBottom,
+                        artworkAdjustment: artworkDebug.configuration[.video])
     }
 
     private var immersiveLyricsHasVideo: Bool {
@@ -392,7 +395,7 @@ struct AMLLLyricsPlayer: View {
                                         cornerRadius: CGFloat, opacity: Double) -> some View {
         return ImmersiveArtworkMedia(video: immersiveLyricsHasVideo ? immersiveVideo(item) : nil,
             frames: artworkReflectionFrames,
-            layout: .lyrics(cover: layout.cover, viewport: size, configuration: configuration,
+            layout: .immersive(cover: layout.cover, viewport: size, configuration: configuration,
                 tuning: artworkDebug.configuration, presentsFrame: immersiveLyricsHasVideo && artworkLoader.hasPresentedFrame,
                 reduceTransparency: reduceTransparency, cornerRadius: cornerRadius, opacity: opacity),
             background: artworkBackground(), still: currentStillFrame)
@@ -453,23 +456,11 @@ struct AMLLLyricsPlayer: View {
     }
 
     private func immersiveArtworkLayers(_ item: PlaybackItem, size: CGSize, cornerRadius: CGFloat, opacity: Double) -> some View {
-        let tuning = artworkDebug.configuration
         let originalVideo = AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
-        let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(originalVideo), source: originalVideo.size)
-        let reflection = tuning[.reflection].frame(ArtworkReflectionGeometry.frame(cover: video, viewportHeight: size.height))
-        let blurProfile = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: size,
-            adjustment: tuning[.transition])
-        let transition = blurProfile.frame
-        let bottomFade = tuning[.bottomFade].frame(AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: size))
-        let reflects = configuration.animatedArtwork?.reflection == true && !reduceMotion && tuning[.reflection].enabled
         return ImmersiveArtworkMedia(video: immersiveVideo(item), frames: artworkReflectionFrames,
-            layout: .init(video: video, reflection: reflection, transition: transition, bottomFade: bottomFade,
-                tuning: tuning, presentsFrame: artworkLoader.hasPresentedFrame, reflectionEnabled: reflects,
-                reduceTransparency: reduceTransparency,
-                background: tuning[.background].frame(CGRect(origin: .zero, size: size)),
-                dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: size)),
-                backgroundDimming: configuration.backgroundDimming ?? 0.16,
-                cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: blurProfile),
+            layout: .immersive(cover: originalVideo, viewport: size, configuration: configuration,
+                tuning: artworkDebug.configuration, presentsFrame: artworkLoader.hasPresentedFrame,
+                reduceTransparency: reduceTransparency, cornerRadius: cornerRadius, opacity: opacity),
             background: artworkBackground())
         .id(artworkLoader.requestToken)
         .frame(width: size.width, height: size.height)

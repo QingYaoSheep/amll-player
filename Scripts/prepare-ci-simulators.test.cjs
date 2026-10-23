@@ -18,4 +18,6 @@ test('selects a runtime compatible with both fixed reference devices', () => {
   incompatible.supportedDeviceTypes = [{ identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro' }];
   assert.equal(selectRuntime([runtime('27.0'), incompatible]), runtime('27.0').identifier);
   assert.throws(() => selectRuntime([incompatible]), /No available iOS 27/);
+  incompatible.supportedDeviceTypes = [{ identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro' }];
+  assert.throws(() => selectRuntime([incompatible]), /No available iOS 27/, 'The iPad reference must also be supported');
 });

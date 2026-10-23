@@ -6,6 +6,39 @@ import UIKit
 import XCTest
 
 @MainActor final class LyricsSeekPageTests: XCTestCase {
+    func testImmersiveFocusUsesEighteenPercentAndRestoresTheOrdinaryAnchor() async throws {
+        let (model, player, song) = try await makeModel()
+        model.renderPreferences.configuration.anchor = 0.62
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
+        defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
+        try await start(model, song)
+        try await pauseFixture(model, player)
+        await model.seek(to: 0.75)
+        try await wait("known first-line playback position") { abs(model.progress() - 0.75) < 0.01 }
+        let canvas = try await waitForCanvas(host.view)
+        let item = player.currentItem, revision = model.lyricsSeekRevision
+        for immersive in [true, false] {
+            model.renderPreferences.configuration.immersiveLyrics = immersive
+            let expected = immersive ? 0.18 : 0.62
+            try await wait("production focus at \(expected)") {
+                host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+                guard let frame = canvas.frameState, frame.settled, let row = frame.rows.first,
+                      (canvas.bounds.height < 500) == immersive else { return false }
+                return abs(row.y - Double(canvas.bounds.height) * expected) < 1
+            }
+            XCTAssertTrue(findCanvas(host.view) === canvas)
+            XCTAssertEqual(model.renderPreferences.configuration.anchor, 0.62)
+            XCTAssertEqual(model.lyricsSeekRevision, revision)
+            XCTAssertTrue(player.currentItem === item)
+            if immersive { XCTAssertEqual(canvas.fadeTop, 0) }
+        }
+    }
+
     func testOrdinaryMeshForegroundBlendingSurvivesReentryAndLayoutChanges() async throws {
         let (model, player, song) = try await makeModel()
         model.renderPreferences.configuration.backgroundMode = .meshColorMode2

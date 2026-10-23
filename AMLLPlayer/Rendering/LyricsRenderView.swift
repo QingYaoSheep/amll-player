@@ -13,6 +13,7 @@ struct NativeLyricsView: UIViewRepresentable {
     let seek: (Double) -> Void
     let resumeToken: Int
     let browsing: (Bool) -> Void
+    var fadeTop: CGFloat? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeUIView(context _: Context) -> LyricsRenderView {
@@ -21,6 +22,7 @@ struct NativeLyricsView: UIViewRepresentable {
 
     func updateUIView(_ view: LyricsRenderView, context _: Context) {
         view.position = position; view.seek = seek; view.browsing = browsing
+        view.fadeTop = fadeTop
         view.update(document: document, configuration: configuration.validated(), offset: offset, duration: duration,
                     playing: playing, active: active, canSeek: canSeek, reduceMotion: reduceMotion, resumeToken: resumeToken)
     }
@@ -32,6 +34,10 @@ struct NativeLyricsView: UIViewRepresentable {
 
 @MainActor
 final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
+    var fadeTop: CGFloat? { didSet { if oldValue != fadeTop { setNeedsLayout() } } }
+    private let viewportFade = CAGradientLayer()
+    private var fadeSize = CGSize.zero
+    private var appliedFadeTop: CGFloat?
     var position: () -> Double = { 0 }
     var seek: (Double) -> Void = { _ in }
     var browsing: (Bool) -> Void = { _ in }
@@ -134,6 +140,11 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         scroll.frame = bounds
+        if fadeSize != bounds.size || appliedFadeTop != fadeTop {
+            fadeSize = bounds.size
+            appliedFadeTop = fadeTop
+            updateViewportFade()
+        }
         guard bounds.width > 32, bounds.height > 0 else { return }
         if bounds.size != lastSize || needsRebuild {
             let resized = bounds.size != lastSize
@@ -159,6 +170,19 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         if playing || !follow.following {
             syncDisplayLink()
         }
+    }
+
+    private func updateViewportFade() {
+        guard let fadeTop, bounds.height > 0 else { layer.mask = nil; return }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        viewportFade.frame = bounds
+        viewportFade.startPoint = CGPoint(x: 0.5, y: 0)
+        viewportFade.endPoint = CGPoint(x: 0.5, y: 1)
+        viewportFade.colors = [UIColor.clear.cgColor, UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.white.cgColor]
+        viewportFade.locations = [0, NSNumber(value: Double(min(0.8, max(0, fadeTop) / bounds.height))),
+            NSNumber(value: Double(min(0.9, max(0, fadeTop + 64) / bounds.height))), 1]
+        layer.mask = viewportFade
+        CATransaction.commit()
     }
 
     override func didMoveToWindow() {

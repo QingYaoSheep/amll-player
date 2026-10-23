@@ -18,9 +18,18 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertTrue(information.waitForExistence(timeout: 4))
             let canvas = app.descendants(matching: .any)[legacy ? "nativeLyricsScroll" : "amllNativeLyricsDisplay"].firstMatch
             XCTAssertTrue(canvas.exists)
-            XCTAssertGreaterThanOrEqual(canvas.frame.minY, information.frame.maxY + 20)
+            let artist = information.staticTexts["Fixture Artist"].firstMatch
+            XCTAssertTrue(artist.exists)
+            XCTAssertEqual(canvas.frame.minY, artist.frame.maxY, accuracy: 2,
+                "The upper lyric fade must start at the artist's bottom edge")
             XCTAssertTrue(app.buttons["immersiveLyricsPlayPause"].isHittable)
             capture(app, name: legacy ? "Immersive-lyrics-custom" : "Immersive-lyrics-native")
+            XCTAssertTrue(app.buttons["immersiveArtworkDebug"].isHittable)
+            app.buttons["immersiveArtworkDebug"].tap()
+            XCTAssertTrue(app.buttons["closeImmersiveArtworkDebug"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["层级顺序（最上层 → 最下层）"].exists)
+            app.buttons["closeImmersiveArtworkDebug"].tap()
+            XCTAssertTrue(app.buttons["immersiveArtworkDebug"].waitForExistence(timeout: 4))
             XCUIDevice.shared.orientation = .landscapeLeft
             XCTAssertTrue(information.waitForNonExistence(timeout: 4))
             XCUIDevice.shared.orientation = .portrait

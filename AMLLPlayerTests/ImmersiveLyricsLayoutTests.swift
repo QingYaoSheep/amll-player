@@ -14,7 +14,7 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         let visible = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(cover), source: cover.size)
         let expected = ImmersiveBackgroundBlurProfile.extendingBackground(video: visible, viewport: viewport,
             adjustment: tuning[.transition])
-        let actual = ImmersiveArtworkMedia.Layout.lyrics(cover: cover, viewport: viewport,
+        let actual = ImmersiveArtworkMedia.Layout.immersive(cover: cover, viewport: viewport,
             configuration: .init(), tuning: tuning, presentsFrame: true, reduceTransparency: false)
         XCTAssertEqual(actual.video, visible)
         XCTAssertEqual(actual.transition, expected.frame, "Opening lyrics must not lift the calibrated blur region")
@@ -29,7 +29,7 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cover, CGRect(x: 0, y: 0, width: 402, height: 402))
         XCTAssertEqual(layout.information.minY, 418)
         XCTAssertEqual(layout.information.minX, 30)
-        XCTAssertEqual(layout.lyrics.minY, 506)
+        XCTAssertEqual(layout.lyrics.minY, 482)
         XCTAssertEqual(layout.lyrics.maxY, 840)
         XCTAssertFalse(layout.requiresScrolling)
     }
@@ -42,7 +42,7 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
             XCTAssertEqual(layout.cover.midX, viewport.width / 2)
             XCTAssertEqual(layout.cover.minY, 0)
             XCTAssertGreaterThanOrEqual(layout.information.minY, layout.cover.maxY + 16)
-            XCTAssertGreaterThanOrEqual(layout.lyrics.minY, layout.information.maxY + 24)
+            XCTAssertEqual(layout.lyrics.minY, layout.information.maxY)
             XCTAssertGreaterThanOrEqual(layout.lyrics.height, viewport.height / 3 - 0.01)
             XCTAssertLessThanOrEqual(layout.lyrics.maxY, viewport.height - 34 + 0.01)
         }
@@ -56,8 +56,9 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
                 XCTAssertEqual(layout.cover, AMLLImmersiveArtworkGeometry.frame(viewport: viewport, video: source))
                 XCTAssertEqual(layout.cover.width, viewport.width, accuracy: 0.51)
                 XCTAssertEqual(layout.cover.width / layout.cover.height, source.width / source.height, accuracy: 0.0001)
-                XCTAssertEqual(layout.information.minY, layout.cover.maxY + 16)
-                XCTAssertEqual(layout.lyrics.minY, layout.information.maxY + 24)
+                let informationTop = source.height > source.width ? layout.cover.maxY - 80 : layout.cover.maxY + 16
+                XCTAssertEqual(layout.information.minY, informationTop)
+                XCTAssertEqual(layout.lyrics.minY, layout.information.maxY)
                 XCTAssertGreaterThanOrEqual(layout.lyrics.height, viewport.height / 3 - 0.01)
             }
         }
@@ -96,6 +97,55 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         XCTAssertGreaterThan(layout.contentHeight, 568)
     }
 
+    func testPortraitVideoInformationIsInsideTheCoverAndFadeStartsAtTheArtistBottom() {
+        let layout = ImmersiveLyricsLayout.resolve(viewport: CGSize(width: 402, height: 874),
+            artwork: CGSize(width: 3, height: 4), informationHeight: 64, bottomInset: 34,
+            isVideo: true, informationTextBottom: 58)
+        XCTAssertTrue(layout.overlaysArtwork)
+        XCTAssertEqual(layout.cover.height, 536)
+        XCTAssertEqual(layout.information.minY, 456)
+        XCTAssertEqual(layout.information.maxY, 520)
+        XCTAssertEqual(layout.lyrics.minY, 514)
+        XCTAssertEqual(layout.lyrics.maxY, 840)
+        XCTAssertFalse(layout.requiresScrolling)
+        let large = ImmersiveLyricsLayout.resolve(viewport: CGSize(width: 320, height: 568),
+            artwork: CGSize(width: 3, height: 4), informationHeight: 500, bottomInset: 34, isVideo: true)
+        XCTAssertFalse(large.overlaysArtwork)
+        XCTAssertGreaterThan(large.information.minY, large.cover.maxY)
+        XCTAssertTrue(large.requiresScrolling)
+    }
+
+    func testFocusIsEighteenPercentWithoutChangingOrdinaryPreferences() {
+        var preference = LyricsRenderConfiguration()
+        preference.anchor = 0.62
+        preference.sizePreset = .medium
+        let page = CGSize(width: 402, height: 874)
+        let layout = ImmersiveLyricsLayout.resolve(viewport: page, artwork: CGSize(width: 1, height: 1),
+            informationHeight: 64, bottomInset: 34)
+        let projected = layout.lyricConfiguration(preference, page: page).validated()
+        XCTAssertEqual(projected.anchor, 0.18)
+        XCTAssertEqual(projected.fontSize, preference.resolvedFontSize(width: page.width, height: page.height))
+        XCTAssertNil(projected.sizePreset)
+        XCTAssertEqual(preference.anchor, 0.62)
+        XCTAssertEqual(preference.sizePreset, .medium)
+        preference.anchor = 0.18
+        XCTAssertEqual(preference.validated().anchor, 0.2, "The ordinary anchor range must stay unchanged")
+    }
+
+    func testInformationAndLyricsFollowTheActualCalibratedCover() {
+        var adjustment = ImmersiveArtworkLayerAdjustment()
+        adjustment.y = 20
+        adjustment.width = 0.8
+        let layout = ImmersiveLyricsLayout.resolve(viewport: CGSize(width: 402, height: 874),
+            artwork: CGSize(width: 3, height: 4), informationHeight: 64, bottomInset: 34, isVideo: true,
+            informationTextBottom: 60, artworkAdjustment: adjustment)
+        XCTAssertEqual(layout.cover.width, 402)
+        XCTAssertEqual(layout.visibleCover.width, 321.6, accuracy: 0.001)
+        XCTAssertEqual(layout.visibleCover.width / layout.visibleCover.height, 0.75, accuracy: 0.001)
+        XCTAssertEqual(layout.information.maxY, layout.visibleCover.maxY - 16)
+        XCTAssertEqual(layout.lyrics.minY, layout.information.minY + 60)
+    }
+
     func testModeOnlyAppliesToPhonePortraitLyricsAndDoesNotEnableVideo() {
         var configuration = LyricsRenderConfiguration()
         let phone = CGSize(width: 402, height: 874)
@@ -109,7 +159,7 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         XCTAssertFalse(ImmersiveLyricsLayout.isEnabled(configuration, isPhone: true, viewport: phone))
     }
 
-    func testCalibrationDoesNotMoveOrHideTheNewCover() {
+    @MainActor func testLyricsLayerDebuggingKeepsAllSavedGeometryAndOrder() {
         var legacy = ImmersiveArtworkDebugConfiguration()
         legacy[.video].y = 400
         legacy[.video].height = 1.8
@@ -119,15 +169,16 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         legacy.blurRadius = 48
         legacy.topFeatherLength = 36
         legacy.order = Array(ImmersiveArtworkLayer.allCases)
-        let projected = legacy.forImmersiveLyrics()
-        XCTAssertEqual(projected[.video].y, 0)
-        XCTAssertEqual(projected[.video].height, 1)
-        XCTAssertTrue(projected[.video].enabled)
-        XCTAssertEqual(projected[.reflection].y, 0)
-        XCTAssertEqual(projected[.reflection].opacity, 0.7)
-        XCTAssertEqual(projected.validatedBlur, 48)
-        XCTAssertEqual(projected.validatedTopFeatherLength, 36)
-        XCTAssertTrue(projected.isBelow(.video, .transition))
+        let layout = ImmersiveArtworkMedia.Layout.immersive(cover: CGRect(x: 0, y: 0, width: 402, height: 536),
+            viewport: CGSize(width: 402, height: 874), configuration: .init(), tuning: legacy,
+            presentsFrame: true, reduceTransparency: false)
+        XCTAssertEqual(layout.tuning, legacy)
+        XCTAssertEqual(layout.video.minY, 400, accuracy: 0.001)
+        XCTAssertFalse(layout.tuning[.video].enabled)
+        XCTAssertEqual(layout.tuning[.reflection].y, 250)
+        XCTAssertEqual(layout.tuning[.reflection].opacity, 0.7)
+        XCTAssertEqual(layout.tuning.validatedBlur, 48)
+        XCTAssertEqual(layout.tuning.validatedTopFeatherLength, 36)
         XCTAssertEqual(legacy[.video].y, 400)
     }
 }

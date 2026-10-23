@@ -96,18 +96,6 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
         if layer == .transition { topFeatherLength = nil }
     }
 
-    /// The lyrics layout owns spatial placement. Keep only the calibrated
-    /// appearance values, leaving the original page's saved geometry intact.
-    func forImmersiveLyrics() -> Self {
-        var value = Self()
-        value.blurRadius = validatedBlur
-        value.topFeatherLength = validatedTopFeatherLength
-        for layer in [ImmersiveArtworkLayer.reflection, .transition, .bottomFade] {
-            value[layer].opacity = self[layer].opacity
-            value[layer].enabled = self[layer].enabled
-        }
-        return value
-    }
 }
 
 extension ImmersiveArtworkDebugConfiguration {
@@ -150,6 +138,18 @@ final class ImmersiveArtworkDebugStore {
         complete.order = complete.orderedLayers
         complete.topFeatherLength = complete.validatedTopFeatherLength
         return (try? encoder.encode(complete)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+}
+
+struct ImmersiveArtworkDebugButton: View {
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44)
+        }
+        .background(.ultraThinMaterial, in: Circle())
+        .accessibilityLabel("沉浸封面层级调试")
+        .accessibilityIdentifier("immersiveArtworkDebug")
     }
 }
 
@@ -220,10 +220,13 @@ struct ImmersiveArtworkDebugPanel: View {
                 }
             }
             .navigationTitle("沉浸封面层级调试")
+            .accessibilityIdentifier("immersiveArtworkDebugPanel")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }.accessibilityIdentifier("closeImmersiveArtworkDebug")
+                }
             }
         }
     }

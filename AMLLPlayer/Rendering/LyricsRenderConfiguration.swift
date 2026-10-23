@@ -210,7 +210,8 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         copy.tracking = tracking.isFinite ? min(3, max(-1, tracking)) : 0
         copy.gradientWidth = gradientWidth.isFinite
             ? min(1, max(0, gradientWidth)) : AMLLMotionMetrics.wordFadeWidthInEms
-        copy.anchor = anchor.isFinite ? min(0.7, max(0.2, anchor)) : 0.28
+        let minimumAnchor = immersiveLyrics == true ? ImmersiveLyricsLayout.focusAnchor : 0.2
+        copy.anchor = anchor.isFinite ? min(0.7, max(minimumAnchor, anchor)) : 0.28
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         copy.backgroundBlur = backgroundBlur.isFinite ? min(80, max(0, backgroundBlur)) : 40
         copy.flowingBackground = flowingBackground?.validated()

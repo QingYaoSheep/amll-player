@@ -33,7 +33,8 @@ final class MusicCatalogDesignUITests: XCTestCase {
         selectTab("Library", app)
         let artists = app.buttons["Followed artists"]
         XCTAssertTrue(artists.waitForExistence(timeout: 5))
-        let categories = app.scrollViews["catalogLibraryCategories"]
+        let categories = app.descendants(matching: .any)["catalogLibraryCategories"].firstMatch
+        XCTAssertTrue(categories.waitForExistence(timeout: 5))
         for _ in 0..<4 {
             if categories.frame.insetBy(dx: 12, dy: 0).contains(artists.frame) { break }
             categories.swipeLeft()
@@ -72,9 +73,13 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertTrue(external.waitForExistence(timeout: 5), "A denied initial detail request still needs an external recovery action")
         XCTAssertTrue(external.isHittable)
         capture(app, "WWDC-detail-error-recovery")
+        // Switch from the real root toolbar while the other tab retains its
+        // old detail route; source changes must clear that inactive route too.
+        selectTab("Home", app)
         app.buttons["musicSourceMenu"].tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Apple Music ·")).firstMatch.tap()
         XCTAssertTrue(app.buttons["musicSourceMenu"].waitForExistence(timeout: 5))
+        selectTab("Search", app)
         XCTAssertFalse(external.exists, "Changing service must discard the old service's detail route")
         XCTAssertFalse(app.staticTexts["Unavailable Result"].exists)
     }

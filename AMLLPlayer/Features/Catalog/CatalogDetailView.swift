@@ -55,6 +55,10 @@ private struct CatalogDetailContent: View {
                 if let error = state.error {
                     CatalogErrorView(error: error) { await load(force: true) }
                     if let item = state.value?.item { CatalogExternalLink(item: item) }
+                    else if store.provider.service == .spotify,
+                            let url = URL(string: "https://open.spotify.com/\(kind.rawValue)/\(spotifyID)") {
+                        Link("catalog.openSpotify", destination: url).frame(minHeight: 44)
+                    }
                 }
             }
             .padding(20).frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
@@ -158,7 +162,7 @@ private struct CatalogDetailContent: View {
     @ViewBuilder private func playback(_ item: MusicCatalogItem) -> some View {
         CatalogPlayButton(model: model, item: item, compact: false)
             .frame(minWidth: 120, minHeight: 48).padding(.horizontal, 16)
-            .foregroundStyle(.white).background(MusicProductStyle.accent, in: Capsule())
+            .foregroundStyle(.white).background(MusicProductStyle.filledAccent, in: Capsule())
         if [.appleMusic, .netease].contains(item.service), [.album, .playlist].contains(item.kind) {
             Button {
                 Task {

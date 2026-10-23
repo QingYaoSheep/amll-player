@@ -2,6 +2,7 @@ import SwiftUI
 
 enum MusicProductStyle {
     static let accent = Color("MusicAccent")
+    static let filledAccent = Color("MusicAccentFill")
     static let pageInset: CGFloat = 20
     static let sectionSpacing: CGFloat = 28
 }

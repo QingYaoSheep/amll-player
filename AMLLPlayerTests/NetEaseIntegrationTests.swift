@@ -78,6 +78,21 @@ import XCTest
         XCTAssertEqual(all.count, 60)
         XCTAssertEqual(all[0].spotifyID, all[1].spotifyID)
     }
+    func testArtistDetailReusesOrderedHotSongsAndDoesNotInventMissingBiography() async throws {
+        let api = NetEaseFixtureAPI(), session = NetEaseSession(api: NetEaseFixtureAPI(), store: NetEaseMemoryStore())
+        let realSession = NetEaseSession(api: api, store: NetEaseMemoryStore())
+        let detail = try await NetEaseCatalog(session: realSession).detail(kind: .artist, id: "7")
+        XCTAssertEqual(detail.item.name, "Fixture Artist")
+        XCTAssertEqual(detail.children, .artistAlbums("7"))
+        XCTAssertEqual(detail.highlights.map(\.item.spotifyID), ["42", "42", "43"])
+        XCTAssertEqual(Set(detail.highlights.map(\.id)).count, 3)
+        XCTAssertTrue(detail.highlights.allSatisfy { $0.position == nil })
+        XCTAssertEqual(detail.about, "A real service biography")
+        XCTAssertEqual(api.paths, ["/v1/artist/7"])
+        let empty = try await NetEaseCatalog(session: session).detail(kind: .artist, id: "8")
+        XCTAssertNil(empty.about)
+        XCTAssertTrue(empty.highlights.isEmpty)
+    }
     func testCursorCannotBeReusedForAnotherQueryOrExternalHost() async throws {
         let api = NetEaseFixtureAPI(), session = NetEaseSession(api: NetEaseFixtureAPI(), store: NetEaseMemoryStore())
         try await session.importCookie("MUSIC_U=x")
@@ -377,6 +392,11 @@ import XCTest
         case "/v6/playlist/detail":
             let ids = (0..<60).map { ["id": $0 < 2 ? 42 : $0] }
             return .init(object: ["playlist": ["id": 99, "name": "List", "trackIds": ids, "creator": ["userId": userID]]], cookie: nil)
+        case "/v1/artist/7":
+            return .init(object: ["artist": ["id": 7, "name": "Fixture Artist", "briefDesc": "A real service biography"],
+                "hotSongs": [["id": 42, "name": "First"], ["id": 42, "name": "Duplicate"], ["id": 43, "name": "Last"]]], cookie: nil)
+        case "/v1/artist/8":
+            return .init(object: ["artist": ["id": 8, "name": "No Biography"]], cookie: nil)
         case "/v3/song/detail":
             let raw = parameters["c"] as? String ?? "[]"
             let input = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [[String: String]] ?? []

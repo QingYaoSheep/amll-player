@@ -53,7 +53,7 @@ final class CatalogImageCache {
     private(set) var byteCount = 0
     func clear() { cache.removeAll(); costs.removeAll(); order.removeAll(); byteCount = 0 }
     func image(_ url: URL, pixels: Int = 600) async -> UIImage? {
-        guard url.scheme == "https" else { return nil }
+        guard url.isFileURL || url.scheme == "https" else { return nil }
         let edge = min(1400, max(64, ((pixels + 63) / 64) * 64))
         let key = url.absoluteString + ":" + String(edge)
         if let image = cache[key] {
@@ -67,6 +67,14 @@ final class CatalogImageCache {
             task = existing
         } else {
             task = Task {
+                if url.isFileURL {
+                    return await Task.detached(priority: .utility) { () -> Data? in
+                        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                              values.isRegularFile == true, let size = values.fileSize, size <= 5 * 1024 * 1024,
+                              !Task.isCancelled else { return nil }
+                        return try? Data(contentsOf: url, options: .mappedIfSafe)
+                    }.value
+                }
                 var request = URLRequest(url: url)
                 request.timeoutInterval = 15
                 do {
@@ -96,7 +104,7 @@ final class CatalogImageCache {
             return UIImage(cgImage: cg)
         }.value
         guard !Task.isCancelled, let thumbnail else { return nil }
-        let cost = Int(thumbnail.size.width * thumbnail.size.height * 4)
+        let cost = thumbnail.cgImage.map { $0.bytesPerRow * $0.height } ?? Int(thumbnail.size.width * thumbnail.size.height * 4)
         byteCount -= costs[key] ?? 0
         cache[key] = thumbnail; costs[key] = cost; byteCount += cost
         order.removeAll { $0 == key }; order.append(key)
@@ -193,7 +201,7 @@ struct CatalogPlayButton: View {
                 Label("player.play", systemImage: "play.fill").frame(minHeight: 44)
             }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(MusicContentButtonStyle())
         .disabled(!item.canPlay || model.isPerformingAction)
         .accessibilityLabel(Text("player.play") + Text(" " + item.name))
         .accessibilityIdentifier("catalogPlay-\(item.id)")

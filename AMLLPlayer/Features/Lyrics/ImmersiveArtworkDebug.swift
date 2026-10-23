@@ -107,8 +107,8 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
     }
 
     mutating func resetLayer(_ layer: ImmersiveArtworkLayer) {
-        layers.removeValue(forKey: layer.rawValue)
-        if layer == .transition { topFeatherLength = nil }
+        self[layer] = Self.calibratedDefault[layer]
+        if layer == .transition { topFeatherLength = Self.calibratedDefault.topFeatherLength }
     }
 
 }

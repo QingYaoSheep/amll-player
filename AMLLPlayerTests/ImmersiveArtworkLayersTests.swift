@@ -114,7 +114,7 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         settings.resetLayer(.reflection)
         XCTAssertEqual(settings.validatedTopFeatherLength, 60)
         settings.resetLayer(.transition)
-        XCTAssertEqual(settings.validatedTopFeatherLength, 24)
+        XCTAssertEqual(settings.validatedTopFeatherLength, 66)
         XCTAssertEqual(settings.validatedBlur, 55, "Do not expand the existing blur-radius reset behavior")
         XCTAssertEqual(ImmersiveArtworkDebugConfiguration().validatedTopFeatherLength, 24)
         let store = ImmersiveArtworkDebugStore.shared
@@ -122,7 +122,7 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         defer { store.configuration = original }
         store.configuration = settings
         let exported = try JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: Data(store.exportedValues(backgroundDimming: 0.16).utf8))
-        XCTAssertEqual(exported.topFeatherLength, 24)
+        XCTAssertEqual(exported.topFeatherLength, 66)
         XCTAssertEqual(exported[.transition], settings[.transition])
     }
 

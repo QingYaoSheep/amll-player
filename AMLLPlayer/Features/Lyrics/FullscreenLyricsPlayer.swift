@@ -263,12 +263,15 @@ struct FullscreenLyricsPlayer: View {
                                  resumeToken: resumeToken, browsing: { browsing = $0 },
                                  fadeTop: immersiveLayout != nil ? 0 : nil)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
-                    .buttonStyle(.bordered).accessibilityIdentifier("resumeLyricsFollowing")
-                    .frame(height: 48).opacity(browsing ? 1 : 0).disabled(!browsing).accessibilityHidden(!browsing)
-                credits
+                if immersiveLayout == nil {
+                    returnCurrentButton
+                    credits
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottom) {
+                if immersiveLayout != nil, browsing { returnCurrentButton }
+            }
         } else {
             VStack(spacing: 16) {
                 Spacer()
@@ -281,6 +284,12 @@ struct FullscreenLyricsPlayer: View {
                 Spacer()
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var returnCurrentButton: some View {
+        Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
+            .buttonStyle(.bordered).accessibilityIdentifier("resumeLyricsFollowing")
+            .frame(height: 48).opacity(browsing ? 1 : 0).disabled(!browsing).accessibilityHidden(!browsing)
     }
 
     private func compatibilityConfiguration(layout: ImmersiveLyricsLayout?) -> LyricsRenderConfiguration {

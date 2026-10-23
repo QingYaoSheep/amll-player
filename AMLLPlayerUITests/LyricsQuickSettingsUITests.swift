@@ -79,6 +79,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
 
     @MainActor func testGlobalLyricDelayCanBeAdjustedAndRestoredThroughThePanel() {
         let app = lyricsApp()
+        app.launchArguments += ["--quick-settings-preferences-suite", "quick-settings-ui-" + UUID().uuidString]
         openPanel(app)
         let reset = app.buttons["quickSettingsGlobalDelayReset"]
         reveal(reset, in: app)

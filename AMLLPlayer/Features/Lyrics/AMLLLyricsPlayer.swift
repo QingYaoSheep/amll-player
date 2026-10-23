@@ -85,7 +85,7 @@ struct AMLLLyricsPlayer: View {
             .opacity(immersive ? 1 : drag.opacity)
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
             .overlay(alignment: .topTrailing) {
-                if let item = model.playbackSnapshot?.item,
+                if artworkDebug.showsButton, let item = model.playbackSnapshot?.item,
                    lyricLayout != nil || mountsImmersiveArtwork(item, size: geometry.size) {
                     ImmersiveArtworkDebugButton { showingArtworkDebug = true }
                     .padding(.top, geometry.safeAreaInsets.top + 48).padding(.trailing, 16)

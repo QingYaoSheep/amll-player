@@ -9,7 +9,7 @@
 | 官方资料 | 本轮采用的原则 | 实现位置 |
 |---|---|---|
 | [WWDC26 Principles of great design](https://developer.apple.com/videos/play/wwdc2026/250/) | 目的明确、熟悉、简洁，内容优先；反馈解释用户动作 | 卡片导航与播放按钮分离；主要操作突出，管理与诊断收进菜单／二级入口 |
-| [WWDC26 Design intuitive search experiences](https://developer.apple.com/videos/play/wwdc2026/292/) | 搜索位置符合导航与范围，保留系统输入、清空、取消行为；最近搜索帮助再次访问 | 原生 search-role Tab 与 searchable 自动布局，Apple Music 范围保持独立；分类按钮可聚焦搜索，键盘随滚动交互收起 |
+| [WWDC26 Design intuitive search experiences](https://developer.apple.com/videos/play/wwdc2026/292/) | 搜索位置符合导航与范围，保留系统输入、清空、取消行为；最近搜索帮助再次访问 | 采用常规搜索 Tab＋始终可见的顶部原生 searchable，适合包含历史／分类的发现页；Apple Music 范围保持独立，键盘随滚动交互收起 |
 | [WWDC25 Get to know the new design system](https://developer.apple.com/videos/play/wwdc2025/356/) | 内容层与功能层分开，少用装饰性容器，用层次、分组与留白表达关系 | 封面／文字承担内容；Liquid Glass 留在系统导航、工具栏及封面播放控制，不给每张卡片重复铺玻璃 |
 | [WWDC25 Build a SwiftUI app with the new design](https://developer.apple.com/videos/play/wwdc2025/323/) | 使用系统导航、搜索与工具栏获得平台适配 | 保留 TabView、NavigationStack、sidebarAdaptable 与原迷你播放器；不自绘系统搜索栏 |
 | [HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout) | 清楚的视觉层级、留白、按窗口与 Dynamic Type 调整 | 20pt 手机留白、12pt 卡片间距、28pt 分区间距；内容最大1120pt，详情宽屏左右布局，大字体改纵向 |
@@ -36,6 +36,10 @@
 | 进入／退出详情 | 保留空间方向与可中断返回手势 | 系统 NavigationStack 转场，不叠加自制动画 |
 
 布局不依赖人工动画等待，操作不锁定输入；歌词页原动效不受本轮样式影响。
+
+### 第一轮真实运行发现
+
+`065e4b3f`（隔离验证，生产代码对应 `403531fa`）的62项目录／图片／网易云单元与集成测试全部通过。iPhone 7项UI中3项通过、4项失败：3项在新搜索角色的自动布局中找不到搜索框，属于实际回归，改回官方建议的常规搜索标签＋始终可见顶部搜索；1项在读取屏外分类按钮的 hittability 时失败，改为在明确分类容器中先滚至可见再测试。iPad歌单交互通过，歌手用例首次应用启动超时，后续预热并隔离模拟器资源后重跑。保留原失败证据，不视为验收通过。
 
 ## 验证台账
 

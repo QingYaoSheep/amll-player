@@ -28,14 +28,17 @@ final class MusicCatalogDesignUITests: XCTestCase {
     }
 
     @MainActor func testArtistHighlightsAndAlbumNavigation() {
-        let app = launch(dark: true)
-        capture(app, "WWDC-home-dark")
+        let app = launch()
+        capture(app, "WWDC-home-artist-flow")
         selectTab("Library", app)
         let artists = app.buttons["Followed artists"]
-        if !artists.isHittable {
-            app.scrollViews.firstMatch.swipeLeft()
-        }
         XCTAssertTrue(artists.waitForExistence(timeout: 5))
+        let categories = app.scrollViews["catalogLibraryCategories"]
+        for _ in 0..<4 {
+            if categories.frame.insetBy(dx: 12, dy: 0).contains(artists.frame) { break }
+            categories.swipeLeft()
+        }
+        XCTAssertTrue(artists.isHittable)
         artists.tap()
         let artist = app.staticTexts["Test Artist"].firstMatch
         XCTAssertTrue(artist.waitForExistence(timeout: 5))
@@ -63,8 +66,11 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertTrue(albums.waitForExistence(timeout: 5)); albums.tap()
         let result = app.staticTexts["Unavailable Result"].firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
-        let external = app.links["Open in Spotify"]
+        let external = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label == %@ AND (elementType == %d OR elementType == %d)", "Open in Spotify",
+            Int(XCUIElement.ElementType.button.rawValue), Int(XCUIElement.ElementType.link.rawValue))).firstMatch
         XCTAssertTrue(external.waitForExistence(timeout: 5), "A denied initial detail request still needs an external recovery action")
+        XCTAssertTrue(external.isHittable)
         capture(app, "WWDC-detail-error-recovery")
         app.buttons["musicSourceMenu"].tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Apple Music ·")).firstMatch.tap()
@@ -88,10 +94,10 @@ final class MusicCatalogDesignUITests: XCTestCase {
         capture(app, "WWDC-playlist-accessibility-text")
     }
 
-    @MainActor private func launch(dark: Bool = false, largeText: Bool = false) -> XCUIApplication {
+    @MainActor private func launch(largeText: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["--catalog-ui-testing", "--catalog-design-ui-testing", "--skip-welcome-ui-testing",
-            "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-AppleInterfaceStyle", dark ? "Dark" : "Light"]
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
         app.launch()
         XCTAssertTrue(app.buttons["musicSourceMenu"].waitForExistence(timeout: 5))
@@ -106,7 +112,10 @@ final class MusicCatalogDesignUITests: XCTestCase {
 
     @MainActor private func reveal(_ element: XCUIElement, _ app: XCUIApplication) {
         for _ in 0..<8 {
-            if element.exists, element.isHittable { return }
+            if element.exists {
+                let frame = element.frame
+                if app.frame.insetBy(dx: 0, dy: 80).contains(CGPoint(x: frame.midX, y: frame.midY)), element.isHittable { return }
+            }
             app.swipeUp()
         }
         XCTAssertTrue(element.isHittable, element.debugDescription)

@@ -44,7 +44,7 @@ struct MusicBrowserView: View {
             Tab("catalog.library", systemImage: "square.stack") {
                 navigation { MusicLibraryView(model: model, store: model.catalog) }
             }
-            Tab("catalog.search", systemImage: "magnifyingglass", role: .search) {
+            Tab("catalog.search", systemImage: "magnifyingglass") {
                 navigation { CatalogSearchView(model: model, store: model.catalog) }
             }
         }
@@ -223,6 +223,7 @@ struct MusicLibraryView: View {
                             }
                         }.padding(.horizontal, 20)
                     }.scrollIndicators(.hidden).padding(.vertical, 8)
+                        .accessibilityIdentifier("catalogLibraryCategories")
                     CatalogCollectionView(model: model, store: store, section: current, showsTitle: false)
                         .id(current)
                 }
@@ -294,7 +295,6 @@ struct CatalogSearchView: View {
     @State private var displayedRequest: MusicSearchRequest?
     @State private var searchPresented = false
     private var searchPlacement: SearchFieldPlacement {
-        if #available(iOS 26.0, *) { return .automatic }
         return .navigationBarDrawer(displayMode: .always)
     }
     private var request: MusicSearchRequest {

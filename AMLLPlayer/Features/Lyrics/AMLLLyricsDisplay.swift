@@ -56,7 +56,7 @@ struct AMLLLyricsDisplay: View {
     private func input(for document: LyricsDocument) -> AMLLPlayerInput {
         AMLLPlayerInput(
             position: model.progress(),
-            offset: model.lyrics.selection.offset,
+            offset: model.lyrics.effectiveOffset,
             playing: snapshot.isPlaying,
             seekRevision: model.lyricsSeekRevision,
             seekPosition: model.lyricsSeekPosition,
@@ -74,9 +74,9 @@ struct AMLLLyricsDisplay: View {
         case let .seek(lineID):
             guard snapshot.restrictions.canSeek, !model.isPerformingAction,
                   let line = document.lines.first(where: { $0.id == lineID }) else { return }
-            let target = LyricsTimeline.seekTarget(line: line, offset: model.lyrics.selection.offset,
+            let target = LyricsTimeline.seekTarget(line: line, offset: model.lyrics.effectiveOffset,
                                                    duration: snapshot.duration)
-            let track = snapshot.item?.uri, offset = model.lyrics.selection.offset
+            let track = snapshot.item?.uri, offset = model.lyrics.effectiveOffset
             Task { await model.seek(to: target, entry: .lyric, trackURI: track, lyricTime: line.start, offset: offset) }
         case .resumeFollowing:
             browsing(false)

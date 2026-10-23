@@ -312,6 +312,19 @@ final class LyricsCoordinator {
         selection.offset = max(-10, min(10, value)); persistSelection()
     }
 
+    var globalDelay: Double { settings.validatedGlobalDelay }
+    var effectiveOffset: Double { selection.offset + globalDelay }
+
+    /// Timing-only changes must not reload lyrics, regenerate TTML or seek audio.
+    func setGlobalDelay(_ value: Double) {
+        guard value.isFinite else { return }
+        var updated = settings
+        updated.globalDelay = max(-10, min(10, value))
+        guard updated != settings else { return }
+        do { try settingsStore.save(updated); settings = updated }
+        catch { cacheWarning = LyricsError.cache.localizedDescription }
+    }
+
     private func persistSelection() {
         guard let track else { return }
         do { try cache.saveSelection(selection, for: track.spotifyID) }

@@ -256,7 +256,7 @@ struct FullscreenLyricsPlayer: View {
             Spacer(minLength: 0)
         } else if let document = model.lyrics.document, !document.lines.isEmpty {
             VStack(spacing: 0) {
-                NativeLyricsView(document: document, configuration: renderConfiguration, offset: model.lyrics.selection.offset,
+                NativeLyricsView(document: document, configuration: renderConfiguration, offset: model.lyrics.effectiveOffset,
                                  duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                                  canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
                                  position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },

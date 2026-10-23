@@ -8,6 +8,13 @@ struct LyricsSettings: Codable, Equatable, Sendable {
     var language = "zh-Hans-CN"
     var cacheEnabled = true
     var refreshDays = 30
+    /// Positive seconds delay all lyric displays; absent in older preferences.
+    var globalDelay: Double?
+
+    var validatedGlobalDelay: Double {
+        guard let globalDelay, globalDelay.isFinite else { return 0 }
+        return max(-10, min(10, globalDelay))
+    }
 
     func validated() -> LyricsSettings {
         var value = self
@@ -29,6 +36,7 @@ struct LyricsSettings: Codable, Equatable, Sendable {
             value.language = "zh-Hans-CN"
         }
         value.refreshDays = max(0, min(3650, refreshDays))
+        if globalDelay != nil { value.globalDelay = validatedGlobalDelay }
         return value
     }
 }

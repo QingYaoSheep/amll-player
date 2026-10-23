@@ -1,6 +1,8 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "quickSettings.globalDelay" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Global lyric delay"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"全局歌词延迟"}}}},
+    "quickSettings.globalDelayHelp" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Applies to every song and music source, in addition to each song’s offset. Positive values show lyrics later; negative values show them earlier."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"适用于所有歌曲与音乐来源，并与逐曲偏移相加。正值延后显示，负值提前显示。"}}}},
     "quickSettings.artworkDebugButton" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show artwork layer debug button"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示封面层级调试按钮"}}}},
     "quickSettings.copyCompositingDiagnostics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Copy lyric blending diagnostics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"复制歌词混色诊断"}}}},
     "quickSettings.diagnosticCopied" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Diagnostics copied"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"诊断已复制"}}}},

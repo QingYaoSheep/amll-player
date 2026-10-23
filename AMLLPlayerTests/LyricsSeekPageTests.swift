@@ -6,6 +6,43 @@ import UIKit
 import XCTest
 
 @MainActor final class LyricsSeekPageTests: XCTestCase {
+    func testGlobalDelayUpdatesTheLiveCanvasAndLyricSeekUsesTheCombinedOffset() async throws {
+        let (model, player, song) = try await makeModel()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        host.loadViewIfNeeded(); host.view.frame = window.bounds; host.view.layoutIfNeeded()
+        defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; window.rootViewController = nil }
+        try await start(model, song)
+        try await pauseFixture(model, player)
+        await model.seek(to: 8.75)
+        let canvas = try await waitForCanvas(host.view)
+        let item = player.currentItem, seekRevision = model.lyricsSeekRevision, documentRevision = model.lyrics.documentRevision
+        model.lyrics.setOffset(0.2)
+        for delay in [0.5, -0.5, 0] {
+            model.lyrics.setGlobalDelay(delay)
+            try await wait("live global lyric delay \(delay)") {
+                abs((canvas.frameState?.lyricTime ?? -100) - (8.75 - 0.2 - delay)) < 0.01
+            }
+            XCTAssertEqual(player.currentTime().seconds, 8.75, accuracy: 0.1)
+            XCTAssertEqual(model.lyricsSeekRevision, seekRevision)
+            XCTAssertEqual(model.lyrics.documentRevision, documentRevision)
+            XCTAssertTrue(findCanvas(host.view) === canvas)
+            XCTAssertTrue(player.currentItem === item)
+        }
+        model.lyrics.setGlobalDelay(0.5)
+        let row = try XCTUnwrap(descendants(canvas).first { $0.isAccessibilityElement && $0.accessibilityLabel?.contains("Marker 4") == true })
+        XCTAssertTrue(row.accessibilityActivate())
+        try await wait("lyric seek includes global and per-song delay once") {
+            abs(player.currentTime().seconds - 16.7) < 0.1 && abs(model.progress() - 16.7) < 0.1
+                && abs((canvas.frameState?.lyricTime ?? 0) - 16) < 0.1
+        }
+        XCTAssertEqual(model.lyrics.selection.offset, 0.2)
+        XCTAssertEqual(model.lyrics.globalDelay, 0.5)
+    }
+
     func testImmersiveFocusUsesEighteenPercentAndRestoresTheOrdinaryAnchor() async throws {
         let (model, player, song) = try await makeModel()
         model.renderPreferences.configuration.anchor = 0.62

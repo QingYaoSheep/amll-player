@@ -46,7 +46,7 @@ struct LyricsDiagnosticView: View {
                     }
                 }.font(.caption)
                 TimelineView(.periodic(from: .now, by: 0.2)) { _ in
-                    let position = model.progress() - lyrics.selection.offset
+                    let position = model.progress() - lyrics.effectiveOffset
                     LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(document.lines) { line in
                             LyricDiagnosticRow(line: line, active: position >= line.start && position < line.end)

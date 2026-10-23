@@ -17,6 +17,47 @@ final class LyricsCoordinatorTests: XCTestCase {
         XCTFail("Timed out waiting for coordinator")
     }
 
+    func testGlobalDelayPersistsAcrossTracksWithoutReloadingOrChangingSongOffsets() async throws {
+        let provider = TestLyricsProvider(.qq), cache = MemoryLyricsCache(), settings = store()
+        let coordinator = LyricsCoordinator(providers: [provider], cache: cache, settingsStore: settings)
+        XCTAssertEqual(coordinator.globalDelay, 0)
+        coordinator.update(track: track)
+        await waitUntil { !coordinator.isLoading }
+        coordinator.setOffset(0.2)
+        let document = coordinator.document, revision = coordinator.documentRevision, calls = provider.searchCalls
+        coordinator.setGlobalDelay(0.6)
+        XCTAssertEqual(coordinator.effectiveOffset, 0.8, accuracy: 0.0001)
+        XCTAssertEqual(coordinator.document, document)
+        XCTAssertEqual(coordinator.documentRevision, revision)
+        XCTAssertEqual(provider.searchCalls, calls)
+        XCTAssertEqual(settings.load().validatedGlobalDelay, 0.6)
+        XCTAssertEqual(try cache.selection(for: track.spotifyID).offset, 0.2)
+        coordinator.update(track: TrackIdentity(spotifyID: "netease:b", title: "Other", artists: [], duration: 30))
+        XCTAssertEqual(coordinator.globalDelay, 0.6)
+        XCTAssertEqual(coordinator.selection.offset, 0)
+        coordinator.setOffset(-0.1)
+        XCTAssertEqual(coordinator.effectiveOffset, 0.5, accuracy: 0.0001)
+        coordinator.setGlobalDelay(0)
+        XCTAssertEqual(coordinator.selection.offset, -0.1)
+        XCTAssertEqual(settings.load().validatedGlobalDelay, 0)
+        coordinator.setGlobalDelay(100)
+        XCTAssertEqual(coordinator.globalDelay, 10)
+        coordinator.setGlobalDelay(.nan)
+        XCTAssertEqual(coordinator.globalDelay, 10)
+    }
+
+    func testOldLyricsSettingsDecodeWithoutA_GlobalDelay() throws {
+        let data = try JSONEncoder().encode(LyricsSettings())
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        old.removeValue(forKey: "globalDelay")
+        let decoded = try JSONDecoder().decode(LyricsSettings.self, from: JSONSerialization.data(withJSONObject: old))
+        XCTAssertEqual(decoded.validatedGlobalDelay, 0)
+        XCTAssertEqual(decoded.priority, LyricsSettings().priority)
+        var invalid = decoded
+        invalid.globalDelay = .infinity
+        XCTAssertEqual(invalid.validated().validatedGlobalDelay, 0)
+    }
+
     func testFailuresFallThroughInPriorityOrder() async {
         let apple = TestLyricsProvider(.apple), qq = TestLyricsProvider(.qq), netease = TestLyricsProvider(.netease)
         apple.failure = .credentials; qq.failure = .transport

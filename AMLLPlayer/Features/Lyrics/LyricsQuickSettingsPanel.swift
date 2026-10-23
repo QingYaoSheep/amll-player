@@ -187,6 +187,7 @@ struct LyricsQuickSettingsPanel: View {
                         appearance
                         typography
                         playback
+                        globalTiming
                         lyricActions
                         more
                     }
@@ -382,6 +383,30 @@ struct LyricsQuickSettingsPanel: View {
                     Task { await model.setRepeat(mode) }
                 }.equatable()
             }
+        }
+    }
+
+    private var globalTiming: some View {
+        section("quickSettings.globalDelay") {
+            Text(String(format: "%+.1f s", model.lyrics.globalDelay)).monospacedDigit()
+                .accessibilityIdentifier("quickSettingsGlobalDelayValue")
+            Slider(value: Binding(get: { model.lyrics.globalDelay }, set: { model.lyrics.setGlobalDelay($0) }),
+                   in: -10 ... 10, step: 0.1)
+                .accessibilityLabel(Text("quickSettings.globalDelay"))
+                .accessibilityValue(Text(String(format: "%+.1f s", model.lyrics.globalDelay)))
+                .accessibilityIdentifier("quickSettingsGlobalDelay")
+            HStack(spacing: 12) {
+                Button("−0.1 s") { model.lyrics.setGlobalDelay(model.lyrics.globalDelay - 0.1) }
+                    .accessibilityIdentifier("quickSettingsGlobalDelayMinus")
+                    .frame(minWidth: 70, minHeight: 44)
+                Button("+0.1 s") { model.lyrics.setGlobalDelay(model.lyrics.globalDelay + 0.1) }
+                    .accessibilityIdentifier("quickSettingsGlobalDelayPlus")
+                    .frame(minWidth: 70, minHeight: 44)
+                Button("lyrics.offset.zero") { model.lyrics.setGlobalDelay(0) }
+                    .accessibilityIdentifier("quickSettingsGlobalDelayReset")
+                    .frame(minHeight: 44)
+            }
+            Text("quickSettings.globalDelayHelp").font(.caption).foregroundStyle(.secondary)
         }
     }
 

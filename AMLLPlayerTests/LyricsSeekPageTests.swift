@@ -199,6 +199,9 @@ import XCTest
         try await wait("audio and native lyric clock continue") { player.currentTime().seconds > originalTime + 0.4 }
         XCTAssertGreaterThan(player.rate, 0)
         XCTAssertEqual(model.progress(), player.currentTime().seconds, accuracy: 0.4)
+        try await wait("resized canvas has presented the current audio time") {
+            abs((canvas.frameState?.lyricTime ?? -100) - model.progress()) < 0.5
+        }
         let state = try XCTUnwrap(canvas.frameState)
         XCTAssertEqual(state.lyricTime, model.progress(), accuracy: 0.5)
         XCTAssertNil(model.renderPreferences.configuration.animatedArtwork)

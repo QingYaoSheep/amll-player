@@ -20,6 +20,11 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertTrue(canvas.exists)
             let artist = information.staticTexts["Fixture Artist"].firstMatch
             XCTAssertTrue(artist.exists)
+            let geometryReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                abs(canvas.frame.minY - artist.frame.maxY) <= 2
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [geometryReady], timeout: 4), .completed,
+                "Canvas \(canvas.frame), artist \(artist.frame), legacy \(legacy)")
             XCTAssertEqual(canvas.frame.minY, artist.frame.maxY, accuracy: 2,
                 "The upper lyric fade must start at the artist's bottom edge")
             XCTAssertTrue(app.buttons["immersiveLyricsPlayPause"].isHittable)

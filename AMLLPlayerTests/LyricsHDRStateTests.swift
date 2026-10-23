@@ -53,6 +53,10 @@ final class LyricsHDRStateTests: XCTestCase {
         XCTAssertEqual(supported.outputBrightness(configuration: enabled, reduceTransparency: false), 1.2)
         XCTAssertEqual(supported.outputBrightness(configuration: enabled, reduceTransparency: true), 1)
         XCTAssertEqual(supported.outputBrightness(configuration: .init(), reduceTransparency: false), 1)
-        XCTAssertEqual(frame(4).outputBrightness, 2.0)
+        XCTAssertEqual(frame(4).outputBrightness, 1.2)
+        for headroom in [1.1, 1.2, 2, 8] {
+            XCTAssertEqual(LyricsHDRCapabilities(supportsEDR: true, headroom: headroom)
+                .outputBrightness(configuration: enabled, reduceTransparency: false), min(1.2, headroom))
+        }
     }
 }

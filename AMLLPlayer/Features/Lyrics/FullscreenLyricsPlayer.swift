@@ -49,6 +49,10 @@ struct FullscreenLyricsPlayer: View {
     @State private var pageVisible = false
     @State private var immersiveArtworkSource = ImmersiveLyricsArtworkSource.placeholder
     @State private var immersiveInformationHeight: CGFloat = 64
+    @State private var immersiveInformationTextBottom: CGFloat?
+    @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
+    @State private var artworkReflectionFrames = ArtworkReflectionFrames()
+    @State private var showingArtworkDebug = false
     @State private var immersiveViewport = false
     private var configuration: LyricsRenderConfiguration {
         model.renderPreferences.configuration.validated()
@@ -61,14 +65,16 @@ struct FullscreenLyricsPlayer: View {
                 let layout = ImmersiveLyricsLayout.isEnabled(configuration, isPhone: UIDevice.current.userInterfaceIdiom == .phone,
                     viewport: geometry.size) ? ImmersiveLyricsLayout.resolve(viewport: geometry.size,
                         artwork: source.size, informationHeight: immersiveInformationHeight,
-                        bottomInset: geometry.safeAreaInsets.bottom, isVideo: source.isVideo) : nil
+                        bottomInset: geometry.safeAreaInsets.bottom, isVideo: source.isVideo,
+                        informationTextBottom: immersiveInformationTextBottom,
+                        artworkAdjustment: artworkDebug.configuration[.video]) : nil
                 ZStack {
                     if let layout, let item = model.playbackSnapshot?.item {
                         ImmersiveLyricsArtworkBackdrop(model: model, item: item, layout: layout, viewport: geometry.size,
                             active: pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                             artworkSource: { source in
                                 if source.trackID == model.playbackSnapshot?.item?.uri { immersiveArtworkSource = source }
-                            })
+                            }, frames: artworkReflectionFrames)
                     } else {
                         AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
                                                blur: configuration.backgroundBlur)
@@ -104,6 +110,20 @@ struct FullscreenLyricsPlayer: View {
                 .onChange(of: layout != nil, initial: true) { _, enabled in immersiveViewport = enabled }
                 .onPreferenceChange(ImmersiveInformationHeightKey.self) { height in
                     if height > 0, abs(immersiveInformationHeight - height) > 0.5 { immersiveInformationHeight = height }
+                }
+                .onPreferenceChange(ImmersiveInformationTextBottomKey.self) { bottom in
+                    if let bottom, abs((immersiveInformationTextBottom ?? -1) - bottom) > 0.5 { immersiveInformationTextBottom = bottom }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if layout != nil {
+                        ImmersiveArtworkDebugButton { showingArtworkDebug = true }
+                            .padding(.top, geometry.safeAreaInsets.top + 48).padding(.trailing, 16)
+                    }
+                }
+                .sheet(isPresented: $showingArtworkDebug) {
+                    ImmersiveArtworkDebugPanel(viewport: geometry.size, video: layout?.visibleCover ?? .zero,
+                        backgroundDimming: configuration.backgroundDimming ?? 0.16, frames: artworkReflectionFrames)
+                        .presentationDetents([.medium, .large])
                 }
             }
             .ignoresSafeArea(.container, edges: immersiveViewport ? .all : [])
@@ -149,12 +169,13 @@ struct FullscreenLyricsPlayer: View {
                     if let layout {
                         Color.clear.frame(height: max(0, layout.information.minY - 44))
                             .accessibilityHidden(true)
-                        ImmersiveLyricsHeader(model: model, snapshot: snapshot, item: item, presentation: quickSettings)
+                        ImmersiveLyricsHeader(model: model, snapshot: snapshot, item: item, presentation: quickSettings,
+                            additive: layout.overlaysArtwork)
                             .frame(width: layout.information.width)
                             .background { GeometryReader { proxy in
                                 Color.clear.preference(key: ImmersiveInformationHeightKey.self, value: proxy.size.height)
                             } }
-                            .padding(.bottom, 24)
+                            .padding(.bottom, layout.lyrics.minY - layout.information.maxY)
                     } else {
                         ScrollView { metadata(item, wide: false) }
                             .frame(height: headerHeight).padding(.bottom, 8)
@@ -239,7 +260,8 @@ struct FullscreenLyricsPlayer: View {
                                  duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                                  canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
                                  position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
-                                 resumeToken: resumeToken, browsing: { browsing = $0 })
+                                 resumeToken: resumeToken, browsing: { browsing = $0 },
+                                 fadeTop: immersiveLayout != nil ? 0 : nil)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
                     .buttonStyle(.bordered).accessibilityIdentifier("resumeLyricsFollowing")
@@ -262,9 +284,9 @@ struct FullscreenLyricsPlayer: View {
     }
 
     private func compatibilityConfiguration(layout: ImmersiveLyricsLayout?) -> LyricsRenderConfiguration {
+        if let layout { return layout.lyricConfiguration(configuration) }
         var value = configuration
-        value.immersiveLyrics = layout != nil
-        if let layout { value.horizontalPadding = layout.horizontalInset }
+        value.immersiveLyrics = false
         return value
     }
 

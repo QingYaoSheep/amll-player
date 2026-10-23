@@ -5,7 +5,9 @@ struct ImmersiveLyricsHeader: View {
     let snapshot: PlaybackSnapshot
     let item: PlaybackItem
     let presentation: LyricsQuickSettingsPresentation
+    var additive = false
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @ScaledMetric(relativeTo: .headline) private var titleSize = 18.0
     @ScaledMetric(relativeTo: .subheadline) private var artistSize = 15.0
 
@@ -24,6 +26,12 @@ struct ImmersiveLyricsHeader: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: ImmersiveInformationTextBottomKey.self,
+                        value: proxy.frame(in: .named("immersiveLyricsHeader")).maxY)
+                }
+            }
             if configuration.showControls {
                 Button { Task { await model.togglePlayPause() } } label: {
                     Image(systemName: snapshot.isPlaying ? "pause.fill" : "play.fill")
@@ -40,26 +48,21 @@ struct ImmersiveLyricsHeader: View {
         .buttonStyle(.plain)
         .frame(minHeight: 44)
         .fixedSize(horizontal: false, vertical: true)
+        .coordinateSpace(name: "immersiveLyricsHeader")
+        .blendMode(additive && !reduceTransparency ? .plusLighter : .normal)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("immersiveLyricsInformation")
+    }
+}
+
+struct ImmersiveInformationTextBottomKey: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue(), next.isFinite { value = next }
     }
 }
 
 struct ImmersiveInformationHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 64
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
-extension ImmersiveArtworkMedia.Layout {
-    static func lyrics(cover: CGRect, viewport: CGSize, configuration: LyricsRenderConfiguration,
-                       tuning: ImmersiveArtworkDebugConfiguration, presentsFrame: Bool,
-                       reduceTransparency: Bool, cornerRadius: CGFloat = 0, opacity: Double = 1) -> Self {
-        let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: cover, viewport: viewport)
-        return .init(video: cover, reflection: ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: viewport.height),
-            transition: profile.frame, bottomFade: AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: cover, viewport: viewport),
-            tuning: tuning.forImmersiveLyrics(), presentsFrame: presentsFrame,
-            reflectionEnabled: configuration.animatedArtwork?.reflection == true,
-            reduceTransparency: reduceTransparency, backgroundDimming: configuration.backgroundDimming ?? 0.16,
-            cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: profile)
-    }
 }

@@ -24,6 +24,27 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         var cornerRadius: CGFloat = 0
         var pageOpacity = 1.0
         var blurProfile: ImmersiveBackgroundBlurProfile? = nil
+
+        /// Both immersive pages use the same calibrated content rectangles.
+        /// Lyrics and controls live above this native backdrop, never in its blur.
+        static func immersive(cover: CGRect, viewport: CGSize, configuration: LyricsRenderConfiguration,
+                              tuning: ImmersiveArtworkDebugConfiguration, presentsFrame: Bool,
+                              reduceTransparency: Bool, cornerRadius: CGFloat = 0, opacity: Double = 1) -> Self {
+            let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(cover), source: cover.size)
+            let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: viewport,
+                adjustment: tuning[.transition])
+            return .init(video: video,
+                reflection: tuning[.reflection].frame(ArtworkReflectionGeometry.frame(cover: video, viewportHeight: viewport.height)),
+                transition: profile.frame,
+                bottomFade: tuning[.bottomFade].frame(AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: viewport)),
+                tuning: tuning, presentsFrame: presentsFrame,
+                reflectionEnabled: configuration.animatedArtwork?.reflection == true && tuning[.reflection].enabled,
+                reduceTransparency: reduceTransparency,
+                background: tuning[.background].frame(CGRect(origin: .zero, size: viewport)),
+                dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: viewport)),
+                backgroundDimming: configuration.backgroundDimming ?? 0.16,
+                cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: profile)
+        }
     }
 
     func makeUIView(context _: Context) -> Surface { Surface(frames: frames) }

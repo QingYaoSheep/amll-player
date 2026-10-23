@@ -9,11 +9,11 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     let viewport: CGSize
     let active: Bool
     let artworkSource: (ImmersiveLyricsArtworkSource) -> Void
+    let frames: ArtworkReflectionFrames
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var loader = AnimatedArtworkLoader()
     @State private var still = ImmersiveStillArtwork()
-    @State private var frames = ArtworkReflectionFrames()
     @State private var network = ArtworkNetworkPolicy.shared
     @State private var debug = ImmersiveArtworkDebugStore.shared
     private var configuration: LyricsRenderConfiguration { model.renderPreferences.configuration.validated() }
@@ -37,7 +37,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     var body: some View {
         ZStack {
         ImmersiveArtworkMedia(video: video, frames: frames,
-            layout: .lyrics(cover: layout.cover, viewport: viewport, configuration: configuration,
+            layout: .immersive(cover: layout.cover, viewport: viewport, configuration: configuration,
                 tuning: debug.configuration, presentsFrame: hasVideo && loader.hasPresentedFrame,
                 reduceTransparency: reduceTransparency),
             background: AMLLBackground(artworkURL: item.artworkURL, active: active,

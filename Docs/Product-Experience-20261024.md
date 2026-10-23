@@ -53,3 +53,19 @@
 | 两路同提交 IPA | 待本轮最终测试结果，禁止把直接构建当作测试通过 |
 
 后续在本文件追加实际提交、运行与截图证据。保留原13项未提交回放工程，不提交它们。
+
+## 审查与可安装预览
+
+两轴只读审查各自完成：Standards 初次1项（深色填充对比），Spec 初次2项（介绍展开与首次详情失败恢复）；三项已修正，追加审查没有新的确定性阻断问题。静态审查结论不替代UI运行。
+
+当前预览代码为 `2861672bfc9ab2c25fc4e8f5ae4261e26f9b7175`，Xcode27直接任务 `120580594307` 成功。安装包 `Builds/Product-Experience-20261024/2861672b-direct/AMLLPlayer-Xcode27-direct-unsigned.ipa`，22,394,380字节，SHA-256 `098245eea8248657bcfa4fabf56dd07c3dd90407be061950039ef280db39ea90`；已核对内嵌提交和 Bundle ID `net.stevexmh.amllplayer`。需按现有方式重签。
+
+原始截图未修图，来自首轮生产页面与显式DEBUG示例内容：
+
+- [iPhone首页](E:/AMLL-Swift/Builds/Product-Experience-20261024/Preview-iPhone-Home.png)
+- [iPhone歌单详情](E:/AMLL-Swift/Builds/Product-Experience-20261024/Preview-iPhone-Playlist.png)
+- [iPad歌单详情](E:/AMLL-Swift/Builds/Product-Experience-20261024/Preview-iPad-Playlist-Light.png)
+
+本地18项Node回归、固定离线词典校验及原工作区13项哈希核对通过。首轮62项Apple平台单元／集成测试通过：图片2、体验模型13、网易云27、Spotify解码14、目录状态6。手机歌单导航／播放按钮分离／重复条目、大字体及旧metadata-only详情通过；搜索与歌手流程的最终结果以重跑记录为准。首次名为dark的启动参数截图实际仍为浅色，已识别并撤下该覆盖声明；后续直接切换模拟器系统外观验证深色。
+
+正式完整工作流 `40002114293` 与隔离串行页面验证继续运行；当前仅提供直接构建预览，不提供“所有测试通过”的声明或测试后IPA。旧基线 `9707dd80` 已记录507单元零失败、22UI两项歌词失败（兼容渲染器上隐边界、循环菜单确认）；本轮不修改歌词生产路径来消除这些既有失败。

@@ -44,7 +44,7 @@ struct MusicBrowserView: View {
             Tab("catalog.library", systemImage: "square.stack") {
                 navigation { MusicLibraryView(model: model, store: model.catalog) }
             }
-            Tab("catalog.search", systemImage: "magnifyingglass") {
+            Tab("catalog.search", systemImage: "magnifyingglass", role: .search) {
                 navigation { CatalogSearchView(model: model, store: model.catalog) }
             }
         }
@@ -77,6 +77,7 @@ struct MusicBrowserView: View {
                     }
                 }
         }
+        .id(model.catalog.identity)
         // Reserve space within the selected tab, above the system tab bar.
         // An inset around TabView itself does not protect its native controls.
         .safeAreaInset(edge: .bottom, spacing: usesTabAccessory ? 0 : 8) {
@@ -95,6 +96,7 @@ struct CatalogHomeView: View {
     @Bindable var model: AppModel
     @Bindable var store: MusicCatalogStore
     var openPlayer: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var sections: [MusicLibrarySection] {
         model.canBrowseCurrentService ? MusicHomePresentation.sections(
             supported: store.provider.homeSections, connected: model.currentServiceConnected) : []
@@ -104,26 +106,28 @@ struct CatalogHomeView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MusicProductStyle.sectionSpacing) {
                     if !model.currentServiceConnected || !model.canBrowseCurrentService {
-                        MusicConnectionCard(model: model)
+                        MusicConnectionCard(model: model).padding(.horizontal, MusicProductStyle.pageInset)
                     }
                     if let profile = store.profile {
                         Text("为 " + profile.displayName + " 精选")
                             .font(.subheadline).foregroundStyle(.secondary)
+                            .padding(.horizontal, MusicProductStyle.pageInset)
                     }
                     if model.selectedMusicService == .appleMusic, model.currentServiceConnected, !model.canBrowseCurrentService,
                        let item = model.playbackSnapshot?.item {
                         Button(action: openPlayer) {
                             Label("打开 " + item.title + " 的歌词", systemImage: "quote.bubble")
                                 .frame(maxWidth: .infinity, minHeight: 44)
-                        }.buttonStyle(.bordered)
+                        }.buttonStyle(.bordered).padding(.horizontal, MusicProductStyle.pageInset)
                     }
                     ForEach(sections, id: \.self) { section in
                         MusicHomeSection(model: model, store: store, section: section,
                             state: store.page(.collection(section)),
-                            width: min(220, max(145, (proxy.size.width - 40) * 0.45)))
+                            width: MusicCatalogLayout.cardWidth(in: proxy.size.width, largeText: typeSize.isAccessibilitySize))
                     }
                 }
-                .padding(.horizontal, MusicProductStyle.pageInset)
+                .frame(maxWidth: MusicCatalogLayout.maximumWidth)
+                .frame(maxWidth: .infinity)
                 .padding(.top, 12).padding(.bottom, 28)
             }
             .background(Color(uiColor: .systemGroupedBackground))
@@ -150,33 +154,49 @@ private struct MusicHomeSection: View {
     @Bindable var state: MusicCatalogPageState
     let width: CGFloat
     @ScaledMetric(relativeTo: .body) private var songColumnHeight: CGFloat = 230
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         if state.loadedAt == nil || !state.rows.isEmpty || state.error != nil {
             VStack(alignment: .leading, spacing: 12) {
                 MusicSectionHeading(title: section.title, route: .collection(section))
+                    .padding(.horizontal, MusicProductStyle.pageInset)
                 if !state.rows.isEmpty {
                     ScrollView(.horizontal) {
-                        if MusicHomePresentation.usesSongColumns(section, kinds: state.rows.map { $0.item.kind }) {
+                        if MusicHomePresentation.usesSongColumns(section, kinds: state.rows.map { $0.item.kind }), typeSize.isAccessibilitySize {
+                            LazyHStack(alignment: .top, spacing: 20) {
+                                ForEach(Array(state.rows.prefix(12))) { row in
+                                    CatalogRowView(model: model, row: row, tapToPlay: true).frame(width: min(380, max(280, width * 1.9)))
+                                }
+                            }.scrollTargetLayout()
+                        } else if MusicHomePresentation.usesSongColumns(section, kinds: state.rows.map { $0.item.kind }) {
                             LazyHGrid(rows: Array(repeating: GridItem(.flexible(), spacing: 8), count: min(3, state.rows.count)), spacing: 20) {
                                 ForEach(Array(state.rows.prefix(12))) { row in
                                     CatalogRowView(model: model, row: row, tapToPlay: true)
-                                        .frame(width: max(280, width * 1.9))
+                                        .frame(width: min(380, max(280, width * 1.9)))
                                 }
-                            }.frame(height: songColumnHeight * CGFloat(min(3, state.rows.count)) / 3).padding(.vertical, 2)
+                            }.scrollTargetLayout()
+                                .frame(height: songColumnHeight * CGFloat(min(3, state.rows.count)) / 3)
+                                .padding(.vertical, 2)
                         } else {
                             LazyHStack(alignment: .top, spacing: 12) {
                                 ForEach(Array(state.rows.prefix(12))) { row in
                                     MusicCatalogCard(model: model, row: row, width: width)
                                 }
-                            }
+                            }.scrollTargetLayout()
                         }
-                    }.scrollIndicators(.hidden)
-                } else if state.error == nil { MusicSkeleton() }
+                    }
+                    .contentMargins(.horizontal, MusicProductStyle.pageInset, for: .scrollContent)
+                    .scrollTargetBehavior(.viewAligned)
+                    .scrollIndicators(.hidden)
+                    .transition(.opacity)
+                } else if state.error == nil { MusicSkeleton().padding(.horizontal, MusicProductStyle.pageInset) }
                 if let error = state.error {
-                    CatalogErrorView(error: error) { await load(force: true) }
+                    CatalogErrorView(error: error) { await load(force: true) }.padding(.horizontal, MusicProductStyle.pageInset)
                 }
             }
             .task { await load(force: false) }
+            .animation(reduceMotion ? nil : MusicProductMotion.change, value: state.rows.isEmpty)
         }
     }
     private func load(force: Bool) async {
@@ -199,13 +219,7 @@ struct MusicLibraryView: View {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
                             ForEach(sections, id: \.self) { section in
-                                Button { selection = section } label: {
-                                    Label(section.title, systemImage: section.symbol)
-                                        .font(.subheadline.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 44)
-                                }.buttonStyle(.plain)
-                                    .foregroundStyle(current == section ? MusicProductStyle.accent : .primary)
-                                    .background(current == section ? MusicProductStyle.accent.opacity(0.12) : Color.clear, in: Capsule())
-                                    .accessibilityAddTraits(current == section ? .isSelected : [])
+                                MusicFilterPill(title: section.title, symbol: section.symbol, selected: current == section) { selection = section }
                             }
                         }.padding(.horizontal, 20)
                     }.scrollIndicators(.hidden).padding(.vertical, 8)
@@ -278,6 +292,11 @@ struct CatalogSearchView: View {
     @Bindable var model: AppModel
     @Bindable var store: MusicCatalogStore
     @State private var displayedRequest: MusicSearchRequest?
+    @State private var searchPresented = false
+    private var searchPlacement: SearchFieldPlacement {
+        if #available(iOS 26.0, *) { return .automatic }
+        return .navigationBarDrawer(displayMode: .always)
+    }
     private var request: MusicSearchRequest {
         .init(term: store.searchText.trimmingCharacters(in: .whitespacesAndNewlines),
               library: store.searchLibrary, kind: store.searchFilter)
@@ -305,8 +324,9 @@ struct CatalogSearchView: View {
                                         onSelect: { store.rememberSearch(request.term) },
                                         seeAll: { kind in store.rememberSearch(request.term); store.searchFilter = kind })
                                 }
-                            }.padding(20)
+                            }.padding(20).frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
                         }
+                        .scrollDismissesKeyboard(.interactively)
                     } else { MusicSkeleton().padding(20); Spacer() }
                 }
             } else {
@@ -316,7 +336,7 @@ struct CatalogSearchView: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("catalog.search")
         // Keep the input visible on the landing page without relying on search-tab activation.
-        .searchable(text: $store.searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "catalog.searchPrompt")
+        .searchable(text: $store.searchText, isPresented: $searchPresented, placement: searchPlacement, prompt: "catalog.searchPrompt")
         .onSubmit(of: .search) { store.rememberSearch(request.term) }
         .searchSuggestions {
             ForEach(store.suggestions, id: \.self) { term in
@@ -361,16 +381,22 @@ struct CatalogSearchView: View {
         }.scrollIndicators(.hidden).padding(.vertical, 8)
     }
     private func filter(_ title: String, kind: MusicCatalogKind?) -> some View {
-        Button { store.searchFilter = kind } label: {
-            Text(title).font(.subheadline.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 44)
-        }.buttonStyle(.plain)
-            .foregroundStyle(store.searchFilter == kind ? MusicProductStyle.accent : .primary)
-            .background(store.searchFilter == kind ? MusicProductStyle.accent.opacity(0.12) : Color.clear, in: Capsule())
-            .accessibilityAddTraits(store.searchFilter == kind ? .isSelected : [])
+        MusicFilterPill(title: title, selected: store.searchFilter == kind) { store.searchFilter = kind }
     }
     private var history: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                Text("搜索 " + model.selectedMusicService.title).font(.headline)
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(store.provider.searchKinds.filter { [.track, .album, .artist, .playlist].contains($0) }, id: \.self) { kind in
+                            MusicFilterPill(title: kind.title, selected: store.searchFilter == kind) {
+                                store.searchFilter = kind
+                                searchPresented = true
+                            }
+                        }
+                    }
+                }.scrollIndicators(.hidden)
                 HStack {
                     Text("最近搜索").font(.title2.bold())
                     Spacer()
@@ -419,9 +445,13 @@ private struct MusicSearchGroup: View {
                     Button("查看全部") { seeAll(kind) }.frame(minHeight: 44)
                 }
             }
-            ForEach(Array(state.rows.prefix(preview ? 4 : state.rows.count))) { row in
-                CatalogRowView(model: model, row: row, tapToPlay: true, onSelect: onSelect)
-                Divider()
+            if [.artist, .album, .playlist].contains(kind), !state.rows.isEmpty {
+                MusicCatalogGrid(model: model, rows: Array(state.rows.prefix(preview ? 4 : state.rows.count)), onSelect: onSelect)
+            } else {
+                ForEach(Array(state.rows.prefix(preview ? 4 : state.rows.count))) { row in
+                    CatalogRowView(model: model, row: row, tapToPlay: true, onSelect: onSelect)
+                    Divider()
+                }
             }
             if let error = state.error {
                 CatalogErrorView(error: error) { await state.load(query: query, provider: store.provider, force: true) }
@@ -442,22 +472,11 @@ struct CatalogRowsScrollView: View {
     @Bindable var model: AppModel
     @Bindable var state: MusicCatalogPageState
     let load: (Bool, Bool) async -> Void
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
-        GeometryReader { proxy in
-            let available = max(1, proxy.size.width - 40)
-            let minimum: CGFloat = dynamicTypeSize.isAccessibilitySize ? 250 : 145
-            let count = max(1, Int((available + 12) / (minimum + 12)))
-            let width = (available - CGFloat(count - 1) * 12) / CGFloat(count)
             ScrollView {
                 Group {
                     if !state.rows.isEmpty, state.rows.allSatisfy({ [.album, .playlist, .artist].contains($0.item.kind) }) {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: count),
-                                  alignment: .leading, spacing: 24) {
-                            ForEach(state.rows) { row in
-                                MusicCatalogCard(model: model, row: row, width: width).id(row.id)
-                            }
-                        }
+                        MusicCatalogGrid(model: model, rows: state.rows)
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(state.rows) { row in
@@ -471,8 +490,8 @@ struct CatalogRowsScrollView: View {
                 }
                 .scrollTargetLayout()
                 .padding(.horizontal, 20).padding(.top, 12)
+                .frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
                 CatalogPageFooter(state: state, load: load).padding(20)
             }.scrollPosition(id: $state.scrollAnchor, anchor: .top)
-        }
     }
 }

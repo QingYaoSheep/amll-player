@@ -199,6 +199,8 @@ struct MusicCatalogDetail: Sendable {
     let item: MusicCatalogItem
     let children: MusicCatalogQuery?
     let availability: MusicContentAvailability
+    var highlights: [MusicCatalogRow] = []
+    var about: String? = nil
 }
 
 enum MusicCatalogError: Error, Equatable, LocalizedError, Sendable {

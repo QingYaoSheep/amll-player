@@ -33,10 +33,14 @@ jobs:
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerTests/ImmersiveLyricsLayoutTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkDebugStoreTests
+          -only-testing:AMLLPlayerTests/LyricsCoordinatorTests/testGlobalDelayPersistsAcrossTracksWithoutReloadingOrChangingSongOffsets
+          -only-testing:AMLLPlayerTests/LyricsCoordinatorTests/testOldLyricsSettingsDecodeWithoutA_GlobalDelay
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testGlobalDelayUpdatesTheLiveCanvasAndLyricSeekUsesTheCombinedOffset
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testImmersiveFocusUsesEighteenPercentAndRestoresTheOrdinaryAnchor
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testImmersiveLyricsSwitchRetainsCanvasAndActualAudioTime
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testCompatibilityImmersiveSwitchRetainsItsOriginalRenderer
           -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testImmersiveLyricsModeStaysOpenPersistsAndFallsBackInLandscape
+          -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testGlobalLyricDelayCanBeAdjustedAndRestoredThroughThePanel
           -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testActualMeshColorMode2MetalLyricsAddLightAtRestThroughTheProductionZoomPresentation
           -resultBundlePath build/LyricsBlend.xcresult
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO

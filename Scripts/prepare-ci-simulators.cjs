@@ -3,11 +3,14 @@ const { execFileSync } = require('node:child_process');
 const { appendFileSync } = require('node:fs');
 
 function selectRuntime(runtimes) {
+  const references = ['iPhone-16-Pro', 'iPad-Pro-13-inch-M4-8GB']
+    .map(name => `com.apple.CoreSimulator.SimDeviceType.${name}`);
   const candidates = runtimes.filter(runtime => runtime.isAvailable &&
     runtime.identifier.startsWith('com.apple.CoreSimulator.SimRuntime.iOS-') &&
-    runtime.version.split('.')[0] === '27');
+    runtime.version.split('.')[0] === '27' &&
+    references.every(identifier => runtime.supportedDeviceTypes?.some(type => type.identifier === identifier)));
   candidates.sort((a, b) => b.version.localeCompare(a.version, 'en', { numeric: true }));
-  if (!candidates.length) throw new Error('No available iOS 27 simulator runtime; install it before testing.');
+  if (!candidates.length) throw new Error('No available iOS 27 simulator runtime compatible with both reference devices; install it before testing.');
   return candidates[0].identifier;
 }
 

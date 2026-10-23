@@ -26,14 +26,17 @@ jobs:
         run: bash Scripts/generate-project.sh
       - name: Prepare reference simulators
         run: |
-          xcrun simctl list runtimes --json
-          xcrun simctl list devicetypes --json
           node Scripts/prepare-ci-simulators.cjs
       - name: Test actual production lyrics
         run: >-
           xcodebuild test -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -only-testing:AMLLPlayerTests/ImmersiveLyricsLayoutTests/testLyricsBackdropKeepsTheCalibratedArtworkPageJunction
+          -only-testing:AMLLPlayerTests/ImmersiveLyricsLayoutTests
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testImmersiveFocusUsesEighteenPercentAndRestoresTheOrdinaryAnchor
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testImmersiveLyricsSwitchRetainsCanvasAndActualAudioTime
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testCompatibilityImmersiveSwitchRetainsItsOriginalRenderer
+          -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testImmersiveLyricsModeStaysOpenPersistsAndFallsBackInLandscape
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testActualMeshColorMode2MetalLyricsAddLightAtRestThroughTheProductionZoomPresentation
           -resultBundlePath build/LyricsBlend.xcresult
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Export actual rendering evidence

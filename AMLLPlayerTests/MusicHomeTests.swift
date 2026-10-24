@@ -18,7 +18,7 @@ import XCTest
         let requests = Task {
             await withTaskGroup(of: Void.self) { group in
                 for query in [MusicLibrarySection.recent, .playlists, .topTracks, .savedTracks, .savedAlbums, .followedArtists] {
-                    group.addTask { @MainActor in await store.load(.catalog(.collection(query))) }
+                    group.addTask { await store.load(.catalog(.collection(query))) }
                 }
             }
         }

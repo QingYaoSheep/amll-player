@@ -120,13 +120,13 @@ import Observation
             .catalog(.collection(.recent)), .catalog(.collection(.topTracks)), .catalog(.collection(.playlists))]
         let queries = priorities.filter { query in sections.contains { $0.query == query } }
         await withTaskGroup(of: Void.self) { group in
-            for query in queries { group.addTask { @MainActor in await self.load(query, force: force) } }
+            for query in queries { group.addTask { await self.load(query, force: force) } }
         }
     }
     func refresh() async {
         let queries = states.keys.filter { states[$0]?.loadedAt != nil || states[$0]?.error != nil }
         await withTaskGroup(of: Void.self) { group in
-            for query in queries { group.addTask { @MainActor in await self.load(query, force: true) } }
+            for query in queries { group.addTask { await self.load(query, force: true) } }
         }
     }
     var featured: [(MusicCatalogRow, String)] {

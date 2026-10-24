@@ -246,7 +246,10 @@ extension AppleMusicCatalog: MusicHomeProviding {
                           value: query == .personalStation ? "personal" : "apple-music-live-radio")])
             case .replay:
                 request = try AppleMusicAPI.request("/v1/me/music-summaries", parameters: [
-                    .init(name: "filter[year]", value: "latest"), .init(name: "views", value: "top-songs,top-albums,top-artists")])
+                    .init(name: "filter[year]", value: "latest"), .init(name: "views", value: "top-songs,top-albums,top-artists"),
+                    .init(name: "include[song-period-summaries]", value: "song"),
+                    .init(name: "include[album-period-summaries]", value: "album"),
+                    .init(name: "include[artist-period-summaries]", value: "artist")])
             default: throw MusicServiceError.unsupportedOperation
             }
         }

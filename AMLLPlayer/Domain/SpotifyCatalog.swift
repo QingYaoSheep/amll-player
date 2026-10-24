@@ -108,6 +108,7 @@ struct MusicPage<Item: Sendable>: Sendable {
 struct MusicProfile: Equatable, Sendable {
     let accountID: String
     let displayName: String
+    var avatarURL: URL? = nil
 }
 
 enum MusicLibrarySection: String, CaseIterable, Hashable, Sendable {

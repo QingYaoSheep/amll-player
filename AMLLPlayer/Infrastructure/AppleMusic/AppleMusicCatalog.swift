@@ -118,7 +118,10 @@ final class AppleMusicCatalog: MusicCatalogProviding {
             case .savedTracks: path = "/v1/me/library/songs"
             case .savedAlbums: path = "/v1/me/library/albums"
             case .followedArtists: path = "/v1/me/library/artists"
-            case .recent: path = "/v1/me/recent/played"
+            case .recent:
+                path = "/v1/me/recent/played"
+                parameters = [.init(name: "limit", value: "10"),
+                              .init(name: "types", value: "albums,library-albums,playlists,library-playlists,stations")]
             case .recentlyAdded: path = "/v1/me/library/recently-added"
             case .recommendations:
                 path = "/v1/me/recommendations"
@@ -217,5 +220,38 @@ final class AppleMusicCatalog: MusicCatalogProviding {
     private func check(_ token: UUID, _ context: UUID) throws {
         try Task.checkCancellation()
         guard token == generation, context == session.connectionID, session.currentState.connected, session.currentState.capabilities.canBrowse else { throw CancellationError() }
+    }
+}
+
+extension AppleMusicCatalog: MusicHomeProviding {
+    func homePage(_ query: MusicHomeQuery, next: URL?) async throws -> MusicHomePage {
+        if case let .catalog(value) = query { return MusicHomePage(try await page(value, next: next)) }
+        try session.requireCatalog()
+        let token = generation, context = session.connectionID
+        let request: URLRequest
+        if let next {
+            guard AppleMusicAPI.allowed(next) else { throw MusicCatalogError.invalidResponse }
+            request = URLRequest(url: next)
+        } else {
+            switch query {
+            case .recommendations:
+                request = try AppleMusicAPI.request("/v1/me/recommendations", parameters: [.init(name: "include", value: "contents")])
+            case let .recommendation(id):
+                guard !id.isEmpty, id.unicodeScalars.allSatisfy(CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-")).contains), !id.contains("..") else { throw MusicCatalogError.invalidResponse }
+                request = try AppleMusicAPI.request("/v1/me/recommendations/\(id)/contents")
+            case .personalStation, .liveStations:
+                guard region.count == 2, region.allSatisfy(\.isLetter) else { throw MusicCatalogError.invalidResponse }
+                request = try AppleMusicAPI.request("/v1/catalog/\(region)/stations", parameters: [
+                    .init(name: query == .personalStation ? "filter[identity]" : "filter[featured]",
+                          value: query == .personalStation ? "personal" : "apple-music-live-radio")])
+            case .replay:
+                request = try AppleMusicAPI.request("/v1/me/music-summaries", parameters: [
+                    .init(name: "filter[year]", value: "latest"), .init(name: "views", value: "top-songs,top-albums,top-artists")])
+            default: throw MusicServiceError.unsupportedOperation
+            }
+        }
+        let data = try await session.api.send(request)
+        try check(token, context)
+        return try AppleMusicHomeDecoder.page(data, query: query, url: request.url!)
     }
 }

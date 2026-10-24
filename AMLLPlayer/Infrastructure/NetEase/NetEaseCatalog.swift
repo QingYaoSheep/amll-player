@@ -14,7 +14,7 @@ import Foundation
     func invalidate() { epoch = UUID(); playlists.removeAll(); sequenceCache.removeAll() }
     func profile() async throws -> MusicProfile {
         guard let p = session.profile else { throw NetEaseError.expired }
-        return .init(accountID: p.id, displayName: p.name)
+        return .init(accountID: p.id, displayName: p.name, avatarURL: p.avatar)
     }
     private func call(_ path: String, _ p: [String: Any] = [:], privateData: Bool = true) async throws -> [String: Any] {
         let token = epoch
@@ -173,5 +173,47 @@ import Foundation
     func audio(_ id: String, quality: NetEaseQuality) async throws -> NetEaseAudioSource {
         let r = try await call("/song/enhance/player/url/v1", ["ids": "[\(id)]", "level": quality.rawValue, "encodeType": "flac"], privateData: false)
         return try NetEaseAudioSource.decode(r, id: id)
+    }
+}
+
+extension NetEaseCatalog: MusicHomeProviding {
+    func homePage(_ query: MusicHomeQuery, next: URL?) async throws -> MusicHomePage {
+        if case let .catalog(value) = query { return MusicHomePage(try await page(value, next: next)) }
+        let path: String, field: String, kind: MusicCatalogKind
+        var parameters: [String: Any] = ["limit": 50, "total": true]
+        switch query {
+        case .newAlbums:
+            path = "/album/new"; field = "albums"; kind = .album; parameters["area"] = "ALL"
+        case let .mood(category):
+            guard ["放松", "快乐", "伤感"].contains(category) else { throw NetEaseError.invalidResponse }
+            path = "/playlist/list"; field = "playlists"; kind = .playlist
+            parameters["cat"] = category; parameters["order"] = "hot"
+        default: throw MusicServiceError.unsupportedOperation
+        }
+        let key = SHA256.hash(data: Data(String(describing: query).utf8)).map { String(format: "%02x", $0) }.joined()
+        var offset = 0
+        if let next {
+            guard next.scheme == "https", next.host == "music.163.com", next.path == "/amll-home/" + key,
+                  let text = URLComponents(url: next, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "offset" })?.value,
+                  let value = Int(text), value >= 0 else { throw NetEaseError.invalidResponse }
+            offset = value
+        }
+        parameters["offset"] = offset
+        let response = try await call(path, parameters, privateData: false)
+        guard let values = response[field] as? [[String: Any]] else { throw NetEaseError.invalidResponse }
+        let rows = values.enumerated().compactMap { index, value -> MusicCatalogRow? in
+            guard let item = NetEaseDecoder.item(value, kind: kind, owner: session.profile?.id) else { return nil }
+            return .init(id: "\(key):\(offset + index):\(item.id)", item: item, position: nil)
+        }
+        let total = response["total"] as? Int
+        let more = !values.isEmpty && ((response["more"] as? Bool) ?? (total.map { offset + values.count < $0 } ?? false))
+        return .init(items: rows, next: more ? URL(string: "https://music.163.com/amll-home/\(key)?offset=\(offset + values.count)") : nil, total: total)
+    }
+
+    /// Only a user-started FM session may consume recommendation batches.
+    func personalFMBatch() async throws -> [MusicCatalogItem] {
+        let response = try await call("/v1/radio/get")
+        guard let data = response["data"] as? [[String: Any]] else { throw NetEaseError.invalidResponse }
+        return data.compactMap { NetEaseDecoder.item($0, kind: .track) }
     }
 }

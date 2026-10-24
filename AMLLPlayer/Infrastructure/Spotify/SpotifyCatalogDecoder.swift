@@ -6,7 +6,9 @@ enum SpotifyCatalogDecoder {
         guard let id = (value["account_id"] as? String) ?? (value["id"] as? String), !id.isEmpty else {
             throw SpotifyCatalogError.invalidResponse
         }
-        return SpotifyProfile(accountID: id, displayName: (value["display_name"] as? String) ?? id)
+        let images = value["images"] as? [[String: Any]] ?? []
+        let avatar = images.compactMap { ($0["url"] as? String).flatMap(URL.init(string:)) }.first { $0.scheme == "https" }
+        return SpotifyProfile(accountID: id, displayName: (value["display_name"] as? String) ?? id, avatarURL: avatar)
     }
 
     static func page(

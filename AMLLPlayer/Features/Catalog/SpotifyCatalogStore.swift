@@ -141,6 +141,7 @@ final class MusicCatalogStore {
     var searchText = ""
     var searchKind: SpotifyCatalogKind = .track
     @ObservationIgnored let provider: any SpotifyCatalogProviding
+    let home: MusicHomeStore
     @ObservationIgnored private var pages: [SpotifyCatalogQuery: MusicCatalogPageState] = [:]
     @ObservationIgnored private var details: [String: MusicCatalogDetailState] = [:]
     @ObservationIgnored private var detailResources: [String: MusicResourceID] = [:]
@@ -150,6 +151,7 @@ final class MusicCatalogStore {
 
     init(provider: any SpotifyCatalogProviding, defaults: UserDefaults = .standard) {
         self.provider = provider
+        home = MusicHomeStore(provider: provider)
         historyDefaults = defaults
         searchHistory = defaults.stringArray(forKey: "music.search.history." + provider.service.rawValue) ?? []
     }
@@ -197,6 +199,7 @@ final class MusicCatalogStore {
     }
 
     func reset() {
+        home.reset()
         active = false
         identity = UUID()
         profileTask?.cancel()

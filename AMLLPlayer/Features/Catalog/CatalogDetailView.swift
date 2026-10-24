@@ -38,7 +38,7 @@ private struct CatalogDetailContent: View {
                                 CatalogRowView(model: model, row: row, tapToPlay: true)
                                 Divider()
                             }
-                        }.accessibilityIdentifier("catalogArtistHighlights")
+                        }
                     }
                     if let query = detail.children {
                         CatalogDetailChildren(model: model, store: store, query: query, state: store.page(query), parent: detail.item)
@@ -223,7 +223,7 @@ private struct CatalogDetailChildren: View {
                 }
             }
             if parent.kind == .artist {
-                MusicCatalogGrid(model: model, rows: state.rows).accessibilityIdentifier("catalogArtistAlbums")
+                MusicCatalogGrid(model: model, rows: state.rows)
             } else {
                 ForEach(state.rows) { row in
                     CatalogRowView(model: model, row: row, contextURI: query.preservesPositions ? parent.uri : nil,

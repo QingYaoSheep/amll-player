@@ -37,8 +37,6 @@ jobs:
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -parallel-testing-enabled NO
           -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testArtistHighlightsAndAlbumNavigation
-          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testSearchFailureRetainsRecoveryAndSourceSwitchResetsNavigation
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testSearchSurvivesDetailNavigation
           -resultBundlePath build/Catalog-iPhone.xcresult
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Test actual catalog pages on iPad

@@ -365,6 +365,7 @@ struct NetEaseQueueState: Codable {
         defer { if token == radioGeneration { isRefillingRadio = false; radioTask = nil } }
         for attempt in 0..<3 {
             do {
+                try Task.checkCancellation()
                 if attempt > 0 { try await Task.sleep(for: .seconds(Double(attempt))) }
                 let songs = try await catalog.personalFMBatch()
                 try Task.checkCancellation()
@@ -389,10 +390,12 @@ struct NetEaseQueueState: Codable {
         let token = radioGeneration
         for _ in 0..<5 {
             guard token == radioGeneration, let index = queue.entries.firstIndex(where: { $0.id == queue.currentID }) else { throw CancellationError() }
+            let expectedEntry = queue.currentID
             if forward && index + 1 >= queue.entries.count {
                 if let radioTask { await radioTask.value } else if radioFailure == nil { await refillRadio() }
                 guard token == radioGeneration else { throw CancellationError() }
             }
+            guard queue.currentID == expectedEntry else { throw CancellationError() }
             let target = forward ? index + 1 : index - 1
             guard queue.entries.indices.contains(target) else {
                 if !forward { try await seek(to: 0); return }

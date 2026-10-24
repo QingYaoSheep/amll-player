@@ -37,9 +37,10 @@ import Observation
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var visited = Set<URL>()
     func cancel() { generation = UUID(); task?.cancel(); task = nil; isLoading = false }
-    func seed(_ page: MusicHomePage) {
-        guard loadedAt == nil, !isLoading else { return }
+    func seed(_ page: MusicHomePage, replace: Bool = false) {
+        guard (replace || loadedAt == nil), !isLoading else { return }
         rows = page.items; next = page.next; total = page.total; loadedAt = Date()
+        error = nil; visited.removeAll()
     }
     fileprivate func load(query: MusicHomeQuery, store: MusicHomeStore, more: Bool, force: Bool) async {
         if force { cancel() }
@@ -63,7 +64,7 @@ import Observation
                 var groupIDs = Set(more ? groups.map(\.id) : [])
                 let added = page.groups.filter { groupIDs.insert($0.id).inserted }
                 groups = more ? groups + added : added
-                for group in page.groups { if let seed = page.groupPages[group.id] { store.state(group.query).seed(seed) } }
+                for group in page.groups { if let seed = page.groupPages[group.id] { store.state(group.query).seed(seed, replace: force && !more) } }
                 loadedAt = Date()
             } catch is CancellationError {
             } catch {
@@ -97,6 +98,9 @@ import Observation
         if self.connected != connected || self.browsing != browsing { reset() }
         self.connected = connected; self.browsing = browsing
         sections = browsing ? Self.descriptors(provider: provider, connected: connected) : []
+        // Install states before the first body reads featured; its rows then form
+        // observable dependencies even when every request is still pending.
+        for section in sections { _ = state(section.query) }
     }
     func state(_ query: MusicHomeQuery) -> MusicHomeSectionState {
         if let state = states[query] { return state }

@@ -3,6 +3,22 @@ import XCTest
 final class MusicCatalogDesignUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor func testHomePostersAccountMenuAndLongPressActions() {
+        let app = launch()
+        let card = app.descendants(matching: .any)["homeCard:track:song0"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(card.frame.height, card.frame.width)
+        XCTAssertFalse(app.buttons["catalogPlay-track:song0"].exists, "Home cards must not carry an overlapping play button")
+        capture(app, "AppleStyle-home-posters")
+        card.press(forDuration: 0.8)
+        XCTAssertTrue(app.buttons["播放"].waitForExistence(timeout: 3))
+        capture(app, "AppleStyle-home-context-menu")
+        app.tap()
+        app.buttons["musicSourceMenu"].tap()
+        XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout: 3))
+        capture(app, "AppleStyle-home-account-menu")
+    }
+
     @MainActor func testPlaylistNavigationPlaybackAndRepeatedEntries() {
         let app = launch()
         capture(app, "WWDC-home-light")

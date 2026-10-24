@@ -161,6 +161,18 @@
     {
       "file": "pkg_crypto_crypto.go",
       "sha256": "26e96a6f9178ad31df888668a07247b3ef3a67376242fad53ae7d419b00cbff4"
+    },
+    {
+      "file": "module_album_new.js",
+      "sha256": "1e0f3a130b08a12f2ee5255772321964b1eae887442a7b1a7f2ea83cc3f08573"
+    },
+    {
+      "file": "module_top_playlist.js",
+      "sha256": "f392b386e39df3b4bdaf385b98a149e1385ebbdf640222a76d959e3321bd3b77"
+    },
+    {
+      "file": "module_personal_fm.js",
+      "sha256": "9d8ff490dd1dc42c209748ce59b678a5d22de73a7f40864aff28332da93e3e4d"
     }
   ]
 }

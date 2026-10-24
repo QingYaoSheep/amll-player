@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "target": "LyricsBlossom.exe v7.0",
+  "sha256": "d64d2b413c1abbc0b4ea57d4530e31e344ecb0b172b79fb8604d70c2185f98ed",
+  "inputs": [
+    {
+      "path": "E:/REA/swiftui-repro/SUMMARY.md",
+      "sha256": "8d5c40ee0ab80878c4832c8cb17c46b7e5447b69f36894ab634140c0a98cb924"
+    },
+    {
+      "path": "E:/REA/swiftui-repro/EVIDENCE.md",
+      "sha256": "beb650620e3d279400ef334c44fb726b7f3231212d7ae4f88fb199825017d170"
+    },
+    {
+      "path": "E:/REA/swiftui-repro/Sources/LyricsBlossomRepro/DecompiledParameters.swift",
+      "sha256": "679c955d4f66816282c6fedf3b907d03a835c23f8689d8a237563ec0d88b1d66"
+    },
+    {
+      "path": "E:/REA/swiftui-repro/Sources/LyricsBlossomRepro/LyricModel.swift",
+      "sha256": "878c9d212f386c4695222958f37764ad258fcda7b52773493a4fac4a6cd43b1e"
+    }
+  ],
+  "source": "Local user supplied binary and reconstructed files",
+  "tool": "Ghidra 12.2 readOnly/noanalysis and PE static data reads",
+  "presetRows": [
+    [
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      1,
+      2,
+      1,
+      1,
+      2,
+      0
+    ],
+    [
+      2,
+      1,
+      2,
+      3,
+      1,
+      2,
+      0
+    ],
+    [
+      4,
+      0,
+      1,
+      0,
+      0,
+      3,
+      0
+    ]
+  ],
+  "presetUIOrder": [
+    4,
+    0,
+    1,
+    2,
+    3
+  ],
+  "presetUITitles": [
+    "16.4",
+    "16.4 advance",
+    "26.4",
+    "27",
+    "Custom"
+  ],
+  "selectionLogic": {
+    "stored3": "16.4",
+    "stored2": "27",
+    "stored0": "16.4 advance"
+  },
+  "maximumLines": {
+    "storedPositive": 3,
+    "stored0": 2,
+    "id": "0x22"
+  },
+  "rejectedClaims": [
+    "100/160ms scale callbacks belong to PrivacyActionButtonLayer",
+    "2/3 swap is a UI index conversion, not playback version",
+    "(v != 0)+1 is a menu index, not the selected row cap",
+    "IDs 0x20 and 0x22 have selection/count roles opposite to the supplied summary"
+  ],
+  "limitations": [
+    "word version 3 localized label unresolved: retained as 27 preset",
+    "complete per-version brightness and selection edge behavior not claimed"
+  ]
+}

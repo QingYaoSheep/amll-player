@@ -184,4 +184,27 @@ final class LyricsAnimationStyleTests: XCTestCase {
         XCTAssertEqual(before.rows.map(\.wordClock), after.rows.map(\.wordClock))
         XCTAssertEqual(before.lyricTime, after.lyricTime)
     }
+
+    func testFineOptionsSurviveStyleChangesRelaunchAndResetOnlyWithAppleDefaults() throws {
+        let name = "animation-versions-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let preferences = LyricsRenderPreferences(defaults: defaults)
+        preferences.configuration.selectAnimationStyle(.appleMusic164)
+        var options = LyricsBlossomAnimationOptions()
+        options.apply(.appleMusic264)
+        options.selection = 0
+        options.maximumLines = 3
+        preferences.configuration.appleMusicAnimation = options
+        preferences.configuration.selectAnimationStyle(.amll)
+        preferences.configuration.restoreCurrentAnimationDefaults()
+        XCTAssertEqual(preferences.configuration.appleMusicAnimation, options)
+        let restored = LyricsRenderPreferences(defaults: defaults)
+        restored.configuration.selectAnimationStyle(.appleMusic164)
+        XCTAssertEqual(restored.configuration.appleMusicAnimation, options)
+        XCTAssertEqual(restored.configuration.appleMusicAnimation?.matchedPreset, .custom)
+        restored.configuration.restoreCurrentAnimationDefaults()
+        XCTAssertEqual(restored.configuration.appleMusicAnimation, LyricsBlossomAnimationOptions())
+        XCTAssertEqual(restored.configuration.appleMusicAnimation?.matchedPreset, .appleMusic164)
+    }
 }

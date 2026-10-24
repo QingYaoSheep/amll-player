@@ -24,14 +24,32 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         XCTAssertFalse(app.buttons["blossomPreset"].exists)
         select("Apple Music 16.4")
         XCTAssertTrue(app.buttons["blossomPreset"].exists)
+        app.buttons["blossomPreset"].tap()
+        app.buttons["26.4"].firstMatch.tap()
+        XCTAssertEqual(app.buttons["blossom.background"].value as? String, "26")
+        XCTAssertEqual(app.buttons["blossom.scale"].value as? String, "26.4")
+        let selection = app.buttons["blossom.selection"]
+        for _ in 0 ..< 8 where !selection.isHittable { app.swipeUp() }
+        XCTAssertEqual(selection.value as? String, "27")
+        let maximum = app.steppers["blossom.maximum"]
+        XCTAssertTrue(maximum.exists)
+        XCTAssertFalse(maximum.isEnabled)
+        selection.tap()
+        app.buttons["16.4 advance"].firstMatch.tap()
+        XCTAssertTrue(maximum.isEnabled)
+        maximum.buttons["Increment"].tap()
+        for _ in 0 ..< 8 where !app.buttons["blossomPreset"].isHittable { app.swipeDown() }
+        XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "自定义")
         let scale = app.switches["animationStyleScale"]
         XCTAssertTrue(scale.waitForExistence(timeout: 3))
         for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
         scale.tap()
         XCTAssertEqual(scale.value as? String, "0")
         select("AMLL")
+        for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
         XCTAssertEqual(scale.value as? String, "1")
         select("Apple Music 16.4")
+        for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
         XCTAssertEqual(scale.value as? String, "0")
         capture(app, name: "Lyrics-fine-animation-style")
         app.buttons["closeLyricsQuickSettingsDestination"].tap()
@@ -39,6 +57,11 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         app.terminate()
         openAnimationSettings()
         XCTAssertEqual(app.buttons["lyricsAnimationStyle"].value as? String, "Apple Music 16.4")
+        XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "自定义")
+        for _ in 0 ..< 8 where !selection.isHittable { app.swipeUp() }
+        XCTAssertEqual(selection.value as? String, "16.4 advance")
+        XCTAssertTrue(maximum.isEnabled)
+        for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
         XCTAssertEqual(app.switches["animationStyleScale"].value as? String, "0")
     }
 

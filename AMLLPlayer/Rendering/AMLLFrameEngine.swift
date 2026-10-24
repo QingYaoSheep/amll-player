@@ -390,8 +390,10 @@ struct AMLLFrameEngine {
                 motions[index].y.updateParameters(vertical.sourceParameters)
                 motions[index].slide.updateParameters(vertical.sourceParameters)
                 let scale = policy.mainScale(focused: motions[index].visualActive)
-                motions[index].mainScale.updateParameters(scale.sourceParameters)
-                motions[index].mainScaleParameters = scale
+                if motions[index].mainScaleParameters != scale {
+                    motions[index].mainScale.updateParameters(scale.sourceParameters)
+                    motions[index].mainScaleParameters = scale
+                }
             }
         }
         positionReset = self.environment.width != environment.width || self.environment.height != environment.height

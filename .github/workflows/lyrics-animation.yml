@@ -1,0 +1,74 @@
+name: Lyrics animation regression
+
+on:
+  push:
+    paths:
+      - '.github/workflows/lyrics-animation.yml'
+      - 'AMLLPlayer/Rendering/LyricsAnimation*.swift'
+      - 'AMLLPlayer/Rendering/LyricsBlossomAnimationOptions.swift'
+      - 'AMLLPlayer/Features/Lyrics/LyricsAnimationSettingsView.swift'
+      - 'AMLLPlayerTests/LyricsAnimationStyleTests.swift'
+      - 'AMLLPlayerUITests/LyricsQuickSettingsUITests.swift'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lyrics-animation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27
+        run: xcodebuild -version | head -1 | grep -E '^Xcode 27\.'
+      - name: Prepare Metal compiler
+        run: xcrun --sdk iphoneos metal --version || xcodebuild -downloadComponent MetalToolchain
+      - name: Generate project
+        run: bash Scripts/generate-project.sh
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+      - name: Prepare reference simulators
+        run: |
+          if ! xcrun simctl list runtimes --json | node -e 'const fs = require("node:fs"); const { selectRuntime } = require("./Scripts/prepare-ci-simulators.cjs"); selectRuntime(JSON.parse(fs.readFileSync(0, "utf8")).runtimes)'; then
+            xcodebuild -downloadPlatform iOS
+          fi
+          node Scripts/prepare-ci-simulators.cjs
+      - name: Test animation engine and real settings page
+        run: >-
+          xcodebuild test
+          -project AMLLPlayer.xcodeproj
+          -scheme AMLLPlayer
+          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
+          -only-testing:AMLLPlayerTests/LyricsAnimationStyleTests
+          -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage
+          -resultBundlePath build/Animation-tests.xcresult
+          -collect-test-diagnostics never
+          CODE_SIGNING_ALLOWED=NO
+      - name: Export screenshots
+        if: always()
+        run: |
+          if [[ -d build/Animation-tests.xcresult ]]; then
+            xcrun xcresulttool export attachments --path build/Animation-tests.xcresult --output-path build/Animation-images
+          fi
+      - name: Upload scoped test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lyrics-animation-regression-evidence
+          path: |
+            build/Animation-tests.xcresult
+            build/Animation-images
+          if-no-files-found: ignore
+      - name: Remove reference simulators
+        if: always()
+        run: |
+          for DEVICE_ID in "${CI_IPHONE_UDID:-}" "${CI_IPAD_UDID:-}"; do
+            if [[ -n "$DEVICE_ID" ]]; then
+              xcrun simctl shutdown "$DEVICE_ID" || true
+              xcrun simctl delete "$DEVICE_ID"
+            fi
+          done

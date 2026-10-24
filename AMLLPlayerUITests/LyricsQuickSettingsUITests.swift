@@ -4,6 +4,14 @@ final class LyricsQuickSettingsUITests: XCTestCase {
     @MainActor func testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage() {
         let app = lyricsApp()
         app.launchArguments += ["--quick-settings-preferences-suite", "animation-style-ui-" + UUID().uuidString]
+        func revealSetting(_ element: XCUIElement, towardTop: Bool = false) {
+            for _ in 0 ..< 14 where !element.isHittable {
+                let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+                let end = start.withOffset(CGVector(dx: 0, dy: towardTop ? 180 : -180))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            }
+            XCTAssertTrue(element.isHittable, element.debugDescription)
+        }
         func openAnimationSettings() {
             openPanel(app)
             let appearance = app.buttons["quickSettingsRoute.appearance"]
@@ -16,7 +24,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         }
         func select(_ name: String) {
             let style = app.buttons["lyricsAnimationStyle"]
-            for _ in 0 ..< 8 where !style.isHittable { app.swipeDown() }
+            revealSetting(style, towardTop: true)
             style.tap()
             app.buttons[name].firstMatch.tap()
         }
@@ -29,7 +37,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         XCTAssertEqual(app.buttons["blossom.background"].value as? String, "26")
         XCTAssertEqual(app.buttons["blossom.scale"].value as? String, "26.4")
         let selection = app.buttons["blossom.selection"]
-        for _ in 0 ..< 8 where !selection.isHittable { app.swipeUp() }
+        revealSetting(selection)
         XCTAssertEqual(selection.value as? String, "27")
         let maximum = app.steppers["blossom.maximum"]
         XCTAssertTrue(maximum.exists)
@@ -39,19 +47,19 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         XCTAssertTrue(maximum.isEnabled)
         maximum.buttons["blossom.maximum-Increment"].tap()
         XCTAssertEqual(maximum.value as? String, "3")
-        for _ in 0 ..< 8 where !app.buttons["blossomPreset"].isHittable { app.swipeDown() }
+        revealSetting(app.buttons["blossomPreset"], towardTop: true)
         XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "自定义")
+        capture(app, name: "Lyrics-animation-version-controls")
         let scale = app.switches["animationStyleScale"]
-        XCTAssertTrue(scale.waitForExistence(timeout: 3))
-        for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
+        revealSetting(scale)
         scale.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
         let scaleDisabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: scale)
         XCTAssertEqual(XCTWaiter.wait(for: [scaleDisabled], timeout: 3), .completed)
         select("AMLL")
-        for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
+        revealSetting(scale)
         XCTAssertEqual(scale.value as? String, "1")
         select("Apple Music 16.4")
-        for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
+        revealSetting(scale)
         XCTAssertEqual(scale.value as? String, "0")
         capture(app, name: "Lyrics-fine-animation-style")
         app.buttons["closeLyricsQuickSettingsDestination"].tap()
@@ -60,10 +68,10 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         openAnimationSettings()
         XCTAssertEqual(app.buttons["lyricsAnimationStyle"].value as? String, "Apple Music 16.4")
         XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "自定义")
-        for _ in 0 ..< 8 where !selection.isHittable { app.swipeUp() }
+        revealSetting(selection)
         XCTAssertEqual(selection.value as? String, "16.4 advance")
         XCTAssertTrue(maximum.isEnabled)
-        for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
+        revealSetting(scale)
         XCTAssertEqual(app.switches["animationStyleScale"].value as? String, "0")
     }
 

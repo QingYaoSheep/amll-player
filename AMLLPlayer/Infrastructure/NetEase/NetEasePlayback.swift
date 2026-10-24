@@ -21,6 +21,13 @@ struct NetEaseQueueState: Codable {
     private(set) var actualQuality = ""
     @ObservationIgnored private(set) var latestSnapshot: PlaybackSnapshot?
     private(set) var failure: String?
+    private(set) var radio: NetEaseRadioState?
+    private(set) var isStartingRadio = false
+    private(set) var isRefillingRadio = false
+    private(set) var radioFailure: String?
+    var isPersonalFM: Bool { radio != nil }
+    @ObservationIgnored private var radioGeneration = UUID()
+    @ObservationIgnored private var radioTask: Task<Void, Never>?
     var quality: NetEaseQuality {
         didSet { defaults.set(quality.rawValue, forKey: "netease.quality.v1") }
     }
@@ -71,10 +78,14 @@ struct NetEaseQueueState: Codable {
     func accountChanged() {
         let next = session.profile?.id
         guard account != next else { return }
-        deselect(); queue = .init(); account = next; failure = nil; actualQuality = ""
+        deselect(); queue = .init(); radio = nil; account = next; failure = nil; actualQuality = ""
         if let next, let data = defaults.data(forKey: "netease.queue.v1." + next),
            let saved = try? JSONDecoder().decode(NetEaseQueueState.self, from: data), saved.entries.count <= 10000 {
             queue = saved
+        }
+        if let next, let data = defaults.data(forKey: "netease.radio.v1." + next),
+           let saved = try? JSONDecoder().decode(NetEaseRadioState.self, from: data), saved.isValid {
+            radio = saved; queue = saved.radio
         }
     }
     func start() {
@@ -102,6 +113,7 @@ struct NetEaseQueueState: Codable {
     }
     func stop() { deselect() }
     func deselect() {
+        cancelRadioWork()
         PlaybackSeekDiagnostics.shared.record("media-deselected")
         generation = UUID(); cancelSeek(); queue.position = position; intentPlaying = false; selected = false
         player.pause(); save(); removeCommands(); MusicAudioSession.releasePlayback()
@@ -117,9 +129,9 @@ struct NetEaseQueueState: Codable {
     func play() async throws {
         guard selected, session.currentState.connected, currentEntry != nil else { throw MusicServiceError.noPlayback }
         if player.currentItem == nil || player.currentItem?.status == .failed { try await loadCurrent(position: queue.position, resetRetries: true) }
-        else { try activate(); intentPlaying = true; player.play(); publish() }
+        else { try activate(); intentPlaying = true; player.play(); publish(); scheduleRadioRefill() }
     }
-    func pause() async throws { generation = UUID(); cancelSeek(); intentPlaying = false; player.pause(); queue.position = position; save(); publish() }
+    func pause() async throws { cancelRadioWork(); generation = UUID(); cancelSeek(); intentPlaying = false; player.pause(); queue.position = position; save(); publish() }
     static func makeAudioItem(_ url: URL) -> AVPlayerItem {
         // FLAC may otherwise estimate byte offsets while reporting the requested time.
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
@@ -197,6 +209,7 @@ struct NetEaseQueueState: Codable {
         let entries = songs.map { NetEaseQueueEntry(item: $0) }
         let index = position ?? (item.kind == .track ? songs.firstIndex { $0.spotifyID == item.spotifyID } ?? 0 : 0)
         guard entries.indices.contains(index) else { throw NetEaseError.unavailable }
+        leaveRadioForNewSelection()
         queue.entries = entries; queue.currentID = entries[index].id; queue.position = 0
         rebuildShuffleOrder()
         try await loadCurrent(position: 0, resetRetries: true)
@@ -207,14 +220,16 @@ struct NetEaseQueueState: Codable {
         let songs = try await catalog.allSongs(resource)
         guard selected, epoch == generation, context == session.currentState.contextID else { throw CancellationError() }
         guard !songs.isEmpty else { throw NetEaseError.unavailable }
+        leaveRadioForNewSelection()
         queue.entries = songs.map { NetEaseQueueEntry(item: $0) }
         queue.shuffle = true; queue.currentID = queue.entries.randomElement()?.id
         rebuildShuffleOrder()
         try await loadCurrent(position: 0, resetRetries: true)
     }
-    func setShuffle(_ enabled: Bool) async throws { queue.shuffle = enabled; rebuildShuffleOrder(); save(); publish() }
-    func setRepeat(_ mode: MusicRepeatMode) async throws { queue.repeatMode = mode; save(); publish() }
+    func setShuffle(_ enabled: Bool) async throws { guard !isPersonalFM else { throw NetEaseRadioError.modesUnavailable }; queue.shuffle = enabled; rebuildShuffleOrder(); save(); publish() }
+    func setRepeat(_ mode: MusicRepeatMode) async throws { guard !isPersonalFM else { throw NetEaseRadioError.modesUnavailable }; queue.repeatMode = mode; save(); publish() }
     func enqueue(_ item: MusicCatalogItem, next: Bool) async throws {
+        guard !isPersonalFM else { throw NetEaseRadioError.modesUnavailable }
         guard item.service == .netease, item.kind == .track else { throw MusicServiceError.unsupportedOperation }
         let entry = NetEaseQueueEntry(item: item)
         if next, let index = queue.entries.firstIndex(where: { $0.id == queue.currentID }) { queue.entries.insert(entry, at: index + 1) }
@@ -229,6 +244,7 @@ struct NetEaseQueueState: Codable {
         save(); publish()
     }
     func remove(at offsets: IndexSet) {
+        guard !isPersonalFM else { return }
         let removing = offsets.filter { queue.entries.indices.contains($0) }
         let currentIndex = queue.entries.firstIndex { $0.id == queue.currentID }
         let removesCurrent = currentIndex.map { removing.contains($0) } ?? false
@@ -249,6 +265,7 @@ struct NetEaseQueueState: Codable {
         remove(at: IndexSet(queue.entries.indices.filter { ids.contains(queue.entries[$0].id) }))
     }
     func move(from offsets: IndexSet, to target: Int) {
+        guard !isPersonalFM else { return }
         if queue.shuffle { queue.shuffleOrder?.move(fromOffsets: offsets, toOffset: target) }
         else { queue.entries.move(fromOffsets: offsets, toOffset: target) }
         save(); publish()
@@ -258,8 +275,9 @@ struct NetEaseQueueState: Codable {
         queue.currentID = id; try await loadCurrent(position: 0, resetRetries: true)
     }
     func clearAccount() {
-        let old = account; deselect(); queue = .init(); account = nil
+        let old = account; deselect(); queue = .init(); radio = nil; account = nil
         if let old { defaults.removeObject(forKey: "netease.queue.v1." + old) }
+        if let old { defaults.removeObject(forKey: "netease.radio.v1." + old) }
     }
     private var position: Double {
         let time = player.currentItem == nil ? queue.position : player.currentTime().seconds
@@ -269,14 +287,136 @@ struct NetEaseQueueState: Codable {
     private func activate() throws {
         try MusicAudioSession.acquirePlayback(); installCommands()
     }
-    private func loadCurrent(position requested: Double, resetRetries: Bool) async throws {
+    func startPersonalFM() async throws {
+        guard selected, session.currentState.connected else { throw NetEaseError.expired }
+        if isPersonalFM { try await play(); return }
+        guard !isStartingRadio else { return }
+        cancelRadioWork()
+        let token = radioGeneration, context = session.currentState.contextID
+        isStartingRadio = true; radioFailure = nil
+        defer { if token == radioGeneration { isStartingRadio = false } }
+        do {
+            let songs = try await catalog.personalFMBatch()
+            guard token == radioGeneration, selected, context == session.currentState.contextID else { throw CancellationError() }
+            var backup = queue; backup.position = position
+            var candidate = NetEaseQueueState()
+            var record = NetEaseRadioState(ordinary: backup, radio: candidate)
+            guard record.append(songs, to: &candidate) > 0 else { throw NetEaseRadioError.noRecommendations }
+            var prepared: NetEaseAudioSource?
+            for entry in candidate.entries.prefix(5) {
+                do {
+                    prepared = try await catalog.audio(entry.item.spotifyID, quality: quality)
+                    candidate.currentID = entry.id; break
+                } catch let error as NetEaseError where [.unavailable, .restricted, .trialOnly].contains(error) { continue }
+            }
+            guard token == radioGeneration, selected, context == session.currentState.contextID else { throw CancellationError() }
+            guard let prepared else { throw NetEaseRadioError.unavailableBatch }
+            // Capture the ordinary position at the actual handoff, not before the request.
+            record.ordinary.position = position
+            save(); radio = record; queue = candidate
+            try await loadCurrent(position: 0, resetRetries: true, preparedSource: prepared)
+        } catch is CancellationError { throw CancellationError() }
+        catch {
+            guard token == radioGeneration else { throw CancellationError() }
+            radioFailure = error.localizedDescription; throw error
+        }
+    }
+
+    func exitPersonalFM() {
+        guard let record = radio else { cancelRadioWork(); return }
+        cancelRadioWork(); generation = UUID(); cancelSeek(); intentPlaying = false; player.pause()
+        player.replaceCurrentItem(with: nil); itemObservation?.invalidate(); itemObservation = nil
+        removeCommands(); MusicAudioSession.releasePlayback()
+        queue = record.ordinary; radio = nil; radioFailure = nil; failure = nil; actualQuality = ""
+        lastSeekConfirmation = nil; resourceGeneration = UUID(); revision &+= 1
+        if let account { defaults.removeObject(forKey: "netease.radio.v1." + account) }
+        save(); publish()
+    }
+    private func leaveRadioForNewSelection() {
+        cancelRadioWork()
+        if let record = radio {
+            queue.shuffle = record.ordinary.shuffle; queue.repeatMode = record.ordinary.repeatMode
+        }
+        radio = nil; radioFailure = nil
+        if let account { defaults.removeObject(forKey: "netease.radio.v1." + account) }
+    }
+    private func cancelRadioWork() {
+        radioGeneration = UUID(); radioTask?.cancel(); radioTask = nil
+        isStartingRadio = false; isRefillingRadio = false
+    }
+    private func scheduleRadioRefill() {
+        guard isPersonalFM, selected, intentPlaying, NetEaseRadioState.pendingCount(queue) <= 2,
+              radioTask == nil, radioFailure == nil else { return }
+        radioTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.refillRadio()
+        }
+    }
+    func retryPersonalFM() async {
+        guard isPersonalFM, selected else { return }
+        radioFailure = nil
+        // An explicit retry is allowed while paused; it never starts audio by itself.
+        if let radioTask { await radioTask.value } else { await refillRadio() }
+    }
+    private func refillRadio() async {
+        guard isPersonalFM, selected, !isRefillingRadio else { return }
+        let token = radioGeneration, context = session.currentState.contextID
+        isRefillingRadio = true
+        defer { if token == radioGeneration { isRefillingRadio = false; radioTask = nil } }
+        for attempt in 0..<3 {
+            do {
+                if attempt > 0 { try await Task.sleep(for: .seconds(Double(attempt))) }
+                let songs = try await catalog.personalFMBatch()
+                try Task.checkCancellation()
+                guard selected, token == radioGeneration, context == session.currentState.contextID, var record = radio else { return }
+                let count = record.append(songs, to: &queue)
+                radio = record
+                if count > 0 { radioFailure = nil; save(); return }
+                if attempt == 2 { radioFailure = NetEaseRadioError.noRecommendations.localizedDescription }
+            } catch is CancellationError { return }
+            catch {
+                guard token == radioGeneration else { return }
+                // Do not retry authentication or server throttling failures.
+                if let error = error as? NetEaseError, error == .expired || error == .rateLimited {
+                    radioFailure = error.localizedDescription; return
+                }
+                if attempt == 2 { radioFailure = error.localizedDescription }
+            }
+        }
+    }
+    private func advanceRadio(forward: Bool) async throws {
+        guard selected, isPersonalFM else { throw MusicServiceError.noPlayback }
+        let token = radioGeneration
+        for _ in 0..<5 {
+            guard token == radioGeneration, let index = queue.entries.firstIndex(where: { $0.id == queue.currentID }) else { throw CancellationError() }
+            if forward && index + 1 >= queue.entries.count {
+                if let radioTask { await radioTask.value } else if radioFailure == nil { await refillRadio() }
+                guard token == radioGeneration else { throw CancellationError() }
+            }
+            let target = forward ? index + 1 : index - 1
+            guard queue.entries.indices.contains(target) else {
+                if !forward { try await seek(to: 0); return }
+                try await pause(); radioFailure = radioFailure ?? NetEaseRadioError.noRecommendations.localizedDescription
+                throw NetEaseRadioError.noRecommendations
+            }
+            queue.currentID = queue.entries[target].id
+            NetEaseRadioState.trimHistory(&queue)
+            do { try await loadCurrent(position: 0, resetRetries: true); return }
+            catch let error as NetEaseError where [.unavailable, .restricted, .trialOnly].contains(error) { continue }
+        }
+        try await pause(); radioFailure = NetEaseRadioError.unavailableBatch.localizedDescription
+        throw NetEaseRadioError.unavailableBatch
+    }
+    private func loadCurrent(position requested: Double, resetRetries: Bool, preparedSource: NetEaseAudioSource? = nil) async throws {
         guard selected, let entry = currentEntry else { throw MusicServiceError.noPlayback }
         generation = UUID(); cancelSeek(); let epoch = generation; let context = session.currentState.contextID
         intentPlaying = false; player.pause(); player.replaceCurrentItem(with: nil)
         if resetRetries { reloads = 0 }
         queue.position = requested; actualQuality = ""; failure = nil; stallSeconds = 0; publish()
         do {
-            let source = try await catalog.audio(entry.item.spotifyID, quality: quality)
+            let source: NetEaseAudioSource
+            if let preparedSource { source = preparedSource }
+            else { source = try await catalog.audio(entry.item.spotifyID, quality: quality) }
             guard selected, generation == epoch, context == session.currentState.contextID else { throw CancellationError() }
             try activate()
             // No account cookie is attached to the independently returned CDN URL.
@@ -312,11 +452,12 @@ struct NetEaseQueueState: Codable {
                 guard finished else { throw CancellationError() }
             }
             guard selected, generation == epoch else { throw CancellationError() }
-            revision &+= 1; intentPlaying = true; player.play(); save(); publish()
+            revision &+= 1; intentPlaying = true; player.play(); save(); publish(); scheduleRadioRefill()
         } catch is CancellationError { throw CancellationError() }
         catch { guard generation == epoch else { throw CancellationError() }; cancelSeek(); fail(error); throw error }
     }
     private func advance(forward: Bool, automatic: Bool) async throws {
+        if isPersonalFM { try await advanceRadio(forward: forward); return }
         guard selected, let index = queue.entries.firstIndex(where: { $0.id == queue.currentID }) else { throw MusicServiceError.noPlayback }
         let sourceEpoch = generation
         let entries = queue.entries
@@ -366,6 +507,12 @@ struct NetEaseQueueState: Codable {
     private func save() {
         guard let account else { return }
         var state = queue; state.position = position
+        if var radio {
+            radio.radio = state
+            self.radio = radio
+            if let data = try? JSONEncoder().encode(radio) { defaults.set(data, forKey: "netease.radio.v1." + account) }
+            return
+        }
         if let data = try? JSONEncoder().encode(state) { defaults.set(data, forKey: "netease.queue.v1." + account) }
     }
     @discardableResult

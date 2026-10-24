@@ -377,11 +377,14 @@ struct LyricsQuickSettingsPanel: View {
                 route("quickSettings.queue", symbol: "list.bullet", to: .queue)
                 iconToggleRow("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle", value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                     Task { await model.setShuffle(enabled) }
-                })).disabled(model.isPerformingAction)
+                })).disabled(model.isPerformingAction || (model.selectedMusicService == .netease && model.netEasePlayback.isPersonalFM))
                 QuickSettingsRepeatMenu(owner: ObjectIdentifier(model), service: model.selectedMusicService,
-                                          mode: snapshot.repeatMode, busy: model.isPerformingAction) { mode in
+                                          mode: snapshot.repeatMode, busy: model.isPerformingAction || (model.selectedMusicService == .netease && model.netEasePlayback.isPersonalFM)) { mode in
                     Task { await model.setRepeat(mode) }
                 }.equatable()
+                if model.selectedMusicService == .netease, model.netEasePlayback.isPersonalFM {
+                    Text("私人 FM 自动续播，退出后可使用随机与循环。").font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
     }

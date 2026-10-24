@@ -50,6 +50,7 @@ struct NetEasePlaylistChooser: View {
     var body: some View {
         NavigationStack {
             List {
+
                 ForEach(state.rows) { row in
                     Button(row.item.name) {
                         Task {
@@ -121,6 +122,18 @@ struct NetEaseQueueView: View {
     var body: some View {
         NavigationStack {
             List {
+                if model.netEasePlayback.isPersonalFM {
+                    Section("私人 FM") {
+                        Text("自动续播；可返回已听歌曲，暂停后停止主动补歌。").font(.subheadline)
+                        if model.netEasePlayback.isRefillingRadio { ProgressView("正在补充推荐") }
+                        if let error = model.netEasePlayback.radioFailure {
+                            Text(error).foregroundStyle(.secondary)
+                            Button("重试补歌") { Task { await model.netEasePlayback.retryPersonalFM() } }
+                        }
+                        Button("退出 FM，恢复普通队列") { model.netEasePlayback.exitPersonalFM() }
+                            .accessibilityIdentifier("exitPersonalFM")
+                    }
+                }
                 if let failure = model.netEasePlayback.failure { Text(failure).foregroundStyle(.secondary) }
                 if !model.netEasePlayback.actualQuality.isEmpty { Text("实际音质：\(model.netEasePlayback.actualQuality)") }
                 ForEach(model.netEasePlayback.displayedEntries) { entry in
@@ -135,9 +148,11 @@ struct NetEaseQueueView: View {
                 }
                 .onDelete { model.netEasePlayback.removeDisplayed(at: $0) }
                 .onMove { model.netEasePlayback.move(from: $0, to: $1) }
-                Text("移除正在播放的条目会暂停；其余条目可自由排序。").font(.footnote).foregroundStyle(.secondary)
+                .deleteDisabled(model.netEasePlayback.isPersonalFM)
+                .moveDisabled(model.netEasePlayback.isPersonalFM)
+                if !model.netEasePlayback.isPersonalFM { Text("移除正在播放的条目会暂停；其余条目可自由排序。").font(.footnote).foregroundStyle(.secondary) }
             }.navigationTitle("网易云播放队列")
-                .toolbar { EditButton(); Button("完成") { dismiss() } }
+                .toolbar { if !model.netEasePlayback.isPersonalFM { EditButton() }; Button("完成") { dismiss() } }
                 .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                     Button("好", role: .cancel) { failure = nil }
                 } message: { Text(failure ?? "") }

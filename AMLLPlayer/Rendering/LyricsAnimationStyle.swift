@@ -52,6 +52,17 @@ struct LyricsAnimationProfiles: Codable, Equatable, Sendable {
     var amll: LyricsAnimationOptions?
     var appleMusic164: LyricsAnimationOptions?
 
+    init() {}
+
+    private enum CodingKeys: String, CodingKey { case selected, amll, appleMusic164 }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        selected = try values.decodeIfPresent(LyricsAnimationStyle.self, forKey: .selected) ?? .amll
+        amll = try values.decodeIfPresent(LyricsAnimationOptions.self, forKey: .amll)
+        appleMusic164 = try values.decodeIfPresent(LyricsAnimationOptions.self, forKey: .appleMusic164)
+    }
+
     subscript(_ style: LyricsAnimationStyle) -> LyricsAnimationOptions? {
         get { style == .amll ? amll : appleMusic164 }
         set {

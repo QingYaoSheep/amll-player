@@ -30,6 +30,15 @@ struct AMLLScheduledSpring: Sendable {
         schedule.target
     }
 
+    var velocity: Double { spring.velocity }
+
+    mutating func resume(position: Double, velocity: Double, at time: Double) {
+        let resumedTarget = pending == nil ? target : spring.target
+        spring.resume(position: position, velocity: velocity, target: resumedTarget)
+        self.time = time
+        if pending == nil, position != target { schedule.startedAt = time }
+    }
+
     var arrived: Bool {
         pending == nil && spring.arrived
     }

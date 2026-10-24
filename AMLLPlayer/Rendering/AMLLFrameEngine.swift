@@ -350,6 +350,31 @@ struct AMLLFrameEngine {
 
     mutating func resize(environment: AMLLRenderEnvironment, heights: [Double]) {
         guard self.environment != environment || self.heights != heights else { return }
+        if self.environment.enableSpring != environment.enableSpring,
+           !self.environment.reduceMotion, !environment.reduceMotion {
+            for index in motions.indices {
+                if environment.enableSpring {
+                    let y = motions[index].yTransition, slide = motions[index].slideTransition
+                    let main = motions[index].mainScaleTransition, background = motions[index].backgroundScaleTransition
+                    let mainTarget = motions[index].mainScale.target, backgroundTarget = motions[index].backgroundScale.target
+                    motions[index].y.resume(position: y.value, velocity: y.velocity, at: animationTime)
+                    motions[index].slide.resume(position: slide.value, velocity: slide.velocity, at: animationTime)
+                    motions[index].mainScale.resume(position: main.value, velocity: main.velocity, target: mainTarget)
+                    motions[index].backgroundScale.resume(position: background.value, velocity: background.velocity, target: backgroundTarget)
+                } else {
+                    let y = motions[index].y, slide = motions[index].slide
+                    let main = motions[index].mainScale, background = motions[index].backgroundScale
+                    motions[index].yTransition.setPosition(y.position)
+                    motions[index].yTransition.setTarget(y.target, initialVelocity: y.velocity)
+                    motions[index].slideTransition.setPosition(slide.position)
+                    motions[index].slideTransition.setTarget(slide.target, initialVelocity: slide.velocity)
+                    motions[index].mainScaleTransition.setPosition(main.position)
+                    motions[index].mainScaleTransition.setTarget(main.target, initialVelocity: main.velocity)
+                    motions[index].backgroundScaleTransition.setPosition(background.position)
+                    motions[index].backgroundScaleTransition.setTarget(background.target, initialVelocity: background.velocity)
+                }
+            }
+        }
         if (self.environment.animationStyle ?? .amll) != (environment.animationStyle ?? .amll) {
             let policy = LyricsAnimationMotion(style: environment.animationStyle ?? .amll)
             let interval = timeline.focus > 0 && timeline.focus < document.timings.count

@@ -19,6 +19,11 @@ final class LyricsAnimationStyleTests: XCTestCase {
         XCTAssertEqual(unknown.animationStyle, .amll)
         XCTAssertEqual(unknown.gradientWidth, 0.75)
         XCTAssertEqual(unknown.fontSize, original.fontSize)
+        json["animationProfiles"] = [:] as [String: Any]
+        let empty = try JSONDecoder().decode(LyricsRenderConfiguration.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(empty.animationStyle, .amll)
+        XCTAssertEqual(empty.advance, 1)
+        XCTAssertFalse(empty.enableSpring)
     }
 
     func testStyleSwitchCopiesOnceAndRestoresIndependentOptionsWithoutChangingLayout() throws {
@@ -82,7 +87,11 @@ final class LyricsAnimationStyleTests: XCTestCase {
             for _ in 0 ..< 150 {
                 time += delta
                 let input = AMLLPlayerInput(position: time, playing: true)
-                XCTAssertEqual(legacy.render(input, delta: delta), explicit.render(input, delta: delta))
+                let oldFrame = legacy.render(input, delta: delta)
+                let newFrame = explicit.render(input, delta: delta)
+                XCTAssertEqual(oldFrame.rows, newFrame.rows)
+                XCTAssertEqual(oldFrame.lyricTime, newFrame.lyricTime)
+                XCTAssertEqual(oldFrame.focusGroup, newFrame.focusGroup)
             }
             let input = AMLLPlayerInput(position: time, playing: true)
             let before = explicit.render(input, delta: 0)
@@ -99,6 +108,31 @@ final class LyricsAnimationStyleTests: XCTestCase {
                 XCTAssertEqual(old.wordClock, new.wordClock)
                 XCTAssertEqual(old.visualFocus, new.visualFocus)
                 XCTAssertEqual(old.brightAlpha, new.brightAlpha, accuracy: 0.000001)
+            }
+        }
+    }
+
+    func testSwitchingSavedSpringModesDuringMotionHasNoPresentationJump() {
+        let lines = (0 ..< 5).map { index in
+            LyricLine(id: String(index), text: "Line", start: Double(index) * 2, end: Double(index) * 2 + 1.5,
+                      words: [.init(text: "Line", start: Double(index) * 2, end: Double(index) * 2 + 1.5)], precision: .word)
+        }
+        for initialSpring in [true, false] {
+            var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+            environment.enableSpring = initialSpring
+            var engine = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: Array(repeating: 60, count: 5))
+            _ = engine.render(.init(position: 0.1, playing: true), delta: 0)
+            let input = AMLLPlayerInput(position: 2.1, playing: true)
+            _ = engine.render(input, delta: 0.06)
+            let before = engine.render(input, delta: 0)
+            environment.animationStyle = .appleMusic164
+            environment.enableSpring = !initialSpring
+            engine.resize(environment: environment, heights: Array(repeating: 60, count: 5))
+            let after = engine.render(input, delta: 0)
+            for (old, new) in zip(before.rows, after.rows) {
+                XCTAssertEqual(old.y, new.y, accuracy: 0.000001)
+                XCTAssertEqual(old.scale, new.scale, accuracy: 0.000001)
+                XCTAssertEqual(old.wordClock, new.wordClock)
             }
         }
     }

@@ -57,6 +57,7 @@ struct AMLLSourceSpring: Sendable {
 
     private(set) var position: Double
     private(set) var target: Double
+    var velocity: Double { solver.speed(elapsed) }
     private var elapsed = 0.0
     private var parameters = Parameters()
     private var solver: Solver
@@ -79,6 +80,13 @@ struct AMLLSourceSpring: Sendable {
         target = value
         position = value
         solver = Solver(from: value, velocity: 0, to: value, parameters: parameters, constant: true)
+    }
+
+    mutating func resume(position: Double, velocity: Double, target: Double) {
+        guard position.isFinite, velocity.isFinite, target.isFinite else { return }
+        self.position = position; self.target = target; elapsed = 0
+        queuedTarget = nil; queuedParameters = nil
+        solver = Solver(from: position, velocity: velocity, to: target, parameters: parameters)
     }
 
     mutating func setTarget(_ value: Double, delay: Double = 0) {

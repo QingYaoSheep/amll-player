@@ -39,7 +39,7 @@ struct LyricsBlossomAnimationOptions: Codable, Equatable, Sendable {
         var choices: [(value: Int, title: String)] {
             switch self {
             case .background: [(0, "16"), (1, "26")]
-            case .word: [(0, "16.4"), (1, "26.4"), (2, "27"), (3, "27 预设")]
+            case .word: [(0, "16.4"), (1, "26.4"), (3, "27"), (2, "关闭")]
             case .scale: [(1, "16.4"), (2, "26.4")]
             case .emphasis: [(0, "16.4"), (1, "26.4")]
             case .selection: [(3, "16.4"), (0, "16.4 advance"), (2, "27")]

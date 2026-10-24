@@ -154,6 +154,8 @@ final class LyricsAnimationStyleTests: XCTestCase {
         options.apply(.appleMusic27)
         XCTAssertEqual(options.word, 3, "Preset fields use stored values, not the UI's swapped index")
         XCTAssertEqual(options.matchedPreset, .appleMusic27)
+        XCTAssertEqual(LyricsBlossomAnimationOptions.Control.word.choices.map(\.value), [0, 1, 3, 2])
+        XCTAssertEqual(LyricsBlossomAnimationOptions.Control.word.choices.map(\.title), ["16.4", "26.4", "27", "关闭"])
         let decoded = try JSONDecoder().decode(LyricsBlossomAnimationOptions.self, from: Data("{}".utf8))
         XCTAssertEqual(decoded, LyricsBlossomAnimationOptions())
         options.emphasis = 1

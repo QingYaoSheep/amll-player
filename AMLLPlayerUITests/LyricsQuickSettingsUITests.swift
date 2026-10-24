@@ -62,6 +62,8 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         revealSetting(scale)
         XCTAssertEqual(scale.value as? String, "0")
         capture(app, name: "Lyrics-fine-animation-style")
+        app.navigationBars["精细动画调整"].buttons["BackButton"].tap()
+        XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForExistence(timeout: 3))
         app.buttons["closeLyricsQuickSettingsDestination"].tap()
         XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 4))
         app.terminate()

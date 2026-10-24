@@ -1,6 +1,42 @@
 import XCTest
 
 final class LyricsQuickSettingsUITests: XCTestCase {
+    @MainActor func testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage() {
+        let app = lyricsApp()
+        app.launchArguments += ["--quick-settings-preferences-suite", "animation-style-ui-" + UUID().uuidString]
+        func openAnimationSettings() {
+            openPanel(app)
+            let appearance = app.buttons["quickSettingsRoute.appearance"]
+            reveal(appearance, in: app)
+            appearance.tap()
+            let fine = app.buttons["lyricsAnimationSettings"]
+            for _ in 0 ..< 8 where !fine.isHittable { app.swipeUp() }
+            XCTAssertTrue(fine.isHittable)
+            fine.tap()
+        }
+        func select(_ name: String) {
+            app.buttons["lyricsAnimationStyle"].tap()
+            app.buttons[name].firstMatch.tap()
+        }
+        openAnimationSettings()
+        select("Apple Music 16.4")
+        let scale = app.switches["animationStyleScale"]
+        XCTAssertTrue(scale.waitForExistence(timeout: 3))
+        scale.tap()
+        XCTAssertEqual(scale.value as? String, "0")
+        select("AMLL")
+        XCTAssertEqual(scale.value as? String, "1")
+        select("Apple Music 16.4")
+        XCTAssertEqual(scale.value as? String, "0")
+        capture(app, name: "Lyrics-fine-animation-style")
+        app.buttons["closeLyricsQuickSettingsDestination"].tap()
+        XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 4))
+        app.terminate()
+        openAnimationSettings()
+        XCTAssertEqual(app.buttons["lyricsAnimationStyle"].value as? String, "Apple Music 16.4")
+        XCTAssertEqual(app.switches["animationStyleScale"].value as? String, "0")
+    }
+
     @MainActor func testImmersiveLyricsModeStaysOpenPersistsAndFallsBackInLandscape() {
         for legacy in [false, true] {
             let app = lyricsApp()

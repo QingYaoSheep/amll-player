@@ -13,7 +13,9 @@ struct LyricsAnimationSettingsView: View {
                     ForEach(LyricsAnimationStyle.allCases, id: \.self) { style in
                         Text(style.title).tag(style)
                     }
-                }.accessibilityIdentifier("lyricsAnimationStyle")
+                }.pickerStyle(.menu)
+                    .accessibilityIdentifier("lyricsAnimationStyle")
+                    .accessibilityValue(preferences.configuration.animationStyle.title)
             } footer: {
                 Text("风格作用于逐字与整行动效。两种风格分别保存动画选项，首次切换时复制当前设置。")
             }
@@ -22,6 +24,7 @@ struct LyricsAnimationSettingsView: View {
                 Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords)
                 Toggle("render.spring", isOn: $preferences.configuration.enableSpring)
                 Toggle("render.scale", isOn: $preferences.configuration.enableScale)
+                    .accessibilityIdentifier("animationStyleScale")
                 Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines)
                 Toggle("render.marquee", isOn: $preferences.configuration.marquee)
                 LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
@@ -44,7 +47,7 @@ struct LyricsAnimationSettingsView: View {
                     .accessibilityIdentifier("resetLyricsAnimationStyle")
             }
             Section("风格来源") {
-                Text("Apple Music 16.4 风格基于 LyricsBlossom 的已核实动画资料适配。尚未确认的动效沿用 AMLL，不代表 Apple Music 官方实现。")
+                Text("基于 LyricsBlossom 的已核实歌词弹簧参数适配行滚动与缩放；逐字强调、亮度和模糊等未确认部分沿用 AMLL。不代表 Apple Music 官方实现。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }

@@ -27,6 +27,8 @@ struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     var voiceOver = false
     var enableSpring = true
     var enableScale = true
+    /// Absent in older replay inputs means the pinned AMLL motion path.
+    var animationStyle: LyricsAnimationStyle?
     var enableBlur = true
     var hidePassedLines = false
     var alwaysPostpositionBackground = false
@@ -337,9 +339,10 @@ struct AMLLFrameEngine {
             if group.backgroundFirst {
                 motion.slide.setPosition(80)
             }
-            motion.y.updateParameters(.init(mass: 0.9, damping: 15, stiffness: 90))
-            motion.slide.updateParameters(.init(mass: 0.9, damping: 15, stiffness: 90))
-            motion.mainScale.updateParameters(.init(mass: 2, damping: 25, stiffness: 100))
+            let motionStyle = LyricsAnimationMotion(style: environment.animationStyle ?? .amll)
+            motion.y.updateParameters(motionStyle.initialVertical.sourceParameters)
+            motion.slide.updateParameters(motionStyle.initialVertical.sourceParameters)
+            motion.mainScale.updateParameters(motionStyle.mainScale.sourceParameters)
             motion.backgroundScale.updateParameters(.init(mass: 1, damping: 20, stiffness: 50))
             return motion
         }
@@ -347,6 +350,19 @@ struct AMLLFrameEngine {
 
     mutating func resize(environment: AMLLRenderEnvironment, heights: [Double]) {
         guard self.environment != environment || self.heights != heights else { return }
+        if (self.environment.animationStyle ?? .amll) != (environment.animationStyle ?? .amll) {
+            let policy = LyricsAnimationMotion(style: environment.animationStyle ?? .amll)
+            let interval = timeline.focus > 0 && timeline.focus < document.timings.count
+                ? (document.timings[timeline.focus].startTime - document.timings[timeline.focus - 1].startTime) / 1000 : nil
+            let vertical = policy.vertical(lineInterval: interval, seeking: false, interlude: interlude != nil)
+            for index in motions.indices {
+                // Parameter changes retain the solver's presented position, velocity,
+                // queued position deadline, lyric clocks and focus/retirement events.
+                motions[index].y.updateParameters(vertical.sourceParameters)
+                motions[index].slide.updateParameters(vertical.sourceParameters)
+                motions[index].mainScale.updateParameters(policy.mainScale.sourceParameters)
+            }
+        }
         positionReset = self.environment.width != environment.width || self.environment.height != environment.height
             || self.heights != heights
         self.environment = environment; self.heights = heights; dirty = true
@@ -566,7 +582,8 @@ struct AMLLFrameEngine {
                 let interval = timeline.focus > 0 && timeline.focus < document.timings.count
                     ? (document.timings[timeline.focus].startTime - document.timings[timeline.focus - 1].startTime) / 1000 : nil
                 if seeking || interlude != nil || interval != nil {
-                    let p = AMLLMotionMetrics.verticalSpring(lineInterval: interval, seeking: seeking, interlude: interlude != nil)
+                    let p = LyricsAnimationMotion(style: environment.animationStyle ?? .amll)
+                        .vertical(lineInterval: interval, seeking: seeking, interlude: interlude != nil)
                     for index in motions.indices {
                         motions[index].y.updateParameters(.init(mass: p.mass, damping: p.damping, stiffness: p.stiffness))
                         motions[index].slide.updateParameters(.init(mass: p.mass, damping: p.damping, stiffness: p.stiffness))

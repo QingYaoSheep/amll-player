@@ -403,6 +403,8 @@ final class AMLLNativeCanvas: UIView {
         environment.enableSpring = configuration.enableSpring
         environment.enableScale = configuration.enableScale
         environment.animationStyle = configuration.animationStyle
+        environment.appleMusicAnimation = configuration.animationStyle == .appleMusic164
+            ? (configuration.appleMusicAnimation ?? .init()).validated() : nil
         environment.enableBlur = configuration.blurInactive && !environment.reduceTransparency
         environment.hidePassedLines = configuration.hidePassedLines
         environment.alwaysPostpositionBackground = configuration.alwaysPostpositionBackground
@@ -1365,14 +1367,19 @@ private final class AMLLNativeRow: UIView {
             let presentation = motionEnabled && configuration.emphasizeWords
                 ? entry.animation?.sample(lineTime: row.wordClock.time)
                 : nil
+            let emphasisWeight = configuration.animationStyle == .appleMusic164
+                ? (configuration.appleMusicAnimation ?? .init()).emphasisReleaseWeight(
+                    lineTime: row.wordClock.time, wordEnd: word.end - line.start,
+                    reverseElapsed: row.wordClock.enabled ? 0 : row.wordClock.reverseElapsed)
+                : 1
             let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground)
-            let scale = presentation?.scale ?? 1
-            let x = (presentation?.offsetX ?? 0) * textLayout.font.pointSize
-            let y = ((presentation?.offsetY ?? 0) + (motionEnabled ? float : 0)) * textLayout.font.pointSize
+            let scale = 1 + ((presentation?.scale ?? 1) - 1) * emphasisWeight
+            let x = (presentation?.offsetX ?? 0) * emphasisWeight * textLayout.font.pointSize
+            let y = ((presentation?.offsetY ?? 0) * emphasisWeight + (motionEnabled ? float : 0)) * textLayout.font.pointSize
             entry.layer.setAffineTransform(CGAffineTransform(translationX: x, y: y).scaledBy(x: scale, y: scale))
             entry.layer.shadowColor = UIColor.white.cgColor
-            entry.layer.shadowRadius = CGFloat(presentation?.glowRadius ?? 0) * textLayout.font.pointSize
-            entry.layer.shadowOpacity = Float(presentation?.glowOpacity ?? 0)
+            entry.layer.shadowRadius = CGFloat((presentation?.glowRadius ?? 0) * emphasisWeight) * textLayout.font.pointSize
+            entry.layer.shadowOpacity = Float((presentation?.glowOpacity ?? 0) * emphasisWeight)
             entry.layer.shadowOffset = .zero
             let feather = textLayout.font.lineHeight * configuration.gradientWidth
             let edge = row.fillComplete ? entry.fragment.rect.width + feather

@@ -90,6 +90,7 @@ extension LyricsRenderConfiguration {
     }
 
     mutating func restoreCurrentAnimationDefaults() {
+        if animationStyle == .appleMusic164 { appleMusicAnimation = .init() }
         let defaults = LyricsAnimationOptions()
         defaults.apply(to: &self)
         if var profiles = animationProfiles {

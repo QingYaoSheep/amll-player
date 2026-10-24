@@ -29,6 +29,7 @@ struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     var enableScale = true
     /// Absent in older replay inputs means the pinned AMLL motion path.
     var animationStyle: LyricsAnimationStyle?
+    var appleMusicAnimation: LyricsBlossomAnimationOptions?
     var enableBlur = true
     var hidePassedLines = false
     var alwaysPostpositionBackground = false
@@ -260,6 +261,7 @@ struct AMLLFrameEngine {
         var y = AMLLScheduledSpring()
         var slide = AMLLScheduledSpring(-80)
         var mainScale = AMLLSourceSpring(100)
+        var mainScaleParameters = AMLLSpringParameters.scale
         var backgroundScale = AMLLSourceSpring(100)
         var yTransition = AMLLSourceTransition()
         var slideTransition = AMLLSourceTransition(-80)
@@ -343,6 +345,7 @@ struct AMLLFrameEngine {
             motion.y.updateParameters(motionStyle.initialVertical.sourceParameters)
             motion.slide.updateParameters(motionStyle.initialVertical.sourceParameters)
             motion.mainScale.updateParameters(motionStyle.mainScale.sourceParameters)
+            motion.mainScaleParameters = motionStyle.mainScale
             motion.backgroundScale.updateParameters(.init(mass: 1, damping: 20, stiffness: 50))
             return motion
         }
@@ -375,8 +378,9 @@ struct AMLLFrameEngine {
                 }
             }
         }
-        if (self.environment.animationStyle ?? .amll) != (environment.animationStyle ?? .amll) {
-            let policy = LyricsAnimationMotion(style: environment.animationStyle ?? .amll)
+        if (self.environment.animationStyle ?? .amll) != (environment.animationStyle ?? .amll)
+            || self.environment.appleMusicAnimation != environment.appleMusicAnimation {
+            let policy = LyricsAnimationMotion(style: environment.animationStyle ?? .amll, options: environment.appleMusicAnimation)
             let interval = timeline.focus > 0 && timeline.focus < document.timings.count
                 ? (document.timings[timeline.focus].startTime - document.timings[timeline.focus - 1].startTime) / 1000 : nil
             let vertical = policy.vertical(lineInterval: interval, seeking: false, interlude: interlude != nil)
@@ -385,7 +389,9 @@ struct AMLLFrameEngine {
                 // queued position deadline, lyric clocks and focus/retirement events.
                 motions[index].y.updateParameters(vertical.sourceParameters)
                 motions[index].slide.updateParameters(vertical.sourceParameters)
-                motions[index].mainScale.updateParameters(policy.mainScale.sourceParameters)
+                let scale = policy.mainScale(focused: motions[index].visualActive)
+                motions[index].mainScale.updateParameters(scale.sourceParameters)
+                motions[index].mainScaleParameters = scale
             }
         }
         positionReset = self.environment.width != environment.width || self.environment.height != environment.height
@@ -842,13 +848,18 @@ struct AMLLFrameEngine {
     }
 
     private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double, sourcePosition: Double) {
+        let blossom = environment.animationStyle == .appleMusic164 ? environment.appleMusicAnimation : nil
         for index in motions.indices {
             let preparesBackground = document.groups[index].background != nil && visualFocus == index
                 && !browsing && !motions[index].backgroundCompleted && motions[index].backgroundRetirement == nil
+                && (blossom == nil || blossom?.background == 1)
             motions[index].backgroundVisualActive = (motions[index].backgroundSinging && motions[index].backgroundRetirement == nil)
                 || motions[index].backgroundFocusRetained || preparesBackground
         }
         let active = motions.map { ($0.mainSinging && $0.mainRetirement == nil) || $0.backgroundVisualActive }
+        let selectedSinging: Set<Int>? = if let blossom, blossom.limitsSelection {
+            Set(motions.indices.filter { motions[$0].mainSinging }.prefix(blossom.maximumLines))
+        } else { nil }
         let groupHeights = document.groups.enumerated().map { index, group in
             height(group.main) + environment.fontSize * 0.8
                 + (active[index] || !playing ? group.background.map { height($0) } ?? 0 : 0)
@@ -882,8 +893,9 @@ struct AMLLFrameEngine {
                 y += environment.dotHeight + environment.fontSize * 0.4
             }
             let group = document.groups[index]
-            let focused = (motions[index].mainSinging && motions[index].mainRetirement == nil) || motions[index].mainFocusRetained
-                || (visualFocus == index && !browsing && !motions[index].mainCompleted && motions[index].mainRetirement == nil)
+            let allowsSingingFocus = !motions[index].mainSinging || selectedSinging?.contains(index) != false
+            let focused = allowsSingingFocus && ((motions[index].mainSinging && motions[index].mainRetirement == nil) || motions[index].mainFocusRetained
+                || (visualFocus == index && !browsing && !motions[index].mainCompleted && motions[index].mainRetirement == nil))
             let appearanceFocus = motions[index].mainCompleted && !motions[index].mainFocusRetained
                 ? max(visualFocus ?? singingTimeline.focus, timeline.focus) : visualFocus ?? singingTimeline.focus
             motions[index].visualActive = focused
@@ -911,7 +923,8 @@ struct AMLLFrameEngine {
             motions[index].blur = blur
             let hiddenSlide = group.backgroundFirst && !environment.alwaysPostpositionBackground ? 80.0 : -80.0
             let slide = active[index] || !playing ? 0 : hiddenSlide
-            let mainScale = !focused && environment.enableScale && (playing || visualFocus != nil) ? 97.0 : 100
+            let suppressInactiveScale = blossom?.word == 2
+            let mainScale = !focused && environment.enableScale && !suppressInactiveScale && (playing || visualFocus != nil) ? 97.0 : 100
             let bgFocused = motions[index].backgroundVisualActive
             let bgScale = !bgFocused && playing && environment.enableScale ? 75.0 : 100
             // Reduce Motion is a source-defined accessibility variant: it
@@ -921,6 +934,13 @@ struct AMLLFrameEngine {
             // follows the same spring as Return to Current. Only initial layout
             // and the existing accessibility variant position immediately.
             let immediate = firstFrame || environment.reduceMotion
+            if environment.animationStyle == .appleMusic164 {
+                let parameters = LyricsAnimationMotion(style: .appleMusic164, options: blossom).mainScale(focused: focused)
+                if motions[index].mainScaleParameters != parameters {
+                    motions[index].mainScale.updateParameters(parameters.sourceParameters)
+                    motions[index].mainScaleParameters = parameters
+                }
+            }
             let immediatePosition = immediate || browsing || positionReset
             let positionTargetChanged = motions[index].y.target != y
             let presentedY = environment.enableSpring && !environment.reduceMotion

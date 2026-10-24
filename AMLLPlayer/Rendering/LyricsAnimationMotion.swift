@@ -4,6 +4,7 @@ import Foundation
 /// table in Docs/Lyrics-Animation-Styles.md; its 100/160ms button curves are excluded.
 struct LyricsAnimationMotion: Sendable {
     var style: LyricsAnimationStyle
+    var options: LyricsBlossomAnimationOptions? = nil
 
     // FUN_140303510 installs these at LineRenderState +0x1f8 (y) and +0x370
     // (scale) in its fixed-parameter branch. FUN_1403014c0 consumes both, and
@@ -12,6 +13,15 @@ struct LyricsAnimationMotion: Sendable {
 
     var mainScale: AMLLSpringParameters {
         style == .appleMusic164 ? Self.blossomLine : .scale
+    }
+
+    func mainScale(focused: Bool) -> AMLLSpringParameters {
+        // FUN_140303510's selected-row +0x370 branch installs m=1,k=30,c=9
+        // for its newer scale family. Preserve the fixed source branch on exit.
+        if style == .appleMusic164, options?.scale == 2, focused {
+            return .init(mass: 1, damping: 9, stiffness: 30)
+        }
+        return mainScale
     }
 
     func vertical(lineInterval: TimeInterval?, seeking: Bool, interlude: Bool) -> AMLLSpringParameters {

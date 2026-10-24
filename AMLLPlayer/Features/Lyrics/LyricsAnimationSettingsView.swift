@@ -3,6 +3,18 @@ import SwiftUI
 struct LyricsAnimationSettingsView: View {
     @Bindable var preferences: LyricsRenderPreferences
 
+    private var blossom: LyricsBlossomAnimationOptions {
+        preferences.configuration.appleMusicAnimation ?? .init()
+    }
+
+    private func blossomBinding(_ control: LyricsBlossomAnimationOptions.Control) -> Binding<Int> {
+        Binding(get: { blossom[keyPath: control.key] }, set: { value in
+            var next = blossom
+            next[keyPath: control.key] = value
+            preferences.configuration.appleMusicAnimation = next.validated()
+        })
+    }
+
     var body: some View {
         Form {
             Section {
@@ -18,6 +30,43 @@ struct LyricsAnimationSettingsView: View {
                     .accessibilityValue(preferences.configuration.animationStyle.title)
             } footer: {
                 Text("风格作用于逐字与整行动效。两种风格分别保存动画选项，首次切换时复制当前设置。")
+            }
+            if preferences.configuration.animationStyle == .appleMusic164 {
+                Section("歌词风格") {
+                    Picker("歌词和逻辑预置", selection: Binding(
+                        get: { blossom.matchedPreset },
+                        set: { value in
+                            var next = blossom; next.apply(value)
+                            preferences.configuration.appleMusicAnimation = next
+                        }
+                    )) {
+                        ForEach(LyricsBlossomAnimationOptions.Preset.allCases) { preset in
+                            Text(preset.title).tag(preset).disabled(preset == .custom)
+                        }
+                    }.accessibilityIdentifier("blossomPreset").accessibilityValue(blossom.matchedPreset.title)
+                    ForEach(LyricsBlossomAnimationOptions.Control.allCases, id: \.rawValue) { control in
+                        Picker(selection: blossomBinding(control)) {
+                            ForEach(control.choices, id: \.value) { choice in
+                                Text(choice.title).tag(choice.value)
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(control.title)
+                                Text(control.help).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }.accessibilityIdentifier("blossom." + control.rawValue)
+                            .accessibilityValue(control.choices.first { $0.value == blossom[keyPath: control.key] }?.title ?? "")
+                    }
+                    Stepper(value: Binding(get: { blossom.maximumLines }, set: { count in
+                        var next = blossom; next.maximumLines = count
+                        preferences.configuration.appleMusicAnimation = next
+                    }), in: 2 ... 3) {
+                        LabeledContent("最高选择句行数", value: String(blossom.maximumLines))
+                    }.disabled(!blossom.limitsSelection)
+                        .accessibilityIdentifier("blossom.maximum")
+                    Text("27 选择句逻辑不限制行数；其他逻辑可选择 2 或 3 行。单独修改选项后，预置会自动显示为自定义。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             Section("动画选项") {
                 Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive)
@@ -51,6 +100,7 @@ struct LyricsAnimationSettingsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+        .tint(Color("MusicAccent"))
         .navigationTitle("精细动画调整")
     }
 }

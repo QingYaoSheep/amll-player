@@ -15,13 +15,18 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             fine.tap()
         }
         func select(_ name: String) {
-            app.buttons["lyricsAnimationStyle"].tap()
+            let style = app.buttons["lyricsAnimationStyle"]
+            for _ in 0 ..< 8 where !style.isHittable { app.swipeDown() }
+            style.tap()
             app.buttons[name].firstMatch.tap()
         }
         openAnimationSettings()
+        XCTAssertFalse(app.buttons["blossomPreset"].exists)
         select("Apple Music 16.4")
+        XCTAssertTrue(app.buttons["blossomPreset"].exists)
         let scale = app.switches["animationStyleScale"]
         XCTAssertTrue(scale.waitForExistence(timeout: 3))
+        for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
         scale.tap()
         XCTAssertEqual(scale.value as? String, "0")
         select("AMLL")

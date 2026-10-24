@@ -136,4 +136,52 @@ final class LyricsAnimationStyleTests: XCTestCase {
             }
         }
     }
+
+    func testSourcePresetsMatchByFieldsAndManualEditsBecomeCustom() throws {
+        var options = LyricsBlossomAnimationOptions()
+        XCTAssertEqual(options.matchedPreset, .appleMusic164)
+        options.apply(.advance)
+        XCTAssertEqual(options.selection, 0)
+        XCTAssertEqual(options.matchedPreset, .advance)
+        options.apply(.appleMusic264)
+        XCTAssertEqual([options.background, options.scale, options.word, options.emphasis, options.selection, options.maximum], [1, 2, 1, 1, 2, 0])
+        XCTAssertEqual(options.matchedPreset, .appleMusic264)
+        options.maximumLines = 3
+        XCTAssertEqual(options.matchedPreset, .custom)
+        XCTAssertFalse(options.limitsSelection)
+        options.maximumLines = 2
+        XCTAssertEqual(options.matchedPreset, .appleMusic264)
+        options.apply(.appleMusic27)
+        XCTAssertEqual(options.word, 3, "Preset fields use stored values, not the UI's swapped index")
+        XCTAssertEqual(options.matchedPreset, .appleMusic27)
+        let decoded = try JSONDecoder().decode(LyricsBlossomAnimationOptions.self, from: Data("{}".utf8))
+        XCTAssertEqual(decoded, LyricsBlossomAnimationOptions())
+        options.emphasis = 1
+        XCTAssertEqual(options.emphasisReleaseWeight(lineTime: 1, wordEnd: 1, reverseElapsed: 0), 1)
+        XCTAssertEqual(options.emphasisReleaseWeight(lineTime: 1.125, wordEnd: 1, reverseElapsed: 0), 0.5)
+        XCTAssertEqual(options.emphasisReleaseWeight(lineTime: 1.25, wordEnd: 1, reverseElapsed: 0), 0)
+    }
+
+    func testSelectionLimitDoesNotChangeOverlappingVoiceClocksOrActualActivity() {
+        let lines = (0 ..< 4).map { index in
+            LyricLine(id: String(index), text: "Line", start: 0, end: 5,
+                      words: [.init(text: "Line", start: 0, end: 5)], precision: .word)
+        }
+        var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+        environment.animationStyle = .appleMusic164
+        var options = LyricsBlossomAnimationOptions()
+        options.maximumLines = 3
+        environment.appleMusicAnimation = options
+        var limited = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: Array(repeating: 60, count: 4))
+        let before = limited.render(.init(position: 0.5, playing: true), delta: 0)
+        XCTAssertTrue(before.rows.allSatisfy(\.active))
+        XCTAssertEqual(before.rows.filter { $0.brightAlpha > 0.5 }.count, 3)
+        options.selection = 2
+        environment.appleMusicAnimation = options
+        var unlimited = AMLLFrameEngine(document: .init(lines: lines), environment: environment, heights: Array(repeating: 60, count: 4))
+        let after = unlimited.render(.init(position: 0.5, playing: true), delta: 0)
+        XCTAssertEqual(after.rows.filter { $0.brightAlpha > 0.5 }.count, 4)
+        XCTAssertEqual(before.rows.map(\.wordClock), after.rows.map(\.wordClock))
+        XCTAssertEqual(before.lyricTime, after.lyricTime)
+    }
 }

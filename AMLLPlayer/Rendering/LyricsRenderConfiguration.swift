@@ -103,6 +103,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var enableScale = true
     /// Optional so installed configurations and reference replays keep AMLL motion.
     var animationProfiles: LyricsAnimationProfiles?
+    var appleMusicAnimation: LyricsBlossomAnimationOptions?
     var hidePassedLines = false
     var alwaysPostpositionBackground = false
     /// AMLL stores the feather width as an em value; 0.5 tracks the rendered font size.
@@ -215,6 +216,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         let minimumAnchor = immersiveLyrics == true ? ImmersiveLyricsLayout.focusAnchor : 0.2
         copy.anchor = anchor.isFinite ? min(0.7, max(minimumAnchor, anchor)) : 0.28
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
+        copy.appleMusicAnimation = appleMusicAnimation?.validated()
         if var profiles = animationProfiles {
             profiles.amll = profiles.amll?.validated()
             profiles.appleMusic164 = profiles.appleMusic164?.validated()

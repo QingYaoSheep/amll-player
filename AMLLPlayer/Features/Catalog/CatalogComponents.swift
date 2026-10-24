@@ -2,6 +2,8 @@ import SwiftUI
 import ImageIO
 
 enum CatalogRoute: Hashable {
+    case home(MusicHomeSection)
+    case replay
     case collection(SpotifyLibrarySection)
     case detail(SpotifyCatalogKind, String)
     case resource(MusicResourceID)

@@ -39,7 +39,7 @@ struct MusicBrowserView: View {
     private var tabs: some View {
         TabView {
             Tab("catalog.home", systemImage: "house") {
-                navigation { CatalogHomeView(model: model, store: model.catalog, openPlayer: openPlayer) }
+                navigation(home: true) { CatalogHomeView(model: model, store: model.catalog, openPlayer: openPlayer) }
             }
             Tab("catalog.library", systemImage: "square.stack") {
                 navigation { MusicLibraryView(model: model, store: model.catalog) }
@@ -50,11 +50,15 @@ struct MusicBrowserView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
     }
-    private func navigation(@ViewBuilder content: () -> some View) -> some View {
+    private func navigation(home: Bool = false, @ViewBuilder content: () -> some View) -> some View {
         NavigationStack {
             content()
                 .navigationDestination(for: CatalogRoute.self) { route in
                     switch route {
+                    case let .home(section):
+                        MusicHomeCollectionView(model: model, home: model.catalog.home, section: section)
+                    case .replay:
+                        MusicReplayView(model: model, home: model.catalog.home)
                     case let .collection(section):
                         CatalogCollectionView(model: model, store: model.catalog, section: section)
                     case let .detail(kind, id):
@@ -64,16 +68,25 @@ struct MusicBrowserView: View {
                     }
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { MusicSourceMenu(model: model) }
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        if model.currentServiceConnected {
-                            Button("player.devices", systemImage: "airplayaudio") {
+                    if home {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            MusicHomeAccountMenu(model: model, profile: model.catalog.profile) {
                                 showingDevices = true
                                 Task { await model.loadDevices() }
                             }
                         }
-                        NavigationLink { SettingsView(model: model) } label: { Label("settings.open", systemImage: "gearshape") }
-                            .accessibilityIdentifier("openSettings")
+                    } else {
+                        ToolbarItem(placement: .topBarLeading) { MusicSourceMenu(model: model) }
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            if model.currentServiceConnected {
+                                Button("player.devices", systemImage: "airplayaudio") {
+                                    showingDevices = true
+                                    Task { await model.loadDevices() }
+                                }
+                            }
+                            NavigationLink { SettingsView(model: model) } label: { Label("settings.open", systemImage: "gearshape") }
+                                .accessibilityIdentifier("openSettings")
+                        }
                     }
                 }
         }
@@ -89,118 +102,6 @@ struct MusicBrowserView: View {
                     .padding(.bottom, 4)
             }
         }
-    }
-}
-
-struct CatalogHomeView: View {
-    @Bindable var model: AppModel
-    @Bindable var store: MusicCatalogStore
-    var openPlayer: () -> Void
-    @Environment(\.dynamicTypeSize) private var typeSize
-    private var sections: [MusicLibrarySection] {
-        model.canBrowseCurrentService ? MusicHomePresentation.sections(
-            supported: store.provider.homeSections, connected: model.currentServiceConnected) : []
-    }
-    var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: MusicProductStyle.sectionSpacing) {
-                    if !model.currentServiceConnected || !model.canBrowseCurrentService {
-                        MusicConnectionCard(model: model).padding(.horizontal, MusicProductStyle.pageInset)
-                    }
-                    if let profile = store.profile {
-                        Text("为 " + profile.displayName + " 精选")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                            .padding(.horizontal, MusicProductStyle.pageInset)
-                    }
-                    if model.selectedMusicService == .appleMusic, model.currentServiceConnected, !model.canBrowseCurrentService,
-                       let item = model.playbackSnapshot?.item {
-                        Button(action: openPlayer) {
-                            Label("打开 " + item.title + " 的歌词", systemImage: "quote.bubble")
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }.buttonStyle(.bordered).padding(.horizontal, MusicProductStyle.pageInset)
-                    }
-                    ForEach(sections, id: \.self) { section in
-                        MusicHomeSection(model: model, store: store, section: section,
-                            state: store.page(.collection(section)),
-                            width: MusicCatalogLayout.cardWidth(in: proxy.size.width, largeText: typeSize.isAccessibilitySize))
-                    }
-                }
-                .frame(maxWidth: MusicCatalogLayout.maximumWidth)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 12).padding(.bottom, 28)
-            }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .refreshable {
-                if model.currentServiceConnected { await store.loadProfile(force: true) }
-                let tasks = sections.map { section in Task { @MainActor in
-                    await store.page(.collection(section)).load(query: .collection(section), provider: store.provider, force: true)
-                } }
-                await withTaskCancellationHandler {
-                    for task in tasks { await task.value }
-                } onCancel: { tasks.forEach { $0.cancel() } }
-            }
-        }
-        .navigationTitle("catalog.home")
-        .accessibilityIdentifier("catalogHome")
-        .task { if model.currentServiceConnected && model.canBrowseCurrentService { await store.loadProfile() } }
-    }
-}
-
-private struct MusicHomeSection: View {
-    @Bindable var model: AppModel
-    let store: MusicCatalogStore
-    let section: MusicLibrarySection
-    @Bindable var state: MusicCatalogPageState
-    let width: CGFloat
-    @ScaledMetric(relativeTo: .body) private var songColumnHeight: CGFloat = 230
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var body: some View {
-        if state.loadedAt == nil || !state.rows.isEmpty || state.error != nil {
-            VStack(alignment: .leading, spacing: 12) {
-                MusicSectionHeading(title: section.title, route: .collection(section))
-                    .padding(.horizontal, MusicProductStyle.pageInset)
-                if !state.rows.isEmpty {
-                    ScrollView(.horizontal) {
-                        if MusicHomePresentation.usesSongColumns(section, kinds: state.rows.map { $0.item.kind }), typeSize.isAccessibilitySize {
-                            LazyHStack(alignment: .top, spacing: 20) {
-                                ForEach(Array(state.rows.prefix(12))) { row in
-                                    CatalogRowView(model: model, row: row, tapToPlay: true).frame(width: min(380, max(280, width * 1.9)))
-                                }
-                            }.scrollTargetLayout()
-                        } else if MusicHomePresentation.usesSongColumns(section, kinds: state.rows.map { $0.item.kind }) {
-                            LazyHGrid(rows: Array(repeating: GridItem(.flexible(), spacing: 8), count: min(3, state.rows.count)), spacing: 20) {
-                                ForEach(Array(state.rows.prefix(12))) { row in
-                                    CatalogRowView(model: model, row: row, tapToPlay: true)
-                                        .frame(width: min(380, max(280, width * 1.9)))
-                                }
-                            }.scrollTargetLayout()
-                                .frame(height: songColumnHeight * CGFloat(min(3, state.rows.count)) / 3)
-                                .padding(.vertical, 2)
-                        } else {
-                            LazyHStack(alignment: .top, spacing: 12) {
-                                ForEach(Array(state.rows.prefix(12))) { row in
-                                    MusicCatalogCard(model: model, row: row, width: width)
-                                }
-                            }.scrollTargetLayout()
-                        }
-                    }
-                    .contentMargins(.horizontal, MusicProductStyle.pageInset, for: .scrollContent)
-                    .scrollTargetBehavior(.viewAligned)
-                    .scrollIndicators(.hidden)
-                    .transition(.opacity)
-                } else if state.error == nil { MusicSkeleton().padding(.horizontal, MusicProductStyle.pageInset) }
-                if let error = state.error {
-                    CatalogErrorView(error: error) { await load(force: true) }.padding(.horizontal, MusicProductStyle.pageInset)
-                }
-            }
-            .task { await load(force: false) }
-            .animation(reduceMotion ? nil : MusicProductMotion.change, value: state.rows.isEmpty)
-        }
-    }
-    private func load(force: Bool) async {
-        await state.load(query: .collection(section), provider: store.provider, force: force)
     }
 }
 

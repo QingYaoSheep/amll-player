@@ -37,14 +37,16 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         selection.tap()
         app.buttons["16.4 advance"].firstMatch.tap()
         XCTAssertTrue(maximum.isEnabled)
-        maximum.buttons["Increment"].tap()
+        maximum.buttons["blossom.maximum-Increment"].tap()
+        XCTAssertEqual(maximum.value as? String, "3")
         for _ in 0 ..< 8 where !app.buttons["blossomPreset"].isHittable { app.swipeDown() }
         XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "自定义")
         let scale = app.switches["animationStyleScale"]
         XCTAssertTrue(scale.waitForExistence(timeout: 3))
         for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
-        scale.tap()
-        XCTAssertEqual(scale.value as? String, "0")
+        scale.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
+        let scaleDisabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: scale)
+        XCTAssertEqual(XCTWaiter.wait(for: [scaleDisabled], timeout: 3), .completed)
         select("AMLL")
         for _ in 0 ..< 8 where !scale.isHittable { app.swipeUp() }
         XCTAssertEqual(scale.value as? String, "1")

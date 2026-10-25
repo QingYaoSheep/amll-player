@@ -52,7 +52,9 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         capture(app, name: "Lyrics-animation-version-controls")
         let scale = app.switches["animationStyleScale"]
         revealSetting(scale)
-        scale.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
+        // SwiftUI exposes the entire Form row as the switch's AX frame. Hit
+        // the native control's center, clear of its Liquid Glass right rim.
+        scale.coordinate(withNormalizedOffset: CGVector(dx: 0.87, dy: 0.5)).tap()
         let scaleDisabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: scale)
         XCTAssertEqual(XCTWaiter.wait(for: [scaleDisabled], timeout: 3), .completed)
         select("AMLL")

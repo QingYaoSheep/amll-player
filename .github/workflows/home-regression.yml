@@ -1,0 +1,93 @@
+name: Home and personal FM regression
+
+on:
+  push:
+    paths:
+      - '.github/workflows/home-regression.yml'
+      - 'AMLLPlayer/Domain/MusicHome.swift'
+      - 'AMLLPlayer/Domain/NetEaseRadioState.swift'
+      - 'AMLLPlayer/Features/Catalog/MusicHome*.swift'
+      - 'AMLLPlayer/Infrastructure/AppleMusic/AppleMusicHomeDecoder.swift'
+      - 'AMLLPlayer/Infrastructure/AppleMusic/AppleMusicCatalog.swift'
+      - 'AMLLPlayer/Infrastructure/NetEase/NetEasePlayback.swift'
+      - 'AMLLPlayer/Infrastructure/NetEase/NetEaseCatalog.swift'
+      - 'AMLLPlayerTests/MusicHomeTests.swift'
+      - 'AMLLPlayerTests/NetEaseRadio*Tests.swift'
+      - 'AMLLPlayerUITests/MusicCatalogDesignUITests.swift'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    runs-on: xcode-27
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27
+        run: xcodebuild -version | head -1 | grep -E '^Xcode 27\.'
+      - name: Prepare Metal compiler
+        run: xcrun --sdk iphoneos metal --version || xcodebuild -downloadComponent MetalToolchain
+      - name: Generate project
+        run: bash Scripts/generate-project.sh
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+      - name: Prepare reference simulators
+        run: |
+          if ! xcrun simctl list runtimes --json | node -e 'const fs = require("node:fs"); const { selectRuntime } = require("./Scripts/prepare-ci-simulators.cjs"); selectRuntime(JSON.parse(fs.readFileSync(0, "utf8")).runtimes)'; then
+            xcodebuild -downloadPlatform iOS
+          fi
+          node Scripts/prepare-ci-simulators.cjs
+      - name: Test home, radio, real player and iPhone pages
+        run: >-
+          xcodebuild test
+          -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
+          -only-testing:AMLLPlayerTests/MusicHomeTests
+          -only-testing:AMLLPlayerTests/NetEaseRadioStateTests
+          -only-testing:AMLLPlayerTests/NetEaseRadioPlaybackTests
+          -only-testing:AMLLPlayerTests/NetEaseSeekTests
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests
+          -resultBundlePath build/Home-iPhone.xcresult
+          -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
+      - name: Test iPad home and large text
+        run: >-
+          xcodebuild test
+          -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
+          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testHomePostersAccountMenuAndLongPressActions
+          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testAccessibilityTextKeepsDescriptionAndControlsReachable
+          -resultBundlePath build/Home-iPad.xcresult
+          -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
+      - name: Export screenshots
+        if: always()
+        run: |
+          for DEVICE in iPhone iPad; do
+            if [[ -d "build/Home-$DEVICE.xcresult" ]]; then
+              xcrun xcresulttool export attachments --path "build/Home-$DEVICE.xcresult" --output-path "build/Home-images/$DEVICE"
+            fi
+          done
+      - name: Upload home regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Home-FM-regression-evidence
+          path: |
+            build/Home-iPhone.xcresult
+            build/Home-iPad.xcresult
+            build/Home-images
+          if-no-files-found: ignore
+      - name: Remove reference simulators
+        if: always()
+        run: |
+          for DEVICE_ID in "${CI_IPHONE_UDID:-}" "${CI_IPAD_UDID:-}"; do
+            if [[ -n "$DEVICE_ID" ]]; then
+              xcrun simctl shutdown "$DEVICE_ID" || true
+              xcrun simctl delete "$DEVICE_ID"
+            fi
+          done

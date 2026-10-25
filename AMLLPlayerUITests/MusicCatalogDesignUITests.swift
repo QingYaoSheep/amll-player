@@ -13,7 +13,7 @@ final class MusicCatalogDesignUITests: XCTestCase {
         card.press(forDuration: 0.8)
         XCTAssertTrue(app.buttons["播放"].waitForExistence(timeout: 3))
         capture(app, "AppleStyle-home-context-menu")
-        app.tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.1)).tap()
         app.buttons["musicSourceMenu"].tap()
         XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout: 3))
         capture(app, "AppleStyle-home-account-menu")
@@ -41,6 +41,39 @@ final class MusicCatalogDesignUITests: XCTestCase {
         reveal(duplicate.firstMatch, app)
         XCTAssertEqual(duplicate.count, 2, "Duplicate playlist entries must retain their independent positions")
         capture(app, "WWDC-playlist-repeated-entries")
+    }
+
+    @MainActor func testPersonalFMStartsFromHomeAndRestoresOrdinaryQueue() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--catalog-ui-testing", "--home-fm-ui-testing", "--skip-welcome-ui-testing",
+            "--quick-settings-service", "netease", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        let fm = app.buttons["homePersonalFM"]
+        XCTAssertTrue(fm.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Fixture Song"].waitForExistence(timeout: 8), "An ordinary queue must exist before entering FM")
+        fm.tap()
+        let options = app.buttons["lyricsDisplayOptions"]
+        XCTAssertTrue(options.waitForExistence(timeout: 8))
+        options.tap()
+        let panel = app.scrollViews["lyricsQuickSettingsScroll"]
+        let shuffle = app.buttons["quickSettingsShuffle"]
+        for _ in 0..<8 {
+            if shuffle.exists && shuffle.isHittable { break }
+            panel.swipeUp()
+        }
+        XCTAssertTrue(shuffle.exists)
+        XCTAssertFalse(shuffle.isEnabled, "FM must keep random playback disabled")
+        let queue = app.buttons["quickSettingsRoute.queue"]
+        XCTAssertTrue(queue.isHittable); queue.tap()
+        XCTAssertTrue(app.navigationBars["网易云播放队列"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["FM Song 100"].exists)
+        XCTAssertFalse(app.buttons["Edit"].exists)
+        capture(app, "AppleStyle-personal-FM-queue")
+        app.buttons["exitPersonalFM"].tap()
+        XCTAssertTrue(app.staticTexts["Fixture Song"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["exitPersonalFM"].exists)
+        XCTAssertTrue(app.buttons["Edit"].exists)
+        capture(app, "AppleStyle-restored-ordinary-queue")
     }
 
     @MainActor func testArtistHighlightsAndAlbumNavigation() {

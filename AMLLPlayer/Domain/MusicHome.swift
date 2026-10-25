@@ -4,6 +4,7 @@ enum MusicHomeQuery: Hashable, Sendable {
     case catalog(MusicCatalogQuery)
     case recommendations, recommendation(String)
     case personalStation, liveStations, replay, newAlbums, mood(String)
+    case replayView(String, String)
 }
 
 struct MusicHomeSection: Identifiable, Hashable, Sendable {
@@ -22,6 +23,8 @@ struct MusicReplaySection: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let items: [MusicCatalogRow]
+    var query: MusicHomeQuery?
+    var next: URL?
 }
 
 struct MusicHomePage: Sendable {
@@ -44,10 +47,6 @@ struct MusicHomePage: Sendable {
 
 @MainActor protocol MusicHomeProviding: MusicCatalogProviding {
     func homePage(_ query: MusicHomeQuery, next: URL?) async throws -> MusicHomePage
-}
-
-enum MusicHomeCardAction: Hashable {
-    case resource(MusicResourceID), personalFM, replay
 }
 
 enum MusicHomeLayout {

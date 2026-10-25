@@ -1,4 +1,6 @@
 import XCTest
+import Observation
+import os
 @testable import AMLLPlayer
 
 @MainActor final class MusicHomeTests: XCTestCase {
@@ -57,6 +59,72 @@ import XCTest
         XCTAssertEqual(MusicHomeLayout.coverWidth(in: 402, largeText: false), 150.22, accuracy: 0.1)
         XCTAssertEqual(MusicHomeLayout.featuredWidth(in: 402, largeText: false), 232, accuracy: 0.1)
         XCTAssertLessThanOrEqual(MusicHomeLayout.coverWidth(in: 1366, largeText: false), 200)
+    }
+    func testRecommendationWithoutEmbeddedContentsInvalidatesFeaturedWhenLoaded() async {
+        let store = MusicHomeStore(provider: RecommendationHomeFixture())
+        store.configure(connected: true, browsing: true)
+        await store.load(.recommendations)
+        let changed = OSAllocatedUnfairLock(initialState: false)
+        withObservationTracking { _ = store.featured } onChange: { changed.withLock { $0 = true } }
+        await store.load(.recommendation("new-music"))
+        XCTAssertTrue(changed.withLock { $0 }, "The home must observe recommendation rows before their first load")
+        XCTAssertEqual(store.featured.first?.0.item.name, "Recommended Song")
+        XCTAssertEqual(store.state(.recommendations).groups.first?.title, "New Music for You")
+    }
+    func testReplayViewSeedsItsFirstPageAndContinuesFromReturnedCursor() async {
+        let provider = RecommendationHomeFixture()
+        let store = MusicHomeStore(provider: provider)
+        store.configure(connected: true, browsing: true)
+        await store.load(.replay)
+        let state = store.state(.replayView("2024", "top-songs"))
+        XCTAssertEqual(state.rows.map(\.id), ["first"])
+        XCTAssertEqual(state.next, provider.cursor)
+        await store.load(.replayView("2024", "top-songs"), more: true)
+        XCTAssertEqual(provider.lastCursor, provider.cursor)
+        XCTAssertEqual(state.rows.map(\.id), ["first", "second"])
+        XCTAssertNil(state.next)
+    }
+    func testReplayDecoderPreservesViewCursorAndResourceOccurrences() throws {
+        let song: [String: Any] = ["id": "s", "type": "songs", "attributes": ["name": "Song"]]
+        let entry: [String: Any] = ["relationships": ["song": ["data": [song]]]]
+        let next = "/v1/me/music-summaries/2024/view/top-songs?offset=2"
+        let data = try JSONSerialization.data(withJSONObject: ["data": [["id": "2024", "attributes": ["year": 2024, "period": "year"],
+            "views": ["top-songs": ["data": [entry, entry], "next": next]]]]])
+        let page = try AppleMusicHomeDecoder.page(data, query: .replay, url: URL(string: "https://api.music.apple.com/v1/me/music-summaries")!)
+        let section = try XCTUnwrap(page.replay?.sections.first)
+        XCTAssertEqual(section.query, .replayView("2024", "top-songs"))
+        XCTAssertEqual(section.next?.path, "/v1/me/music-summaries/2024/view/top-songs")
+        XCTAssertEqual(section.items.count, 2)
+        XCTAssertNotEqual(section.items[0].id, section.items[1].id)
+        let following = try JSONSerialization.data(withJSONObject: ["data": [entry]])
+        let continuation = try AppleMusicHomeDecoder.page(following, query: .replayView("2024", "top-songs"), url: section.next!)
+        XCTAssertEqual(continuation.items.first?.item.name, "Song")
+    }
+}
+
+@MainActor private final class RecommendationHomeFixture: MusicHomeProviding {
+    var service: MusicServiceID { .appleMusic }
+    let cursor = URL(string: "https://api.music.apple.com/v1/me/music-summaries/2024/view/top-songs?offset=1")!
+    var lastCursor: URL?
+    func profile() async throws -> MusicProfile { .init(accountID: "test", displayName: "Test") }
+    func invalidate() {}
+    func detail(kind: MusicCatalogKind, id: String) async throws -> MusicCatalogDetail { throw MusicCatalogError.unavailable }
+    func page(_ query: MusicCatalogQuery, next: URL?) async throws -> MusicPage<MusicCatalogRow> { .init(items: [], next: nil, total: 0) }
+    func homePage(_ query: MusicHomeQuery, next: URL?) async throws -> MusicHomePage {
+        let item = MusicCatalogItem(spotifyID: "song", kind: .track, name: "Recommended Song", subtitle: "", artworkURL: nil, availability: .available, service: .appleMusic)
+        switch query {
+        case .recommendations:
+            return .init(groups: [.init(id: "new-music", title: "New Music for You", query: .recommendation("new-music"))])
+        case .recommendation:
+            return .init(items: [.init(id: "recommended", item: item, position: nil)])
+        case .replay:
+            return .init(replay: .init(year: "2024", sections: [.init(id: "songs", title: "Songs", items: [.init(id: "first", item: item, position: nil)],
+                query: .replayView("2024", "top-songs"), next: cursor)]))
+        case .replayView:
+            lastCursor = next
+            return .init(items: [.init(id: "second", item: item, position: nil)])
+        default: return .init()
+        }
     }
 }
 

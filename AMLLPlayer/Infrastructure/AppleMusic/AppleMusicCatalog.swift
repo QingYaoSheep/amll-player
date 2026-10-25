@@ -250,6 +250,13 @@ extension AppleMusicCatalog: MusicHomeProviding {
                     .init(name: "include[song-period-summaries]", value: "song"),
                     .init(name: "include[album-period-summaries]", value: "album"),
                     .init(name: "include[artist-period-summaries]", value: "artist")])
+            case let .replayView(id, view):
+                guard !id.isEmpty, id.unicodeScalars.allSatisfy(CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-")).contains),
+                      !id.contains(".."), ["top-songs", "top-albums", "top-artists"].contains(view) else { throw MusicCatalogError.invalidResponse }
+                request = try AppleMusicAPI.request("/v1/me/music-summaries/\(id)/view/\(view)", parameters: [
+                    .init(name: "include[song-period-summaries]", value: "song"),
+                    .init(name: "include[album-period-summaries]", value: "album"),
+                    .init(name: "include[artist-period-summaries]", value: "artist")])
             default: throw MusicServiceError.unsupportedOperation
             }
         }

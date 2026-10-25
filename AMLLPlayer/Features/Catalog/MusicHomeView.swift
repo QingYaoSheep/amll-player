@@ -97,6 +97,7 @@ private struct MusicHomeShelf: View {
     let section: MusicHomeSection
     @Bindable var state: MusicHomeSectionState
     let width: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Group {
             if section.query == .recommendations {
@@ -130,7 +131,7 @@ private struct MusicHomeShelf: View {
                         .scrollTargetBehavior(.viewAligned).scrollPosition(id: $state.scrollAnchor).scrollIndicators(.hidden)
                 }
             }
-            if state.isLoading && state.loadedAt == nil { MusicSkeleton().padding(.horizontal, 20) }
+            if state.loadedAt == nil && state.error == nil { MusicSkeleton().padding(.horizontal, 20) }
             if let error = state.error {
                 VStack(alignment: .leading) {
                     Text(section.title).font(.headline)
@@ -138,6 +139,7 @@ private struct MusicHomeShelf: View {
                 }.padding(.horizontal, 20)
             }
         }.task { await home.load(section.query) }
+            .animation(reduceMotion ? nil : MusicProductMotion.change, value: state.rows.isEmpty)
     }
 }
 
@@ -252,7 +254,12 @@ struct MusicReplayView: View {
         List {
             if let summary = state.replay {
                 ForEach(summary.sections) { section in
-                    Section(section.title) { ForEach(section.items) { CatalogRowView(model: model, row: $0, tapToPlay: true) } }
+                    Section(section.title) {
+                        ForEach(section.items) { CatalogRowView(model: model, row: $0, tapToPlay: true) }
+                        if let query = section.query, section.next != nil {
+                            NavigationLink("查看全部", value: CatalogRoute.home(.init(id: section.id, title: section.title, query: query)))
+                        }
+                    }
                 }
             }
             if state.isLoading { ProgressView() }

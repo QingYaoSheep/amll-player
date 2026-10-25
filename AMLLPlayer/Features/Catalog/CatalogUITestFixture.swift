@@ -156,7 +156,25 @@
 
         private final class NetEaseFixtureAPI: NetEaseRequesting {
             static let song: [String: Any] = ["id": 42, "name": "Fixture Song", "dt": 120000, "ar": [["id": 1, "name": "Fixture Artist"]]]
-            func send(_ path: String, _: [String: Any], cookie _: String?) async throws -> NetEaseResponse {
+            private var radioBatch = 0
+            func send(_ path: String, _ parameters: [String: Any], cookie _: String?) async throws -> NetEaseResponse {
+                if ProcessInfo.processInfo.arguments.contains("--home-fm-ui-testing") {
+                    if path == "/v1/radio/get" {
+                        radioBatch += 1
+                        return .init(object: ["data": (0..<6).map { index in
+                            ["id": radioBatch * 100 + index, "name": "FM Song \(radioBatch * 100 + index)", "dt": 120000,
+                             "ar": [["id": 1, "name": "Fixture Artist"]]] as [String: Any]
+                        }])
+                    }
+                    if path == "/song/enhance/player/url/v1" {
+                        let ids = try JSONSerialization.jsonObject(with: Data((parameters["ids"] as? String ?? "[]").utf8)) as? [Int] ?? []
+                        return .init(object: ["data": ids.map {
+                            ["id": $0, "code": 200, "url": "https://fixture.music.126.net/audio.caf", "level": "exhigh"] as [String: Any]
+                        }])
+                    }
+                    if path == "/album/new" { return .init(object: ["albums": [], "total": 0]) }
+                    if path == "/playlist/list" { return .init(object: ["playlists": [], "more": false]) }
+                }
                 if path == "/w/nuser/account/get" { return .init(object: ["profile": ["userId": 1, "nickname": "Fixture"]]) }
                 if path == "/v3/song/detail" { return .init(object: ["songs": [Self.song]]) }
                 if path == "/song/enhance/player/url/v1" {

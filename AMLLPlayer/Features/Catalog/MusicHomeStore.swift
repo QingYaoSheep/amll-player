@@ -61,10 +61,18 @@ import Observation
                 rows = more ? rows + unique : unique
                 next = page.next.flatMap { visited.contains($0) ? nil : $0 }
                 total = page.total; replay = page.replay
+                for section in page.replay?.sections ?? [] {
+                    if let query = section.query { store.state(query).seed(.init(items: section.items, next: section.next), replace: force && !more) }
+                }
+                // Install child states before publishing their descriptors. The
+                // featured shelf must observe rows even without embedded contents.
+                for group in page.groups {
+                    let state = store.state(group.query)
+                    if let seed = page.groupPages[group.id] { state.seed(seed, replace: force && !more) }
+                }
                 var groupIDs = Set(more ? groups.map(\.id) : [])
                 let added = page.groups.filter { groupIDs.insert($0.id).inserted }
                 groups = more ? groups + added : added
-                for group in page.groups { if let seed = page.groupPages[group.id] { store.state(group.query).seed(seed, replace: force && !more) } }
                 loadedAt = Date()
             } catch is CancellationError {
             } catch {

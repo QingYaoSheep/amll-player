@@ -1,0 +1,59 @@
+# Apple Music 风格首页与私人 FM
+
+## 范围与实现
+
+接续首页方案既有实现，保留首页／音乐库／搜索导航、迷你播放器与三服务播放适配。首页采用大标题、圆形账户菜单、3:4 精选海报和方形封面横排；普通首页卡片不叠加播放按钮。歌词生产文件、播放时钟、无损 seek、HDR、音译与封面合成本轮不修改。
+
+| 能力 | 实现 |
+|---|---|
+| 首页结构 | `MusicHomeProviding`、`MusicHomeStore`，栏目稳定身份、独立状态、最多三个并发请求、分页与重复条目 |
+| 账户入口 | 当前来源及连接状态、三来源切换、账号、设置、设备／AirPlay；真实头像或系统账户图标 |
+| Apple Music | 原始推荐分组与理由、个人电台、直播电台、年度 Replay；权限不足保留统一连接提示 |
+| 网易云 | 新碟、放松／快乐／伤感分类歌单、既有个人栏目、用户主动启动的私人 FM |
+| Spotify | 最近播放、常听、个人歌单、收藏与关注歌手；不新增受限的新发行／推荐请求 |
+| FM | 单播放器、自动补歌合并、有界历史／待播／去重、暂停与迟到请求隔离、普通队列备份及暂停恢复 |
+
+## 本次闭合
+
+- 将上一轮尚未提交的 Replay 分页模型、请求、首批种子及“查看全部”入口接入同一数据链。
+- 推荐组缺少内嵌 contents 时，先创建其可观察状态，再发布分组；后续真实推荐完成会更新精选，避免一直显示回退卡片。
+- FM 开始播放前，以实际交接时刻捕获普通队列和进度；中断取消尚未完成的启动。
+- FM 显式重试和恢复播放共享一个补歌任务，结束后释放任务句柄，避免重复请求或后续不再续播。
+- 在 FM 队列点播时同步裁剪历史；避免点击待播末尾再补歌超出61条，写出无法恢复的记录。
+- 保留 FM 最多两次重试、五首不可播放后暂停、切源／重启恢复为暂停，以及退出后恢复普通随机／循环配置。
+
+## 两轴审查
+
+### Standards
+
+发现并修正队列点播没有执行 FM 历史裁剪的问题：50首历史＋当前＋10首待播时，点播尾部后补歌可能超过持久化上限。新增通过真实 AVPlayer 的边界及保存校验测试。
+
+### Spec
+
+发现并修正未内嵌内容的推荐组无法可靠更新顶部精选的问题。新增 Observation 行为测试；补全生产页面 FM 启动、禁用随机、队列状态与退出恢复流程。真实账号和设备结果分别记录。
+
+## 验证
+
+固定本轮起点为 `50e183c4fe6350532d86b8d9f2bd08f0b62dad1d`。原工作区补丁与文件清单保存在 `Builds/Home-FM-Completion-20261025/initial-worktree.patch` 和 `initial-status.txt`；独立歌词回放修改保留。
+
+| 验证 | 状态 |
+|---|---|
+| 本地 Node 回归 | 15项通过；当前工作区的既有回放修改未提交 |
+| 首页模型、推荐及 Replay | 已新增测试，等待 Apple 平台运行结果 |
+| FM、真实 AVPlayer、无损 seek | 已补全测试，等待 Apple 平台运行结果 |
+| iPhone／iPad 页面与截图 | `home-regression.yml` 专项运行；结果待记录 |
+| 两路 Xcode27 IPA | 直接构建与完整测试后构建按相同提交运行；结果待记录 |
+| 实际账号 | 网易云公开接口此前已有脱敏真实响应；私人 FM 与 Apple Music 私人数据仍需账号验收 |
+| 真机性能 | iPhone16Pro／13英寸iPadPro十五分钟、温度、后台及锁屏续播待验收 |
+
+完整回归沿用原断言，已有歌词／封面失败独立记录，不据此放宽测试或生成“测试通过”的包。专项页面使用显式 DEBUG 夹具，不能替代真实账号验收。
+
+## 官方及协议依据
+
+- [Apple WWDC25 新设计系统](https://developer.apple.com/videos/play/wwdc2025/356/)：内容与控制分层，系统导航及材质。
+- [Apple Music Replay](https://developer.apple.com/documentation/applemusicapi/get-the-user%27s-replay-data)：最近符合资格的年份及 top-songs／top-albums／top-artists。
+- [Apple Music 直播电台](https://developer.apple.com/documentation/applemusicapi/get-the-apple-music-live-radio-stations)：`filter[featured]=apple-music-live-radio`。
+- [Spotify 2026开发模式迁移](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide)：按当前可用能力展示栏目。
+- 网易云新增栏目和 FM 沿用 `ReferenceCaptures/netease-inputs.json` 固定的社区来源及许可证，不增加服务器或解锁服务。
+
+运行提交、工作流链接、包哈希、截图和未通过项在构建完成后追加。

@@ -11,7 +11,18 @@ enum AppleMusicHomeDecoder {
                 return .init(id: "\(prefix):\(index):\(item.id)", item: item, position: nil)
             }
         }
+        func replayRows(_ entries: [[String: Any]], relationship: String, prefix: String) -> [MusicCatalogRow] {
+            let resources = entries.flatMap { entry -> [[String: Any]] in
+                let relationships = entry["relationships"] as? [String: Any]
+                return (relationships?[relationship] as? [String: Any])?["data"] as? [[String: Any]] ?? []
+            }
+            return rows(resources, prefix: prefix)
+        }
         switch query {
+        case let .replayView(_, view):
+            let relationship = ["top-songs": "song", "top-albums": "album", "top-artists": "artist"][view]
+            guard let relationship else { throw MusicCatalogError.invalidResponse }
+            return .init(items: replayRows(values, relationship: relationship, prefix: url.absoluteString), next: next)
         case .recommendations:
             var groups: [MusicHomeSection] = [], pages: [String: MusicHomePage] = [:]
             for value in values {
@@ -34,12 +45,10 @@ enum AppleMusicHomeDecoder {
             var sections: [MusicReplaySection] = []
             for (key, relationship, title) in [("top-songs", "song", "年度歌曲"), ("top-albums", "album", "年度专辑"), ("top-artists", "artist", "年度歌手")] {
                 guard let view = views[key] as? [String: Any], let entries = view["data"] as? [[String: Any]] else { continue }
-                let resources = entries.flatMap { entry -> [[String: Any]] in
-                    let relationships = entry["relationships"] as? [String: Any]
-                    return (relationships?[relationship] as? [String: Any])?["data"] as? [[String: Any]] ?? []
-                }
-                let decoded = rows(resources, prefix: "replay:\(year):\(key)")
-                if !decoded.isEmpty { sections.append(.init(id: key, title: title, items: decoded)) }
+                let decoded = replayRows(entries, relationship: relationship, prefix: "replay:\(year):\(key)")
+                let cursor = try AppleMusicAPI.next(view["next"] as? String, from: url)
+                let query = (summary["id"] as? String).map { MusicHomeQuery.replayView($0, key) }
+                if !decoded.isEmpty || cursor != nil { sections.append(.init(id: key, title: title, items: decoded, query: query, next: cursor)) }
             }
             return .init(replay: .init(year: String(year), sections: sections))
         default: return .init(items: rows(values, prefix: url.absoluteString), next: next, total: (root["meta"] as? [String: Any])?["total"] as? Int)

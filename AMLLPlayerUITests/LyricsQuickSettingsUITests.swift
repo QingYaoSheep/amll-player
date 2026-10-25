@@ -3,7 +3,7 @@ import XCTest
 final class LyricsQuickSettingsUITests: XCTestCase {
     @MainActor func testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage() {
         let app = lyricsApp()
-        app.launchArguments += ["--quick-settings-preferences-suite", "animation-style-ui-" + UUID().uuidString]
+        app.launchArguments += ["--quick-settings-preferences-suite", "quick-settings-ui-animation-style-" + UUID().uuidString]
         func revealSetting(_ element: XCUIElement, towardTop: Bool = false) {
             for _ in 0 ..< 14 where !element.isHittable {
                 let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))

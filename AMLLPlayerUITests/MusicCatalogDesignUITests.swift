@@ -56,17 +56,22 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertTrue(options.waitForExistence(timeout: 8))
         options.tap()
         let panel = app.scrollViews["lyricsQuickSettingsScroll"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 3))
         let shuffle = app.buttons["quickSettingsShuffle"]
         let queue = app.buttons["quickSettingsRoute.queue"]
-        for _ in 0..<8 {
-            // A disabled FM shuffle control is intentionally not hittable.
-            // Scroll to the enabled queue route, which sits immediately above it.
+        for _ in 0..<16 {
             if queue.exists && queue.isHittable { break }
-            panel.swipeUp()
+            // Match the existing quick-settings tests: a small bidirectional
+            // drag cannot skip the route as a full inertial swipe can.
+            let direction = queue.exists && queue.frame.midY < panel.frame.midY ? 1.0 : -1.0
+            let start = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let end = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5 + direction * 0.22))
+            start.press(forDuration: 0.05, thenDragTo: end)
         }
         XCTAssertTrue(shuffle.exists)
         XCTAssertFalse(shuffle.isEnabled, "FM must keep random playback disabled")
-        XCTAssertTrue(queue.isHittable); queue.tap()
+        capture(app, "AppleStyle-FM-queue-route-before-open")
+        XCTAssertTrue(queue.isHittable, "Target: \(queue.debugDescription), viewport: \(panel.frame)"); queue.tap()
         XCTAssertTrue(app.navigationBars["网易云播放队列"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["FM Song 100"].exists)
         XCTAssertFalse(app.buttons["Edit"].exists)

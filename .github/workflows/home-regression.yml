@@ -75,14 +75,16 @@ jobs:
             -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Test iPad home and large text
         if: ${{ !cancelled() }}
-        run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
-          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testHomePostersAccountMenuAndLongPressActions
-          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testAccessibilityTextKeepsDescriptionAndControlsReachable
-          -resultBundlePath build/Home-iPad.xcresult
-          -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
+        run: |
+          xcrun simctl boot "$CI_IPAD_UDID" || true
+          xcrun simctl bootstatus "$CI_IPAD_UDID" -b
+          xcodebuild test \
+            -project AMLLPlayer.xcodeproj -scheme AMLLPlayer \
+            -destination "platform=iOS Simulator,id=$CI_IPAD_UDID" \
+            -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testHomePostersAccountMenuAndLongPressActions \
+            -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testAccessibilityTextKeepsDescriptionAndControlsReachable \
+            -resultBundlePath build/Home-iPad.xcresult \
+            -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Export screenshots
         if: always()
         run: |

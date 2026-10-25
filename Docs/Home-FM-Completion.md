@@ -43,7 +43,7 @@
 | FM、真实 AVPlayer、无损 seek | 已补全测试，等待 Apple 平台运行结果 |
 | iPhone／iPad 页面与截图 | `home-regression.yml` 专项运行；结果待记录 |
 | 两路 Xcode27 IPA | 直接构建与完整测试后构建按相同提交运行；结果待记录 |
-| 实际账号 | 网易云公开接口此前已有脱敏真实响应；私人 FM 与 Apple Music 私人数据仍需账号验收 |
+| 实际账号 | 网易云首页与私人 FM 已获用户设备确认；Apple Music 私人数据仍需单独账号验收 |
 | 真机性能 | iPhone16Pro／13英寸iPadPro十五分钟、温度、后台及锁屏续播待验收 |
 
 完整回归沿用原断言，已有歌词／封面失败独立记录，不据此放宽测试或生成“测试通过”的包。专项页面使用显式 DEBUG 夹具，不能替代真实账号验收。
@@ -56,4 +56,16 @@
 - [Spotify 2026开发模式迁移](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide)：按当前可用能力展示栏目。
 - 网易云新增栏目和 FM 沿用 `ReferenceCaptures/netease-inputs.json` 固定的社区来源及许可证，不增加服务器或解锁服务。
 
-运行提交、工作流链接、包哈希、截图和未通过项在构建完成后追加。
+## 已交付直接包与设备确认
+
+- 实现提交 `af9837ef`；Swift6测试夹具修正 `b07d8403`；现有首页导航回归改走账户菜单 `b6b1ec09`。
+- [两路构建](https://github.com/QingYaoSheep/amll-player/actions/runs/40154504568)：`b6b1ec091e0822bf4f51d6c5d340b9536731384c` 直接 IPA 已成功；完整测试后包仍以最终测试结果为准。
+- [首页／FM专项](https://github.com/QingYaoSheep/amll-player/actions/runs/40154504563)：同提交的 iPhone／iPad 验证，运行结果与截图另行追加。
+- 直接包 `Builds/Home-FM-Completion-20261025/b6b1ec09-direct/AMLLPlayer-Xcode27-direct-unsigned.ipa`；22,579,776字节；SHA-256 `a526e3cb065b0d3b4d8e4c9e75a54a57bb82d92b93ab014917c9615736510fc7`。已读取包内 Info.plist 核对提交号和 `net.stevexmh.amllplayer`。
+- 2026-10-25 用户安装该包后确认：网易云首页大卡与封面横排、右上账户菜单、私人 FM 连续跳歌、退出 FM 后恢复普通队列为暂停，均正常。
+- 同日匿名实测新碟与放松／快乐／伤感分类四个公开接口，均返回 HTTP200／业务200，且具有预期的数据与分页字段；脱敏结果保存在 `Builds/Home-FM-Completion-20261025/public-api-results.json`。
+- 两轴复核修正后均无新的确定阻断项。原11项已跟踪回放工作区补丁与任务开始时逐块相同，另两项未跟踪文件仍保留；未提交或改写它们。
+
+保留首轮并发编译失败日志：测试夹具的 MainActor 静态工厂返回非 Sendable 响应，已通过声明纯数据工厂 nonisolated 修正。基线 `6fdb99a1` 完整运行为531单元通过、28UI中5项失败：其中3项旧首页测试仍找独立设置按钮，现已改走真实账户菜单；另2项为既有歌词UI断言，保留断言并单独对照最终结果。
+
+尚未执行的真实 Apple Music 私人接口、十五分钟热状态和性能验收，不包含在用户本次设备确认中。

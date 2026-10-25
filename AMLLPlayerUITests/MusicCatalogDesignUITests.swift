@@ -57,13 +57,15 @@ final class MusicCatalogDesignUITests: XCTestCase {
         options.tap()
         let panel = app.scrollViews["lyricsQuickSettingsScroll"]
         let shuffle = app.buttons["quickSettingsShuffle"]
+        let queue = app.buttons["quickSettingsRoute.queue"]
         for _ in 0..<8 {
-            if shuffle.exists && shuffle.isHittable { break }
+            // A disabled FM shuffle control is intentionally not hittable.
+            // Scroll to the enabled queue route, which sits immediately above it.
+            if queue.exists && queue.isHittable { break }
             panel.swipeUp()
         }
         XCTAssertTrue(shuffle.exists)
         XCTAssertFalse(shuffle.isEnabled, "FM must keep random playback disabled")
-        let queue = app.buttons["quickSettingsRoute.queue"]
         XCTAssertTrue(queue.isHittable); queue.tap()
         XCTAssertTrue(app.navigationBars["网易云播放队列"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["FM Song 100"].exists)

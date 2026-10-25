@@ -16,6 +16,12 @@ on:
       - 'AMLLPlayerUITests/MusicCatalogDesignUITests.swift'
       - 'AMLLPlayerUITests/AMLLPlayerUITests.swift'
   workflow_dispatch:
+    inputs:
+      scope:
+        description: iPhone UI scope (unit tests and iPad checks always run)
+        type: choice
+        options: [all, fm]
+        default: all
 
 permissions:
   contents: read
@@ -45,21 +51,30 @@ jobs:
           fi
           node Scripts/prepare-ci-simulators.cjs
       - name: Test home, radio, real player and iPhone pages
-        run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -only-testing:AMLLPlayerTests/MusicHomeTests
-          -only-testing:AMLLPlayerTests/NetEaseRadioStateTests
-          -only-testing:AMLLPlayerTests/NetEaseRadioPlaybackTests
-          -only-testing:AMLLPlayerTests/NetEaseSeekTests
-          -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testPlayerAndSettingsAreReachable
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testWelcomeCanBeSkippedIntoStableNavigation
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testProductPagesAndSearchHistory
-          -resultBundlePath build/Home-iPhone.xcresult
-          -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
+        env:
+          HOME_UI_SCOPE: ${{ inputs.scope || 'all' }}
+        run: |
+          UI_TESTS=(
+            -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests
+            -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testPlayerAndSettingsAreReachable
+            -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testWelcomeCanBeSkippedIntoStableNavigation
+            -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testProductPagesAndSearchHistory
+          )
+          if [[ "$HOME_UI_SCOPE" == fm ]]; then
+            UI_TESTS=(-only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testPersonalFMStartsFromHomeAndRestoresOrdinaryQueue)
+          fi
+          xcodebuild test \
+            -project AMLLPlayer.xcodeproj -scheme AMLLPlayer \
+            -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID" \
+            -only-testing:AMLLPlayerTests/MusicHomeTests \
+            -only-testing:AMLLPlayerTests/NetEaseRadioStateTests \
+            -only-testing:AMLLPlayerTests/NetEaseRadioPlaybackTests \
+            -only-testing:AMLLPlayerTests/NetEaseSeekTests \
+            "${UI_TESTS[@]}" \
+            -resultBundlePath build/Home-iPhone.xcresult \
+            -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Test iPad home and large text
+        if: ${{ !cancelled() }}
         run: >-
           xcodebuild test
           -project AMLLPlayer.xcodeproj -scheme AMLLPlayer

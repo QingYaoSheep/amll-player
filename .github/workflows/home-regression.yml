@@ -14,6 +14,7 @@ on:
       - 'AMLLPlayerTests/MusicHomeTests.swift'
       - 'AMLLPlayerTests/NetEaseRadio*Tests.swift'
       - 'AMLLPlayerUITests/MusicCatalogDesignUITests.swift'
+      - 'AMLLPlayerUITests/AMLLPlayerUITests.swift'
   workflow_dispatch:
 
 permissions:
@@ -53,6 +54,9 @@ jobs:
           -only-testing:AMLLPlayerTests/NetEaseRadioPlaybackTests
           -only-testing:AMLLPlayerTests/NetEaseSeekTests
           -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testPlayerAndSettingsAreReachable
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testWelcomeCanBeSkippedIntoStableNavigation
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testProductPagesAndSearchHistory
           -resultBundlePath build/Home-iPhone.xcresult
           -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Test iPad home and large text

@@ -128,7 +128,7 @@ final class AMLLPlayerUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["connectCurrentMusic"].exists)
-        app.buttons["openSettings"].tap()
+        openHomeSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         app.buttons["musicAccountsLink"].tap()
         XCTAssertTrue(app.buttons["spotifyLoginLink"].waitForExistence(timeout: 3))
@@ -153,7 +153,9 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["skipMusicWelcome"].waitForExistence(timeout: 5))
         capture(app, name: "Product-welcome")
         app.buttons["skipMusicWelcome"].tap()
-        XCTAssertTrue(app.buttons["openSettings"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["musicSourceMenu"].waitForExistence(timeout: 3))
+        openHomeSettings(app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.tabBars.buttons.count >= 3)
     }
 
@@ -161,7 +163,7 @@ final class AMLLPlayerUITests: XCTestCase {
         let app = catalogApp()
         XCTAssertTrue(app.staticTexts["为 Test Listener 精选"].waitForExistence(timeout: 5))
         capture(app, name: "Product-home")
-        app.buttons["openSettings"].tap()
+        openHomeSettings(app)
         XCTAssertTrue(app.buttons["musicAccountsLink"].waitForExistence(timeout: 3))
         capture(app, name: "Product-settings")
         app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -279,6 +281,15 @@ final class AMLLPlayerUITests: XCTestCase {
         add(attachment)
         app.buttons["closeLyricsPlayer"].tap()
         XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor private func openHomeSettings(_ app: XCUIApplication) {
+        let account = app.buttons["musicSourceMenu"]
+        XCTAssertTrue(account.waitForExistence(timeout: 5))
+        account.tap()
+        let settings = app.buttons["openSettings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 3))
+        settings.tap()
     }
 
     @MainActor private func capture(_ app: XCUIApplication, name: String) {

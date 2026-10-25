@@ -177,7 +177,7 @@ import XCTest
     var category: String?
     var pending: CheckedContinuation<NetEaseResponse, Never>?
     static func song(_ id: Int) -> [String: Any] { ["id": id, "name": "Fixture \(id)", "dt": 48000] }
-    static func audio(_ id: Int) -> NetEaseResponse {
+    nonisolated static func audio(_ id: Int) -> NetEaseResponse {
         .init(object: ["data": [["id": id, "code": 200, "url": "https://m.music.126.net/fixture.m4a", "level": "exhigh"]]], cookie: nil)
     }
     func send(_ path: String, _ parameters: [String: Any], cookie: String?) async throws -> NetEaseResponse {

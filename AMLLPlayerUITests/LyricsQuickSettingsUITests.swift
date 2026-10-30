@@ -5,12 +5,21 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         let app = lyricsApp()
         app.launchArguments += ["--quick-settings-preferences-suite", "quick-settings-ui-animation-style-" + UUID().uuidString]
         func revealSetting(_ element: XCUIElement, towardTop: Bool = false) {
-            for _ in 0 ..< 14 where !element.isHittable {
+            // Form reports a partially clipped row as hittable. The native
+            // switch's center must be inside the unobscured content viewport.
+            func fullyVisible() -> Bool {
+                guard element.exists, element.isHittable else { return false }
+                let frame = element.frame
+                return frame.minY >= app.frame.minY + 140 && frame.maxY <= app.frame.maxY - 100
+            }
+            for _ in 0 ..< 14 {
+                if fullyVisible() { break }
+                let above = element.exists && element.frame.minY < app.frame.minY + 140
                 let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
-                let end = start.withOffset(CGVector(dx: 0, dy: towardTop ? 180 : -180))
+                let end = start.withOffset(CGVector(dx: 0, dy: above || (!element.exists && towardTop) ? 180 : -180))
                 start.press(forDuration: 0.05, thenDragTo: end)
             }
-            XCTAssertTrue(element.isHittable, element.debugDescription)
+            XCTAssertTrue(fullyVisible(), element.debugDescription)
         }
         func openAnimationSettings() {
             openPanel(app)

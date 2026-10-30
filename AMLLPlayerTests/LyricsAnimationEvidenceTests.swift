@@ -70,8 +70,13 @@ final class LyricsAnimationEvidenceTests: XCTestCase {
         XCTAssertEqual(wrapper.target, target)
         wrapper.selectStyle(.amll)
         XCTAssertEqual(wrapper.position, position)
-        // AMLL's centered finite derivative is intentionally not exact at zero.
-        XCTAssertEqual(wrapper.velocity, velocity, accuracy: 0.1)
+        XCTAssertEqual(wrapper.velocity, velocity, accuracy: 1e-9)
+        wrapper.setTarget(target + 10)
+        XCTAssertEqual(wrapper.velocity, velocity, accuracy: 1e-9)
+        let expected = LyricsBlossomSpring.sample(from: position, to: target + 10, velocity: velocity,
+                                                   time: 0.01, parameters: .scale)
+        wrapper.update(0.01)
+        XCTAssertEqual(wrapper.position, expected.position, accuracy: 1e-8)
     }
 
     func testFocusOpacityUsesTemplateWithoutScaleAndSettles() {

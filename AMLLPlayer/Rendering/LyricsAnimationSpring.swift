@@ -57,6 +57,10 @@ struct LyricsAnimationSpring: Sendable {
     private var legacy: AMLLSourceSpring
     private var blossom: LyricsBlossomSpring
     private var parameters = AMLLSourceSpring.Parameters()
+    // The pinned solver clamps x(t<0) to its starting position, so its central
+    // derivative reports half velocity at t=0. Preserve only the style handoff
+    // value until time advances; ordinary AMLL operations stay unchanged.
+    private var handoffVelocity: Double?
     private(set) var style = LyricsAnimationStyle.amll
 
     init(_ value: Double = 0) {
@@ -64,7 +68,7 @@ struct LyricsAnimationSpring: Sendable {
     }
 
     var position: Double { style == .amll ? legacy.position : blossom.position }
-    var velocity: Double { style == .amll ? legacy.velocity : blossom.velocity }
+    var velocity: Double { style == .amll ? (handoffVelocity ?? legacy.velocity) : blossom.velocity }
     var target: Double { style == .amll ? legacy.target : blossom.target }
     var arrived: Bool { style == .amll ? legacy.arrived : blossom.arrived }
 
@@ -75,26 +79,37 @@ struct LyricsAnimationSpring: Sendable {
         applyBlossomParameters()
         if style == .amll { legacy.updateParameters(parameters) }
         resume(position: p, velocity: v, target: t)
+        if style == .amll { handoffVelocity = v }
     }
 
     mutating func setPosition(_ value: Double) {
+        handoffVelocity = nil
         if style == .amll { legacy.setPosition(value) }
         else { blossom.resume(position: value, velocity: 0, target: value) }
     }
 
     mutating func resume(position: Double, velocity: Double, target: Double) {
+        handoffVelocity = nil
         if style == .amll { legacy.resume(position: position, velocity: velocity, target: target) }
         else { blossom.resume(position: position, velocity: velocity, target: target) }
     }
 
     mutating func setTarget(_ value: Double) {
-        if style == .amll { legacy.setTarget(value) }
+        if style == .amll {
+            if let handoffVelocity {
+                legacy.resume(position: position, velocity: handoffVelocity, target: value)
+            } else { legacy.setTarget(value) }
+        }
         else { blossom.resume(position: position, velocity: velocity, target: value) }
     }
 
     mutating func updateParameters(_ value: AMLLSourceSpring.Parameters) {
         parameters.merge(value)
-        if style == .amll { legacy.updateParameters(value) }
+        if style == .amll {
+            let p = position, t = target
+            legacy.updateParameters(value)
+            if let handoffVelocity { legacy.resume(position: p, velocity: handoffVelocity, target: t) }
+        }
         else {
             let p = position, v = velocity, t = target
             applyBlossomParameters()
@@ -104,6 +119,7 @@ struct LyricsAnimationSpring: Sendable {
 
     mutating func update(_ delta: Double) {
         if style == .amll { legacy.update(delta) } else { blossom.update(delta) }
+        if delta.isFinite, delta > 0 { handoffVelocity = nil }
     }
 
     private mutating func applyBlossomParameters() {

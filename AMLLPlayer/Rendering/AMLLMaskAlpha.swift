@@ -8,6 +8,11 @@ struct AMLLMaskAlpha: Sendable {
     private(set) var bright = 1.0
     private(set) var dark = 0.2
 
+    mutating func resume(bright: Double, dark: Double) {
+        currentBright = bright; currentDark = dark
+        self.bright = bright; self.dark = dark
+    }
+
     mutating func update(scale: Double, gradient: Bool, delta: Double, force: Bool = false) {
         let factor = min(1, max(0, (scale - 0.97) / 0.03))
         let targetDark = factor * 0.2 + 0.2

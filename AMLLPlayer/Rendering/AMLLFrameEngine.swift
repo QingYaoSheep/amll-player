@@ -260,9 +260,9 @@ struct AMLLFrameEngine {
     private struct GroupMotion {
         var y = AMLLScheduledSpring()
         var slide = AMLLScheduledSpring(-80)
-        var mainScale = AMLLSourceSpring(100)
+        var mainScale = LyricsAnimationSpring(100)
         var mainScaleParameters = AMLLSpringParameters.scale
-        var backgroundScale = AMLLSourceSpring(100)
+        var backgroundScale = LyricsAnimationSpring(100)
         var yTransition = AMLLSourceTransition()
         var slideTransition = AMLLSourceTransition(-80)
         var mainScaleTransition = AMLLSourceTransition(100)
@@ -271,6 +271,9 @@ struct AMLLFrameEngine {
         var blurTransition = AMLLSourceTransition()
         var mainAlpha = AMLLMaskAlpha()
         var backgroundAlpha = AMLLMaskAlpha()
+        var mainLightUp = LyricsBlossomFocusAlpha()
+        var backgroundLightUp = LyricsBlossomFocusAlpha()
+        var backgroundReady = false
         var mainWords = AMLLWordAnimationClock()
         var backgroundWords = AMLLWordAnimationClock()
         var active = false
@@ -337,6 +340,9 @@ struct AMLLFrameEngine {
         self.heights = heights
         motions = document.groups.map { group in
             var motion = GroupMotion()
+            let style = environment.animationStyle ?? .amll
+            motion.y.selectStyle(style); motion.slide.selectStyle(style)
+            motion.mainScale.selectStyle(style); motion.backgroundScale.selectStyle(style)
             motion.y.setPosition(environment.height * 2)
             if group.backgroundFirst {
                 motion.slide.setPosition(80)
@@ -346,7 +352,7 @@ struct AMLLFrameEngine {
             motion.slide.updateParameters(motionStyle.initialVertical.sourceParameters)
             motion.mainScale.updateParameters(motionStyle.mainScale.sourceParameters)
             motion.mainScaleParameters = motionStyle.mainScale
-            motion.backgroundScale.updateParameters(.init(mass: 1, damping: 20, stiffness: 50))
+            motion.backgroundScale.updateParameters(motionStyle.backgroundScale.sourceParameters)
             return motion
         }
     }
@@ -383,10 +389,24 @@ struct AMLLFrameEngine {
             let policy = LyricsAnimationMotion(style: environment.animationStyle ?? .amll, options: environment.appleMusicAnimation)
             let interval = timeline.focus > 0 && timeline.focus < document.timings.count
                 ? (document.timings[timeline.focus].startTime - document.timings[timeline.focus - 1].startTime) / 1000 : nil
-            let vertical = policy.vertical(lineInterval: interval, seeking: false, interlude: interlude != nil)
+            let vertical = policy.vertical(lineInterval: interval, gap: sourceGap(at: timeline.focus), seeking: false, interlude: interlude != nil)
             for index in motions.indices {
                 // Parameter changes retain the solver's presented position, velocity,
                 // queued position deadline, lyric clocks and focus/retirement events.
+                let style = environment.animationStyle ?? .amll
+                if (self.environment.animationStyle ?? .amll) != style {
+                    if style == .appleMusic164 {
+                        motions[index].mainLightUp.resume(bright: motions[index].mainAlpha.bright, dark: motions[index].mainAlpha.dark)
+                        motions[index].backgroundLightUp.resume(bright: motions[index].backgroundAlpha.bright, dark: motions[index].backgroundAlpha.dark)
+                    } else {
+                        let main = motions[index].mainLightUp.value, background = motions[index].backgroundLightUp.value
+                        motions[index].mainAlpha.resume(bright: main.bright, dark: main.dark)
+                        motions[index].backgroundAlpha.resume(bright: background.bright, dark: background.dark)
+                    }
+                }
+                motions[index].y.selectStyle(style); motions[index].slide.selectStyle(style)
+                motions[index].mainScale.selectStyle(style); motions[index].backgroundScale.selectStyle(style)
+                motions[index].backgroundScale.updateParameters(policy.backgroundScale.sourceParameters)
                 motions[index].y.updateParameters(vertical.sourceParameters)
                 motions[index].slide.updateParameters(vertical.sourceParameters)
                 let scale = policy.mainScale(focused: motions[index].visualActive)
@@ -541,6 +561,11 @@ struct AMLLFrameEngine {
             }
             if let background = group.background {
                 let backgroundStart = document.actualLineStarts[background]
+                if environment.animationStyle == .appleMusic164 {
+                    let ready = input.playing && time / 1000 + environment.advance >= backgroundStart
+                    if ready != motions[index].backgroundReady { dirty = true }
+                    motions[index].backgroundReady = ready
+                }
                 let backgroundSinging = backgroundStart <= time / 1000 && time / 1000 < document.actualLineEnds[background]
                 if backgroundSinging != motions[index].backgroundSinging {
                     dirty = true
@@ -616,14 +641,15 @@ struct AMLLFrameEngine {
                     ? (document.timings[timeline.focus].startTime - document.timings[timeline.focus - 1].startTime) / 1000 : nil
                 if seeking || interlude != nil || interval != nil {
                     let p = LyricsAnimationMotion(style: environment.animationStyle ?? .amll)
-                        .vertical(lineInterval: interval, seeking: seeking, interlude: interlude != nil)
+                        .vertical(lineInterval: interval, gap: sourceGap(at: timeline.focus), seeking: seeking, interlude: interlude != nil)
                     for index in motions.indices {
                         motions[index].y.updateParameters(.init(mass: p.mass, damping: p.damping, stiffness: p.stiffness))
                         motions[index].slide.updateParameters(.init(mass: p.mass, damping: p.damping, stiffness: p.stiffness))
                     }
                 }
             }
-            layoutGroups(playing: input.playing, seeking: seeking, frameStart: animationTime - elapsed, sourcePosition: input.position)
+            layoutGroups(playing: input.playing, seeking: seeking, frameStart: animationTime - elapsed,
+                         sourcePosition: input.position)
             dirty = false
         }
         let forceAlpha = seeking || firstFrame || environment.reduceMotion
@@ -647,7 +673,8 @@ struct AMLLFrameEngine {
                 selectVisualFocus(pending.index, at: boundary)
                 pendingVisualFocus = nil
             }
-            layoutGroups(playing: input.playing, seeking: false, frameStart: boundary, sourcePosition: input.position)
+            layoutGroups(playing: input.playing, seeking: false, frameStart: boundary,
+                         sourcePosition: input.position)
             dirty = false
             appearanceTime = boundary
         }
@@ -687,6 +714,8 @@ struct AMLLFrameEngine {
                 .waiting
             }
             let holdHDR = visualState == .holding && !songEnded && interlude == nil
+            let mainAlpha = environment.animationStyle == .appleMusic164 ? motion.mainLightUp.value : (motion.mainAlpha.bright, motion.mainAlpha.dark)
+            let backgroundAlpha = environment.animationStyle == .appleMusic164 ? motion.backgroundLightUp.value : (motion.backgroundAlpha.bright, motion.backgroundAlpha.dark)
             let padding = environment.fontSize * 0.4
             let progress = min(1, max(0, 1 - abs(slidePosition) / 80))
             let bgFirst = group.backgroundFirst && !environment.alwaysPostpositionBackground
@@ -695,8 +724,8 @@ struct AMLLFrameEngine {
             let bgAdvance = bgFirst ? bgHeight * progress : 0
             let y = (yPosition * 10).rounded() / 10
             rows.append(.init(lineIndex: group.main, groupIndex: index, y: y + padding + bgAdvance,
-                              scale: mainScalePosition / 100, brightAlpha: mainExit?.bright ?? motion.mainAlpha.bright,
-                              darkAlpha: mainExit?.dark ?? motion.mainAlpha.dark, wordClock: motion.mainWords,
+                              scale: mainScalePosition / 100, brightAlpha: mainExit?.bright ?? mainAlpha.0,
+                              darkAlpha: mainExit?.dark ?? mainAlpha.1, wordClock: motion.mainWords,
                               opacity: motion.opacityTransition.value,
                               blur: mainExit?.blur ?? min(5, motion.blurTransition.value),
                               active: motion.mainSinging,
@@ -712,7 +741,7 @@ struct AMLLFrameEngine {
                 let top = bgFirst ? y + padding - bgHeight * (1 - progress) : y + padding + height(group.main)
                 rows.append(.init(lineIndex: background, groupIndex: index, y: top + bgHeight * slidePosition / 100,
                                   scale: backgroundScalePosition / 100 * (0.8 + progress * 0.2),
-                                  brightAlpha: backgroundExit?.bright ?? motion.backgroundAlpha.bright, darkAlpha: backgroundExit?.dark ?? motion.backgroundAlpha.dark,
+                                  brightAlpha: backgroundExit?.bright ?? backgroundAlpha.0, darkAlpha: backgroundExit?.dark ?? backgroundAlpha.1,
                                   wordClock: motion.backgroundWords,
                                   opacity: motion.opacityTransition.value * (backgroundVisible ? 1 : 0),
                                   blur: backgroundExit?.blur ?? min(5, motion.blurTransition.value),
@@ -720,6 +749,9 @@ struct AMLLFrameEngine {
                                   visualFocus: backgroundState, fillComplete: motion.backgroundCompleted,
                                   hdrHold: backgroundState == .holding && !songEnded && interlude == nil,
                                   positionMotion: motion.y.schedule, retirement: backgroundExit?.state))
+            }
+            if environment.animationStyle == .appleMusic164 {
+                allSettled = allSettled && motion.mainLightUp.arrived && motion.backgroundLightUp.arrived
             }
             allSettled = allSettled && (motion.mainRetirement?.arrived ?? true) && (motion.backgroundRetirement?.arrived ?? true)
             if environment.enableSpring || environment.reduceMotion {
@@ -771,6 +803,13 @@ struct AMLLFrameEngine {
         return nil
     }
 
+    /// Source timings are separate from advance-adjusted scroll scheduling.
+    private func sourceGap(at index: Int) -> Double? {
+        guard index > 0, document.groups.indices.contains(index) else { return nil }
+        let line = document.groups[index].main, previous = document.groups[index - 1].main
+        return document.actualLineStarts[line] - document.actualLineEnds[previous]
+    }
+
     private mutating func advanceAppearance(delta elapsed: Double, forceAlpha: Bool) {
         guard elapsed > 0 || forceAlpha else { return }
         for index in motions.indices {
@@ -793,6 +832,10 @@ struct AMLLFrameEngine {
                 : (motions[index].visualActive ? 1 : 0.97)
             let backgroundAppearanceScale = environment.enableScale ? (environment.enableSpring ? motions[index].backgroundScale.position : motions[index].backgroundScaleTransition.value) / 100
                 : (motions[index].backgroundVisualActive ? 1 : 0.97)
+            if environment.animationStyle == .appleMusic164 {
+                motions[index].mainLightUp.update(focused: motions[index].visualActive, delta: elapsed, force: forceAlpha)
+                motions[index].backgroundLightUp.update(focused: motions[index].backgroundVisualActive, delta: elapsed, force: forceAlpha)
+            }
             motions[index].mainAlpha.update(scale: motions[index].mainCompleted && !motions[index].visualActive ? 0.97 : mainAppearanceScale,
                                             gradient: motions[index].visualActive, delta: elapsed, force: forceAlpha)
             motions[index].backgroundAlpha.update(scale: motions[index].backgroundCompleted && !motions[index].backgroundVisualActive ? 0.97 : backgroundAppearanceScale,
@@ -816,7 +859,8 @@ struct AMLLFrameEngine {
             motions[index].mainFocusRetained = false
             if motions[index].mainCompleted || releaseMainAhead, motions[index].mainRetirement == nil {
                 motions[index].mainRetirement = .init(at: time,
-                    bright: motions[index].mainAlpha.bright, dark: motions[index].mainAlpha.dark,
+                    bright: environment.animationStyle == .appleMusic164 ? motions[index].mainLightUp.value.bright : motions[index].mainAlpha.bright,
+                    dark: environment.animationStyle == .appleMusic164 ? motions[index].mainLightUp.value.dark : motions[index].mainAlpha.dark,
                     opacity: motions[index].opacityTransition.value, blur: motions[index].blurTransition.value)
             }
             dirty = true
@@ -825,7 +869,8 @@ struct AMLLFrameEngine {
             motions[index].backgroundFocusRetained = false
             if motions[index].backgroundCompleted || releaseBackgroundAhead, motions[index].backgroundRetirement == nil {
                 motions[index].backgroundRetirement = .init(at: time,
-                    bright: motions[index].backgroundAlpha.bright, dark: motions[index].backgroundAlpha.dark,
+                    bright: environment.animationStyle == .appleMusic164 ? motions[index].backgroundLightUp.value.bright : motions[index].backgroundAlpha.bright,
+                    dark: environment.animationStyle == .appleMusic164 ? motions[index].backgroundLightUp.value.dark : motions[index].backgroundAlpha.dark,
                     opacity: motions[index].opacityTransition.value, blur: motions[index].blurTransition.value)
             }
             dirty = true
@@ -855,6 +900,7 @@ struct AMLLFrameEngine {
             let preparesBackground = document.groups[index].background != nil && visualFocus == index
                 && !browsing && !motions[index].backgroundCompleted && motions[index].backgroundRetirement == nil
                 && (blossom == nil || blossom?.background == 1)
+                && (environment.animationStyle != .appleMusic164 || motions[index].backgroundReady)
             motions[index].backgroundVisualActive = (motions[index].backgroundSinging && motions[index].backgroundRetirement == nil)
                 || motions[index].backgroundFocusRetained || preparesBackground
         }
@@ -885,7 +931,7 @@ struct AMLLFrameEngine {
             case .bottom: y -= groupHeights[timeline.focus]
             }
         }
-        var delay = 0.0, baseDelay = touching ? 0 : 0.05
+        var delay = 0.0, baseDelay = touching || blossom?.word == 1 ? 0 : 0.05
         let nonDynamic = !document.lines.contains { $0.precision == .word }
         var revisedPositions = false
         for index in motions.indices {
@@ -926,7 +972,8 @@ struct AMLLFrameEngine {
             let hiddenSlide = group.backgroundFirst && !environment.alwaysPostpositionBackground ? 80.0 : -80.0
             let slide = active[index] || !playing ? 0 : hiddenSlide
             let suppressInactiveScale = blossom?.word == 2
-            let mainScale = !focused && environment.enableScale && !suppressInactiveScale && (playing || visualFocus != nil) ? 97.0 : 100
+            let inactiveScale = environment.animationStyle == .appleMusic164 ? 98.0 : 97.0
+            let mainScale = !focused && environment.enableScale && !suppressInactiveScale && (playing || visualFocus != nil) ? inactiveScale : 100
             let bgFocused = motions[index].backgroundVisualActive
             let bgScale = !bgFocused && playing && environment.enableScale ? 75.0 : 100
             // Reduce Motion is a source-defined accessibility variant: it
@@ -1032,7 +1079,7 @@ struct AMLLFrameEngine {
             if y >= 0 {
                 delay += baseDelay
                 if index >= timeline.focus {
-                    baseDelay /= 1.05
+                    if environment.animationStyle != .appleMusic164 { baseDelay /= 1.05 }
                 }
             }
         }

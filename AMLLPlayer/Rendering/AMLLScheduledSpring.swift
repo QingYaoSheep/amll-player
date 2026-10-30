@@ -11,14 +11,14 @@ struct AMLLScheduledSpring: Sendable {
         var startedAt: Double?
     }
 
-    private var spring: AMLLSourceSpring
+    private var spring: LyricsAnimationSpring
     private var parameters = AMLLSourceSpring.Parameters()
     private var time = 0.0
     private var pending: (start: Double, target: Double)?
     private(set) var schedule: Schedule
 
     init(_ value: Double = 0) {
-        spring = AMLLSourceSpring(value)
+        spring = LyricsAnimationSpring(value)
         schedule = .init(revision: 0, target: value)
     }
 
@@ -31,6 +31,10 @@ struct AMLLScheduledSpring: Sendable {
     }
 
     var velocity: Double { spring.velocity }
+
+    mutating func selectStyle(_ style: LyricsAnimationStyle) {
+        spring.selectStyle(style)
+    }
 
     mutating func resume(position: Double, velocity: Double, at time: Double) {
         let resumedTarget = pending == nil ? target : spring.target
@@ -46,7 +50,9 @@ struct AMLLScheduledSpring: Sendable {
     mutating func setPosition(_ value: Double, at time: Double = 0) {
         // Rebuild instead of using the source's setPosition, which deliberately
         // retains queued targets. Direct positioning cancels production work.
-        spring = AMLLSourceSpring(value)
+        let style = spring.style
+        spring = LyricsAnimationSpring(value)
+        spring.selectStyle(style)
         spring.updateParameters(parameters)
         self.time = time
         pending = nil

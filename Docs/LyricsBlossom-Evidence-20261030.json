@@ -1,0 +1,52 @@
+{
+  "captured": "2026-10-30",
+  "targetSHA256": "d64d2b413c1abbc0b4ea57d4530e31e344ecb0b172b79fb8604d70c2185f98ed",
+  "basis": "User-supplied static artifacts; runtime experiments were performed by the user/DeepSeek, not rerun in this change.",
+  "files": [
+    {
+      "path": "E:/REA/.analysis/reports/MASTER.md",
+      "bytes": 26872,
+      "sha256": "d6d08e1428f7e962857efa216f25b80206dc2b2417e9b7ff5914abd7776f79f1"
+    },
+    {
+      "path": "E:/REA/.analysis/reports/ws12-emphasis.md",
+      "bytes": 67440,
+      "sha256": "1c2273380d6a5fa87d46119ad490960f0a13dc82f48fa284350daffa2ea4f415"
+    },
+    {
+      "path": "E:/REA/.analysis/reports/ws34-motion.md",
+      "bytes": 50816,
+      "sha256": "c97586427fd8cbeae4239412e7be53cfbe698aa0e1ddd713a945536cf1b64daa"
+    },
+    {
+      "path": "E:/REA/.analysis/reports/ws56-selection.md",
+      "bytes": 32941,
+      "sha256": "87932aab88fad7564580a5362a37e85243c6fff4ed92eecf7f334f13c5da08e0"
+    },
+    {
+      "path": "E:/REA/swiftui-repro/Sources/LyricsBlossomRepro/DecompiledAnimation.swift",
+      "bytes": 27814,
+      "sha256": "1f890d076ec33d9bee5caf70bb346322f75006accd606b68716d614775547281"
+    },
+    {
+      "path": "E:/REA/swiftui-repro/Sources/LyricsBlossomRepro/DecompiledParameters.swift",
+      "bytes": 11260,
+      "sha256": "679c955d4f66816282c6fedf3b907d03a835c23f8689d8a237563ec0d88b1d66"
+    },
+    {
+      "path": "E:/REA/.analysis/ghidra-rowtemplate-asm.txt",
+      "bytes": 48439,
+      "sha256": "018318cc5c2da94e34abdfd7d18bae9bbdf9358edfb3bb4bca70a2a91b87e971"
+    },
+    {
+      "path": "E:/REA/.analysis/ghidra-rowtemplate.txt",
+      "bytes": 24740,
+      "sha256": "874552d6edbbcdb7354aaa2a533f36d2f99c71681742729f997eedfb466740c1"
+    },
+    {
+      "path": "E:/REA/.analysis/ghidra-animtree.txt",
+      "bytes": 620257,
+      "sha256": "21ea3793c3973d0d721e4ff3c3b7386088577583b497c829444a72e02e32e521"
+    }
+  ]
+}

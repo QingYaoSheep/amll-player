@@ -30,7 +30,7 @@ struct LyricsBlossomAnimationOptions: Codable, Equatable, Sendable {
             switch self {
             case .background: "背景人声随主歌词进入焦点时的呈现方式。"
             case .word: "逐词歌词点亮与取消时的外观过渡。"
-            case .scale: "歌词获取与离开焦点时的缩放效果。"
+            case .scale: "保留版本选择；目前两版共用已核实的模板弹簧，次级缩放差异尚待适配。"
             case .emphasis: "长音、强调词及其结束阶段的动画。"
             case .selection: "选择句子的规则；27 逻辑不限制同时高亮行数。"
             }

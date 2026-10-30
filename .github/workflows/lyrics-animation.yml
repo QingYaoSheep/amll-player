@@ -8,6 +8,7 @@ on:
       - 'AMLLPlayer/Rendering/LyricsBlossomAnimationOptions.swift'
       - 'AMLLPlayer/Features/Lyrics/LyricsAnimationSettingsView.swift'
       - 'AMLLPlayerTests/LyricsAnimationStyleTests.swift'
+      - 'AMLLPlayerTests/LyricsAnimationEvidenceTests.swift'
       - 'AMLLPlayerUITests/LyricsQuickSettingsUITests.swift'
 
 permissions:
@@ -44,6 +45,8 @@ jobs:
           -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerTests/LyricsAnimationStyleTests
+          -only-testing:AMLLPlayerTests/LyricsAnimationEvidenceTests
+          -only-testing:AMLLPlayerTests/AMLLScheduledSpringTests
           -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage
           -resultBundlePath build/Animation-tests.xcresult
           -collect-test-diagnostics never

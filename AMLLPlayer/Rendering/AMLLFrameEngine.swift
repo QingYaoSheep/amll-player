@@ -931,10 +931,20 @@ struct AMLLFrameEngine {
             case .bottom: y -= groupHeights[timeline.focus]
             }
         }
-        var delay = 0.0, baseDelay = touching || blossom?.word == 1 ? 0 : 0.05
+        let clearsBlossomDelay = environment.animationStyle == .appleMusic164
+            && LyricsBlossomLineSchedule.clearsDelay(wordVersion: blossom?.word ?? 0,
+                                                    paused: !playing, hidden: false, advanceSatisfied: false)
+        var delay = 0.0, baseDelay = touching || clearsBlossomDelay ? 0 : LyricsBlossomLineSchedule.step
         let nonDynamic = !document.lines.contains { $0.precision == .word }
         var revisedPositions = false
         for index in motions.indices {
+            if clearsBlossomDelay {
+                if motions[index].y.clearPendingDelay(at: frameStart) {
+                    if pendingVisualFocus?.index == index { pendingVisualFocus?.startTime = frameStart }
+                    if motions[index].completedReleaseAt != nil { motions[index].completedReleaseAt = frameStart }
+                }
+                motions[index].slide.clearPendingDelay(at: frameStart)
+            }
             if interlude?.anchor == index - 1 {
                 y += environment.fontSize * 0.4
                 interlude?.y = y

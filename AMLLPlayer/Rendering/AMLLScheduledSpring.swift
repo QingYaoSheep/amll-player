@@ -67,6 +67,17 @@ struct AMLLScheduledSpring: Sendable {
         spring.updateParameters(merged)
     }
 
+    /// Remove a queued wait while retaining the current position and velocity.
+    /// Used by Blossom's pause path; this never snaps an in-progress movement.
+    @discardableResult
+    mutating func clearPendingDelay(at time: Double) -> Bool {
+        guard time.isFinite, time >= self.time, let queued = pending, queued.start > time else { return false }
+        pending = (min(queued.start, time), queued.target)
+        schedule.scheduledAt = min(queued.start, time)
+        advance(to: time)
+        return true
+    }
+
     mutating func setTarget(_ value: Double, startTime: Double, at time: Double, revision: Int) {
         guard value.isFinite, startTime.isFinite, time.isFinite else { return }
         guard value != schedule.target else { return }

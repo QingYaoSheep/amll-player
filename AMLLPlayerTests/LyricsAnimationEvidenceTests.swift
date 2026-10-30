@@ -92,7 +92,7 @@ final class LyricsAnimationEvidenceTests: XCTestCase {
             LyricLine(id: "lead", text: "Lead", start: 0, end: 10,
                       words: [.init(text: "Lead", start: 0, end: 10)], precision: .word),
             LyricLine(id: "echo", text: "Echo", start: 2, end: 4,
-                      words: [.init(text: "Echo", start: 2, end: 4)], precision: .word, isBackground: true),
+                      words: [.init(text: "Echo", start: 2, end: 4)], isBackground: true, precision: .word),
         ]
         var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
         environment.animationStyle = .appleMusic164

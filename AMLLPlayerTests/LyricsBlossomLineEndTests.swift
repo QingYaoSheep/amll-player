@@ -124,6 +124,53 @@ final class LyricsBlossomLineEndTests: XCTestCase {
         XCTAssertEqual(LyricsBlossomRunSweep.target(now: 1.5, segments: records), 37.5) // Reverse seek: no retained full-fill flag.
     }
 
+    func testPauseStartsQueuedHandoffAndRetirementAtTheMovementBoundaryOnce() throws {
+        let lines: [LyricLine] = (0 ..< 5).map { index in
+            let start = Double(index) * 2
+            let end = start + 1.8
+            return LyricLine(id: String(index), text: "Row", start: start, end: end,
+                             words: [LyricWord(text: "Row", start: start, end: end)], precision: .word)
+        }
+        for interval in [1.0 / 60, 1.0 / 120, 0.037] {
+            var environment = AMLLRenderEnvironment(width: 400, height: 900, screenWidth: 400, fontSize: 32)
+            environment.alignPosition = 0.5 // Both the outgoing and incoming row have queued waits.
+            environment.animationStyle = .appleMusic164
+            var engine = AMLLFrameEngine(document: .init(lines: lines), environment: environment,
+                                         heights: Array(repeating: 50, count: lines.count))
+            _ = engine.render(.init(position: 2.1, playing: true), delta: 0)
+            let queued = engine.render(.init(position: 3.71, playing: true), delta: 0.01)
+            let outgoingBefore = try XCTUnwrap(queued.rows.first { $0.lineIndex == 1 })
+            let incomingBefore = try XCTUnwrap(queued.rows.first { $0.lineIndex == 2 })
+            XCTAssertNil(outgoingBefore.retirement)
+            XCTAssertNil(outgoingBefore.positionMotion?.startedAt)
+            XCTAssertNil(incomingBefore.positionMotion?.startedAt)
+            XCTAssertEqual(incomingBefore.visualFocus, .waiting)
+
+            let paused = engine.render(.init(position: 3.71, playing: false), delta: interval)
+            let outgoing = try XCTUnwrap(paused.rows.first { $0.lineIndex == 1 })
+            let incoming = try XCTUnwrap(paused.rows.first { $0.lineIndex == 2 })
+            let exit = try XCTUnwrap(outgoing.retirement)
+            XCTAssertEqual(exit.startedAt, 0.01, accuracy: 1e-10)
+            XCTAssertEqual(exit.startedAt, try XCTUnwrap(outgoing.positionMotion?.startedAt))
+            XCTAssertEqual(incoming.positionMotion?.startedAt, exit.startedAt)
+            XCTAssertEqual(outgoing.visualFocus, .passed)
+            XCTAssertEqual(incoming.visualFocus, .preparing)
+            XCTAssertGreaterThan(exit.progress, 0)
+            XCTAssertLessThan(exit.progress, 1)
+            XCTAssertGreaterThan(outgoing.scale, 0.98)
+            XCTAssertLessThan(outgoing.scale, outgoingBefore.scale)
+            XCTAssertLessThan(outgoing.brightAlpha, outgoingBefore.brightAlpha)
+            XCTAssertGreaterThan(outgoing.blur, 0)
+            XCTAssertLessThan(exit.hdrWeight, 1)
+
+            let next = engine.render(.init(position: 3.71, playing: false), delta: interval)
+            let continued = try XCTUnwrap(next.rows.first { $0.lineIndex == 1 }?.retirement)
+            XCTAssertEqual(continued.startedAt, exit.startedAt) // No second activation on the next layout/frame.
+            XCTAssertGreaterThan(continued.progress, exit.progress)
+            XCTAssertEqual(next.lyricTime, paused.lyricTime) // Appearance finishes without advancing song time.
+        }
+    }
+
     func testRunWindowUsesSpatialCursorAndSearchSentinelWithoutTripleAlpha() throws {
         let window = try XCTUnwrap(LyricsBlossomRunSweep.window(cursor: 95, wordPositions: [20, 80], alpha: 0.4))
         XCTAssertEqual(window.start, 83)

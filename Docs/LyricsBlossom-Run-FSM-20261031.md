@@ -36,6 +36,11 @@ readOnly/noanalysis导出renderLine与canvas变换函数。原项目、账号与
 
 上述可确定差异已在本项目数值实现中修正，不要求继续重复逆向这些分支。
 
+额外以汇编消除字节计数的反编译类型歧义：构造器`1402fe0c3`起在EDX/EAX做整数
+计数，`1402fe0f2`写入记录+0xc；普通分支`1402fe7a4`与force分支`1402fe3d4`
+均以整数CMP比较3，不存在浮点转换。因此两分支共用整数UTF-8字节数选择系数，
+不能根据伪代码的局部float别名另造一个分支行为。汇编在`run-instructions.txt`。
+
 ## 不能据新总结直接启用的结论
 
 1. **画布单位**：renderLine内没有另一个固定DPI缩放，不证明入口CTM、surface尺寸
@@ -55,3 +60,17 @@ readOnly/noanalysis导出renderLine与canvas变换函数。原项目、账号与
 
 Ghidra新导出与后续构建证据保存在
 `E:/AMLL-Swift/Builds/Blossom-Run-FSM-20261031/`。自动测试结果另行补充。
+
+## 验证与交付
+
+代码提交：`31ca9d646e28118ef321b2cd5789508cb32242b2`。
+Standards与Spec两项只读审查均无可执行问题；字节计数歧义经汇编复核关闭。
+
+- [定向回归41182975696](https://github.com/QingYaoSheep/amll-player/actions/runs/41182975696)：
+  38项算法测试和1项真实设置页UI测试全部通过；新增10项Cursor用例均通过。
+- [完整两路41182975649](https://github.com/QingYaoSheep/amll-player/actions/runs/41182975649)：
+  直接构建成功，完整测试仍执行中；未交付测试后IPA。
+- 直接IPA位于构建证据目录`31ca9d64-direct/`，包内提交号已验证；SHA-256：
+  `4e68840e81ad68f0a97b3e9ed51a853f9125986d1a944e6ffafe36895f517688`。
+
+这些结果验证参考状态机与已有设置回归，不代表生产run已接入或设备视觉通过。

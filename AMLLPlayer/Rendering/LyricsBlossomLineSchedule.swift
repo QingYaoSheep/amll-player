@@ -4,7 +4,9 @@ import Foundation
 /// replaced with guesses based on isBackground/isDuet. See the evidence ledger.
 struct LyricsBlossomLineSchedule: Sendable {
     struct Row: Sendable {
-        var start: Double
+        // Raw +0x18 field. Passive samples match row end, not row start;
+        // retain the offset identity until the selection mapping is validated.
+        var time18: Double
         var flag1B0 = false
         var flag1B2 = false
         var flag1B3 = false
@@ -49,9 +51,9 @@ struct LyricsBlossomAdvanceState: Equatable, Sendable {
         // FUN_1401e5ec0: settings+0x90 = 0x3fd999999999999a (0.4).
         // FUN_140315c60: subtract another 0.5; comparison is strict.
         if let row = lastSelectedRow, row.permitsAdvance,
-           now.isFinite, row.start.isFinite, family != 2, family != 3,
+           now.isFinite, row.time18.isFinite, family != 2, family != 3,
            !paused, !hidden, !scrubbing {
-            satisfied = (row.start - now) - 0.5 < 0.4
+            satisfied = (row.time18 - now) - 0.5 < 0.4
         } else {
             satisfied = false
         }

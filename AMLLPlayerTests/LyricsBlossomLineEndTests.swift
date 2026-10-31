@@ -4,9 +4,9 @@ import XCTest
 final class LyricsBlossomLineEndTests: XCTestCase {
     func testRowDelayFiltersSourceFlagsAndDoesNotCountWordsOrViewportRows() {
         let rows: [LyricsBlossomLineSchedule.Row] = [
-            .init(start: 0), .init(start: 1, flag1B0: true), .init(start: 2),
-            .init(start: 3, flag1B2: true), .init(start: 4, containsWordFlag28: true),
-            .init(start: 5), .init(start: 6, flag1B3: true),
+            .init(time18: 0), .init(time18: 1, flag1B0: true), .init(time18: 2),
+            .init(time18: 3, flag1B2: true), .init(time18: 4, containsWordFlag28: true),
+            .init(time18: 5), .init(time18: 6, flag1B3: true),
         ]
         let schedule = LyricsBlossomLineSchedule(rows: rows)
         XCTAssertEqual(schedule.delay(after: 0, through: 2), 0)
@@ -19,9 +19,9 @@ final class LyricsBlossomLineEndTests: XCTestCase {
         XCTAssertEqual(LyricsBlossomLineSchedule.multiLineDelay(rank: 3), 0.1)
     }
 
-    func testAdvanceUsesSelectedRowStartAndAllSourceGuards() {
+    func testAdvanceUsesSelectedRowTimeFieldAndAllSourceGuards() {
         typealias Row = LyricsBlossomLineSchedule.Row
-        func predicate(_ row: Row? = .init(start: 10), now: Double = 9.11, family: Int = 0,
+        func predicate(_ row: Row? = .init(time18: 10), now: Double = 9.11, family: Int = 0,
                        paused: Bool = false, hidden: Bool = false, scrubbing: Bool = false) -> Bool {
             LyricsBlossomAdvanceState(now: now, family: family, lastSelectedRow: row,
                                       paused: paused, hidden: hidden, scrubbing: scrubbing).satisfied
@@ -33,8 +33,8 @@ final class LyricsBlossomLineEndTests: XCTestCase {
         XCTAssertFalse(predicate(family: 2)); XCTAssertFalse(predicate(family: 3))
         XCTAssertFalse(predicate(paused: true)); XCTAssertFalse(predicate(hidden: true))
         XCTAssertFalse(predicate(scrubbing: true))
-        for row in [Row(start: 10, flag1B0: true), Row(start: 10, flag1B2: true),
-                    Row(start: 10, flag1B3: true), Row(start: 10, containsWordFlag28: true)] {
+        for row in [Row(time18: 10, flag1B0: true), Row(time18: 10, flag1B2: true),
+                    Row(time18: 10, flag1B3: true), Row(time18: 10, containsWordFlag28: true)] {
             XCTAssertFalse(predicate(row))
         }
         XCTAssertTrue(LyricsBlossomLineSchedule.clearsDelay(wordVersion: 1, paused: false, hidden: false, advanceSatisfied: false))

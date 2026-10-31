@@ -81,10 +81,14 @@ final class LyricsBlossomLineEndTests: XCTestCase {
 
     @MainActor
     func testProductionApplePauseClearsQueuedRowWaitWhileAMLLKeepsItsSchedule() throws {
-        let document = LyricsDocument(lines: (0 ..< 5).map { index in
-            LyricLine(id: "row-\(index)", text: "Row", start: Double(index) * 2, end: Double(index) * 2 + 1.8,
-                      words: [.init(text: "Row", start: Double(index) * 2, end: Double(index) * 2 + 1.8)], precision: .word)
-        })
+        let lines: [LyricLine] = (0 ..< 5).map { index in
+            let start = Double(index) * 2
+            let end = start + 1.8
+            let word = LyricWord(text: "Row", start: start, end: end)
+            return LyricLine(id: "row-\(index)", text: "Row", start: start, end: end,
+                             words: [word], precision: .word)
+        }
+        let document = AMLLDisplayDocument(lines: lines)
         for style in [LyricsAnimationStyle.amll, .appleMusic164] {
             var environment = AMLLRenderEnvironment(width: 400, height: 900, screenWidth: 400, fontSize: 32)
             environment.animationStyle = style

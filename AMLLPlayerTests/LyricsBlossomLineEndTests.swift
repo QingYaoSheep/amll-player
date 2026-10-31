@@ -204,4 +204,148 @@ final class LyricsBlossomLineEndTests: XCTestCase {
         XCTAssertEqual(LyricsBlossomRunSweep.target(now: 1.5, segments: records), 83.75)
         XCTAssertEqual(LyricsBlossomRunSweep.target(now: 4.5, segments: records), 165)
     }
+
+    private var cursorSegments: [LyricsBlossomRunSweep.Segment] {
+        LyricsBlossomRunSweep.segments([
+            .init(start: 1, end: 2, width: 60, text: "a"),
+            .init(start: 3, end: 5, width: 40, text: "tail"),
+        ])
+    }
+
+    func testCursorFirstEntryUsesPreviousDistanceAndFinalDurationGuard() {
+        var cursor = LyricsBlossomRunSweep.Cursor()
+        cursor.step(now: 3.25, delta: 0, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.value, 60)
+        XCTAssertEqual(cursor.from, 60)
+        XCTAssertEqual(cursor.to, 130)
+        XCTAssertEqual(cursor.duration, 3.5)
+        XCTAssertEqual(cursor.lastIndex, 1)
+        XCTAssertTrue(cursor.active)
+    }
+
+    func testCursorFinishedTweenDoesNotRestartInsideTheSameSegment() {
+        var cursor = LyricsBlossomRunSweep.Cursor(value: 67.5, from: 0, to: 75,
+            elapsed: 0.09, duration: 0.1, active: true, lastIndex: 0)
+        cursor.step(now: 1.5, delta: 0.02, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.value, 75)
+        XCTAssertFalse(cursor.active)
+        XCTAssertEqual(cursor.lastIndex, 0)
+        let finished = cursor
+        cursor.step(now: 1.6, delta: 0.1, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor, finished)
+    }
+
+    func testCursorAfterEndKeepsExistingTweenThenSnapsOnTheFollowingCall() {
+        var cursor = LyricsBlossomRunSweep.Cursor(value: 40, from: 0, to: 80,
+            elapsed: 0.5, duration: 1, active: true, lastIndex: 1)
+        cursor.step(now: 6, delta: 0.1, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.value, 48, accuracy: 0.00001)
+        XCTAssertEqual(cursor.to, 80)
+        XCTAssertEqual(cursor.lastIndex, -1)
+        cursor.step(now: 6, delta: 1, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.value, 80)
+        XCTAssertFalse(cursor.active)
+        cursor.step(now: 6, delta: 0, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.value, 130)
+    }
+
+    func testForcedCursorFollowsTheDecodedTimeConstantAcrossFrameIntervals() {
+        for interval in [Float(1) / 60, Float(1) / 120, Float(0.037)] {
+            var cursor = LyricsBlossomRunSweep.Cursor(suppressed: true)
+            var elapsed: Float = 0
+            while elapsed < 0.2 {
+                let delta = min(interval, 0.2 - elapsed)
+                cursor.step(now: 1.5, delta: delta, segments: cursorSegments, force: true)
+                elapsed += delta
+            }
+            let expected: Float = 37.5 * (1 - exp(-0.2 / 0.0833333358))
+            XCTAssertEqual(cursor.value, expected, accuracy: 0.0001)
+            XCTAssertEqual(cursor.from, cursor.value)
+            XCTAssertEqual(cursor.to, cursor.value)
+            XCTAssertEqual(cursor.elapsed, 0)
+            XCTAssertEqual(cursor.duration, 1)
+            XCTAssertEqual(cursor.lastIndex, -2)
+            XCTAssertFalse(cursor.active)
+            XCTAssertFalse(cursor.suppressed)
+        }
+    }
+
+    func testReturningFromForceBeforeStartClearsElapsedAndUsesQuarterSecond() {
+        var cursor = LyricsBlossomRunSweep.Cursor(value: 100, from: 100, to: 100,
+            elapsed: 0.7, duration: 1, lastIndex: -2)
+        cursor.step(now: 0, delta: 0.05, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.value, 80)
+        XCTAssertEqual(cursor.elapsed, 0.05)
+        XCTAssertEqual(cursor.duration, 0.25)
+        XCTAssertEqual(cursor.lastIndex, -1)
+        cursor = .init(value: 20, lastIndex: -2)
+        cursor.step(now: 3.25, delta: 0, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.from, 20)
+        XCTAssertEqual(cursor.duration, 0.25) // This path skips final-duration scaling.
+    }
+
+    func testCursorResyncIsConditionalAndUsesStrictSegmentStart() {
+        var cursor = LyricsBlossomRunSweep.Cursor(value: 12, from: 4, to: 30,
+            elapsed: 0.2, duration: 1, active: true, lastIndex: 0, suppressed: true)
+        let before = cursor
+        cursor.resync(effectiveTime: 3, resetRuns: false, segments: cursorSegments)
+        XCTAssertEqual(cursor, before)
+        cursor.resync(effectiveTime: 3, resetRuns: true, segments: cursorSegments)
+        XCTAssertEqual(cursor.value, 90)
+        XCTAssertEqual(cursor.lastIndex, 0)
+        XCTAssertFalse(cursor.suppressed)
+        cursor.resync(effectiveTime: 3.1, resetRuns: true, segments: cursorSegments)
+        XCTAssertEqual(cursor.value, 130)
+        XCTAssertEqual(cursor.lastIndex, 1)
+        cursor.resync(effectiveTime: 1, resetRuns: true, segments: cursorSegments)
+        XCTAssertEqual(cursor, .init())
+    }
+
+    func testRawRowGateDoesNotInvertTheMainAndAdvanceOnlyPaths() {
+        var cursor = LyricsBlossomRunSweep.Cursor()
+        cursor.stepRow(now: 1.5, delta: 0, segments: cursorSegments, flag40: false, flag41: false, force: false)
+        XCTAssertTrue(cursor.active)
+        XCTAssertEqual(cursor.to, 75)
+        cursor = .init()
+        cursor.stepRow(now: 0.95, delta: 0, segments: cursorSegments, flag40: true, flag41: false, force: false)
+        XCTAssertEqual(cursor, .init())
+        cursor.stepRow(now: 0.95, delta: 0, segments: cursorSegments, flag40: true, flag41: true, force: false)
+        XCTAssertTrue(cursor.active) // +0.1 applies only with raw flag40.
+        XCTAssertEqual(cursor.lastIndex, 0)
+    }
+
+    func testMergedSegmentsKeepCumulativeWidthsAndNonSpaceUTF8Bytes() {
+        let segments = LyricsBlossomRunSweep.segments([
+            .init(start: 1, end: 2, width: 20, text: "가 "),
+            .init(start: 1, end: 2, width: 40, text: "e\u{301}"),
+            .init(start: 3, end: 4, width: 10, text: "字"),
+            .init(start: 4, end: 5, width: 5, text: "tail"),
+        ])
+        XCTAssertEqual(segments.map(\.distance), [60, 70, 75])
+        XCTAssertEqual(segments.map(\.nonSpaceByteCount), [6, 3, 4])
+        XCTAssertEqual(LyricsBlossomRunSweep.overshoot(segments[0], count: segments.count), 0.12)
+    }
+
+    func testSuppressedCursorAdvancesExistingMotionWithoutRetargeting() {
+        var cursor = LyricsBlossomRunSweep.Cursor(value: 30, from: 0, to: 60,
+            elapsed: 0.5, duration: 1, active: true, lastIndex: 0, suppressed: true)
+        cursor.step(now: 3.5, delta: 0.1, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.value, 36, accuracy: 0.00001)
+        XCTAssertEqual(cursor.to, 60)
+        XCTAssertEqual(cursor.lastIndex, 0)
+        XCTAssertTrue(cursor.suppressed)
+    }
+
+    func testNonPositiveDurationFallsBackToOneAndOvershotFinalKeepsItsDuration() {
+        var segments = cursorSegments
+        segments[0].end = segments[0].start
+        var cursor = LyricsBlossomRunSweep.Cursor()
+        cursor.step(now: 1, delta: 0, segments: segments, force: false)
+        XCTAssertEqual(cursor.duration, 1)
+        cursor = .init(value: 140, from: 140, to: 140, lastIndex: 0)
+        cursor.step(now: 3.5, delta: 0, segments: cursorSegments, force: false)
+        XCTAssertEqual(cursor.from, 140)
+        XCTAssertEqual(cursor.to, 130)
+        XCTAssertEqual(cursor.duration, 2)
+    }
 }

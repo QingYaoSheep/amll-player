@@ -111,7 +111,7 @@ run采样同时确认：游标与词位置/累计宽度同量纲；已结束run�
 - [定向回归41161753391](https://github.com/QingYaoSheep/amll-player/actions/runs/41161753391)：
   28项算法测试、1项真实动画设置页UI测试全部通过，包含先前失败的暂停交接用例。
 - [两路构建41161753203](https://github.com/QingYaoSheep/amll-player/actions/runs/41161753203)：
-  直接IPA构建成功；完整测试路仍在执行，未交付测试后IPA。
+  直接IPA构建成功；完整测试已结束：554项单元测试通过，29项UI测试中3项失败，未生成测试后IPA。
 - 直接IPA在`E:/AMLL-Swift/Builds/Blossom-Run-20261031/9b762c64-direct/`，
   已检查包内提交号一致；SHA-256为
   `6c20eb8f56487dd62c4c451c9367c6ba85176a22983078a45035fb7ed90c3c8a`。
@@ -121,3 +121,9 @@ run采样同时确认：游标与词位置/累计宽度同量纲；已结束run�
 
 本台Windows未完成同TTML两字号/两缩放及Apple画布视觉对照，计划为部分完成。
 不得将测试模型和直接IPA构建成功标记成run生产替换或末词截断已实现。
+
+后续收到四组来源矩阵与Swift状态机，已核对字体空间比例，但发现遗漏分支、
+seek等号和首次中段快照等翻译差异，尚不满足替换门槛。详见
+`LyricsBlossom-Run-Update-Review-20261031.md`。完整测试的三项UI失败分别为
+Mesh混色用例启动前终止应用失败、队列操作等待超时、沉浸歌词上沿断言；
+不据此宣称全量通过，也不将所有失败一律归为已有基线。

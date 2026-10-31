@@ -449,6 +449,9 @@ struct AMLLFrameEngine {
 
     mutating func render(_ input: AMLLPlayerInput, delta: Double) -> AMLLFrameState {
         let elapsed = delta.isFinite ? max(0, delta) : 0
+        // Keep the exact committed boundary. Reconstructing it as (time + dt)
+        // - dt can round backwards and make a scheduled spring reject the frame.
+        let frameStart = animationTime
         animationTime += elapsed
         let rawTime = ((input.position.isFinite ? input.position : 0) - (input.offset.isFinite ? input.offset : 0)) * 1000
         // DomLyricPlayer.setCurrentTime uses Math.round (ties toward +infinity).
@@ -536,7 +539,7 @@ struct AMLLFrameEngine {
             }
             motions[index].mainSinging = mainSinging
             if beganSinging, !seeking, browsing || visualFocus == timeline.focus {
-                releaseCompletedFocus(except: index, at: animationTime - elapsed)
+                releaseCompletedFocus(except: index, at: frameStart)
             }
             if mainSinging, motions[index].mainRetirement == nil {
                 motions[index].mainFocusRetained = true
@@ -573,7 +576,7 @@ struct AMLLFrameEngine {
                 let beganBackground = backgroundSinging && !motions[index].backgroundSinging
                 motions[index].backgroundSinging = backgroundSinging
                 if beganBackground, !seeking, browsing || visualFocus == timeline.focus {
-                    releaseCompletedFocus(except: index, at: animationTime - elapsed)
+                    releaseCompletedFocus(except: index, at: frameStart)
                 }
                 if backgroundSinging, motions[index].backgroundRetirement == nil {
                     motions[index].backgroundFocusRetained = true
@@ -615,7 +618,7 @@ struct AMLLFrameEngine {
                 motions[index].backgroundFocusRetained = false
             }
         } else if (visualFocus == nil && !releasedForInterlude) || seeking || (releasedForInterlude && changedInterlude) {
-            selectVisualFocus(document.groups.indices.contains(timeline.focus) ? timeline.focus : nil, at: animationTime - elapsed)
+            selectVisualFocus(document.groups.indices.contains(timeline.focus) ? timeline.focus : nil, at: frameStart)
             releasedForInterlude = false
         }
         if songEnded {
@@ -633,7 +636,7 @@ struct AMLLFrameEngine {
         if !songEnded, !browsing, interlude == nil, pendingVisualFocus == nil,
            visualFocus != timeline.focus, environment.reduceMotion || !input.playing
         {
-            selectVisualFocus(document.groups.indices.contains(timeline.focus) ? timeline.focus : nil, at: animationTime - elapsed)
+            selectVisualFocus(document.groups.indices.contains(timeline.focus) ? timeline.focus : nil, at: frameStart)
         }
         if dirty || layout || singingLayout || changedInterlude || previousInput?.playing != input.playing {
             if oldFocus != timeline.focus || changedInterlude {
@@ -648,12 +651,12 @@ struct AMLLFrameEngine {
                     }
                 }
             }
-            layoutGroups(playing: input.playing, seeking: seeking, frameStart: animationTime - elapsed,
+            layoutGroups(playing: input.playing, seeking: seeking, frameStart: frameStart,
                          sourcePosition: input.position)
             dirty = false
         }
         let forceAlpha = seeking || firstFrame || environment.reduceMotion
-        var appearanceTime = animationTime - elapsed
+        var appearanceTime = frameStart
         while !browsing {
             var nextEvent = pendingVisualFocus?.startTime
             for motion in motions {

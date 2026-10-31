@@ -165,9 +165,18 @@ final class LyricsBlossomLineEndTests: XCTestCase {
 
             let next = engine.render(.init(position: 3.71, playing: false), delta: interval)
             let continued = try XCTUnwrap(next.rows.first { $0.lineIndex == 1 }?.retirement)
-            XCTAssertEqual(continued.startedAt, exit.startedAt) // No second activation on the next layout/frame.
+            XCTAssertEqual(continued.startedAt, exit.startedAt) // No second activation on the next frame.
             XCTAssertGreaterThan(continued.progress, exit.progress)
             XCTAssertEqual(next.lyricTime, paused.lyricTime) // Appearance finishes without advancing song time.
+
+            // A refresh-rate update invalidates layout without changing its geometry.
+            environment.maximumFPS = 120
+            engine.resize(environment: environment, heights: Array(repeating: 50, count: lines.count))
+            let relaid = engine.render(.init(position: 3.71, playing: false), delta: interval)
+            let afterLayout = try XCTUnwrap(relaid.rows.first { $0.lineIndex == 1 })
+            XCTAssertEqual(afterLayout.retirement?.startedAt, exit.startedAt)
+            XCTAssertEqual(afterLayout.positionMotion?.startedAt, outgoing.positionMotion?.startedAt)
+            XCTAssertGreaterThan(try XCTUnwrap(afterLayout.retirement?.progress), continued.progress)
         }
     }
 

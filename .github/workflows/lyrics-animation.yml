@@ -7,6 +7,9 @@ on:
       - 'AMLLPlayer/Rendering/LyricsAnimation*.swift'
       - 'AMLLPlayer/Rendering/LyricsBlossomAnimationOptions.swift'
       - 'AMLLPlayer/Rendering/LyricsBlossomLineSchedule.swift'
+      - 'AMLLPlayer/Rendering/LyricsBlossomRun*.swift'
+      - 'AMLLPlayer/Rendering/LyricsBlossomScaleWait.swift'
+      - 'AMLLPlayerTests/LyricsBlossomRunLayoutTests.swift'
       - 'AMLLPlayer/Rendering/AMLLScheduledSpring.swift'
       - 'AMLLPlayer/Rendering/AMLLFrameEngine.swift'
       - 'AMLLPlayerTests/LyricsBlossomLineEndTests.swift'
@@ -53,6 +56,7 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsAnimationEvidenceTests
           -only-testing:AMLLPlayerTests/AMLLScheduledSpringTests
           -only-testing:AMLLPlayerTests/LyricsBlossomLineEndTests
+          -only-testing:AMLLPlayerTests/LyricsBlossomRunLayoutTests
           -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage
           -resultBundlePath build/Animation-tests.xcresult
           -collect-test-diagnostics never

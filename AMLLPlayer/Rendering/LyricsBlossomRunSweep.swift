@@ -1,7 +1,7 @@
 import Foundation
 
-/// Source-coordinate oracle, deliberately confined to the test target until
-/// source-font/scale samples establish the conversion to native layout points.
+/// Source-coordinate cursor. Native geometry explicitly converts backing pixels
+/// to layout points; source timings and the media clock are never rescaled.
 /// FUN_1402fde90 builds timed cumulative distances; FUN_1402fe1f0 moves a run's
 /// cursor. FUN_14031f940 then constructs one shader from its spatial window.
 struct LyricsBlossomRunSweep {

@@ -67,7 +67,10 @@ struct LyricsBlossomFocusAlpha: Sendable {
     }
 
     mutating func update(focused: Bool, delta: Double, force: Bool) {
-        let brightTarget = focused ? 1.0 : 0.2, darkTarget = focused ? 0.4 : 0.2
+        // Source white stops are 0.85/0.30. The native parent already applies
+        // 0.85 once, so keep the bright mask at 1 and normalize only the dark
+        // stop. HDR receives these same coverage values, never a third draw.
+        let brightTarget = focused ? 1.0 : 0.2, darkTarget = focused ? 0.3 / 0.85 : 0.2
         if force {
             resume(bright: brightTarget, dark: darkTarget)
         } else {

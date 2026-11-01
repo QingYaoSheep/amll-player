@@ -263,6 +263,8 @@ struct AMLLFrameEngine {
         var mainScale = LyricsAnimationSpring(100)
         var mainScaleParameters = AMLLSpringParameters.scale
         var backgroundScale = LyricsAnimationSpring(100)
+        var mainScaleWait: LyricsBlossomScaleWait?
+        var backgroundScaleWait: LyricsBlossomScaleWait?
         var yTransition = AMLLSourceTransition()
         var slideTransition = AMLLSourceTransition(-80)
         var mainScaleTransition = AMLLSourceTransition(100)
@@ -290,6 +292,16 @@ struct AMLLFrameEngine {
         var completedReleaseAt: Double?
         var mainRetirement: AMLLFocusRetirement?
         var backgroundRetirement: AMLLFocusRetirement?
+
+        mutating func advanceScales(delta: Double, endingAt end: Double) {
+            LyricsBlossomScaleWait.advance(&mainScale, pending: &mainScaleWait, delta: delta, endingAt: end)
+            LyricsBlossomScaleWait.advance(&backgroundScale, pending: &backgroundScaleWait, delta: delta, endingAt: end)
+        }
+
+        mutating func targetScales(main: Double, background: Double, at time: Double, delay: Double) {
+            LyricsBlossomScaleWait.retarget(&mainScale, pending: &mainScaleWait, target: main, at: time, delay: delay)
+            LyricsBlossomScaleWait.retarget(&backgroundScale, pending: &backgroundScaleWait, target: background, at: time, delay: delay)
+        }
     }
 
     let document: AMLLDisplayDocument
@@ -394,6 +406,8 @@ struct AMLLFrameEngine {
                 // Parameter changes retain the solver's presented position, velocity,
                 // queued position deadline, lyric clocks and focus/retirement events.
                 let style = environment.animationStyle ?? .amll
+                motions[index].mainScaleWait = nil
+                motions[index].backgroundScaleWait = nil
                 if (self.environment.animationStyle ?? .amll) != style {
                     if style == .appleMusic164 {
                         motions[index].mainLightUp.resume(bright: motions[index].mainAlpha.bright, dark: motions[index].mainAlpha.dark)
@@ -638,7 +652,9 @@ struct AMLLFrameEngine {
         {
             selectVisualFocus(document.groups.indices.contains(timeline.focus) ? timeline.focus : nil, at: frameStart)
         }
-        if dirty || layout || singingLayout || changedInterlude || previousInput?.playing != input.playing {
+        let pendingScale = environment.animationStyle == .appleMusic164
+            && motions.contains { $0.mainScaleWait != nil || $0.backgroundScaleWait != nil }
+        if dirty || layout || singingLayout || changedInterlude || previousInput?.playing != input.playing || pendingScale {
             if oldFocus != timeline.focus || changedInterlude {
                 let interval = timeline.focus > 0 && timeline.focus < document.timings.count
                     ? (document.timings[timeline.focus].startTime - document.timings[timeline.focus - 1].startTime) / 1000 : nil
@@ -652,7 +668,7 @@ struct AMLLFrameEngine {
                 }
             }
             layoutGroups(playing: input.playing, seeking: seeking, frameStart: frameStart,
-                         sourcePosition: input.position)
+                         sourcePosition: input.position, lyricTime: time / 1000)
             dirty = false
         }
         let forceAlpha = seeking || firstFrame || environment.reduceMotion
@@ -666,7 +682,7 @@ struct AMLLFrameEngine {
             }
             guard let nextEvent, nextEvent <= animationTime else { break }
             let boundary = max(appearanceTime, nextEvent)
-            advanceAppearance(delta: boundary - appearanceTime, forceAlpha: forceAlpha)
+            advanceAppearance(delta: boundary - appearanceTime, forceAlpha: forceAlpha, endingAt: boundary)
             for index in motions.indices {
                 if let deadline = motions[index].completedReleaseAt, deadline <= boundary {
                     releaseVisualFocus(in: index, at: boundary, allowEarly: true)
@@ -677,11 +693,11 @@ struct AMLLFrameEngine {
                 pendingVisualFocus = nil
             }
             layoutGroups(playing: input.playing, seeking: false, frameStart: boundary,
-                         sourcePosition: input.position)
+                         sourcePosition: input.position, lyricTime: time / 1000)
             dirty = false
             appearanceTime = boundary
         }
-        advanceAppearance(delta: animationTime - appearanceTime, forceAlpha: forceAlpha)
+        advanceAppearance(delta: animationTime - appearanceTime, forceAlpha: forceAlpha, endingAt: animationTime)
         for index in motions.indices {
             motions[index].y.advance(to: animationTime)
             motions[index].slide.advance(to: animationTime)
@@ -755,6 +771,7 @@ struct AMLLFrameEngine {
             }
             if environment.animationStyle == .appleMusic164 {
                 allSettled = allSettled && motion.mainLightUp.arrived && motion.backgroundLightUp.arrived
+                    && motion.mainScaleWait == nil && motion.backgroundScaleWait == nil
             }
             allSettled = allSettled && (motion.mainRetirement?.arrived ?? true) && (motion.backgroundRetirement?.arrived ?? true)
             if environment.enableSpring || environment.reduceMotion {
@@ -813,12 +830,11 @@ struct AMLLFrameEngine {
         return document.actualLineStarts[line] - document.actualLineEnds[previous]
     }
 
-    private mutating func advanceAppearance(delta elapsed: Double, forceAlpha: Bool) {
+    private mutating func advanceAppearance(delta elapsed: Double, forceAlpha: Bool, endingAt end: Double) {
         guard elapsed > 0 || forceAlpha else { return }
         for index in motions.indices {
             if environment.enableSpring, !environment.reduceMotion {
-                motions[index].mainScale.update(elapsed)
-                motions[index].backgroundScale.update(elapsed)
+                motions[index].advanceScales(delta: elapsed, endingAt: end)
             } else if !environment.reduceMotion {
                 motions[index].yTransition.update(elapsed)
                 motions[index].slideTransition.update(elapsed)
@@ -897,7 +913,7 @@ struct AMLLFrameEngine {
         }
     }
 
-    private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double, sourcePosition: Double) {
+    private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double, sourcePosition: Double, lyricTime: Double) {
         let blossom = environment.animationStyle == .appleMusic164 ? environment.appleMusicAnimation : nil
         for index in motions.indices {
             let preparesBackground = document.groups[index].background != nil && visualFocus == index
@@ -938,6 +954,16 @@ struct AMLLFrameEngine {
             && LyricsBlossomLineSchedule.clearsDelay(wordVersion: blossom?.word ?? 0,
                                                     paused: !playing, hidden: false, advanceSatisfied: false)
         var delay = 0.0, baseDelay = touching || clearsBlossomDelay ? 0 : LyricsBlossomLineSchedule.step
+        // Native selected voices supply real row-end times. The predicate only
+        // clears the scale wait; it cannot seek or force a word to be filled.
+        let selected = motions.indices.filter { motions[$0].mainSinging && selectedSinging?.contains($0) != false }
+        let lastSelectedEnd = selected.last.map { document.actualLineEnds[document.groups[$0].main] }
+        let advanceClearsScale = blossom.map {
+            LyricsBlossomAdvanceState(now: lyricTime,
+                family: $0.selectionFamily,
+                lastSelectedRow: lastSelectedEnd.map { .init(time18: $0) },
+                paused: !playing, hidden: false, scrubbing: browsing).satisfied
+        } ?? false
         let nonDynamic = !document.lines.contains { $0.precision == .word }
         var revisedPositions = false
         for index in motions.indices {
@@ -996,6 +1022,13 @@ struct AMLLFrameEngine {
             // follows the same spring as Return to Current. Only initial layout
             // and the existing accessibility variant position immediately.
             let immediate = firstFrame || environment.reduceMotion
+            let scaleDelay: Double = if let blossom, !seeking, !browsing,
+                !LyricsBlossomLineSchedule.clearsDelay(wordVersion: blossom.word, paused: !playing,
+                    hidden: false, advanceSatisfied: advanceClearsScale) {
+                blossom.selectionFamily == 3
+                    ? LyricsBlossomLineSchedule.multiLineDelay(rank: selected.firstIndex(of: index) ?? 0)
+                    : Double(max(0, index - (selected.last ?? timeline.focus) - 1)) * LyricsBlossomLineSchedule.step
+            } else { 0 }
             if environment.animationStyle == .appleMusic164 {
                 let parameters = LyricsAnimationMotion(style: .appleMusic164, options: blossom).mainScale(focused: focused)
                 if motions[index].mainScaleParameters != parameters {
@@ -1019,6 +1052,8 @@ struct AMLLFrameEngine {
                 motions[index].slideTransition.setPosition(slide)
             }
             if immediate {
+                motions[index].mainScaleWait = nil
+                motions[index].backgroundScaleWait = nil
                 motions[index].mainScale.setPosition(mainScale)
                 motions[index].backgroundScale.setPosition(bgScale)
                 motions[index].mainScaleTransition.setPosition(mainScale)
@@ -1026,6 +1061,8 @@ struct AMLLFrameEngine {
                 motions[index].opacityTransition.setPosition(motions[index].opacity)
                 motions[index].blurTransition.setPosition(blur)
             } else if !environment.enableSpring {
+                motions[index].mainScaleWait = nil
+                motions[index].backgroundScaleWait = nil
                 if !immediatePosition {
                     motions[index].yTransition.setTarget(y)
                     motions[index].slideTransition.setTarget(slide)
@@ -1046,13 +1083,9 @@ struct AMLLFrameEngine {
                     // The local background reveal shares the focus event; do not queue a second stagger.
                     motions[index].slide.setTarget(slide, startTime: frameStart, at: frameStart, revision: positionRevision)
                 }
-                // DomLyricLine.setTransform deliberately does not delay its scale spring.
-                if motions[index].mainScale.target != mainScale {
-                    motions[index].mainScale.setTarget(mainScale)
-                }
-                if motions[index].backgroundScale.target != bgScale {
-                    motions[index].backgroundScale.setTarget(bgScale)
-                }
+                // AMLL still uses zero scale delay. Blossom's 50ms scheduler
+                // belongs to this transform channel, independently of native Y.
+                motions[index].targetScales(main: mainScale, background: bgScale, at: frameStart, delay: scaleDelay)
                 motions[index].yTransition.setPosition(y)
                 motions[index].slideTransition.setPosition(slide)
                 motions[index].mainScaleTransition.setPosition(mainScale)

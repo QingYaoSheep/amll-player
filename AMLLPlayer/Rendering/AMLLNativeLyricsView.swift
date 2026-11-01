@@ -993,7 +993,7 @@ private final class AMLLCompositeRow: UIView {
                        row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool)
     {
         original.updateVisuals(renderer: renderer, gain: gain, row: row,
-                               configuration: configuration, motionEnabled: motionEnabled)
+                               configuration: configuration, motionEnabled: motionEnabled, lyricTime: lyricTime)
         alignedRomanization?.update(row: row, lyricTime: lyricTime, configuration: configuration)
         guard let cue = romanizationCue, let romanization else { return }
         var independent = row
@@ -1012,7 +1012,7 @@ private final class AMLLCompositeRow: UIView {
         // The pronunciation has its own TTML masks. Original-word emphasis
         // and HDR must not be applied to this independent SDR text row.
         romanization.updateVisuals(renderer: nil, gain: 1, row: independent,
-                                   configuration: auxiliaryConfiguration, motionEnabled: false)
+                                   configuration: auxiliaryConfiguration, motionEnabled: false, lyricTime: lyricTime)
     }
 
 }
@@ -1054,6 +1054,9 @@ private final class AMLLNativeRow: UIView {
     private var characters: [CharacterPiece] = []
     private var rubyPieces: [RubyPiece] = []
     private let maskWords: [AMLLWordMask.Word]
+    private let blossomLayout: LyricsBlossomRunLayout
+    private var blossomSample: LyricsBlossomRunLayout.Sample?
+    private var blossomTime: Double?
     private let sharpImage: UIImage
     private let sharpRubyImage: UIImage
     private let sharpAuxiliaryImage: UIImage
@@ -1070,6 +1073,16 @@ private final class AMLLNativeRow: UIView {
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat,
          hideRomanization: Bool = false, prepared: AMLLPreparedRowImages? = nil) {
         self.line = line; textLayout = layout
+        blossomLayout = LyricsBlossomRunLayout(text: layout.sourceAtoms.map(\.word.text).joined(),
+            pieces: layout.characterFragments.compactMap { fragment in
+                guard layout.sourceAtoms.indices.contains(fragment.wordIndex) else { return nil }
+                let owner = layout.sourceAtoms[fragment.wordIndex].sourceWordIndex
+                guard line.words.indices.contains(owner) else { return nil }
+                let source = line.words[owner]
+                return .init(range: fragment.range, width: fragment.rect.width,
+                             start: source.start, end: source.end)
+            }, pixelsPerPoint: scale,
+            fragmentRanges: layout.fragments.map(\.range) + layout.characterFragments.map(\.range))
         let indexes = layout.maskWords.indices.filter { layout.maskWords[$0].width > 0 }
         maskWords = indexes.map { layout.maskWords[$0] }
         let maskIndexByWord = Dictionary(uniqueKeysWithValues: indexes.enumerated().map { ($0.element, $0.offset) })
@@ -1244,7 +1257,7 @@ private final class AMLLNativeRow: UIView {
     }
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row,
-                       configuration: LyricsRenderConfiguration, motionEnabled: Bool)
+                       configuration: LyricsRenderConfiguration, motionEnabled: Bool, lyricTime: Double)
     {
         // Dragging changes the parent position, not every word's mask.
         // A completed Metal drawable remains the row's current output until
@@ -1259,7 +1272,15 @@ private final class AMLLNativeRow: UIView {
             settled.advance(min(visual.wordClock.time, visual.wordClock.reverseElapsed), playing: false)
             visual.wordClock = settled
         }
-        guard visual != lastVisualRow || configuration != lastVisualConfiguration
+        let runTime: Double? = configuration.animationStyle == .appleMusic164 && line.precision == .word
+            ? lyricTime + ((configuration.appleMusicAnimation ?? .init()).selectionFamily == 3 ? 0.1 : 0) : nil
+        let runChanged = runTime != blossomTime || configuration.gradientWidth != lastVisualConfiguration?.gradientWidth
+        if runChanged {
+            blossomTime = runTime
+            blossomSample = runTime.map { blossomLayout.sample(time: $0,
+                featherMultiplier: configuration.gradientWidth / AMLLMotionMetrics.wordFadeWidthInEms) }
+        }
+        guard runChanged || visual != lastVisualRow || configuration != lastVisualConfiguration
             || motionEnabled != lastVisualMotion || gain != lastVisualGain else { return }
         lastVisualRow = visual
         lastVisualConfiguration = configuration
@@ -1270,6 +1291,21 @@ private final class AMLLNativeRow: UIView {
         let hdrSubmitted = applyHDR(renderer: renderer, gain: gain, row: row, configuration: configuration)
         needsHDRRetry = gain > 1 && renderer != nil && !hdrSubmitted
         if needsHDRRetry { lastVisualRow = nil }
+    }
+
+    /// One geometry calculation feeds both the SDR gradient and HDR coverage.
+    /// Unsupported/untimed mappings retain the established AMLL fallback.
+    private func fillWindow(range: NSRange, width: Double, maskIndex: Int, advance: Double,
+                            row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration) -> (edge: Double, feather: Double) {
+        if configuration.animationStyle == .appleMusic164, let blossomSample,
+           let edge = blossomLayout.edge(for: range, sample: blossomSample) {
+            return (edge, blossomSample.feather)
+        }
+        let feather = textLayout.font.lineHeight * configuration.gradientWidth
+        let edge = row.fillComplete ? width + feather
+            : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: maskIndex,
+                                words: maskWords, feather: feather) - advance
+        return (edge, feather)
     }
 
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
@@ -1340,12 +1376,8 @@ private final class AMLLNativeRow: UIView {
             let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: entry.fragment.word.end - entry.fragment.word.start,
                                                           isBackground: line.isBackground)
             entry.layer.setAffineTransform(CGAffineTransform(translationX: 0, y: motionEnabled ? float * textLayout.font.pointSize : 0))
-            let feather = textLayout.font.lineHeight * configuration.gradientWidth
-            // Original mask WAAPI animations advance independently between enable/seek
-            // events, pause with playback and retain their current time on disable.
-            let edge = row.fillComplete ? entry.fragment.rect.width + feather
-                : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
-                                    words: maskWords, feather: feather) - entry.advance
+            let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
+                maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
             entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
@@ -1381,10 +1413,8 @@ private final class AMLLNativeRow: UIView {
             entry.layer.shadowRadius = CGFloat((presentation?.glowRadius ?? 0) * emphasisWeight) * textLayout.font.pointSize
             entry.layer.shadowOpacity = Float((presentation?.glowOpacity ?? 0) * emphasisWeight)
             entry.layer.shadowOffset = .zero
-            let feather = textLayout.font.lineHeight * configuration.gradientWidth
-            let edge = row.fillComplete ? entry.fragment.rect.width + feather
-                : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
-                                    words: maskWords, feather: feather) - entry.advance
+            let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
+                maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
             entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
@@ -1412,7 +1442,6 @@ private final class AMLLNativeRow: UIView {
             }
         }
         guard let hdrRow else { return false }
-        let feather = textLayout.font.lineHeight * configuration.gradientWidth
         var pieces: [LyricsHDRRow.Piece] = []
         if !base.isHidden {
             let opacity = words.isEmpty ? (row.retirement != nil ? row.brightAlpha : (row.active || row.visualFocus == .holding ? 1.0 : row.darkAlpha)) : row.darkAlpha
@@ -1420,17 +1449,15 @@ private final class AMLLNativeRow: UIView {
                                 feather: 0, dark: opacity, bright: opacity))
         } else {
             for entry in words where !entry.layer.isHidden {
-                let edge = row.fillComplete ? entry.fragment.rect.width + feather
-                    : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
-                                        words: maskWords, feather: feather) - entry.advance
+                let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
+                    maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
                 pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
                                     rtl: entry.fragment.rtl, edge: edge, feather: feather,
                                     dark: row.darkAlpha, bright: row.brightAlpha))
             }
             for entry in characters {
-                let edge = row.fillComplete ? entry.fragment.rect.width + feather
-                    : AMLLWordMask.edge(time: line.start + row.wordClock.time, index: entry.maskIndex,
-                                        words: maskWords, feather: feather) - entry.advance
+                let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
+                    maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
                 pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
                                     rtl: entry.fragment.rtl, edge: edge, feather: feather,
                                     dark: row.darkAlpha, bright: row.brightAlpha,

@@ -99,6 +99,14 @@ struct LyricsBlossomAnimationOptions: Codable, Equatable, Sendable {
         set { maximum = newValue > 2 ? 1 : 0 }
     }
     var limitsSelection: Bool { selection != 2 }
+    /// FUN_140323270 consumes stored values, not menu order.
+    var selectionFamily: Int {
+        switch selection {
+        case 3: 3
+        case 1, 2: 2
+        default: 0
+        }
+    }
 
     /// FUN_1402fb4f0 initializes a 0.25s release for the newer emphasis family;
     /// FUN_1402fc010 multiplies scale/offset residuals by remaining/new duration.

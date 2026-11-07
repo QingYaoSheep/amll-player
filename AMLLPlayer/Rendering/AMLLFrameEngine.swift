@@ -1113,11 +1113,6 @@ struct AMLLFrameEngine {
         let blossom = environment.animationStyle == .appleMusic164 ? (environment.appleMusicAnimation ?? .init()) : nil
         let sourceSelection = blossomSchedule.map { Set($0.selected) }
         for index in motions.indices {
-            let oldVisual = motions[index].visualActive
-            let oldY = motions[index].y.target
-            let oldScale = motions[index].mainScaleWait?.target ?? motions[index].mainScale.target
-            let oldBackgroundScale = motions[index].backgroundScaleWait?.target ?? motions[index].backgroundScale.target
-            let oldOpacity = motions[index].opacityTransition.target
             let preparesBackground = document.groups[index].background != nil && visualFocus == index
                 && !browsing && !motions[index].backgroundCompleted && motions[index].backgroundRetirement == nil
                 && (blossom == nil || blossom?.background == 1)
@@ -1164,6 +1159,11 @@ struct AMLLFrameEngine {
         let nonDynamic = !document.lines.contains { $0.precision == .word }
         var revisedPositions = false
         for index in motions.indices {
+            let oldVisual = motions[index].visualActive
+            let oldY = motions[index].y.target
+            let oldScale = motions[index].mainScaleWait?.target ?? motions[index].mainScale.target
+            let oldBackgroundScale = motions[index].backgroundScaleWait?.target ?? motions[index].backgroundScale.target
+            let oldOpacity = motions[index].opacityTransition.target
             if clearsBlossomDelay {
                 if motions[index].y.clearPendingDelay(at: frameStart) {
                     if pendingVisualFocus?.index == index { pendingVisualFocus?.startTime = frameStart }

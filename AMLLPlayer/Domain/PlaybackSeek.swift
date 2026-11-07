@@ -39,6 +39,7 @@ struct LyricsPlaybackFrame: Sendable {
     var pending: PlaybackSeekRequest?
     var confirmation: PlaybackSeekConfirmation?
     var legacySeekPosition: Double?
+    var progressDraft: Double? = nil
 }
 
 enum PlaybackSeekError: Error, LocalizedError {

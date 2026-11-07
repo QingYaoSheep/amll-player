@@ -13,6 +13,11 @@ struct AMLLSourceTimeline: Sendable {
     private(set) var time = 0.0
 
     @discardableResult
+    mutating func selectFocus(_ index: Int) -> Bool {
+        guard focus != index else { return false }; focus = index; return true
+    }
+
+    @discardableResult
     mutating func update(time: Double, groups: [AMLLGroupTiming], seeking: Bool, hasBottomContent: Bool) -> Bool {
         guard time.isFinite else { return false }
         let nextHot = Set(groups.indices.filter { groups[$0].startTime <= time && time < groups[$0].endTime })

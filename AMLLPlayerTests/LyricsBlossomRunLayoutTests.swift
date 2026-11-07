@@ -6,7 +6,7 @@ final class LyricsBlossomRunLayoutTests: XCTestCase {
         let model = LyricsBlossomRunLayout(text: "talking L-O-V-E", pieces: [
             .init(range: NSRange(location: 0, length: 3), width: 30, start: 1, end: 2),
             .init(range: NSRange(location: 3, length: 4), width: 40, start: 2, end: 3),
-            .init(range: NSRange(location: 8, length: 7), width: 70, start: 4, end: 5),
+            .init(range: NSRange(location: 8, length: 7), width: 70, start: 4, end: 5, group: 1),
         ], pixelsPerPoint: 1)
         XCTAssertEqual(model.recordCount, 2)
         let sample = model.sample(time: 1.5)
@@ -23,9 +23,9 @@ final class LyricsBlossomRunLayoutTests: XCTestCase {
             ], pixelsPerPoint: scale)
             let sample = model.sample(time: 1)
             XCTAssertEqual(sample.feather * scale, 30, accuracy: 0.0001)
-            // Final target=130, duration=2.6: at 1s cursor=50; window starts at18.
+            // Native exact-time reconstruction: target at 1s =65; window starts at33.
             XCTAssertEqual(model.edge(for: NSRange(location: 0, length: 4), sample: sample)! * scale,
-                           18, accuracy: 0.0001)
+                           33, accuracy: 0.0001)
         }
     }
 
@@ -49,8 +49,8 @@ final class LyricsBlossomRunLayoutTests: XCTestCase {
         let text = "你好吗\u{00a0}مرحبا\t🙂"
         let ns = text as NSString
         let ranges = [ns.range(of: "你好吗"), ns.range(of: "مرحبا"), ns.range(of: "🙂")]
-        let model = LyricsBlossomRunLayout(text: text, pieces: ranges.map {
-            .init(range: $0, width: 60, start: 2, end: 4)
+        let model = LyricsBlossomRunLayout(text: text, pieces: ranges.enumerated().map { index, range in
+            .init(range: range, width: 60, start: 2, end: 4, group: index)
         }, pixelsPerPoint: 1)
         XCTAssertEqual(model.recordCount, 3)
         for range in ranges {
@@ -63,7 +63,7 @@ final class LyricsBlossomRunLayoutTests: XCTestCase {
     func testFragmentCannotBorrowAnotherRecordsClock() {
         let model = LyricsBlossomRunLayout(text: "a b", pieces: [
             .init(range: NSRange(location: 0, length: 1), width: 10, start: 0, end: 1),
-            .init(range: NSRange(location: 2, length: 1), width: 10, start: 4, end: 5),
+            .init(range: NSRange(location: 2, length: 1), width: 10, start: 4, end: 5, group: 1),
         ], pixelsPerPoint: 1, fragmentRanges: [NSRange(location: 0, length: 3)])
         XCTAssertNil(model.edge(for: NSRange(location: 0, length: 3), sample: model.sample(time: 2)))
     }

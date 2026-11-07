@@ -474,6 +474,8 @@ final class AMLLNativeCanvas: UIView {
     private func applyPlaybackFrame(_ frame: LyricsPlaybackFrame) {
         if input.playing != frame.playing || input.seekRevision != frame.seekRevision
             || input.awaitingSeekConfirmation != (frame.pending != nil) { needsFrame = true }
+        if input.progressDraft != frame.progressDraft { needsFrame = true }
+        input.progressDraft = frame.progressDraft
         input.position = frame.position; input.playing = frame.playing
         input.seekRevision = frame.seekRevision; input.seekPosition = frame.legacySeekPosition
         input.awaitingSeekConfirmation = frame.pending != nil; input.playbackSnapshot = frame.snapshot
@@ -587,7 +589,7 @@ final class AMLLNativeCanvas: UIView {
             view.setCanSeek(canSeek)
             let gain = hdr.brightness(for: row)
             view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
-                               gain: gain, lyricTime: state.lyricTime,
+                               gain: gain, lyricTime: state.lyricTime, runStore: engine!.runStore,
                                row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
             if view.needsHDRRetry { needsFrame = true }
             #if DEBUG
@@ -869,7 +871,7 @@ final class AMLLNativeCanvas: UIView {
         let sample = playbackFrame?()
         if let sample { applyPlaybackFrame(sample) }
         if playbackReanchorRequired { needsFrame = true }
-        if !input.playing, !needsFrame, frameState?.settled == true, frameState?.browsing == false {
+        if input.progressDraft == nil, !input.playing, !needsFrame, frameState?.settled == true, frameState?.browsing == false {
             let wantsEDR = configuration.hdr?.enabled == true && !reduceTransparency
             if !wantsEDR || start - lastHeadroomCheck < 0.25 {
                 lastTick = link.timestamp
@@ -989,11 +991,11 @@ private final class AMLLCompositeRow: UIView {
         alignedRomanization?.setCanSeek(value)
     }
 
-    func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, lyricTime: Double,
+    func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, lyricTime: Double, runStore: LyricsBlossomRunStore,
                        row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool)
     {
         original.updateVisuals(renderer: renderer, gain: gain, row: row,
-                               configuration: configuration, motionEnabled: motionEnabled, lyricTime: lyricTime)
+                               configuration: configuration, motionEnabled: motionEnabled, lyricTime: lyricTime, runStore: runStore, runKey: "main:\(row.lineIndex)")
         alignedRomanization?.update(row: row, lyricTime: lyricTime, configuration: configuration)
         guard let cue = romanizationCue, let romanization else { return }
         var independent = row
@@ -1012,7 +1014,7 @@ private final class AMLLCompositeRow: UIView {
         // The pronunciation has its own TTML masks. Original-word emphasis
         // and HDR must not be applied to this independent SDR text row.
         romanization.updateVisuals(renderer: nil, gain: 1, row: independent,
-                                   configuration: auxiliaryConfiguration, motionEnabled: false, lyricTime: lyricTime)
+                                   configuration: auxiliaryConfiguration, motionEnabled: false, lyricTime: lyricTime, runStore: runStore, runKey: "roman:\(row.lineIndex)")
     }
 
 }
@@ -1056,7 +1058,7 @@ private final class AMLLNativeRow: UIView {
     private let maskWords: [AMLLWordMask.Word]
     private let blossomLayout: LyricsBlossomRunLayout
     private var blossomSample: LyricsBlossomRunLayout.Sample?
-    private var blossomTime: Double?
+
     private let sharpImage: UIImage
     private let sharpRubyImage: UIImage
     private let sharpAuxiliaryImage: UIImage
@@ -1073,16 +1075,35 @@ private final class AMLLNativeRow: UIView {
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat,
          hideRomanization: Bool = false, prepared: AMLLPreparedRowImages? = nil) {
         self.line = line; textLayout = layout
+        let sortedFragments = layout.fragments.sorted { $0.range.location < $1.range.location }
+        var group = -1
+        var previousY: CGFloat?
+        var previousRTL: Bool?
+        var groupForRange: [NSRange: Int] = [:]
+        var pieces: [LyricsBlossomRunLayout.Piece] = []
+        for fragment in sortedFragments {
+            if previousY != fragment.rect.minY || previousRTL != fragment.rtl { group += 1 }
+            previousY = fragment.rect.minY; previousRTL = fragment.rtl
+            // Native RTL source-to-visual association needs a separate shaped
+            // distance mapping; retain the established mask until available.
+            guard !fragment.rtl, layout.sourceAtoms.indices.contains(fragment.wordIndex) else { continue }
+            let owner = layout.sourceAtoms[fragment.wordIndex].sourceWordIndex
+            guard line.words.indices.contains(owner) else { continue }
+            let source = line.words[owner]
+            groupForRange[fragment.range] = group
+            pieces.append(.init(range: fragment.range, width: fragment.rect.width,
+                start: source.start, end: source.end, group: group, source: owner, origin: fragment.rect.minX))
+        }
+        let spans = layout.fragments.map { ($0.range, $0.rect.minX) }
+            + layout.characterFragments.map { ($0.range, $0.rect.minX) }
+        let placements: [LyricsBlossomRunLayout.Placement] = spans.compactMap { range, x in
+            guard let parent = sortedFragments.first(where: {
+                $0.range.location <= range.location && NSMaxRange(range) <= NSMaxRange($0.range)
+            }), let group = groupForRange[parent.range] else { return nil }
+            return .init(range: range, group: group, origin: x)
+        }
         blossomLayout = LyricsBlossomRunLayout(text: layout.sourceAtoms.map(\.word.text).joined(),
-            pieces: layout.characterFragments.compactMap { fragment in
-                guard layout.sourceAtoms.indices.contains(fragment.wordIndex) else { return nil }
-                let owner = layout.sourceAtoms[fragment.wordIndex].sourceWordIndex
-                guard line.words.indices.contains(owner) else { return nil }
-                let source = line.words[owner]
-                return .init(range: fragment.range, width: fragment.rect.width,
-                             start: source.start, end: source.end)
-            }, pixelsPerPoint: scale,
-            fragmentRanges: layout.fragments.map(\.range) + layout.characterFragments.map(\.range))
+            pieces: pieces, pixelsPerPoint: scale, fragments: placements)
         let indexes = layout.maskWords.indices.filter { layout.maskWords[$0].width > 0 }
         maskWords = indexes.map { layout.maskWords[$0] }
         let maskIndexByWord = Dictionary(uniqueKeysWithValues: indexes.enumerated().map { ($0.element, $0.offset) })
@@ -1257,7 +1278,7 @@ private final class AMLLNativeRow: UIView {
     }
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row,
-                       configuration: LyricsRenderConfiguration, motionEnabled: Bool, lyricTime: Double)
+                       configuration: LyricsRenderConfiguration, motionEnabled: Bool, lyricTime: Double, runStore: LyricsBlossomRunStore, runKey: String)
     {
         // Dragging changes the parent position, not every word's mask.
         // A completed Metal drawable remains the row's current output until
@@ -1272,14 +1293,10 @@ private final class AMLLNativeRow: UIView {
             settled.advance(min(visual.wordClock.time, visual.wordClock.reverseElapsed), playing: false)
             visual.wordClock = settled
         }
-        let runTime: Double? = configuration.animationStyle == .appleMusic164 && line.precision == .word
-            ? lyricTime + ((configuration.appleMusicAnimation ?? .init()).selectionFamily == 3 ? 0.1 : 0) : nil
-        let runChanged = runTime != blossomTime || configuration.gradientWidth != lastVisualConfiguration?.gradientWidth
-        if runChanged {
-            blossomTime = runTime
-            blossomSample = runTime.map { blossomLayout.sample(time: $0,
-                featherMultiplier: configuration.gradientWidth / AMLLMotionMetrics.wordFadeWidthInEms) }
-        }
+        let nextSample: LyricsBlossomRunLayout.Sample? = configuration.animationStyle == .appleMusic164 && line.precision == .word
+            ? runStore.sample(key: runKey, row: row.lineIndex, layout: blossomLayout) : nil
+        let runChanged = nextSample != blossomSample
+        blossomSample = nextSample
         guard runChanged || visual != lastVisualRow || configuration != lastVisualConfiguration
             || motionEnabled != lastVisualMotion || gain != lastVisualGain else { return }
         lastVisualRow = visual

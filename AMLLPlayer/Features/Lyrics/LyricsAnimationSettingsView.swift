@@ -76,6 +76,7 @@ struct LyricsAnimationSettingsView: View {
                     .accessibilityIdentifier("animationStyleScale")
                 Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines)
                 Toggle("render.marquee", isOn: $preferences.configuration.marquee)
+                if preferences.configuration.animationStyle != .appleMusic164 {
                 LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
                 Slider(value: $preferences.configuration.gradientWidth, in: 0 ... 1, step: 0.05)
                     .accessibilityLabel(Text("render.gradientWidth"))
@@ -83,6 +84,7 @@ struct LyricsAnimationSettingsView: View {
                 Slider(value: $preferences.configuration.advance, in: 0 ... 1, step: 0.1)
                     .accessibilityLabel(Text("render.advance"))
                 Text("render.advanceHelp").font(.footnote).foregroundStyle(.secondary)
+                }
             }
             Section {
                 LabeledContent("render.anchor", value: String(format: "%.0f%%", preferences.configuration.anchor * 100))
@@ -96,7 +98,7 @@ struct LyricsAnimationSettingsView: View {
                     .accessibilityIdentifier("resetLyricsAnimationStyle")
             }
             Section("风格来源") {
-                Text("基于 LyricsBlossom 的已核实歌词弹簧参数适配行滚动与缩放；逐字强调、亮度和模糊等未确认部分沿用 AMLL。不代表 Apple Music 官方实现。")
+                Text("基于 LyricsBlossom 的布局组游标与版本化行调度适配；部分选择分支仍使用原生兼容行为。提前选择和渐变窗口由风格管理。不代表 Apple Music 官方实现。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }

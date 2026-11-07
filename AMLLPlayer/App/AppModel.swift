@@ -46,6 +46,14 @@ final class AppModel {
     private(set) var playbackSnapshot: PlaybackSnapshot?
     /// Monotonic lyric-time anchor revision. Renderer input uses this instead
     /// of guessing a seek from a normal playback snapshot correction.
+    @ObservationIgnored private var lyricsProgressDraft: (track: String, time: Double)?
+    func previewLyricsProgress(_ time: Double?, track: String?) {
+        guard let time, time.isFinite, let track, track == playbackSnapshot?.item?.uri else {
+            lyricsProgressDraft = nil; return
+        }
+        lyricsProgressDraft = (track, max(0, time))
+    }
+
     private(set) var lyricsSeekRevision = 0
     /// Requested Spotify position, kept separate from the asynchronously reported progress.
     private(set) var lyricsSeekPosition: TimeInterval?
@@ -468,7 +476,8 @@ final class AppModel {
         LyricsPlaybackFrame(snapshot: playbackSnapshot, position: progress(at: uptime),
                             playing: pendingLyricsSeek == nil && playbackSnapshot?.isPlaying == true,
                             seekRevision: lyricsSeekRevision, pending: pendingLyricsSeek ?? playbackSnapshot?.seekRequest,
-                            confirmation: pendingLyricsSeek == nil ? lastLyricsSeekConfirmation : nil, legacySeekPosition: lyricsSeekPosition)
+                            confirmation: pendingLyricsSeek == nil ? lastLyricsSeekConfirmation : nil, legacySeekPosition: lyricsSeekPosition,
+                            progressDraft: lyricsProgressDraft?.track == playbackSnapshot?.item?.uri ? lyricsProgressDraft?.time : nil)
     }
 
     func selectMusicService(_ service: MusicServiceID) {

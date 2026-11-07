@@ -347,14 +347,16 @@ struct LyricsProgressControl: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.25, paused: !snapshot.isPlaying || scenePhase != .active)) { _ in
             VStack(spacing: 0) {
-                LyricsCapsuleSlider(value: Binding(get: { editing ? draft : model.progress() }, set: { draft = $0 }), maximum: max(1, snapshot.duration)) { value in
+                LyricsCapsuleSlider(value: Binding(get: { editing ? draft : model.progress() }, set: { draft = $0; if editing { model.previewLyricsProgress($0, track: editingTrackURI) } }), maximum: max(1, snapshot.duration)) { value in
                     if value {
                         draft = model.progress(); editingTrackURI = snapshot.item?.uri; editing = true
+                        model.previewLyricsProgress(draft, track: editingTrackURI)
                     } else {
                         guard editing, let track = editingTrackURI, track == snapshot.item?.uri else {
-                            editing = false; editingTrackURI = nil; return
+                            editing = false; editingTrackURI = nil; model.previewLyricsProgress(nil, track: nil); return
                         }
                         let target = draft
+                        model.previewLyricsProgress(nil, track: nil)
                         editing = false; editingTrackURI = nil
                         Task { await model.seek(to: target, entry: .progress, trackURI: track) }
                     }
@@ -375,7 +377,9 @@ struct LyricsProgressControl: View {
                 .font(.caption.monospacedDigit()).opacity(0.7)
             }
         }
-        .onChange(of: snapshot.item?.uri) { editing = false; editingTrackURI = nil; draft = 0 }
+        .onChange(of: snapshot.item?.uri) { editing = false; editingTrackURI = nil; draft = 0; model.previewLyricsProgress(nil, track: nil) }
+        .onDisappear { model.previewLyricsProgress(nil, track: nil) }
+        .onChange(of: scenePhase) { if scenePhase != .active { editing = false; editingTrackURI = nil; model.previewLyricsProgress(nil, track: nil) } }
     }
 
     private func time(_ seconds: Double) -> String {

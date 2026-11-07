@@ -53,6 +53,7 @@ struct AMLLPlayerInput: Sendable {
     var seekRevision = 0
     /// The requested position can precede the authoritative Spotify clock update.
     var seekPosition: Double?
+    var progressDraft: Double? = nil
     var seeking = false
     var awaitingSeekConfirmation = false
     var document: LyricsDocument?
@@ -225,17 +226,19 @@ struct AMLLFrameState: Codable, Sendable {
     var settled: Bool
     var background = Background()
     var controls = Controls()
+    var blossomDiagnostics: String? = nil
     var transitionProgress = 1.0
 
     private enum CodingKeys: String, CodingKey {
-        case lyricTime, animationTime, focusGroup, rows, interlude, browsing, settled, background, controls, transitionProgress
+        case lyricTime, animationTime, focusGroup, rows, interlude, browsing, settled, background, controls, blossomDiagnostics, transitionProgress
     }
 
     init(lyricTime: Double, animationTime: Double, focusGroup: Int, rows: [Row], interlude: Interlude?, browsing: Bool,
-         settled: Bool, background: Background = .init(), controls: Controls = .init(), transitionProgress: Double = 1)
+         settled: Bool, background: Background = .init(), controls: Controls = .init(), blossomDiagnostics: String? = nil, transitionProgress: Double = 1)
     {
         self.lyricTime = lyricTime; self.animationTime = animationTime; self.focusGroup = focusGroup
         self.rows = rows; self.interlude = interlude; self.browsing = browsing; self.settled = settled
+        self.blossomDiagnostics = blossomDiagnostics
         self.background = background; self.controls = controls; self.transitionProgress = transitionProgress
     }
 
@@ -250,6 +253,7 @@ struct AMLLFrameState: Codable, Sendable {
         settled = try values.decode(Bool.self, forKey: .settled)
         background = try values.decodeIfPresent(Background.self, forKey: .background) ?? .init()
         controls = try values.decodeIfPresent(Controls.self, forKey: .controls) ?? .init()
+        blossomDiagnostics = try values.decodeIfPresent(String.self, forKey: .blossomDiagnostics)
         transitionProgress = try values.decodeIfPresent(Double.self, forKey: .transitionProgress) ?? 1
     }
 }
@@ -257,6 +261,10 @@ struct AMLLFrameState: Codable, Sendable {
 /// Deterministic native host for the pinned timeline/group/layout/scroll algorithms.
 /// It owns one spring per group/transform, independent of visibility and view recycling.
 struct AMLLFrameEngine {
+    let runStore = LyricsBlossomRunStore()
+    private var blossomRecords: [LyricsBlossomSelectionSchedule.Record] = []
+    private(set) var blossomSchedule: LyricsBlossomSelectionSchedule.Output?
+
     private struct GroupMotion {
         var y = AMLLScheduledSpring()
         var slide = AMLLScheduledSpring(-80)
@@ -348,6 +356,10 @@ struct AMLLFrameEngine {
 
     init(document: AMLLDisplayDocument, environment: AMLLRenderEnvironment, heights: [Double]) {
         self.document = document
+        blossomRecords = document.groups.enumerated().map { index, group in
+            LyricsBlossomSelectionSchedule.Record(index: index, start: document.actualLineStarts[group.main],
+                  end: document.actualLineEnds[group.main], lastWordEnd: document.actualLineEnds[group.main])
+        }.sorted { $0.start == $1.start ? $0.index < $1.index : $0.start < $1.start }
         self.environment = environment
         self.heights = heights
         motions = document.groups.map { group in
@@ -371,6 +383,8 @@ struct AMLLFrameEngine {
 
     mutating func resize(environment: AMLLRenderEnvironment, heights: [Double]) {
         guard self.environment != environment || self.heights != heights else { return }
+        if self.environment.animationStyle != environment.animationStyle
+            || self.environment.appleMusicAnimation != environment.appleMusicAnimation { runStore.reset() }
         if self.environment.enableSpring != environment.enableSpring,
            !self.environment.reduceMotion, !environment.reduceMotion {
             for index in motions.indices {
@@ -536,8 +550,21 @@ struct AMLLFrameEngine {
             handle(.resumeFollowing)
         }
         let oldFocus = timeline.focus
-        let layout = timeline.update(time: time + environment.advance * 1000,
-                                     groups: document.timings, seeking: seeking, hasBottomContent: false)
+        let appleStyle = environment.animationStyle == .appleMusic164
+        let options = environment.appleMusicAnimation ?? .init()
+        let selectionRecords = blossomRecords
+        var layout = timeline.update(time: time + (appleStyle ? 0 : environment.advance * 1000),
+                                     groups: appleStyle ? document.singingTimings : document.timings,
+                                     seeking: seeking, hasBottomContent: false)
+        if appleStyle {
+            let fallback = selectionRecords.filter { $0.start <= time / 1000 && time / 1000 < $0.end }.map(\.index)
+            let schedule = LyricsBlossomSelectionSchedule().evaluate(now: time / 1000,
+                family: options.selectionFamily, records: selectionRecords, fallback: fallback,
+                capacity: options.limitsSelection ? options.maximumLines : max(1, document.groups.count),
+                playing: input.playing, scrubbing: input.progressDraft != nil)
+            blossomSchedule = schedule
+            if let focus = schedule.focusOverride { layout = timeline.selectFocus(focus) || layout }
+        } else { blossomSchedule = nil }
         let singingLayout = singingTimeline.update(time: time, groups: document.singingTimings,
                                                    seeking: seeking, hasBottomContent: false)
         for index in motions.indices {
@@ -579,7 +606,7 @@ struct AMLLFrameEngine {
             if let background = group.background {
                 let backgroundStart = document.actualLineStarts[background]
                 if environment.animationStyle == .appleMusic164 {
-                    let ready = input.playing && time / 1000 + environment.advance >= backgroundStart
+                    let ready = input.playing && time / 1000 >= backgroundStart
                     if ready != motions[index].backgroundReady { dirty = true }
                     motions[index].backgroundReady = ready
                 }
@@ -784,6 +811,16 @@ struct AMLLFrameEngine {
                     && motion.opacityTransition.arrived && motion.blurTransition.arrived
             }
         }
+        if appleStyle {
+            runStore.beginFrame(.init(time: time / 1000, delta: elapsed,
+                playing: input.playing && !input.awaitingSeekConfirmation,
+                revision: timeAnchorRevision, family: options.selectionFamily, offset: input.offset,
+                draftTime: input.progressDraft.map { $0 - input.offset },
+                catchUpRows: Set((blossomSchedule?.catchUp ?? []).flatMap { index -> [Int] in
+                    let group = document.groups[index]
+                    return [group.main] + (group.background.map { [$0] } ?? [])
+                })))
+        } else if previousInput?.configuration?.animationStyle == .appleMusic164 { runStore.reset() }
         firstFrame = false; previousInput = input
         let duration = input.playbackSnapshot?.duration ?? 0
         let progress = duration > 0 ? min(1, max(0, input.position / duration)) : 0
@@ -802,6 +839,7 @@ struct AMLLFrameEngine {
             controls: .init(visible: input.configuration?.showControls ?? false,
                             progress: progress,
                             enabled: input.playbackSnapshot?.restrictions.canSeek ?? false),
+            blossomDiagnostics: blossomSchedule?.diagnostic,
             transitionProgress: 1
         )
     }
@@ -957,13 +995,7 @@ struct AMLLFrameEngine {
         // Native selected voices supply real row-end times. The predicate only
         // clears the scale wait; it cannot seek or force a word to be filled.
         let selected = motions.indices.filter { motions[$0].mainSinging && selectedSinging?.contains($0) != false }
-        let lastSelectedEnd = selected.last.map { document.actualLineEnds[document.groups[$0].main] }
-        let advanceClearsScale = blossom.map {
-            LyricsBlossomAdvanceState(now: lyricTime,
-                family: $0.selectionFamily,
-                lastSelectedRow: lastSelectedEnd.map { .init(time18: $0) },
-                paused: !playing, hidden: false, scrubbing: browsing).satisfied
-        } ?? false
+        let advanceClearsScale = blossomSchedule?.takeover ?? false
         let nonDynamic = !document.lines.contains { $0.precision == .word }
         var revisedPositions = false
         for index in motions.indices {

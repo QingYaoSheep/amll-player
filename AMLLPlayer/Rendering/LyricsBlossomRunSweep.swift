@@ -5,8 +5,7 @@ import Foundation
 /// FUN_1402fde90 builds timed cumulative distances; FUN_1402fe1f0 moves a run's
 /// cursor. FUN_14031f940 then constructs one shader from its spatial window.
 struct LyricsBlossomRunSweep {
-    /// Raw run+0x18...0x34 state. Kept in the reference test target until the
-    /// source layout/row flags and canvas coordinates have a native mapping.
+    /// Raw run state, shared by production and reference tests.
     struct Cursor: Equatable {
         var value: Float = 0
         var from: Float = 0
@@ -27,6 +26,20 @@ struct LyricsBlossomRunSweep {
         private mutating func snap(to target: Float) {
             value = target; from = target; to = target
             elapsed = 0; duration = 1; active = false
+        }
+
+        mutating func catchUp(segments: [Segment]) {
+            guard !suppressed, let last = segments.last else { return }
+            from = value; to = last.distance + 30; elapsed = 0
+            duration = 0.25; active = true; suppressed = true
+        }
+
+        mutating func reconstruct(now: Float, segments: [Segment]) {
+            self = .init()
+            snap(to: LyricsBlossomRunSweep.target(now: now, segments: segments))
+            // Continue from the current presentation, rather than snapping to a
+            // previous segment on the next normal tick.
+            lastIndex = -2
         }
 
         /// FUN_1402fe1f0, including its distinct force/nonforce branches.
@@ -107,7 +120,7 @@ struct LyricsBlossomRunSweep {
         var width: Float
         var text: String
     }
-    struct Segment {
+    struct Segment: Equatable {
         var start: Float
         var end: Float
         var distance: Float

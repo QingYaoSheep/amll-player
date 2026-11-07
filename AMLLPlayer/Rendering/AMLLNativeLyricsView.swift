@@ -391,6 +391,7 @@ final class AMLLNativeCanvas: UIView {
                                                 fontSize: Double(resolvedPointSize))
         environment.safeArea = safe
         environment.displayScale = Double(screen?.scale ?? 1)
+        environment.recordBlossomDiagnostics = performanceRecordingEnabled
         environment.maximumFPS = screen?.maximumFramesPerSecond ?? 60
         environment.localeIdentifier = Locale.current.identifier
         environment.layoutDirection = direction
@@ -1014,7 +1015,7 @@ private final class AMLLCompositeRow: UIView {
         // The pronunciation has its own TTML masks. Original-word emphasis
         // and HDR must not be applied to this independent SDR text row.
         romanization.updateVisuals(renderer: nil, gain: 1, row: independent,
-                                   configuration: auxiliaryConfiguration, motionEnabled: false, lyricTime: lyricTime, runStore: runStore, runKey: "roman:\(row.lineIndex)")
+                                   configuration: auxiliaryConfiguration, motionEnabled: false, lyricTime: lyricTime, runStore: runStore, runKey: "roman:\(row.lineIndex)", runCatchUp: false)
     }
 
 }
@@ -1278,8 +1279,13 @@ private final class AMLLNativeRow: UIView {
     }
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row,
-                       configuration: LyricsRenderConfiguration, motionEnabled: Bool, lyricTime: Double, runStore: LyricsBlossomRunStore, runKey: String)
+                       configuration originalConfiguration: LyricsRenderConfiguration, motionEnabled: Bool, lyricTime: Double, runStore: LyricsBlossomRunStore, runKey: String, runCatchUp: Bool = true)
     {
+        var configuration = originalConfiguration
+        if configuration.animationStyle == .appleMusic164 {
+            configuration.gradientWidth = AMLLMotionMetrics.wordFadeWidthInEms
+            configuration.advance = 0
+        }
         // Dragging changes the parent position, not every word's mask.
         // A completed Metal drawable remains the row's current output until
         // its coverage, brightness or geometry changes.
@@ -1294,7 +1300,7 @@ private final class AMLLNativeRow: UIView {
             visual.wordClock = settled
         }
         let nextSample: LyricsBlossomRunLayout.Sample? = configuration.animationStyle == .appleMusic164 && line.precision == .word
-            ? runStore.sample(key: runKey, row: row.lineIndex, layout: blossomLayout) : nil
+            ? runStore.sample(key: runKey, row: row.lineIndex, layout: blossomLayout, allowsCatchUp: runCatchUp) : nil
         let runChanged = nextSample != blossomSample
         blossomSample = nextSample
         guard runChanged || visual != lastVisualRow || configuration != lastVisualConfiguration

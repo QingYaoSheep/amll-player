@@ -1,5 +1,12 @@
 # AMLL Player SwiftUI Changelog
 
+## 2026-11-07：Apple Music 布局组游标与版本调度
+
+- Apple Music 风格隐藏并停用提前滚动、渐变宽度调节，保留 AMLL 的原设置。
+- 按原生排版组生成 run，跨组音节按宽度分配时间；游标改为引擎持有，支持进度条指数跟随、偏移重校准及行回收。正文和独立音译的追赶资格分别管理。
+- 普通族采用固定提前选择的原生适配；family 2／3 保留真实时间选择。来源行标志和保持门未映射，接管、0.25 秒追赶及自适应选择开关保持禁用；详见 LyricsBlossom-Mechanism-20261107.md。
+- 新增布局、游标轨迹、拖动、回收及独立音译回归用例。Swift/Xcode 验证未执行：GitHub dispatch 返回 422，消息为 Actions has been disabled for this repository；未生成本次 IPA。
+
 ## 2026-10-31：核实句尾机制与Apple风格暂停调度
 
 - 新增测试目标内的run游标状态机与10项边界回归，补齐force指数跟随、条件resync、末段时长及索引保持。38项定向算法与1项设置页UI测试通过；生产run尚未替换，来源坐标及状态映射限制见 `LyricsBlossom-Run-FSM-20261031.md`。

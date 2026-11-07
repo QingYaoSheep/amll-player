@@ -77,13 +77,13 @@ struct LyricsAnimationSettingsView: View {
                 Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines)
                 Toggle("render.marquee", isOn: $preferences.configuration.marquee)
                 if preferences.configuration.animationStyle != .appleMusic164 {
-                LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
-                Slider(value: $preferences.configuration.gradientWidth, in: 0 ... 1, step: 0.05)
-                    .accessibilityLabel(Text("render.gradientWidth"))
-                LabeledContent("render.advance", value: String(format: "%.1f s", preferences.configuration.advance))
-                Slider(value: $preferences.configuration.advance, in: 0 ... 1, step: 0.1)
-                    .accessibilityLabel(Text("render.advance"))
-                Text("render.advanceHelp").font(.footnote).foregroundStyle(.secondary)
+                    LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
+                    Slider(value: $preferences.configuration.gradientWidth, in: 0 ... 1, step: 0.05)
+                        .accessibilityLabel(Text("render.gradientWidth"))
+                    LabeledContent("render.advance", value: String(format: "%.1f s", preferences.configuration.advance))
+                    Slider(value: $preferences.configuration.advance, in: 0 ... 1, step: 0.1)
+                        .accessibilityLabel(Text("render.advance"))
+                    Text("render.advanceHelp").font(.footnote).foregroundStyle(.secondary)
                 }
             }
             Section {

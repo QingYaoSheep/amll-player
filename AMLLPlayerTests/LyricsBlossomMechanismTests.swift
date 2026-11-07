@@ -141,4 +141,30 @@ final class LyricsBlossomMechanismTests: XCTestCase {
         }
     }
 
+    func testBodyCatchUpCannotAccelerateIndependentRomanization() {
+        let store = LyricsBlossomRunStore(), model = layout()
+        store.beginFrame(.init(time: 0.5, delta: 0, playing: true, revision: 0, family: 0))
+        _ = store.sample(key: "main:0", row: 0, layout: model)
+        _ = store.sample(key: "roman:0", row: 0, layout: model, allowsCatchUp: false)
+        store.beginFrame(.init(time: 0.6, delta: 0.1, playing: true, revision: 0, family: 0, catchUpRows: [0]))
+        store.beginFrame(.init(time: 0.85, delta: 0.25, playing: true, revision: 0, family: 0))
+        let body = store.sample(key: "main:0", row: 0, layout: model)
+        let roman = store.sample(key: "roman:0", row: 0, layout: model, allowsCatchUp: false)
+        XCTAssertGreaterThan(body.starts[0], roman.starts[0])
+    }
+
+    func testOrdinaryEarlyAnchorDoesNotRevertAtOverlappingStart() {
+        let records: [LyricsBlossomSelectionSchedule.Record] = [
+            .init(index: 0, start: 0, end: 3, lastWordEnd: 3),
+            .init(index: 1, start: 2, end: 4, lastWordEnd: 4),
+        ]
+        let scheduler = LyricsBlossomSelectionSchedule()
+        XCTAssertEqual(scheduler.evaluate(now: 1.5, family: 0, records: records, fallback: [0],
+            capacity: 2, playing: true, scrubbing: false).focusOverride, 1)
+        XCTAssertEqual(scheduler.evaluate(now: 2.1, family: 0, records: records, fallback: [0, 1],
+            capacity: 2, playing: true, scrubbing: false).focusOverride, 1)
+        XCTAssertNil(scheduler.evaluate(now: 2.1, family: 3, records: records, fallback: [0, 1],
+            capacity: 2, playing: true, scrubbing: false).focusOverride)
+    }
+
 }

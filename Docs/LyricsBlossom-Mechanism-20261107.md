@@ -17,3 +17,6 @@ No fixed last-word cutoff or forced-fill denominator exists. Independent romaniz
 
 ## Review and validation
 Two-axis read-only review identified offset reanchoring, recycled-layout identity, overlapping family2/3 focus and per-frame record sorting. These were corrected with regression cases. No documented standards violation was reported. Static diff checks pass. Swift compilation, scoped/full CI and device visual/performance results are recorded separately after execution. Prior source trace agreement is not counted as current native device validation.
+
+## Build attempt
+2026-11-07: commit dc4eae8c was pushed. No new workflow run appeared. Explicit ci.yml dispatch returned HTTP 422: `Actions has been disabled for this repository.` The workflow metadata remains active and the permissions endpoint says enabled=true, so this is an execution-side block, not evidence that source compilation failed. No permission settings were changed. WSL launch also fails with 0xd0000022; no usable local Swift/Xcode toolchain is available. Swift tests, full regression, IPA output and device acceptance remain unexecuted for this increment.

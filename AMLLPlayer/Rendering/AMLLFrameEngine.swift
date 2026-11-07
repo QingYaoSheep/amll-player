@@ -15,6 +15,7 @@ struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     var fontSize: Double
     var safeArea = AMLLSafeArea()
     var displayScale = 1.0
+    var recordBlossomDiagnostics: Bool? = nil
     var maximumFPS = 60
     var localeIdentifier = ""
     var layoutDirection = "ltr"
@@ -839,7 +840,7 @@ struct AMLLFrameEngine {
             controls: .init(visible: input.configuration?.showControls ?? false,
                             progress: progress,
                             enabled: input.playbackSnapshot?.restrictions.canSeek ?? false),
-            blossomDiagnostics: blossomSchedule?.diagnostic,
+            blossomDiagnostics: blossomSchedule.map { "\($0.diagnostic); selected=\($0.selected); pending=\(String(describing: $0.pending)); takeover=\($0.takeover); \(environment.recordBlossomDiagnostics == true ? runStore.diagnostic : "cursor recording off")" },
             transitionProgress: 1
         )
     }

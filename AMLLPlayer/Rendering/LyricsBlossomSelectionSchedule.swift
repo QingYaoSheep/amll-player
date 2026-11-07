@@ -47,8 +47,12 @@ struct LyricsBlossomSelectionSchedule {
         let ordered = records // Preordered once at document construction.
         let pending = ordered.first { $0.start > now }
         var result = Output(selected: fallback, pending: pending?.index,
-            diagnostic: family == 2 || family == 3 ? "version selection: native compatibility" : "ordinary fixed lead; special flags unavailable")
+            diagnostic: family == 2 || family == 3 ? "version selection: native compatibility" : "ordinary fixed lead adaptation; takeover/catch-up disabled: source flags/hold state unmapped")
         guard family != 2 && family != 3 else { return result }
+        // Keep the newest ordinary record as it crosses its actual start, so
+        // the timeline cannot jump back to an older overlapping voice. Other
+        // families keep the original buffered anchor.
+        if playing && !scrubbing { result.focusOverride = fallback.last }
         // Ordinary selection lead is a native selection-record adaptation.
         // Takeover/catch-up retain the stricter source guards below.
         if let p = pending, playing, !scrubbing, now + Self.lead() >= p.start {

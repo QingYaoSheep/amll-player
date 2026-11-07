@@ -17,6 +17,7 @@ final class LyricsBlossomRunStore {
         var layout: LyricsBlossomRunLayout
         var cursors: [LyricsBlossomRunSweep.Cursor]
         var row: Int
+        var allowsCatchUp: Bool
         var sample: LyricsBlossomRunLayout.Sample
     }
     private var entries: [String: Entry] = [:]
@@ -24,6 +25,15 @@ final class LyricsBlossomRunStore {
     private(set) var reconstructionCount = 0
     var count: Int { entries.count }
     var active: Bool { entries.values.contains { $0.cursors.contains { $0.active } } }
+    var diagnostic: String {
+        entries.keys.sorted().prefix(3).compactMap { key -> String? in
+            guard let entry = entries[key] else { return nil }
+            let states = entry.cursors.prefix(3).map {
+                "cursor=\($0.value),from=\($0.from),to=\($0.to),elapsed=\($0.elapsed),duration=\($0.duration),active=\($0.active),index=\($0.lastIndex),suppressed=\($0.suppressed)"
+            }.joined(separator: ";")
+            return "\(key)[\(states)] fallback=\(entry.layout.fallbackCount)"
+        }.joined(separator: " | ")
+    }
     func reset() { entries.removeAll(); frame = nil }
 
     func beginFrame(_ next: Frame) {
@@ -52,19 +62,19 @@ final class LyricsBlossomRunStore {
                 entry.cursors[index].stepRow(now: Float(frame.time), delta: Float(frame.delta), segments: segments,
                     flag40: frame.family == 3, flag41: true, force: false)
             }
-            if frame.playing && frame.catchUpRows.contains(entry.row) {
+            if entry.allowsCatchUp && frame.playing && frame.catchUpRows.contains(entry.row) {
                 entry.cursors[index].catchUp(segments: segments)
             }
         }
         if rebuild { reconstructionCount += 1 }
         entry.sample = entry.layout.sample(cursors: entry.cursors)
     }
-    func sample(key: String, row: Int, layout: LyricsBlossomRunLayout) -> LyricsBlossomRunLayout.Sample {
+    func sample(key: String, row: Int, layout: LyricsBlossomRunLayout, allowsCatchUp: Bool = true) -> LyricsBlossomRunLayout.Sample {
         if var entry = entries[key], entry.layout.identity == layout.identity || entry.layout.equivalent(to: layout) {
-            entry.layout = layout; entries[key] = entry
+            entry.layout = layout; entry.allowsCatchUp = allowsCatchUp; entries[key] = entry
             return entry.sample
         }
-        var entry = Entry(layout: layout, cursors: layout.records.map { _ in .init() }, row: row,
+        var entry = Entry(layout: layout, cursors: layout.records.map { _ in .init() }, row: row, allowsCatchUp: allowsCatchUp,
                           sample: layout.sample(time: frame?.time ?? 0))
         update(&entry, rebuild: true)
         entries[key] = entry

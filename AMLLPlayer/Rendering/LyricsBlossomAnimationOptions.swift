@@ -94,6 +94,11 @@ struct LyricsBlossomAnimationOptions: Codable, Equatable, Sendable {
             .flatMap { Preset(rawValue: $0[0]) } ?? .custom
     }
 
+    var usesCalibratedAppearance: Bool {
+        let preset = matchedPreset
+        return preset == .appleMusic164 || preset == .advance
+    }
+
     var maximumLines: Int {
         get { maximum > 0 ? 3 : 2 }
         set { maximum = newValue > 2 ? 1 : 0 }

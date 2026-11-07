@@ -98,6 +98,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     var bold = true
     var tracking: Double = 0
     var blurInactive = true
+    var lyricBlurLevel: Int?
     var emphasizeWords = true
     var enableSpring = true
     var enableScale = true
@@ -217,6 +218,7 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
         copy.anchor = anchor.isFinite ? min(0.7, max(minimumAnchor, anchor)) : 0.28
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         copy.appleMusicAnimation = appleMusicAnimation?.validated()
+        copy.lyricBlurLevel = lyricBlurLevel.map { LyricsAnimationBlur.level($0, isPad: false) }
         if var profiles = animationProfiles {
             profiles.amll = profiles.amll?.validated()
             profiles.appleMusic164 = profiles.appleMusic164?.validated()

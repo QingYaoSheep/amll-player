@@ -2,6 +2,18 @@
 import XCTest
 
 final class LyricsBlossomRunLayoutTests: XCTestCase {
+    func testCalibratedFeatherOnlyExtendsTheUnlitSide() {
+        let layout = LyricsBlossomRunLayout(text: "word", pieces: [
+            .init(range: NSRange(location: 0, length: 4), width: 30, start: 0, end: 1)
+        ], pixelsPerPoint: 3)
+        let completed = layout.sample(time: 1)
+        let widened = layout.withCalibratedFeather(completed)
+        XCTAssertEqual(widened.starts, completed.starts)
+        XCTAssertEqual(completed.feather, 10)
+        XCTAssertEqual(widened.feather, 40.0 / 3)
+        XCTAssertEqual(layout.records[0].last?.distance, 90)
+    }
+
     func testRecordKeepsTimedSyllablesAndDoesNotSplitHyphens() {
         let model = LyricsBlossomRunLayout(text: "talking L-O-V-E", pieces: [
             .init(range: NSRange(location: 0, length: 3), width: 30, start: 1, end: 2),

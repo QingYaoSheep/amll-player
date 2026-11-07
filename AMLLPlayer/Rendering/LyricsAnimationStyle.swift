@@ -17,6 +17,7 @@ struct LyricsAnimationOptions: Codable, Equatable, Sendable {
     var enableSpring = true
     var enableScale = true
     var blurInactive = true
+    var lyricBlurLevel: Int?
     var emphasizeWords = true
     var hidePassedLines = false
     var marquee = true
@@ -28,12 +29,14 @@ struct LyricsAnimationOptions: Codable, Equatable, Sendable {
     init(_ configuration: LyricsRenderConfiguration) {
         enableSpring = configuration.enableSpring; enableScale = configuration.enableScale
         blurInactive = configuration.blurInactive; emphasizeWords = configuration.emphasizeWords
+        lyricBlurLevel = configuration.lyricBlurLevel
         hidePassedLines = configuration.hidePassedLines; marquee = configuration.marquee
         gradientWidth = configuration.gradientWidth; advance = configuration.advance
     }
 
     func validated() -> Self {
         var copy = self
+        copy.lyricBlurLevel = lyricBlurLevel.map { LyricsAnimationBlur.level($0, isPad: false) }
         copy.gradientWidth = gradientWidth.isFinite ? min(1, max(0, gradientWidth)) : AMLLMotionMetrics.wordFadeWidthInEms
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         return copy
@@ -42,6 +45,7 @@ struct LyricsAnimationOptions: Codable, Equatable, Sendable {
     func apply(to configuration: inout LyricsRenderConfiguration) {
         configuration.enableSpring = enableSpring; configuration.enableScale = enableScale
         configuration.blurInactive = blurInactive; configuration.emphasizeWords = emphasizeWords
+        configuration.lyricBlurLevel = lyricBlurLevel
         configuration.hidePassedLines = hidePassedLines; configuration.marquee = marquee
         configuration.gradientWidth = gradientWidth; configuration.advance = advance
     }
@@ -77,12 +81,17 @@ struct LyricsAnimationProfiles: Codable, Equatable, Sendable {
 extension LyricsRenderConfiguration {
     var animationStyle: LyricsAnimationStyle { animationProfiles?.selected ?? .amll }
 
+    var usesCalibratedApple164Appearance: Bool {
+        animationStyle == .appleMusic164 && (appleMusicAnimation ?? .init()).usesCalibratedAppearance
+    }
+
     mutating func selectAnimationStyle(_ style: LyricsAnimationStyle) {
         guard style != animationStyle else { return }
         var profiles = animationProfiles ?? .init()
         let current = LyricsAnimationOptions(self).validated()
         profiles[profiles.selected] = current
-        let next = profiles[style] ?? current
+        var next = profiles[style] ?? current
+        if profiles[style] == nil { next.lyricBlurLevel = nil }
         profiles.selected = style
         profiles[style] = next
         next.apply(to: &self)

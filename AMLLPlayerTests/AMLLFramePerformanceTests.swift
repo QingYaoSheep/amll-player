@@ -25,7 +25,7 @@ final class AMLLFramePerformanceTests: XCTestCase {
     }
 
     @MainActor
-    func testBackgroundRasterMatchesVisibleRowRaster() async {
+    func testBackgroundRasterMatchesVisibleRowRaster() async throws {
         let line = LyricLine(id: "raster", text: "歌って ✨", start: 0, end: 2,
                              words: [.init(text: "歌って", start: 0, end: 2)], precision: .word)
         let layout = AMLLCoreTextLayout(line: line, width: 320,
@@ -37,6 +37,20 @@ final class AMLLFramePerformanceTests: XCTestCase {
         }.value
         XCTAssertEqual(actual.sharp.pngData(), expected.sharp.pngData())
         XCTAssertEqual(actual.ruby.pngData(), expected.ruby.pngData())
-        XCTAssertEqual(actual.nearBlur.pngData(), expected.nearBlur.pngData())
+        XCTAssertEqual(try XCTUnwrap(actual.blur).near.pngData(), try XCTUnwrap(expected.blur).near.pngData())
+    }
+
+    @MainActor
+    func testMaximumBlurUsesPaddedTwelvePointTexture() {
+        let line = LyricLine(id: "wide-blur", text: "Focus", start: 0, end: 2)
+        let layout = AMLLCoreTextLayout(line: line, width: 320, font: .systemFont(ofSize: 32), configuration: .init())
+        let textures = AMLLPreparedBlurImages(snapshot: layout.rasterSnapshot(), scale: 3, maximum: 12)
+        XCTAssertEqual(textures.maximum, 12)
+        XCTAssertEqual(textures.far.size.width, ceil(layout.size.width + 74), accuracy: 1)
+        XCTAssertEqual(textures.far.scale, 1)
+        let maxWeights = LyricsAnimationBlur.weights(radius: 12, maximum: textures.maximum)
+        XCTAssertEqual(maxWeights.sharp, 0)
+        XCTAssertEqual(maxWeights.near, 0)
+        XCTAssertEqual(maxWeights.far, 1)
     }
 }

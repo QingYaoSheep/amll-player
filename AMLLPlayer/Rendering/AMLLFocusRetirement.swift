@@ -39,7 +39,8 @@ struct AMLLFocusRetirement: Sendable {
         }
     }
 
-    func presentation(opacity: Double) -> (bright: Double, dark: Double, blur: Double, state: AMLLFrameState.Row.Retirement) {
+    func presentation(opacity: Double, blurMaximum: Double = 5)
+        -> (bright: Double, dark: Double, blur: Double, state: AMLLFrameState.Row.Retirement) {
         let residual = remaining.value
         let target = 0.2 * targetOpacity
         let bright = target + (initialBright - target) * residual
@@ -48,7 +49,7 @@ struct AMLLFocusRetirement: Sendable {
         // HDR excess follows the same envelope once: alpha * HDR weight is
         // the original effective alpha times residual, independent of SDR fade.
         let hdrWeight = bright > 0 ? min(1, max(0, initialBright * residual / bright)) : 0
-        return (bright / divisor, dark / divisor, min(5, blur.value),
+        return (bright / divisor, dark / divisor, min(blurMaximum, blur.value),
                 .init(startedAt: startedAt, progress: 1 - residual, hdrWeight: hdrWeight))
     }
 }

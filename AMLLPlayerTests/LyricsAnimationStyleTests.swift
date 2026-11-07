@@ -3,6 +3,76 @@ import XCTest
 
 @MainActor
 final class LyricsAnimationStyleTests: XCTestCase {
+    func testBlurLevelsFollowDeviceDefaultsAndStayIndependentOfPresets() throws {
+        var configuration = try JSONDecoder().decode(LyricsRenderConfiguration.self,
+            from: JSONEncoder().encode(LyricsRenderConfiguration()))
+        XCTAssertNil(configuration.lyricBlurLevel)
+        XCTAssertEqual(LyricsAnimationBlur.level(configuration.lyricBlurLevel, isPad: false), 5)
+        XCTAssertEqual(LyricsAnimationBlur.level(configuration.lyricBlurLevel, isPad: true), 3)
+        let maxima = (1 ... 10).map(LyricsAnimationBlur.maximum)
+        XCTAssertEqual(maxima, [1, 2.75, 4.5, 6.25, 8, 8.8, 9.6, 10.4, 11.2, 12])
+        configuration.lyricBlurLevel = 10
+        configuration.selectAnimationStyle(.appleMusic164)
+        XCTAssertNil(configuration.lyricBlurLevel)
+        configuration.lyricBlurLevel = 3
+        var options = LyricsBlossomAnimationOptions()
+        options.apply(.appleMusic27)
+        configuration.appleMusicAnimation = options
+        configuration = try JSONDecoder().decode(LyricsRenderConfiguration.self,
+            from: JSONEncoder().encode(configuration.validated()))
+        XCTAssertEqual(configuration.lyricBlurLevel, 3)
+        configuration.selectAnimationStyle(.amll)
+        XCTAssertEqual(configuration.lyricBlurLevel, 10)
+        configuration.selectAnimationStyle(.appleMusic164)
+        XCTAssertEqual(configuration.lyricBlurLevel, 3)
+        configuration.restoreCurrentAnimationDefaults()
+        XCTAssertNil(configuration.lyricBlurLevel)
+    }
+
+    func testCalibratedBlurAndRetainedLegacyCurve() {
+        let calibrated = (-5 ... 6).map {
+            LyricsAnimationBlur.radius(distance: $0, compact: true, calibrated: true, maximum: 8)
+        }
+        XCTAssertEqual(calibrated[0], 8)
+        XCTAssertEqual(calibrated[4], 3)
+        XCTAssertEqual(calibrated[5], 0)
+        XCTAssertEqual(calibrated[6 ... 8], [1.8, 2.7, 4.5])
+        XCTAssertEqual(calibrated[11], 8)
+        XCTAssertEqual(LyricsAnimationBlur.radius(distance: 1, compact: true, calibrated: false, maximum: 5), 0.8)
+        XCTAssertEqual(LyricsAnimationBlur.radius(distance: -1, compact: true, calibrated: false, maximum: 5), 2.4,
+                       accuracy: 0.000_001)
+        XCTAssertEqual(LyricsAnimationBlur.radius(distance: 20, compact: true, calibrated: true, maximum: 12), 12)
+    }
+
+    func testCalibratedBlurReachesNewMaximumWithoutBlurringFocusedRow() {
+        let lines = (0 ..< 9).map { i in
+            let start = Double(i) * 4
+            return LyricLine(id: String(i), text: "Line", start: start, end: start + 3,
+                words: [.init(text: "Line", start: start, end: start + 3)], precision: .word)
+        }
+        for preset in [LyricsBlossomAnimationOptions.Preset.appleMusic164, .advance] {
+            var environment = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
+            environment.animationStyle = .appleMusic164
+            var options = LyricsBlossomAnimationOptions()
+            options.apply(preset)
+            environment.appleMusicAnimation = options
+            environment.lyricBlurMaximum = 8
+            var engine = AMLLFrameEngine(document: .init(lines: lines), environment: environment,
+                                         heights: Array(repeating: 60, count: lines.count))
+            let input = AMLLPlayerInput(position: 5, playing: true)
+            let frame = engine.render(input, delta: 0)
+            XCTAssertEqual(frame.rows[0].blur, 3, accuracy: 0.001)
+            XCTAssertEqual(frame.rows[1].blur, 0)
+            XCTAssertEqual(frame.rows[2].blur, 1.8, accuracy: 0.001)
+            XCTAssertEqual(frame.rows[3].blur, 2.7, accuracy: 0.001)
+            XCTAssertEqual(frame.rows[4].blur, 4.5, accuracy: 0.001)
+            XCTAssertEqual(frame.rows[7].blur, 8, accuracy: 0.001)
+            engine.handle(.beginBrowsing)
+            let browsed = engine.render(input, delta: 0)
+            XCTAssertTrue(browsed.rows.allSatisfy { $0.blur == 0 })
+        }
+    }
+
     func testOlderAndUnknownStylesKeepSavedAMLLMotionAndOtherPreferences() throws {
         var original = LyricsRenderConfiguration()
         original.advance = 1

@@ -57,6 +57,7 @@ jobs:
           -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerTests/LyricsAnimationStyleTests
+          -only-testing:AMLLPlayerTests/AMLLFramePerformanceTests
           -only-testing:AMLLPlayerTests/LyricsAnimationEvidenceTests
           -only-testing:AMLLPlayerTests/AMLLScheduledSpringTests
           -only-testing:AMLLPlayerTests/LyricsBlossomLineEndTests

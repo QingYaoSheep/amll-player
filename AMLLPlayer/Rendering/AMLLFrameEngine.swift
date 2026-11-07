@@ -32,6 +32,8 @@ struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     var animationStyle: LyricsAnimationStyle?
     var appleMusicAnimation: LyricsBlossomAnimationOptions?
     var enableBlur = true
+    /// Absent in older engine replays, whose blur targets capped at 5 pt.
+    var lyricBlurMaximum: Double?
     var hidePassedLines = false
     var alwaysPostpositionBackground = false
     var advance = 0.3
@@ -905,8 +907,9 @@ struct AMLLFrameEngine {
             let backgroundScalePosition = environment.enableSpring && !environment.reduceMotion
                 ? motions[index].backgroundScale.position : motions[index].backgroundScaleTransition.value
             let motion = motions[index]
-            let mainExit = motion.mainRetirement?.presentation(opacity: motion.opacityTransition.value)
-            let backgroundExit = motion.backgroundRetirement?.presentation(opacity: motion.opacityTransition.value)
+            let blurMaximum = environment.lyricBlurMaximum ?? 5
+            let mainExit = motion.mainRetirement?.presentation(opacity: motion.opacityTransition.value, blurMaximum: blurMaximum)
+            let backgroundExit = motion.backgroundRetirement?.presentation(opacity: motion.opacityTransition.value, blurMaximum: blurMaximum)
             let group = document.groups[index]
             let actualStart = document.actualLineStarts[group.main]
             let visualState: AMLLFrameState.Row.VisualFocus = if motion.mainRetirement != nil {
@@ -936,7 +939,7 @@ struct AMLLFrameEngine {
                               scale: mainScalePosition / 100, brightAlpha: mainExit?.bright ?? mainAlpha.0,
                               darkAlpha: mainExit?.dark ?? mainAlpha.1, wordClock: motion.mainWords,
                               opacity: motion.opacityTransition.value,
-                              blur: mainExit?.blur ?? min(5, motion.blurTransition.value),
+                              blur: mainExit?.blur ?? min(blurMaximum, motion.blurTransition.value),
                               active: motion.mainSinging,
                               hidden: false,
                               visualFocus: visualState, fillComplete: motion.mainCompleted, hdrHold: holdHDR,
@@ -953,7 +956,7 @@ struct AMLLFrameEngine {
                                   brightAlpha: backgroundExit?.bright ?? backgroundAlpha.0, darkAlpha: backgroundExit?.dark ?? backgroundAlpha.1,
                                   wordClock: motion.backgroundWords,
                                   opacity: motion.opacityTransition.value * (backgroundVisible ? 1 : 0),
-                                  blur: backgroundExit?.blur ?? min(5, motion.blurTransition.value),
+                                  blur: backgroundExit?.blur ?? min(blurMaximum, motion.blurTransition.value),
                                   active: motion.backgroundSinging, hidden: !motion.active && progress == 0 && (motion.backgroundRetirement?.arrived ?? true),
                                   visualFocus: backgroundState, fillComplete: motion.backgroundCompleted,
                                   hdrHold: backgroundState == .holding && !songEnded && interlude == nil,
@@ -1116,6 +1119,10 @@ struct AMLLFrameEngine {
 
     private mutating func layoutGroups(playing: Bool, seeking: Bool, frameStart: Double, sourcePosition: Double, lyricTime: Double) {
         let blossom = environment.animationStyle == .appleMusic164 ? (environment.appleMusicAnimation ?? .init()) : nil
+        let calibratedAppearance = blossom?.usesCalibratedAppearance == true
+        let blurMaximum = environment.lyricBlurMaximum ?? 5
+        let compactBlur = environment.screenWidth <= 1024
+        let calibratedBlur = calibratedAppearance && environment.lyricBlurMaximum != nil
         let sourceSelection = blossomSchedule.map { Set($0.selected) }
         for index in motions.indices {
             let preparesBackground = document.groups[index].background != nil && visualFocus == index
@@ -1198,17 +1205,18 @@ struct AMLLFrameEngine {
                 && !motions[index].mainSinging && !motions[index].backgroundSinging
                 && index < (interlude.map { $0.anchor + 1 } ?? appearanceFocus)
                 ? 0.0001 : (active[index] || focused ? 0.85 : (nonDynamic ? 0.2 : 1))
-            var blur = 0.0
-            if environment.enableBlur, !environment.reduceMotion, !browsing, !active[index] && !focused {
-                blur = index < appearanceFocus
-                    ? Double(2 + appearanceFocus - index) : Double(index - appearanceFocus)
-                if environment.screenWidth <= 1024 {
-                    blur *= 0.8
-                }
+            let distance = index - appearanceFocus
+            let blurs = environment.enableBlur && !environment.reduceMotion && !browsing
+            let distanceBlur = if environment.lyricBlurMaximum == nil {
+                // Retain the raw transition endpoints of recorded legacy environments.
+                Double(distance < 0 ? 2 - distance : distance) * (compactBlur ? 0.8 : 1)
+            } else {
+                LyricsAnimationBlur.radius(distance: distance, compact: compactBlur,
+                                            calibrated: calibratedBlur, maximum: blurMaximum)
             }
-            let retiredBlur = environment.enableBlur && !environment.reduceMotion && !browsing
-                ? Double(index <= appearanceFocus ? 2 + appearanceFocus - index : index - appearanceFocus)
-                    * (environment.screenWidth <= 1024 ? 0.8 : 1) : 0
+            let blur = blurs && !active[index] && !focused ? distanceBlur : 0
+            let retiredBlur = blurs
+                ? (distance == 0 && !calibratedBlur ? (compactBlur ? 1.6 : 2) * blurMaximum / 5 : distanceBlur) : 0
             motions[index].mainRetirement?.setBlur(retiredBlur, immediately: browsing || environment.reduceMotion)
             motions[index].backgroundRetirement?.setBlur(retiredBlur, immediately: browsing || environment.reduceMotion)
             let targetOpacity = motions[index].opacity
@@ -1221,7 +1229,7 @@ struct AMLLFrameEngine {
             let inactiveScale = environment.animationStyle == .appleMusic164 ? 98.0 : 97.0
             let mainScale = !focused && environment.enableScale && !suppressInactiveScale && (playing || visualFocus != nil) ? inactiveScale : 100
             let bgFocused = motions[index].backgroundVisualActive
-            let bgScale = !bgFocused && playing && environment.enableScale ? 75.0 : 100
+            let bgScale = !bgFocused && playing && environment.enableScale ? (calibratedAppearance ? 90.0 : 75.0) : 100
             // Reduce Motion is a source-defined accessibility variant: it
             // keeps the AMLL geometry but resolves every transition in the
             // same frame instead of leaving opacity/blur on a stale value.

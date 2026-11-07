@@ -1,10 +1,18 @@
 import SwiftUI
+import UIKit
 
 struct LyricsAnimationSettingsView: View {
     @Bindable var preferences: LyricsRenderPreferences
 
     private var blossom: LyricsBlossomAnimationOptions {
         preferences.configuration.appleMusicAnimation ?? .init()
+    }
+
+    private var blurLevel: Binding<Double> {
+        Binding(get: {
+            Double(LyricsAnimationBlur.level(preferences.configuration.lyricBlurLevel,
+                                             isPad: UIDevice.current.userInterfaceIdiom == .pad))
+        }, set: { preferences.configuration.lyricBlurLevel = Int($0.rounded()) })
     }
 
     private func blossomBinding(_ control: LyricsBlossomAnimationOptions.Control) -> Binding<Int> {
@@ -29,7 +37,7 @@ struct LyricsAnimationSettingsView: View {
                     .accessibilityIdentifier("lyricsAnimationStyle")
                     .accessibilityValue(preferences.configuration.animationStyle.title)
             } footer: {
-                Text("风格作用于逐字与整行动效。两种风格分别保存动画选项，首次切换时复制当前设置。")
+                Text("两种风格分别保存动画选项和模糊等级。首次切换时复制其他动画选项，模糊等级使用设备默认值。")
             }
             if preferences.configuration.animationStyle == .appleMusic164 {
                 Section("歌词风格") {
@@ -70,6 +78,12 @@ struct LyricsAnimationSettingsView: View {
             }
             Section("动画选项") {
                 Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive)
+                LabeledContent("歌词模糊程度", value: "\(Int(blurLevel.wrappedValue)) 级")
+                Slider(value: blurLevel, in: 1 ... 10, step: 1)
+                    .disabled(!preferences.configuration.blurInactive)
+                    .accessibilityLabel("歌词模糊程度")
+                    .accessibilityValue("\(Int(blurLevel.wrappedValue)) 级")
+                    .accessibilityIdentifier("lyricBlurLevel")
                 Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords)
                 Toggle("render.spring", isOn: $preferences.configuration.enableSpring)
                 Toggle("render.scale", isOn: $preferences.configuration.enableScale)
@@ -98,7 +112,7 @@ struct LyricsAnimationSettingsView: View {
                     .accessibilityIdentifier("resetLyricsAnimationStyle")
             }
             Section("风格来源") {
-                Text("基于 LyricsBlossom 的布局组游标与版本化行调度适配；部分选择分支仍使用原生兼容行为。提前选择和渐变窗口由风格管理。不代表 Apple Music 官方实现。")
+                Text("提前选择和渐变窗口由风格管理。16.4 和 16.4 advance 的外观参考 iPadOS 16.4 还原资料与实测截图。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }

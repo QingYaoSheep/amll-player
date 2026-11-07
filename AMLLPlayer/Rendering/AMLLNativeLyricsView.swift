@@ -93,6 +93,8 @@ final class AMLLNativeCanvas: UIView {
     private var preparedOrder: [Int] = []
     private var preparingRows = Set<Int>()
     private var prewarmGeneration = 0
+    private var blurRefreshInFlight = false
+    private var blurLevelChangedAt = -Double.infinity
     private var lastVisibleCenter: Int?
     private var link: CADisplayLink?
     private var linkTarget: LinkTarget?
@@ -246,6 +248,9 @@ final class AMLLNativeCanvas: UIView {
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
         let configurationChanged = self.configuration != configuration
+        if self.configuration.lyricBlurLevel != configuration.lyricBlurLevel {
+            blurLevelChangedAt = CACurrentMediaTime()
+        }
         if configurationChanged {
             if Self.layoutSettings(self.configuration) != Self.layoutSettings(configuration) {
                 dirty = true
@@ -407,6 +412,7 @@ final class AMLLNativeCanvas: UIView {
         environment.appleMusicAnimation = configuration.animationStyle == .appleMusic164
             ? (configuration.appleMusicAnimation ?? .init()).validated() : nil
         environment.enableBlur = configuration.blurInactive && !environment.reduceTransparency
+        environment.lyricBlurMaximum = lyricBlurMaximum
         environment.hidePassedLines = configuration.hidePassedLines
         environment.alwaysPostpositionBackground = configuration.alwaysPostpositionBackground
         environment.advance = configuration.advance
@@ -549,6 +555,7 @@ final class AMLLNativeCanvas: UIView {
             }
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
+        let usesApple164Appearance = configuration.usesCalibratedApple164Appearance
         for row in visible {
             let view: AMLLCompositeRow
             if let existing = rowViews[row.lineIndex] {
@@ -588,6 +595,7 @@ final class AMLLNativeCanvas: UIView {
             if view.layer.position != rowPosition { view.layer.position = rowPosition }
             if view.transform != rowTransform { view.transform = rowTransform }
             view.setCanSeek(canSeek)
+            view.setPressFeedbackEnabled(usesApple164Appearance && canSeek && !reduceMotion && !state.browsing)
             let gain = hdr.brightness(for: row)
             view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
                                gain: gain, lyricTime: state.lyricTime, runStore: engine!.runStore,
@@ -611,7 +619,8 @@ final class AMLLNativeCanvas: UIView {
         }
         trimRetainedRows()
         CATransaction.commit()
-        schedulePrewarm(visible: visible, rows: state.rows)
+        scheduleBlurRefresh(visible: visible)
+        if !blurRefreshInFlight { schedulePrewarm(visible: visible, rows: state.rows) }
         if performanceRecordingEnabled {
             let finished = CACurrentMediaTime()
             let hdrTimings = hdrRenderer?.drainTimings()
@@ -627,6 +636,54 @@ final class AMLLNativeCanvas: UIView {
                                              cacheBytes: resourceBytes))
             pendingLayoutMilliseconds = 0
             pendingRasterMilliseconds = 0
+        }
+    }
+
+    private var lyricBlurMaximum: Double {
+        LyricsAnimationBlur.maximum(LyricsAnimationBlur.level(configuration.lyricBlurLevel,
+                                                              isPad: UIDevice.current.userInterfaceIdiom == .pad))
+    }
+
+    private var requestsBlurImages: Bool {
+        configuration.blurInactive && !reduceMotion && !reduceTransparency && !reduceTransparencyEnabled
+    }
+
+    private func scheduleBlurRefresh(visible: [AMLLFrameState.Row]) {
+        guard active, window != nil, requestsBlurImages, !blurRefreshInFlight, preparingRows.isEmpty else { return }
+        let maximum = lyricBlurMaximum
+        guard let row = visible.first(where: {
+            $0.blur > 0 && rowViews[$0.lineIndex]?.blurMaximum != maximum
+        }), let view = rowViews[row.lineIndex], let layout = layouts[row.lineIndex] else { return }
+        let index = row.lineIndex
+        let identity = ObjectIdentifier(view)
+        let generation = prewarmGeneration
+        let scale = window?.screen.scale ?? 2
+        let original = layout.original.rasterSnapshot()
+        let romanization = layout.romanization?.rasterSnapshot()
+        let aligned = layout.alignedRomanization
+        let delay = max(0, 0.09 - (CACurrentMediaTime() - blurLevelChangedAt))
+        blurRefreshInFlight = true
+        Task { @MainActor [weak self] in
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            guard let self else { return }
+            defer {
+                blurRefreshInFlight = false
+                needsFrame = true
+            }
+            guard active, window != nil, requestsBlurImages, prewarmGeneration == generation,
+                  lyricBlurMaximum == maximum else { return }
+            let images = await Task.detached(priority: .utility) {
+                (
+                    AMLLPreparedBlurImages(snapshot: original, scale: scale, maximum: maximum, hideRomanization: aligned),
+                    romanization.map { AMLLPreparedBlurImages(snapshot: $0, scale: scale, maximum: maximum) },
+                    aligned ? AMLLPreparedBlurImages(snapshot: original, scale: scale, maximum: maximum, overlay: true) : nil
+                )
+            }.value
+            guard active, window != nil, requestsBlurImages, prewarmGeneration == generation,
+                  lyricBlurMaximum == maximum,
+                  let current = rowViews[index], ObjectIdentifier(current) == identity else { return }
+            current.installBlur(original: images.0, romanization: images.1, overlay: images.2)
+            trimRetainedRows()
         }
     }
 
@@ -674,16 +731,18 @@ final class AMLLNativeCanvas: UIView {
             let original = layout.original.rasterSnapshot()
             let romanization = layout.romanization?.rasterSnapshot()
             let aligned = layout.alignedRomanization
+            let maximum = requestsBlurImages ? lyricBlurMaximum : nil
             Task.detached(priority: .utility) { [weak self] in
                 let images = AMLLPreparedCompositeImages(
                     original: AMLLPreparedRowImages(snapshot: original, scale: scale,
-                                                    hideRomanization: aligned),
-                    romanization: romanization.map { AMLLPreparedRowImages(snapshot: $0, scale: scale) },
-                    overlay: aligned ? AMLLPreparedOverlayImages(snapshot: original, scale: scale) : nil
+                                                    hideRomanization: aligned, blurMaximum: maximum),
+                    romanization: romanization.map { AMLLPreparedRowImages(snapshot: $0, scale: scale, blurMaximum: maximum) },
+                    overlay: aligned ? AMLLPreparedOverlayImages(snapshot: original, scale: scale, blurMaximum: maximum) : nil
                 )
                 await MainActor.run {
                     guard let self, self.prewarmGeneration == generation else { return }
                     self.preparingRows.remove(index)
+                    self.needsFrame = true
                     guard self.rowViews[index] == nil, self.retainedRows[index] == nil else { return }
                     self.preparedRows[index] = images
                     self.preparedOrder.append(index)
@@ -924,11 +983,14 @@ final class AMLLNativeCanvas: UIView {
 /// The original line and the generated TTML cue are separate native rows.
 /// Only their geometry is grouped for AMLL's focus/scroll layout.
 @MainActor
-private final class AMLLCompositeRow: UIView {
+private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     private let original: AMLLNativeRow
     private let romanization: AMLLNativeRow?
     private let alignedRomanization: AMLLRomanizationOverlay?
     private let romanizationCue: LyricLine?
+    private var pressFeedback: UILongPressGestureRecognizer?
+    private var pressOrigin: CGPoint?
+    private var pendingBlur: (AMLLPreparedBlurImages, AMLLPreparedBlurImages?, AMLLPreparedBlurImages?)?
 
     var onSeek: (() -> Void)? {
         didSet {
@@ -945,9 +1007,16 @@ private final class AMLLCompositeRow: UIView {
     var estimatedBytes: Int {
         original.estimatedBytes + (romanization?.estimatedBytes ?? 0)
             + (alignedRomanization?.estimatedBytes ?? 0)
+            + (pendingBlur.map { $0.0.estimatedBytes + ($0.1?.estimatedBytes ?? 0) + ($0.2?.estimatedBytes ?? 0) } ?? 0)
     }
 
     var needsHDRRetry: Bool { original.needsHDRRetry }
+    var blurMaximum: Double? { original.blurMaximum }
+
+    func installBlur(original images: AMLLPreparedBlurImages, romanization: AMLLPreparedBlurImages?,
+                     overlay: AMLLPreparedBlurImages?) {
+        pendingBlur = (images, romanization, overlay)
+    }
 
     func invalidateVisualCache() {
         original.invalidateVisualCache()
@@ -986,6 +1055,72 @@ private final class AMLLCompositeRow: UIView {
 
     required init?(coder _: NSCoder) { nil }
 
+    func setPressFeedbackEnabled(_ enabled: Bool) {
+        if enabled, pressFeedback == nil {
+            let gesture = UILongPressGestureRecognizer(target: self, action: #selector(pressChanged(_:)))
+            gesture.minimumPressDuration = 0
+            gesture.allowableMovement = 8
+            gesture.cancelsTouchesInView = false
+            gesture.delaysTouchesBegan = false
+            gesture.delegate = self
+            addGestureRecognizer(gesture)
+            pressFeedback = gesture
+        }
+        if let pressFeedback, pressFeedback.isEnabled != enabled {
+            if !enabled { endPress(animated: true) }
+            pressFeedback.isEnabled = enabled
+        }
+    }
+
+    func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { endPress(animated: false) }
+    }
+
+    @objc private func pressChanged(_ gesture: UILongPressGestureRecognizer) {
+        let location = gesture.location(in: superview)
+        switch gesture.state {
+        case .began:
+            pressOrigin = location
+            layer.removeAnimation(forKey: "lyricPress")
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.sublayerTransform = CATransform3DMakeScale(0.95, 0.95, 1)
+            CATransaction.commit()
+        case .changed:
+            if let pressOrigin, hypot(location.x - pressOrigin.x, location.y - pressOrigin.y) > 8 {
+                endPress(animated: true)
+            }
+        case .ended, .cancelled, .failed:
+            endPress(animated: true)
+        default: break
+        }
+    }
+
+    private func endPress(animated: Bool) {
+        let pressed = pressOrigin != nil
+        pressOrigin = nil
+        let presented = layer.presentation()?.sublayerTransform ?? layer.sublayerTransform
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.sublayerTransform = CATransform3DIdentity
+        if pressed, animated {
+            let release = CABasicAnimation(keyPath: "sublayerTransform")
+            release.fromValue = NSValue(caTransform3D: presented)
+            release.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+            release.duration = 0.12
+            release.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(release, forKey: "lyricPress")
+        } else if !animated {
+            layer.removeAnimation(forKey: "lyricPress")
+        }
+        CATransaction.commit()
+    }
+
     func setCanSeek(_ value: Bool) {
         original.setCanSeek(value)
         romanization?.setCanSeek(value)
@@ -995,6 +1130,16 @@ private final class AMLLCompositeRow: UIView {
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, lyricTime: Double, runStore: LyricsBlossomRunStore,
                        row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool)
     {
+        if let (blur, romanBlur, overlayBlur) = pendingBlur {
+            pendingBlur = nil
+            let level = LyricsAnimationBlur.level(configuration.lyricBlurLevel, isPad: UIDevice.current.userInterfaceIdiom == .pad)
+            if blur.maximum == LyricsAnimationBlur.maximum(level) {
+                // Replace the textures and compute the new weights in the same frame.
+                original.installBlur(blur)
+                if let romanBlur { romanization?.installBlur(romanBlur) }
+                if let overlayBlur { alignedRomanization?.installBlur(overlayBlur) }
+            }
+        }
         original.updateVisuals(renderer: renderer, gain: gain, row: row,
                                configuration: configuration, motionEnabled: motionEnabled, lyricTime: lyricTime, runStore: runStore, runKey: "main:\(row.lineIndex)")
         alignedRomanization?.update(row: row, lyricTime: lyricTime, configuration: configuration)
@@ -1064,12 +1209,14 @@ private final class AMLLNativeRow: UIView {
     private let sharpRubyImage: UIImage
     private let sharpAuxiliaryImage: UIImage
     private let rasterBytes: Int
+    private var blurBytes = 0
+    private(set) var blurMaximum: Double?
     private let nearBlur = CALayer()
     private let farBlur = CALayer()
     private var lastCanSeek: Bool?
     private var hdrRow: LyricsHDRRow?
     var estimatedBytes: Int {
-        rasterBytes + (hdrRow?.estimatedBytes ?? 0)
+        rasterBytes + blurBytes + (hdrRow?.estimatedBytes ?? 0)
     }
     var onSeek: (() -> Void)?
 
@@ -1117,11 +1264,11 @@ private final class AMLLNativeRow: UIView {
         // piece must not sample a ruby or translation row from the full-line
         // bitmap when its contentsRect is animated independently.
         let images = prepared ?? AMLLPreparedRowImages(snapshot: layout.rasterSnapshot(),
-                                                        scale: scale, hideRomanization: hideRomanization)
+                                                        scale: scale, hideRomanization: hideRomanization, blurMaximum: nil)
         sharpImage = images.sharp
         sharpRubyImage = images.ruby
         sharpAuxiliaryImage = images.auxiliary
-        rasterBytes = images.estimatedBytes
+        rasterBytes = images.sharpBytes
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         base.contents = sharpImage.cgImage; base.contentsScale = scale; base.frame = bounds; layer.addSublayer(base)
         ruby.contents = sharpRubyImage.cgImage; ruby.contentsScale = scale; ruby.frame = bounds; layer.addSublayer(ruby)
@@ -1149,17 +1296,11 @@ private final class AMLLNativeRow: UIView {
         auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
         // Blur the entire composed text, including annotations, before any
         // glyph cropping. Never feed blurred pixels through word masks.
-        for (blurLayer, image) in [(nearBlur, images.nearBlur), (farBlur, images.farBlur)] {
-            blurLayer.contents = image.cgImage
-            blurLayer.contentsScale = min(scale, 1)
-            // Offset the padded texture back to the original text origin.
-            // Layout width, baselines and word masks remain unchanged.
-            let paddingX = (image.size.width - bounds.width) / 2
-            let paddingY = (image.size.height - bounds.height) / 2
-            blurLayer.frame = CGRect(x: -paddingX, y: -paddingY, width: image.size.width, height: image.size.height)
+        for blurLayer in [nearBlur, farBlur] {
             blurLayer.opacity = 0
             layer.addSublayer(blurLayer)
         }
+        if let blur = images.blur { installBlur(blur) }
         var consumed: [Int: Double] = [:]
         for fragment in layout.fragments where fragment.rect.width > 0 {
             guard let maskIndex = maskIndexByWord[fragment.wordIndex] else { continue }
@@ -1267,6 +1408,13 @@ private final class AMLLNativeRow: UIView {
     private var lastVisualMotion = false
     private var lastVisualGain = 1.0
     private(set) var visualUpdateCount = 0
+
+    func installBlur(_ images: AMLLPreparedBlurImages) {
+        images.install(near: nearBlur, far: farBlur, size: bounds.size)
+        blurMaximum = images.maximum
+        blurBytes = images.estimatedBytes
+        invalidateVisualCache()
+    }
     private(set) var needsHDRRetry = false
 
     func invalidateVisualCache() { lastVisualRow = nil }
@@ -1299,8 +1447,10 @@ private final class AMLLNativeRow: UIView {
             settled.advance(min(visual.wordClock.time, visual.wordClock.reverseElapsed), playing: false)
             visual.wordClock = settled
         }
-        let nextSample: LyricsBlossomRunLayout.Sample? = configuration.animationStyle == .appleMusic164 && line.precision == .word
+        let runSample: LyricsBlossomRunLayout.Sample? = configuration.animationStyle == .appleMusic164 && line.precision == .word
             ? runStore.sample(key: runKey, row: row.lineIndex, layout: blossomLayout, allowsCatchUp: runCatchUp) : nil
+        let nextSample = configuration.usesCalibratedApple164Appearance
+            ? runSample.map(blossomLayout.withCalibratedFeather) : runSample
         let runChanged = nextSample != blossomSample
         blossomSample = nextSample
         guard runChanged || visual != lastVisualRow || configuration != lastVisualConfiguration
@@ -1337,14 +1487,18 @@ private final class AMLLNativeRow: UIView {
             accessibilityLabel = layoutLineAccessibilityText()
         }
         let bright = row.brightAlpha, dark = row.darkAlpha
-        let radius = min(5, max(0, row.blur))
-        let sharpWeight = Float(max(0, 1 - radius / 2))
+        let weights = LyricsAnimationBlur.weights(radius: row.blur, maximum: blurMaximum)
+        let sharpWeight = weights.sharp
+        let calibrated = configuration.usesCalibratedApple164Appearance
+        // The word-float curve returns -0.05 em (or -0.1 for background vocals).
+        // Use the same progress for a fixed 2 pt lift in the calibrated presets.
+        let liftUnit = calibrated ? 2 / (line.isBackground ? 0.1 : 0.05) : Double(textLayout.font.pointSize)
         // A blurred bitmap has no word mask. Preserve the same unplayed
         // brightness instead of displaying its white pixels at full alpha.
         let lineBrightness = row.retirement != nil ? bright : (row.active || row.visualFocus == .holding ? 1.0 : dark)
         let blurredAlpha = Float(row.retirement != nil ? bright : (words.isEmpty ? lineBrightness : dark))
-        nearBlur.opacity = Float(radius <= 2 ? radius / 2 : (5 - radius) / 3) * blurredAlpha
-        farBlur.opacity = Float(max(0, (radius - 2) / 3)) * blurredAlpha
+        nearBlur.opacity = weights.near * blurredAlpha
+        farBlur.opacity = weights.far * blurredAlpha
         alpha = row.opacity * (line.isBackground ? 0.4 : 1)
         ruby.opacity = sharpWeight
         for entry in rubyPieces {
@@ -1359,7 +1513,7 @@ private final class AMLLNativeRow: UIView {
                                                                isBackground: line.isBackground)
                 let staticKoreanRoman = fragment.kind == .romanization && line.generatedRomanizationLanguage == "ko"
                 entry.layer.setAffineTransform(CGAffineTransform(translationX: 0,
-                    y: motionEnabled && !staticKoreanRoman ? offset * textLayout.font.pointSize : 0))
+                    y: motionEnabled && !staticKoreanRoman ? offset * liftUnit : 0))
             }
             guard let start = fragment.start, let end = fragment.end,
                   start.isFinite, end.isFinite, end > start
@@ -1398,7 +1552,7 @@ private final class AMLLNativeRow: UIView {
                                                      duration: entry.fragment.word.end - entry.fragment.word.start)
             let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: entry.fragment.word.end - entry.fragment.word.start,
                                                           isBackground: line.isBackground)
-            entry.layer.setAffineTransform(CGAffineTransform(translationX: 0, y: motionEnabled ? float * textLayout.font.pointSize : 0))
+            entry.layer.setAffineTransform(CGAffineTransform(translationX: 0, y: motionEnabled ? float * liftUnit : 0))
             let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
                 maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
             let width = max(1, entry.fragment.rect.width)
@@ -1428,9 +1582,10 @@ private final class AMLLNativeRow: UIView {
                     reverseElapsed: row.wordClock.enabled ? 0 : row.wordClock.reverseElapsed)
                 : 1
             let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground)
-            let scale = 1 + ((presentation?.scale ?? 1) - 1) * emphasisWeight
+            let scale = 1 + ((presentation?.scale ?? 1) - 1) * emphasisWeight * (calibrated ? 0.14 / 0.12 : 1)
             let x = (presentation?.offsetX ?? 0) * emphasisWeight * textLayout.font.pointSize
-            let y = ((presentation?.offsetY ?? 0) * emphasisWeight + (motionEnabled ? float : 0)) * textLayout.font.pointSize
+            let y = (presentation?.offsetY ?? 0) * emphasisWeight * textLayout.font.pointSize
+                + (motionEnabled ? float * liftUnit : 0)
             entry.layer.setAffineTransform(CGAffineTransform(translationX: x, y: y).scaledBy(x: scale, y: scale))
             entry.layer.shadowColor = UIColor.white.cgColor
             entry.layer.shadowRadius = CGFloat((presentation?.glowRadius ?? 0) * emphasisWeight) * textLayout.font.pointSize
@@ -1455,7 +1610,7 @@ private final class AMLLNativeRow: UIView {
             hdrRow?.layer.removeFromSuperlayer(); hdrRow = nil
             return true
         }
-        let sharpWeight = Float(max(0, 1 - min(5, max(0, row.blur)) / 2))
+        let sharpWeight = LyricsAnimationBlur.weights(radius: row.blur, maximum: blurMaximum).sharp
         guard sharpWeight > 0 else { hdrRow?.layer.isHidden = true; return true }
         if hdrRow == nil, let image = sharpImage.cgImage {
             hdrRow = LyricsHDRRow(renderer: renderer, image: image, size: textLayout.size,

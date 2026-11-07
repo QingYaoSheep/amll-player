@@ -117,6 +117,11 @@ struct LyricsBlossomRunLayout {
         // Kept for deterministic reconstruction tests; production holds cursors.
         .init(starts: records.map { Double(Self.cursor(at: time, segments: $0) - 2) / pixelsPerPoint - feather }, feather: feather)
     }
+
+    func withCalibratedFeather(_ sample: Sample) -> Sample {
+        // Keep the bright edge and the cursor's separate 30-unit tail intact.
+        .init(starts: sample.starts, feather: 40 / pixelsPerPoint)
+    }
     func equivalent(to other: Self) -> Bool {
         pixelsPerPoint == other.pixelsPerPoint && records == other.records && placements == other.placements
     }

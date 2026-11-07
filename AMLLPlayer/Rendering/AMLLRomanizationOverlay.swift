@@ -20,18 +20,20 @@ final class AMLLRomanizationOverlay: UIView {
     private let farBlur = CALayer()
     private var pieces: [Piece] = []
     private let rasterBytes: Int
+    private var blurBytes = 0
+    private var blurMaximum: Double?
     var onSeek: (() -> Void)?
 
     var estimatedBytes: Int {
-        rasterBytes
+        rasterBytes + blurBytes
     }
 
     init(layout: AMLLCoreTextLayout, cue: LyricLine, scale: CGFloat,
          prepared: AMLLPreparedOverlayImages? = nil) {
         self.layout = layout
         self.cue = cue
-        let images = prepared ?? AMLLPreparedOverlayImages(snapshot: layout.rasterSnapshot(), scale: scale)
-        rasterBytes = images.estimatedBytes
+        let images = prepared ?? AMLLPreparedOverlayImages(snapshot: layout.rasterSnapshot(), scale: scale, blurMaximum: nil)
+        rasterBytes = images.sharpBytes
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         isOpaque = false
         isAccessibilityElement = true
@@ -65,19 +67,20 @@ final class AMLLRomanizationOverlay: UIView {
                                 width: width, advance: advances[ordinal, default: 0]))
             advances[ordinal, default: 0] += fragment.rect.width
         }
-        for (blurLayer, blurred) in [(nearBlur, images.nearBlur), (farBlur, images.farBlur)] {
-            let paddingX = (blurred.size.width - bounds.width) / 2
-            let paddingY = (blurred.size.height - bounds.height) / 2
-            blurLayer.frame = CGRect(x: -paddingX, y: -paddingY,
-                                     width: blurred.size.width, height: blurred.size.height)
-            blurLayer.contents = blurred.cgImage
-            blurLayer.contentsScale = min(scale, 1)
+        for blurLayer in [nearBlur, farBlur] {
             blurLayer.opacity = 0
             layer.addSublayer(blurLayer)
         }
+        if let blur = images.blur { installBlur(blur) }
     }
 
     required init?(coder _: NSCoder) { nil }
+
+    func installBlur(_ images: AMLLPreparedBlurImages) {
+        images.install(near: nearBlur, far: farBlur, size: bounds.size)
+        blurMaximum = images.maximum
+        blurBytes = images.estimatedBytes
+    }
 
     func setCanSeek(_ value: Bool) {
         accessibilityTraits = value ? .button : []
@@ -97,15 +100,14 @@ final class AMLLRomanizationOverlay: UIView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         alpha = row.opacity * (cue.isBackground ? 0.4 : 1)
-        let radius = min(5, max(0, row.blur))
-        let sharp = Float(max(0, 1 - radius / 2))
+        let weights = LyricsAnimationBlur.weights(radius: row.blur, maximum: blurMaximum)
         let active = lyricTime >= cue.start && lyricTime < cue.end
         let bright = active ? row.brightAlpha : row.darkAlpha
-        nearBlur.opacity = Float(radius <= 2 ? radius / 2 : (5 - radius) / 3) * Float(row.darkAlpha)
-        farBlur.opacity = Float(max(0, (radius - 2) / 3)) * Float(row.darkAlpha)
+        nearBlur.opacity = weights.near * Float(row.darkAlpha)
+        farBlur.opacity = weights.far * Float(row.darkAlpha)
         let feather = max(0.0001, layout.font.lineHeight * configuration.gradientWidth * 0.5)
         for piece in pieces {
-            piece.layer.opacity = sharp
+            piece.layer.opacity = weights.sharp
             let ordinal = piece.fragment.ttmlWordIndex ?? -1
             guard cue.words.indices.contains(ordinal) else {
                 // The TTML file has only paragraph timing for this source

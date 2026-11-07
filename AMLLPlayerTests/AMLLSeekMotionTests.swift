@@ -50,7 +50,9 @@ final class AMLLSeekMotionTests: XCTestCase {
                         seekRevision: 2), delta: dt)
                     XCTAssertEqual(last.focusGroup, 1)
                 }
-                XCTAssertEqual(last.rows[1].y, 196, accuracy: 0.2)
+                var fresh = engine(appleSelection: family)
+                let target = fresh.render(.init(position: last.lyricTime + 0.5, offset: 0.5, playing: true), delta: 0)
+                XCTAssertEqual(last.rows[1].y, target.rows[1].y, accuracy: 0.2)
                 XCTAssertEqual(live.timeAnchorRevision, initialRevision + 1)
             }
         }

@@ -14,6 +14,8 @@ on:
       - 'AMLLPlayerTests/LyricsBlossomRunLayoutTests.swift'
       - 'AMLLPlayer/Rendering/AMLLScheduledSpring.swift'
       - 'AMLLPlayer/Rendering/AMLLFrameEngine.swift'
+      - 'AMLLPlayer/Infrastructure/AppleMusic/AppleMusicPlayback.swift'
+      - 'AMLLPlayerTests/AMLLSeekMotionTests.swift'
       - 'AMLLPlayerTests/LyricsBlossomLineEndTests.swift'
       - 'AMLLPlayerTests/Support/LyricsBlossomRunSweep.swift'
       - 'AMLLPlayer/Features/Lyrics/LyricsAnimationSettingsView.swift'
@@ -60,6 +62,9 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsBlossomLineEndTests
           -only-testing:AMLLPlayerTests/LyricsBlossomRunLayoutTests
           -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests
+          -only-testing:AMLLPlayerTests/AMLLSeekMotionTests
+          -only-testing:AMLLPlayerTests/AMLLSeekCanvasTests
+          -only-testing:AMLLPlayerTests/AppleMusicIntegrationTests/testApplePlaybackSnapshotUpdatesLyricsSeekRevisionAndIgnoresSpotifySnapshot
           -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage
           -resultBundlePath build/Animation-tests.xcresult
           -collect-test-diagnostics never

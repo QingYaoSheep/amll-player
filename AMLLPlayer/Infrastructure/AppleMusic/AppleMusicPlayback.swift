@@ -41,6 +41,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     private var commandGeneration = UUID()
     private var previous: PlaybackSnapshot?
     private var revision: UInt64 = 0
+    private var pendingSeek: (target: Double, trackURI: String, requestedAt: Double)?
     private var knownEntryID: String?
     private(set) var knownContext: MusicResourceID?
     private var player: SystemMusicPlayer {
@@ -66,6 +67,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         polling?.cancel(); polling = nil
         subscriptions.removeAll()
         previous = nil
+        pendingSeek = nil
         systemArtwork.reset()
         knownContext = nil
     }
@@ -118,9 +120,12 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
 
     func seek(to position: TimeInterval) async throws {
         try requireConnection()
-        guard position.isFinite, let previous, previous.restrictions.canSeek else { throw MusicServiceError.unsupportedOperation }
-        player.playbackTime = min(previous.duration, max(0, position))
-        revision &+= 1
+        guard position.isFinite, let previous, let track = previous.item, previous.restrictions.canSeek else {
+            throw MusicServiceError.unsupportedOperation
+        }
+        let target = min(previous.duration, max(0, position))
+        pendingSeek = (target, track.uri, ProcessInfo.processInfo.systemUptime)
+        player.playbackTime = target
         sample()
     }
 
@@ -286,10 +291,19 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         let duration = item?.duration ?? 0
         let playing = player.state.playbackStatus == .playing && valid
         let position = valid ? (duration > 0 ? min(time, duration) : time) : 0
-        if let previous, previous.item?.uri == item?.uri, valid,
-           abs(position - PlayerClock(anchor: previous).position(at: now)) > 1
-        {
+        let displaced = previous.map {
+            valid && $0.item?.uri == item?.uri && abs(position - PlayerClock(anchor: $0).position(at: now)) > 1
+        } ?? false
+        if let pendingSeek, pendingSeek.trackURI != item?.uri { self.pendingSeek = nil }
+        let resolvedSeek = self.pendingSeek.map {
+            // MusicKit may return the pre-seek time on the first read. Wait
+            // for a trustworthy read-back or release to the actual clock.
+            valid && (abs(position - $0.target) <= 0.25 + min(0.5, max(0, now - $0.requestedAt))
+                || now - $0.requestedAt >= 2)
+        } ?? false
+        if displaced || resolvedSeek {
             revision &+= 1
+            pendingSeek = nil
         }
         if knownEntryID != entry?.id {
             knownContext = nil; knownEntryID = entry?.id

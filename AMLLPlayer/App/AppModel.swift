@@ -636,7 +636,10 @@ final class AppModel {
                                                       resource: confirmation.resourceGeneration, revision: snapshot.positionRevision)
             }
         } else if let previous = playbackSnapshot, snapshot.positionRevision != previous.positionRevision {
-            lyricsSeekPosition = selectedMusicService == .netease ? nil : snapshot.position
+            // The provider published a new clock anchor. Passing its sampled
+            // position as a request would make the interpolated display clock
+            // wait to cross the sample in the wrong direction.
+            lyricsSeekPosition = nil
             lyricsSeekRevision &+= 1
         }
         playbackSnapshot = snapshot

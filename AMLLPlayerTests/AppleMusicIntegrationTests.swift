@@ -107,9 +107,9 @@ final class AppleMusicIntegrationTests: XCTestCase {
             }
         }
         XCTAssertEqual(model.playbackSnapshot?.position, 60)
-        var seek = first
-        seek = PlaybackSnapshot(item: item, isPlaying: false, position: 10, duration: 100, device: nil,
-                                restrictions: .unrestricted, source: .musicKit, sampledAtUptime: 11, positionRevision: 1)
+        let seek = PlaybackSnapshot(item: item, isPlaying: true, position: 10, duration: 100, device: nil,
+                                    restrictions: .unrestricted, source: .musicKit, sampledAtUptime: 11,
+                                    playbackRate: 1, positionRevision: 1)
         let revision = model.lyricsSeekRevision
         apple.continuation.yield(seek)
         for _ in 0 ..< 100 {
@@ -117,7 +117,11 @@ final class AppleMusicIntegrationTests: XCTestCase {
                 break
             }
         }
-        XCTAssertEqual(model.lyricsSeekPosition, 10)
+        // The new position is an authoritative sample, not a pending seek.
+        let frame = model.lyricsPlaybackFrame(at: 11.02)
+        XCTAssertNil(frame.legacySeekPosition)
+        XCTAssertGreaterThan(frame.position, 10)
+        XCTAssertEqual(model.playbackSnapshot?.position, 10)
         XCTAssertEqual(model.lyricsSeekRevision, revision + 1)
         spotify.continuation.yield(.empty(source: .webAPI, sampledAtUptime: 12))
         await Task.yield()

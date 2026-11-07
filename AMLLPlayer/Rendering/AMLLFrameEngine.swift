@@ -588,7 +588,12 @@ struct AMLLFrameEngine {
         let seekRequested = input.seeking || eventRequiresSeek || revisionChanged
         if seekRequested {
             if let target = input.seekPosition, target.isFinite, abs(target - input.position) > 0.001 {
-                pendingSeek = (target, input.position, animationTime)
+                // A revision can arrive with the same request just after its
+                // audio read-back. Compare against the pre-seek presentation,
+                // not an already interpolated sample at the destination.
+                if pendingSeek?.target != target {
+                    pendingSeek = (target, previousInput?.position ?? input.position, animationTime)
+                }
             } else {
                 pendingSeek = nil
             }

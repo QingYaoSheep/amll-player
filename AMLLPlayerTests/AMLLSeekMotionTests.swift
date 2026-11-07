@@ -2,7 +2,8 @@
 import XCTest
 
 final class AMLLSeekMotionTests: XCTestCase {
-    private func engine(advance: Double = 0.3, spring: Bool = true, reduceMotion: Bool = false) -> AMLLFrameEngine {
+    private func engine(advance: Double = 0.3, spring: Bool = true, reduceMotion: Bool = false,
+                        appleSelection: Int? = nil) -> AMLLFrameEngine {
         var lines: [LyricLine] = []
         for i in 0..<8 {
             let start = Double(i) * 4
@@ -11,7 +12,48 @@ final class AMLLSeekMotionTests: XCTestCase {
         }
         var env = AMLLRenderEnvironment(width: 400, height: 700, screenWidth: 400, fontSize: 32)
         env.alignPosition = 0.28; env.advance = advance; env.enableSpring = spring; env.reduceMotion = reduceMotion
+        if let appleSelection {
+            env.animationStyle = .appleMusic164
+            var options = LyricsBlossomAnimationOptions()
+            options.selection = appleSelection
+            env.appleMusicAnimation = options
+        }
         return AMLLFrameEngine(document: AMLLDisplayDocument(lines: lines), environment: env, heights: Array(repeating: 60, count: lines.count))
+    }
+
+    func testBackwardSeekAcknowledgedAfterInterpolationRebasesBothAppleSelectors() {
+        for family in [3, 0] {
+            for dt in [1.0 / 60, 1.0 / 120, 0.037] {
+                var live = engine(appleSelection: family)
+                _ = live.render(.init(position: 21, offset: 0.5, playing: true), delta: 0)
+                live.handle(.beginBrowsing)
+                let browsed = live.render(.init(position: 21, offset: 0.5, playing: true), delta: 0)
+                let initialRevision = live.timeAnchorRevision
+                let pending = live.render(.init(position: 21.05, offset: 0.5, playing: true,
+                    seekRevision: 1, seekPosition: 4.5), delta: dt)
+                XCTAssertTrue(pending.browsing)
+                XCTAssertEqual(pending.rows[1].y, browsed.rows[1].y, accuracy: 0.001)
+                XCTAssertEqual(live.timeAnchorRevision, initialRevision)
+
+                // The first displayed media sample can be a little later
+                // than the provider's read-back and the original request.
+                let confirmed = live.render(.init(position: 4.5 + dt, offset: 0.5, playing: true,
+                    seekRevision: 2, seekPosition: 4.5), delta: dt)
+                XCTAssertFalse(confirmed.browsing)
+                XCTAssertEqual(confirmed.focusGroup, 1)
+                XCTAssertTrue(confirmed.rows[1].active)
+                XCTAssertFalse(confirmed.rows[1].fillComplete)
+                XCTAssertEqual(live.timeAnchorRevision, initialRevision + 1)
+                var last = confirmed
+                for tick in 2...max(3, Int(2 / dt)) {
+                    last = live.render(.init(position: 4.5 + Double(tick) * dt, offset: 0.5, playing: true,
+                        seekRevision: 2), delta: dt)
+                    XCTAssertEqual(last.focusGroup, 1)
+                }
+                XCTAssertEqual(last.rows[1].y, 196, accuracy: 0.2)
+                XCTAssertEqual(live.timeAnchorRevision, initialRevision + 1)
+            }
+        }
     }
     func testConfirmedSeekAnimatesFromPresentedBrowsePositionAndSettlesAtRealTarget() {
         for step in [1.0 / 60, 1.0 / 120, 0.037] {

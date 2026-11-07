@@ -10,6 +10,7 @@ struct AMLLSourceTransition: Sendable {
     private var elapsed = 0.0
     private var duration = 0.32
     private var initialVelocity: Double?
+    var requiresDuration = false
 
     init(_ value: Double = 0) {
         self.value = value
@@ -19,6 +20,7 @@ struct AMLLSourceTransition: Sendable {
 
     var arrived: Bool {
         if initialVelocity != nil { return elapsed >= duration }
+        if requiresDuration { return from == target || elapsed >= duration }
         return abs(value - target) < 0.001
     }
 

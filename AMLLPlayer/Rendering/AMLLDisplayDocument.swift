@@ -13,6 +13,10 @@ struct AMLLDisplayDocument: Sendable {
     /// Source singing boundaries, before the display optimizer advances lines.
     let actualLineStarts: [Double]
     let actualLineEnds: [Double]
+    /// Paragraph boundaries remain distinct from the first and last timed
+    /// fragments, even when the display optimizer replaces the line bounds.
+    let sourceLineStarts: [Double]
+    let sourceLineEnds: [Double]
     let groups: [Group]
     let timings: [AMLLGroupTiming]
     let singingTimings: [AMLLGroupTiming]
@@ -26,6 +30,8 @@ struct AMLLDisplayDocument: Sendable {
         }
         actualLineStarts = sourceStarts
         actualLineEnds = sourceEnds
+        sourceLineStarts = source.map(\.start)
+        sourceLineEnds = source.map(\.end)
         var lines = source
         for index in lines.indices {
             // Keep the display copy lossless. TTML's `xml:space="preserve"`

@@ -31,6 +31,10 @@ struct AMLLScheduledSpring: Sendable {
     }
 
     var velocity: Double { spring.velocity }
+    var requireAccelerationAtRest: Bool {
+        get { spring.requireAccelerationAtRest }
+        set { spring.requireAccelerationAtRest = newValue }
+    }
 
     mutating func selectStyle(_ style: LyricsAnimationStyle) {
         spring.selectStyle(style)
@@ -51,8 +55,10 @@ struct AMLLScheduledSpring: Sendable {
         // Rebuild instead of using the source's setPosition, which deliberately
         // retains queued targets. Direct positioning cancels production work.
         let style = spring.style
+        let requireAccelerationAtRest = spring.requireAccelerationAtRest
         spring = LyricsAnimationSpring(value)
         spring.selectStyle(style)
+        spring.requireAccelerationAtRest = requireAccelerationAtRest
         spring.updateParameters(parameters)
         self.time = time
         pending = nil

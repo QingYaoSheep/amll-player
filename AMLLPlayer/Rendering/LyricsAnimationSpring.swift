@@ -4,6 +4,7 @@ import Foundation
 /// AMLL solver, whose finite derivatives and stopping rules are intentional.
 struct LyricsBlossomSpring: Sendable {
     var parameters = AMLLSpringParameters(mass: 1, damping: 18, stiffness: 100)
+    var requireAccelerationAtRest = false
     private var from: Double
     private var initialVelocity = 0.0
     private var elapsed = 0.0
@@ -15,7 +16,14 @@ struct LyricsBlossomSpring: Sendable {
         from = value; target = value; position = value
     }
 
-    var arrived: Bool { abs(position - target) < 0.01 && abs(velocity) < 0.01 }
+    var arrived: Bool {
+        guard abs(position - target) < 0.01, abs(velocity) < 0.01 else { return false }
+        guard requireAccelerationAtRest else { return true }
+        let squaredFrequency = parameters.stiffness / parameters.mass
+        let damping = min(parameters.damping / parameters.mass, 2 * sqrt(squaredFrequency))
+        let acceleration = squaredFrequency * (target - position) - damping * velocity
+        return abs(acceleration) < 0.01
+    }
 
     /// Exact derivative; the supplied reconstruction's underdamped velocity
     /// has inverted sine/cosine signs. Check it against x'(t), not its label.
@@ -71,6 +79,11 @@ struct LyricsAnimationSpring: Sendable {
     var velocity: Double { style == .amll ? (handoffVelocity ?? legacy.velocity) : blossom.velocity }
     var target: Double { style == .amll ? legacy.target : blossom.target }
     var arrived: Bool { style == .amll ? legacy.arrived : blossom.arrived }
+
+    var requireAccelerationAtRest: Bool {
+        get { blossom.requireAccelerationAtRest }
+        set { blossom.requireAccelerationAtRest = newValue }
+    }
 
     mutating func selectStyle(_ value: LyricsAnimationStyle) {
         guard style != value else { return }

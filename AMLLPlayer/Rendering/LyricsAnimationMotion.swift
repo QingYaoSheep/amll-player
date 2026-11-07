@@ -57,6 +57,13 @@ struct LyricsBlossomFocusAlpha: Sendable {
     private var bright = LyricsBlossomSpring(1)
     private var dark = LyricsBlossomSpring(0.2)
     var arrived: Bool { bright.arrived && dark.arrived }
+    var requireAccelerationAtRest: Bool {
+        get { bright.requireAccelerationAtRest }
+        set {
+            bright.requireAccelerationAtRest = newValue
+            dark.requireAccelerationAtRest = newValue
+        }
+    }
     var value: (bright: Double, dark: Double) {
         (min(1, max(0, bright.position)), min(1, max(0, dark.position)))
     }
@@ -66,19 +73,21 @@ struct LyricsBlossomFocusAlpha: Sendable {
         self.dark.resume(position: dark, velocity: 0, target: dark)
     }
 
-    mutating func update(focused: Bool, delta: Double, force: Bool) {
+    mutating func setFocused(_ focused: Bool, immediately: Bool) {
         // Source white stops are 0.85/0.30. The native parent already applies
         // 0.85 once, so keep the bright mask at 1 and normalize only the dark
         // stop. HDR receives these same coverage values, never a third draw.
         let brightTarget = focused ? 1.0 : 0.2, darkTarget = focused ? 0.3 / 0.85 : 0.2
-        if force {
+        if immediately {
             resume(bright: brightTarget, dark: darkTarget)
-        } else {
-            if bright.target != brightTarget {
-                bright.resume(position: bright.position, velocity: bright.velocity, target: brightTarget)
-                dark.resume(position: dark.position, velocity: dark.velocity, target: darkTarget)
-            }
-            bright.update(delta); dark.update(delta)
+        } else if bright.target != brightTarget {
+            bright.resume(position: bright.position, velocity: bright.velocity, target: brightTarget)
+            dark.resume(position: dark.position, velocity: dark.velocity, target: darkTarget)
         }
+    }
+
+    mutating func update(focused: Bool, delta: Double, force: Bool) {
+        setFocused(focused, immediately: force)
+        if !force { bright.update(delta); dark.update(delta) }
     }
 }

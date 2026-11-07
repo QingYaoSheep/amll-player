@@ -29,10 +29,11 @@ final class AMLLRomanizationOverlay: UIView {
     }
 
     init(layout: AMLLCoreTextLayout, cue: LyricLine, scale: CGFloat,
-         prepared: AMLLPreparedOverlayImages? = nil) {
+         prepared: AMLLPreparedOverlayImages? = nil, initialBlurMaximum: Double? = nil) {
         self.layout = layout
         self.cue = cue
-        let images = prepared ?? AMLLPreparedOverlayImages(snapshot: layout.rasterSnapshot(), scale: scale, blurMaximum: nil)
+        let images = prepared ?? AMLLPreparedOverlayImages(snapshot: layout.rasterSnapshot(), scale: scale,
+                                                            blurMaximum: initialBlurMaximum)
         rasterBytes = images.sharpBytes
         super.init(frame: CGRect(origin: .zero, size: layout.size))
         isOpaque = false

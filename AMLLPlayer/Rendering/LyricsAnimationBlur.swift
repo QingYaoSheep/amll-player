@@ -30,7 +30,7 @@ enum LyricsAnimationBlur {
     static func weights(radius: Double, maximum: Double?) -> (sharp: Float, near: Float, far: Float) {
         guard let maximum, maximum > 0 else { return (1, 0, 0) }
         let radius = min(maximum, max(0, radius))
-        let near = near(maximum)
+        let near = Self.near(maximum)
         if radius <= near {
             let mix = Float(radius / near)
             return (1 - mix, mix, 0)

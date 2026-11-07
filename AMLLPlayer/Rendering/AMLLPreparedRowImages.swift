@@ -39,7 +39,7 @@ struct AMLLPreparedRowImages: @unchecked Sendable {
     let sharp: UIImage
     let ruby: UIImage
     let auxiliary: UIImage
-    let blur: AMLLPreparedBlurImages?
+    fileprivate(set) var blur: AMLLPreparedBlurImages?
 
     init(snapshot: AMLLCoreTextRasterSnapshot, scale: CGFloat, hideRomanization: Bool = false,
          blurMaximum: Double? = 5) {
@@ -59,7 +59,7 @@ struct AMLLPreparedRowImages: @unchecked Sendable {
 
 struct AMLLPreparedOverlayImages: @unchecked Sendable {
     let sharp: UIImage
-    let blur: AMLLPreparedBlurImages?
+    fileprivate(set) var blur: AMLLPreparedBlurImages?
 
     init(snapshot: AMLLCoreTextRasterSnapshot, scale: CGFloat, blurMaximum: Double? = 5) {
         sharp = snapshot.raster(scale: scale, auxiliary: false, ruby: true, romanization: true)
@@ -71,9 +71,17 @@ struct AMLLPreparedOverlayImages: @unchecked Sendable {
 }
 
 struct AMLLPreparedCompositeImages: @unchecked Sendable {
-    let original: AMLLPreparedRowImages
-    let romanization: AMLLPreparedRowImages?
-    let overlay: AMLLPreparedOverlayImages?
+    private(set) var original: AMLLPreparedRowImages
+    private(set) var romanization: AMLLPreparedRowImages?
+    private(set) var overlay: AMLLPreparedOverlayImages?
+
+    func matchingBlur(maximum: Double?) -> Self {
+        var copy = self
+        if original.blur?.maximum != maximum { copy.original.blur = nil }
+        if romanization?.blur?.maximum != maximum { copy.romanization?.blur = nil }
+        if overlay?.blur?.maximum != maximum { copy.overlay?.blur = nil }
+        return copy
+    }
 
     var estimatedBytes: Int {
         original.estimatedBytes + (romanization?.estimatedBytes ?? 0) + (overlay?.estimatedBytes ?? 0)

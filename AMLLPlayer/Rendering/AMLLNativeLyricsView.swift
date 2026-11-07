@@ -568,10 +568,17 @@ final class AMLLNativeCanvas: UIView {
                 let layout = makeLayout(row.lineIndex)
                 layouts[row.lineIndex] = layout
                 let rasterStarted = performanceRecordingEnabled ? CACurrentMediaTime() : 0
-                let prepared = preparedRows.removeValue(forKey: row.lineIndex)
+                let prepared = preparedRows.removeValue(forKey: row.lineIndex)?
+                    .matchingBlur(maximum: requestsBlurImages ? lyricBlurMaximum : nil)
                 if prepared != nil { preparedOrder.removeAll { $0 == row.lineIndex } }
+                #if DEBUG
+                    let initialBlurMaximum = controlledReplay && requestsBlurImages ? lyricBlurMaximum : nil
+                #else
+                    let initialBlurMaximum: Double? = nil
+                #endif
                 view = AMLLCompositeRow(line: display.lines[row.lineIndex], layouts: layout,
-                                        scale: window?.screen.scale ?? 2, prepared: prepared)
+                                        scale: window?.screen.scale ?? 2, prepared: prepared,
+                                        initialBlurMaximum: initialBlurMaximum)
                 if performanceRecordingEnabled {
                     pendingRasterMilliseconds += (CACurrentMediaTime() - rasterStarted) * 1_000
                 }
@@ -595,7 +602,7 @@ final class AMLLNativeCanvas: UIView {
             if view.layer.position != rowPosition { view.layer.position = rowPosition }
             if view.transform != rowTransform { view.transform = rowTransform }
             view.setCanSeek(canSeek)
-            view.setPressFeedbackEnabled(usesApple164Appearance && canSeek && !reduceMotion && !state.browsing)
+            view.setPressFeedbackEnabled(usesApple164Appearance && canSeek && !reduceMotion)
             let gain = hdr.brightness(for: row)
             view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
                                gain: gain, lyricTime: state.lyricTime, runStore: engine!.runStore,
@@ -645,7 +652,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private var requestsBlurImages: Bool {
-        configuration.blurInactive && !reduceMotion && !reduceTransparency && !reduceTransparencyEnabled
+        configuration.blurInactive && !reduceMotion && !reduceTransparency && !UIAccessibility.isReduceTransparencyEnabled
     }
 
     private func scheduleBlurRefresh(visible: [AMLLFrameState.Row]) {
@@ -963,6 +970,7 @@ final class AMLLNativeCanvas: UIView {
         switch gesture.state {
         case .began:
             lastTranslation = 0
+            rowViews.values.forEach { $0.cancelPressFeedback() }
             handleInteraction(.beginBrowsing)
         case .changed:
             let value = gesture.translation(in: self).y
@@ -1024,17 +1032,18 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     }
 
     init(line: LyricLine, layouts: AMLLNativeCanvas.RowLayouts, scale: CGFloat,
-         prepared: AMLLPreparedCompositeImages? = nil) {
+         prepared: AMLLPreparedCompositeImages? = nil, initialBlurMaximum: Double? = nil) {
         original = AMLLNativeRow(line: line, layout: layouts.original, scale: scale,
-                                 hideRomanization: layouts.alignedRomanization, prepared: prepared?.original)
+                                 hideRomanization: layouts.alignedRomanization, prepared: prepared?.original,
+                                 initialBlurMaximum: initialBlurMaximum)
         romanizationCue = layouts.romanizationCue?.line
         alignedRomanization = layouts.alignedRomanization && layouts.romanizationCue != nil
             ? AMLLRomanizationOverlay(layout: layouts.original, cue: layouts.romanizationCue!.line,
-                                      scale: scale, prepared: prepared?.overlay)
+                                      scale: scale, prepared: prepared?.overlay, initialBlurMaximum: initialBlurMaximum)
             : nil
         if let cue = layouts.romanizationCue, let layout = layouts.romanization {
             romanization = AMLLNativeRow(line: cue.line, layout: layout, scale: scale,
-                                          prepared: prepared?.romanization)
+                                          prepared: prepared?.romanization, initialBlurMaximum: initialBlurMaximum)
         } else {
             romanization = nil
         }
@@ -1062,6 +1071,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
             gesture.allowableMovement = 8
             gesture.cancelsTouchesInView = false
             gesture.delaysTouchesBegan = false
+            gesture.delaysTouchesEnded = false
             gesture.delegate = self
             addGestureRecognizer(gesture)
             pressFeedback = gesture
@@ -1074,6 +1084,10 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
 
     func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool {
         true
+    }
+
+    func cancelPressFeedback() {
+        if pressOrigin != nil { endPress(animated: true) }
     }
 
     override func didMoveToWindow() {
@@ -1221,7 +1235,7 @@ private final class AMLLNativeRow: UIView {
     var onSeek: (() -> Void)?
 
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat,
-         hideRomanization: Bool = false, prepared: AMLLPreparedRowImages? = nil) {
+         hideRomanization: Bool = false, prepared: AMLLPreparedRowImages? = nil, initialBlurMaximum: Double? = nil) {
         self.line = line; textLayout = layout
         let sortedFragments = layout.fragments.sorted { $0.range.location < $1.range.location }
         var group = -1
@@ -1264,7 +1278,8 @@ private final class AMLLNativeRow: UIView {
         // piece must not sample a ruby or translation row from the full-line
         // bitmap when its contentsRect is animated independently.
         let images = prepared ?? AMLLPreparedRowImages(snapshot: layout.rasterSnapshot(),
-                                                        scale: scale, hideRomanization: hideRomanization, blurMaximum: nil)
+                                                        scale: scale, hideRomanization: hideRomanization,
+                                                        blurMaximum: initialBlurMaximum)
         sharpImage = images.sharp
         sharpRubyImage = images.ruby
         sharpAuxiliaryImage = images.auxiliary

@@ -38,6 +38,11 @@ final class AMLLFramePerformanceTests: XCTestCase {
         XCTAssertEqual(actual.sharp.pngData(), expected.sharp.pngData())
         XCTAssertEqual(actual.ruby.pngData(), expected.ruby.pngData())
         XCTAssertEqual(try XCTUnwrap(actual.blur).near.pngData(), try XCTUnwrap(expected.blur).near.pngData())
+        let stale = AMLLPreparedCompositeImages(original: actual, romanization: nil, overlay: nil)
+        let updated = stale.matchingBlur(maximum: 12)
+        XCTAssertTrue(updated.original.sharp === actual.sharp)
+        XCTAssertNil(updated.original.blur)
+        XCTAssertNotNil(stale.matchingBlur(maximum: 5).original.blur)
     }
 
     @MainActor

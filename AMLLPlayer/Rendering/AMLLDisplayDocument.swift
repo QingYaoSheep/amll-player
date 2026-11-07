@@ -17,6 +17,7 @@ struct AMLLDisplayDocument: Sendable {
     /// fragments, even when the display optimizer replaces the line bounds.
     let sourceLineStarts: [Double]
     let sourceLineEnds: [Double]
+    let sourceBackgroundFlags: [Bool]
     let groups: [Group]
     let timings: [AMLLGroupTiming]
     let singingTimings: [AMLLGroupTiming]
@@ -32,6 +33,7 @@ struct AMLLDisplayDocument: Sendable {
         actualLineEnds = sourceEnds
         sourceLineStarts = source.map(\.start)
         sourceLineEnds = source.map(\.end)
+        sourceBackgroundFlags = source.map(\.isBackground)
         var lines = source
         for index in lines.indices {
             // Keep the display copy lossless. TTML's `xml:space="preserve"`

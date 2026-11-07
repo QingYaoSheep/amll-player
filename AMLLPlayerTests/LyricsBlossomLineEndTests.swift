@@ -124,7 +124,7 @@ final class LyricsBlossomLineEndTests: XCTestCase {
         XCTAssertEqual(LyricsBlossomRunSweep.target(now: 1.5, segments: records), 37.5) // Reverse seek: no retained full-fill flag.
     }
 
-    func testPauseStartsQueuedHandoffAndRetirementAtTheMovementBoundaryOnce() throws {
+    func testAppleRetiresOnSelectionBeforePositionWaitAndPauseDoesNotRestartIt() throws {
         let lines: [LyricLine] = (0 ..< 5).map { index in
             let start = Double(index) * 2
             let end = start + 1.8
@@ -141,18 +141,20 @@ final class LyricsBlossomLineEndTests: XCTestCase {
             let queued = engine.render(.init(position: 3.71, playing: true), delta: 0.01)
             let outgoingBefore = try XCTUnwrap(queued.rows.first { $0.lineIndex == 1 })
             let incomingBefore = try XCTUnwrap(queued.rows.first { $0.lineIndex == 2 })
-            XCTAssertNil(outgoingBefore.retirement)
+            let selectionExit = try XCTUnwrap(outgoingBefore.retirement)
+            XCTAssertEqual(selectionExit.progress, 0)
             XCTAssertNil(outgoingBefore.positionMotion?.startedAt)
+            XCTAssertGreaterThan(try XCTUnwrap(outgoingBefore.positionMotion?.scheduledAt), selectionExit.startedAt)
             XCTAssertNil(incomingBefore.positionMotion?.startedAt)
-            XCTAssertEqual(incomingBefore.visualFocus, .waiting)
+            XCTAssertEqual(incomingBefore.visualFocus, .preparing)
 
             let paused = engine.render(.init(position: 3.71, playing: false), delta: interval)
             let outgoing = try XCTUnwrap(paused.rows.first { $0.lineIndex == 1 })
             let incoming = try XCTUnwrap(paused.rows.first { $0.lineIndex == 2 })
             let exit = try XCTUnwrap(outgoing.retirement)
-            XCTAssertEqual(exit.startedAt, 0.01, accuracy: 1e-10)
-            XCTAssertEqual(exit.startedAt, try XCTUnwrap(outgoing.positionMotion?.startedAt))
-            XCTAssertEqual(incoming.positionMotion?.startedAt, exit.startedAt)
+            XCTAssertEqual(exit.startedAt, selectionExit.startedAt)
+            XCTAssertEqual(try XCTUnwrap(outgoing.positionMotion?.startedAt), 0.01, accuracy: 1e-10)
+            XCTAssertEqual(incoming.positionMotion?.startedAt, outgoing.positionMotion?.startedAt)
             XCTAssertEqual(outgoing.visualFocus, .passed)
             XCTAssertEqual(incoming.visualFocus, .preparing)
             XCTAssertGreaterThan(exit.progress, 0)

@@ -378,7 +378,7 @@ struct AMLLFrameEngine {
         var previousEnd = 0.0
         for (index, group) in document.groups.enumerated() {
             let main = group.main
-            guard !document.lines[main].isBackground else { continue }
+            guard !document.sourceBackgroundFlags[main] else { continue }
             let start = document.sourceLineStarts[main], end = document.sourceLineEnds[main]
             guard start.isFinite, end.isFinite else { continue }
             if Float(start - previousEnd) > 7 {
@@ -386,7 +386,7 @@ struct AMLLFrameEngine {
                     start: Double(Float(previousEnd + 0.5)), end: start, lastWordEnd: start, interlude: true))
             }
             let associatedStart = group.background.map {
-                min(document.sourceLineStarts[$0], document.actualLineStarts[$0])
+                min(document.sourceLineStarts[$0], document.lines[$0].words.map(\.start).min() ?? start)
             } ?? start
             records.append(.init(index: index, start: associatedStarts ? min(start, associatedStart) : start,
                 end: end, lastWordEnd: document.lines[main].words.last?.end ?? end, sourceStart: start))

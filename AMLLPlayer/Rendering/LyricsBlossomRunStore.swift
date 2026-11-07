@@ -62,8 +62,9 @@ final class LyricsBlossomRunStore {
             deferredCatchUp.removeAll()
         } else if next.playing {
             for row in Array(deferredCatchUp.keys) {
-                deferredCatchUp[row]?.elapsed += next.delta
-                if (deferredCatchUp[row]?.elapsed ?? 0) >= 0.25 { deferredCatchUp.removeValue(forKey: row) }
+                if let elapsed = deferredCatchUp[row]?.elapsed {
+                    deferredCatchUp[row]?.elapsed = min(0.25, elapsed + next.delta)
+                }
             }
         }
         for key in Array(entries.keys) {

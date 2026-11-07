@@ -59,10 +59,11 @@ final class LyricsBlossomMechanismTests: XCTestCase {
                 environment.appleMusicAnimation = options
                 var engine = AMLLFrameEngine(document: .init(lines: lines), environment: environment,
                                              heights: Array(repeating: 50, count: lines.count))
-                var time = 6.9
+                var time = 2.8
                 _ = engine.render(.init(position: time, playing: true), delta: 0)
                 _ = engine.runStore.sample(key: "main:1", row: 1, layout: layout)
-                var armedAt: Double?, leftAt: Double?
+                var armedAt: Double?, leftAt: Double?, armedCursor: Float?
+                var sawIntermediateCursor = false
                 var tick = 0
                 while time < 7.9 {
                     let dt = cadence[tick % cadence.count]
@@ -73,14 +74,21 @@ final class LyricsBlossomMechanismTests: XCTestCase {
                         armedAt = time
                         let state = engine.runStore.cursorStates(key: "main:1")[0]
                         XCTAssertEqual(state.elapsed, 0)
+                        XCTAssertGreaterThan(state.to - state.from, 1)
+                        armedCursor = state.from
                         XCTAssertTrue(engine.blossomSchedule?.selected.contains(1) == true)
                         _ = engine.render(.init(position: time, playing: false), delta: dt)
                         XCTAssertEqual(engine.runStore.cursorStates(key: "main:1")[0], state)
+                    }
+                    if let armedCursor, let cursor = engine.runStore.cursorStates(key: "main:1").first,
+                       cursor.value > armedCursor, cursor.value < cursor.to {
+                        sawIntermediateCursor = true
                     }
                     if leftAt == nil, engine.blossomSchedule?.left.contains(1) == true { leftAt = time }
                 }
                 XCTAssertLessThan(try XCTUnwrap(armedAt), try XCTUnwrap(leftAt))
                 XCTAssertEqual(engine.runStore.armCount, 1)
+                XCTAssertTrue(sawIntermediateCursor)
                 let completed = engine.runStore.cursorStates(key: "main:1")[0]
                 XCTAssertEqual(completed.value, 160, accuracy: 0.001)
                 XCTAssertTrue(completed.suppressed)

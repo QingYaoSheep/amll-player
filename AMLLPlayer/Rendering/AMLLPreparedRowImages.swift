@@ -18,7 +18,17 @@ struct AMLLPreparedBlurImages: @unchecked Sendable {
     var estimatedBytes: Int { rasterBytes(near) + rasterBytes(far) }
 
     @MainActor func install(near nearLayer: CALayer, far farLayer: CALayer, size: CGSize) {
+        let allowsFade = !UIAccessibility.isReduceMotionEnabled && !UIAccessibility.isReduceTransparencyEnabled
         for (layer, image) in [(nearLayer, near), (farLayer, far)] {
+            // The requested radius may already be above the old texture's maximum.
+            // Fade visible replacements so the new texture does not jump into view.
+            if allowsFade, layer.contents != nil, layer.opacity > 0 {
+                let fade = CATransition()
+                fade.type = .fade
+                fade.duration = 0.12
+                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                layer.add(fade, forKey: "blurTextureReplacement")
+            }
             // Offset the padded raster to retain the original text origin.
             layer.frame = CGRect(x: (size.width - image.size.width) / 2,
                                  y: (size.height - image.size.height) / 2,

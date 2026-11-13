@@ -1,5 +1,6 @@
 @testable import AMLLPlayer
 import XCTest
+import UIKit
 
 final class LyricsBlossomFamilyTwoTests: XCTestCase {
     private typealias Schedule = LyricsBlossomSelectionSchedule
@@ -197,11 +198,20 @@ final class LyricsBlossomFamilyTwoTests: XCTestCase {
                 var now = 0.0, tick = 0
                 var sawEarly = false, sawExit = false, sawTailStep = false, sawWrapped = false
                 var armedFrom: Float?
+                var overlapY: Double?
+                var overlapPitch: Double?
+                var exitY: Double?
+                var sawExitMovement = false
                 while now < 24 {
                     let dt = cadence[tick % cadence.count]
                     now += dt; tick += 1
-                    _ = engine.render(.init(position: now, playing: true), delta: dt)
+                    let frame = engine.render(.init(position: now, playing: true), delta: dt)
                     let schedule = try XCTUnwrap(engine.blossomSchedule)
+                    if schedule.selected == [3, 4], frame.settled {
+                        XCTAssertEqual(frame.focusGroup, 3)
+                        overlapY = frame.rows[3].y
+                        overlapPitch = frame.rows[4].y - frame.rows[3].y
+                    }
                     if schedule.catchUp.contains(1), schedule.selected.contains(1) {
                         let state = try XCTUnwrap(engine.runStore.cursorStates(key: "main:1").first)
                         if armedFrom == nil {
@@ -218,7 +228,9 @@ final class LyricsBlossomFamilyTwoTests: XCTestCase {
                         XCTAssertEqual(schedule.left, [3])
                         XCTAssertTrue(schedule.catchUp.isEmpty)
                         sawExit = true
+                        exitY = frame.rows[3].y
                     }
+                    if let exitY, frame.rows[3].y < exitY - 1 { sawExitMovement = true }
                     if schedule.catchUp.contains(5) {
                         let runs = engine.runStore.cursorStates(key: "main:5")
                         XCTAssertEqual(runs.count, 4)
@@ -230,6 +242,11 @@ final class LyricsBlossomFamilyTwoTests: XCTestCase {
                 XCTAssertTrue(sawTailStep, preset.title)
                 XCTAssertTrue(sawExit, preset.title)
                 XCTAssertTrue(sawWrapped, preset.title)
+                XCTAssertTrue(sawExitMovement, preset.title)
+                if let overlapY, let overlapPitch {
+                    XCTAssertGreaterThan(overlapPitch, 0)
+                    XCTAssertEqual(overlapY, environment.height * environment.alignPosition, accuracy: 1)
+                }
                 XCTAssertEqual(engine.runStore.armCount, 5)
                 let before = engine.runStore.cursorStates(key: "main:1")
                 _ = engine.render(.init(position: now, playing: false), delta: 1)
@@ -238,6 +255,52 @@ final class LyricsBlossomFamilyTwoTests: XCTestCase {
                 let replay = try XCTUnwrap(engine.runStore.cursorStates(key: "main:1").first)
                 XCTAssertFalse(replay.suppressed)
                 XCTAssertLessThan(replay.value, before[0].value)
+            }
+        }
+    }
+
+    @MainActor func testProductionCanvasComposesFillBeforeFadingAndKeepsParentNormalized() throws {
+        for preset in [LyricsBlossomAnimationOptions.Preset.appleMusic264, .appleMusic27] {
+            for height in [700.0, 300.0] {
+                let canvas = AMLLNativeCanvas(frame: .init(x: 0, y: 0, width: 402, height: height))
+                let window = UIWindow(frame: canvas.bounds)
+                window.addSubview(canvas)
+                defer { canvas.stop(); canvas.removeFromSuperview(); window.isHidden = true }
+                let line = LyricLine(id: "source-fill", text: "First second", start: 0, end: 4,
+                    words: [.init(text: "First ", start: 0, end: 1), .init(text: "second", start: 1, end: 4)], precision: .word)
+                let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "source-fill", title: "Fill", artists: []),
+                    lines: [line], language: "en", selectionReason: "Source-over production regression")
+                var configuration = LyricsRenderConfiguration()
+                configuration.selectAnimationStyle(.appleMusic164)
+                var options = LyricsBlossomAnimationOptions(); options.apply(preset)
+                configuration.appleMusicAnimation = options
+                configuration.blurInactive = false
+                configuration.emphasizeWords = false
+                configuration.hdr = .init(enabled: false)
+                canvas.position = { 1.5 }
+                canvas.configure(document: document, configuration: configuration,
+                    input: .init(position: 1.5, playing: false), active: false, reduceMotion: false)
+                canvas.advanceFrame(delta: 0)
+                func findGroup(_ layer: CALayer) -> CALayer? {
+                    if layer.name == "blossomRunFill" { return layer }
+                    return (layer.sublayers ?? []).compactMap(findGroup).first
+                }
+                let group = try XCTUnwrap(findGroup(canvas.layer))
+                XCTAssertTrue(group.allowsGroupOpacity)
+                XCTAssertEqual(try XCTUnwrap(group.superlayer).opacity, 1, accuracy: 0.00001)
+                XCTAssertEqual(group.opacity, 1)
+                let children = try XCTUnwrap(group.sublayers)
+                XCTAssertTrue(children.contains { $0.mask == nil && abs($0.opacity - 0.3) < 0.00001 })
+                let gradient = try XCTUnwrap(children.compactMap { $0.mask as? CAGradientLayer }.first)
+                let colors = try XCTUnwrap(gradient.colors as? [CGColor])
+                XCTAssertEqual(colors[0].alpha, 0.85, accuracy: 0.00001)
+                XCTAssertEqual(colors[1].alpha, 0)
+                XCTAssertTrue(children.filter { $0.mask != nil }.allSatisfy { $0.opacity == 1 })
+                configuration.selectAnimationStyle(.amll)
+                canvas.configure(document: document, configuration: configuration,
+                    input: .init(position: 1.5, playing: false), active: false, reduceMotion: false)
+                canvas.advanceFrame(delta: 0)
+                XCTAssertNil(findGroup(canvas.layer))
             }
         }
     }

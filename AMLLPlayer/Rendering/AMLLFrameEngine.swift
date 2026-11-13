@@ -708,7 +708,7 @@ struct AMLLFrameEngine {
                 document.groups.indices.contains(key) ? document.groups[key].main : nil
             }).intersection(blossomTimedRows)
             runStore.applySelection(entered: blossomRows(schedule.entered), left: blossomRows(schedule.left), catchUp: catchUp)
-            if let key = schedule.selected.last {
+            if let key = family == 2 ? schedule.selected.first : schedule.selected.last {
                 let focus = blossomGroup(for: key)
                 layout = timeline.selectFocus(focus) || layout
             }
@@ -822,7 +822,8 @@ struct AMLLFrameEngine {
                     motions[index].mainFocusRetained = selected.contains(index)
                     motions[index].backgroundFocusRetained = selected.contains(index) && motions[index].backgroundSinging
                 }
-                visualFocus = schedule.selected.last.flatMap { document.groups.indices.contains($0) ? $0 : nil }
+                let anchor = family == 2 ? schedule.selected.first : schedule.selected.last
+                visualFocus = anchor.flatMap { document.groups.indices.contains($0) ? $0 : nil }
             }
         } else if (visualFocus == nil && !releasedForInterlude) || seeking || (releasedForInterlude && changedInterlude) {
             selectVisualFocus(document.groups.indices.contains(timeline.focus) ? timeline.focus : nil, at: frameStart)

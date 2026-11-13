@@ -64,7 +64,7 @@ struct LyricsBlossomSelectionSchedule {
     static func dispatch(family: Int, now: Double, records: [Record], selected: [Int],
                          pending: Int?, capacity: Int, mainHold: Bool, ticketHold: Bool,
                          deadline: Double, bypassClock: Bool = false, adaptive: Bool = false) -> Output {
-        var output = Output(selected: selected, pending: pending, deadline: deadline)
+        var output = Output(selected: selected, active: selected, pending: pending, deadline: deadline)
         let special = family == 2 || family == 3
         if special && mainHold { return output }
         if special, !records.contains(where: { $0.index == output.pending }) {
@@ -104,6 +104,7 @@ struct LyricsBlossomSelectionSchedule {
            let record = records.first(where: { $0.index == first }), record.end < now + lead {
             output.removed = output.selected.removeFirst()
         }
+        output.active = output.selected
         guard (special || !ticketHold), pendingRecord.start <= now + lead else { return output }
         if current == nil {
             if family == 2 { output.selected.append(pendingRecord.index) }
@@ -122,6 +123,7 @@ struct LyricsBlossomSelectionSchedule {
                 output.kind = .replace
             }
         }
+        output.active = output.selected
         guard output.kind != .none else { return output }
         output.enterIndex = pendingRecord.index
         output.pending = records.indices.contains(p + 1) ? records[p + 1].index : nil
@@ -193,7 +195,6 @@ struct LyricsBlossomSelectionSchedule {
             output = Self.dispatch(family: family, now: now, records: records, selected: state.active,
                 pending: state.pending, capacity: capacity, mainHold: mainHold, ticketHold: ticketHold,
                 deadline: state.deadline, bypassClock: bypassClock, adaptive: adaptive)
-            output.active = output.selected
             if family == 2 {
                 output.selected = state.selected
                 if let removed = output.removed { output.selected.removeAll { $0 == removed } }
@@ -209,7 +210,7 @@ struct LyricsBlossomSelectionSchedule {
            let key = output.selected.last, let last = records.first(where: { $0.index == key }), !last.interlude {
             output.takeover = (last.end - now) - 0.5 < 0.4
         }
-        output.diagnostic = "family=\(family) pulse=\(pulse) mainHold=\(mainHold) clockHold=\(clockHold) deadline=\(output.deadline) tickets=\(tickets.count) positionTicket=\(String(describing: positionTicket)) kind=\(output.kind) preview=\(output.previewCode) entered=\(output.entered) left=\(output.left) catchUp=\(output.catchUp)"
+        output.diagnostic = "family=\(family) adaptive=\(adaptive) pulse=\(pulse) mainHold=\(mainHold) clockHold=\(clockHold) deadline=\(output.deadline) tickets=\(tickets.count) positionTicket=\(String(describing: positionTicket)) kind=\(output.kind) preview=\(output.previewCode) active=\(output.active) display=\(output.selected) enter=\(String(describing: output.enterIndex)) exit=\(String(describing: output.removed)) entered=\(output.entered) left=\(output.left) catchUp=\(output.catchUp)"
         state = output
         return output
     }

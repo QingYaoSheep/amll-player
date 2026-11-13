@@ -14,9 +14,4 @@ struct LyricsBlossomRunFill {
         overlay = 0.85 * focus
     }
 
-    func alpha(coverage: Double, glyph: Double) -> Double {
-        let underneath = glyph * base
-        let foreground = glyph * overlay * coverage
-        return foreground + underneath * (1 - foreground)
-    }
 }

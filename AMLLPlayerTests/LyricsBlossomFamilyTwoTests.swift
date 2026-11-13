@@ -1,6 +1,7 @@
 @testable import AMLLPlayer
 import XCTest
 import UIKit
+import MetalKit
 
 final class LyricsBlossomFamilyTwoTests: XCTestCase {
     private typealias Schedule = LyricsBlossomSelectionSchedule
@@ -84,6 +85,7 @@ final class LyricsBlossomFamilyTwoTests: XCTestCase {
                 XCTAssertEqual(result.kind.rawValue, point.kind)
                 XCTAssertEqual(result.catchUp, point.catchUp)
                 XCTAssertEqual(result.selected, point.active)
+                XCTAssertEqual(result.active, point.active)
                 XCTAssertEqual(result.enterIndex ?? -1, point.enter)
                 XCTAssertEqual(result.removed ?? -1, point.removed)
                 XCTAssertEqual(result.pending ?? -1, point.next)
@@ -158,16 +160,13 @@ final class LyricsBlossomFamilyTwoTests: XCTestCase {
         XCTAssertFalse(released.takeover)
     }
 
-    func testSourceOverFillKeepsTransparentFrontAndUniformRest() {
+    func testSourceFillStopsAndUniformRest() {
         let fill = LyricsBlossomRunFill(bright: 1, dark: 0.3 / 0.85)
         XCTAssertEqual(fill.base, 0.3, accuracy: 0.000001)
         XCTAssertEqual(fill.overlay, 0.85, accuracy: 0.000001)
-        XCTAssertEqual(fill.alpha(coverage: 0, glyph: 1), 0.3, accuracy: 0.000001)
-        XCTAssertEqual(fill.alpha(coverage: 1, glyph: 1), 0.895, accuracy: 0.000001)
-        XCTAssertEqual(fill.alpha(coverage: 1, glyph: 0.5), 0.51125, accuracy: 0.000001)
         let rest = LyricsBlossomRunFill(bright: 0.2, dark: 0.2)
         XCTAssertEqual(rest.overlay, 0)
-        XCTAssertEqual(rest.alpha(coverage: 1, glyph: 1), 0.2, accuracy: 0.000001)
+        XCTAssertEqual(rest.base, 0.2, accuracy: 0.000001)
     }
 
     func testProductionFamilyTwoTailAndIndependentExitAcrossFrameRates() throws {
@@ -255,6 +254,12 @@ final class LyricsBlossomFamilyTwoTests: XCTestCase {
                 let replay = try XCTUnwrap(engine.runStore.cursorStates(key: "main:1").first)
                 XCTAssertFalse(replay.suppressed)
                 XCTAssertLessThan(replay.value, before[0].value)
+                let overlapSeek = engine.render(.init(position: 9.6, playing: false, seekRevision: 2), delta: 0)
+                XCTAssertEqual(overlapSeek.lyricTime, 9.6, accuracy: 0.0001)
+                XCTAssertEqual(engine.blossomSchedule?.selected, [3, 4])
+                XCTAssertEqual(overlapSeek.focusGroup, 3)
+                XCTAssertTrue(overlapSeek.rows[3].active)
+                XCTAssertTrue(overlapSeek.rows[4].active)
             }
         }
     }
@@ -296,6 +301,39 @@ final class LyricsBlossomFamilyTwoTests: XCTestCase {
                 XCTAssertEqual(colors[0].alpha, 0.85, accuracy: 0.00001)
                 XCTAssertEqual(colors[1].alpha, 0)
                 XCTAssertTrue(children.filter { $0.mask != nil }.allSatisfy { $0.opacity == 1 })
+                func maximumAlpha() throws -> Double {
+                    let width = max(1, Int(ceil(group.bounds.width)))
+                    let height = max(1, Int(ceil(group.bounds.height)))
+                    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+                    try pixels.withUnsafeMutableBytes { buffer in
+                        let context = try XCTUnwrap(CGContext(data: buffer.baseAddress, width: width, height: height,
+                            bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                        group.render(in: context)
+                    }
+                    return Double(stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }.max() ?? 0) / 255
+                }
+                let fullAlpha = try maximumAlpha()
+                XCTAssertEqual(fullAlpha, 0.895, accuracy: 0.02)
+                group.opacity = 0.5
+                XCTAssertEqual(try maximumAlpha(), fullAlpha * 0.5, accuracy: 0.015)
+                group.opacity = 1
+                canvas.hdrCapabilitiesOverride = .init(supportsEDR: true, headroom: 2)
+                configuration.hdr = .init(enabled: true)
+                canvas.configure(document: document, configuration: configuration,
+                    input: .init(position: 1.5, playing: false), active: false, reduceMotion: false)
+                canvas.advanceFrame(delta: 0)
+                func containsMetal(_ layer: CALayer) -> Bool {
+                    layer is CAMetalLayer || (layer.sublayers ?? []).contains(where: containsMetal)
+                }
+                XCTAssertTrue(containsMetal(canvas.layer))
+                configuration.hdr = .init(enabled: false)
+                canvas.configure(document: document, configuration: configuration,
+                    input: .init(position: 1.5, playing: false), active: false, reduceMotion: false)
+                canvas.advanceFrame(delta: 0)
+                XCTAssertFalse(containsMetal(canvas.layer))
+                XCTAssertEqual(group.opacity, 1)
+                XCTAssertEqual(try maximumAlpha(), fullAlpha, accuracy: 0.015)
                 configuration.selectAnimationStyle(.amll)
                 canvas.configure(document: document, configuration: configuration,
                     input: .init(position: 1.5, playing: false), active: false, reduceMotion: false)

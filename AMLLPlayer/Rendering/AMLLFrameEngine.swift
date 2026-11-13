@@ -672,14 +672,14 @@ struct AMLLFrameEngine {
             let lyricTime = time / 1000
             let rebased = seeking || blossomNeedsRebase || previousInput?.offset != input.offset
                 || (previousInput?.progressDraft != nil && input.progressDraft == nil)
-            let records = family == 3 ? blossomRecords : blossomOrdinaryRecords
+            let records = family == 2 || family == 3 ? blossomRecords : blossomOrdinaryRecords
             let capacity = options.maximumLines
             if rebased {
                 let target = timeline.focus
                 let visible = motions.indices.contains(target) && motions[target].y.position < environment.height
                     && motions[target].y.position + height(document.groups[target].main) > 0
                 blossomSelector.rebase(records: records, now: lyricTime, capacity: capacity,
-                    bypassClock: !seeking || firstFrame || !visible || input.progressDraft != nil)
+                    bypassClock: !seeking || firstFrame || !visible || input.progressDraft != nil, family: family)
                 pendingVisualFocus = nil
                 for index in motions.indices { motions[index].completedReleaseAt = nil }
                 for key in blossomSelector.state.selected where document.groups.indices.contains(key) {
@@ -700,8 +700,9 @@ struct AMLLFrameEngine {
             let schedule = blossomSelector.update(family: family, now: lyricTime, wall: animationTime,
                 records: records, capacity: capacity, running: input.playing && !songEnded
                     && !input.awaitingSeekConfirmation && input.progressDraft == nil,
-                rebased: rebased, browsing: browsing, isPending: pendingTickets.contains)
-            if schedule.takeover != blossomSchedule?.takeover || schedule.kind != .none { dirty = true }
+                rebased: rebased, browsing: browsing, adaptive: family == 2, isPending: pendingTickets.contains)
+            if schedule.takeover != blossomSchedule?.takeover || schedule.kind != .none
+                || !schedule.left.isEmpty || !schedule.entered.isEmpty { dirty = true }
             blossomSchedule = schedule
             let catchUp = Set(schedule.catchUp.compactMap { key in
                 document.groups.indices.contains(key) ? document.groups[key].main : nil
@@ -993,7 +994,7 @@ struct AMLLFrameEngine {
             rows: rows,
             interlude: interlude,
             browsing: browsing,
-            settled: allSettled,
+            settled: allSettled && !(input.playing && runStore.active),
             background: .init(artworkURL: input.artworkURL,
                               blur: input.configuration?.backgroundBlur ?? 0,
                               progress: progress,

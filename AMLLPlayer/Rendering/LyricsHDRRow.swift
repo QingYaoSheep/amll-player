@@ -13,6 +13,7 @@ final class LyricsHDRRow {
         var feather: Double
         var dark: Double
         var bright: Double
+        var receivesHighlight = true
         var glowRadius: Double = 0
         var glowOpacity: Double = 0
     }
@@ -57,7 +58,7 @@ final class LyricsHDRRow {
                     uv: .init(Float(x / atlasSize.width), Float(y / atlasSize.height)),
                     mask: .init(Float(piece.rtl ? rect.maxX - x : x - rect.minX), Float(piece.edge)),
                     appearance: .init(Float(max(0.0001, piece.feather)), Float(piece.dark * alpha),
-                                      Float(piece.bright * alpha), Float(shadow ? 1 : gain)),
+                                      Float(piece.bright * alpha), Float(shadow || !piece.receivesHighlight ? 1 : gain)),
                     crop: crop,
                     glow: shadow ? .init(Float(piece.glowRadius / atlasSize.width), Float(piece.glowRadius / atlasSize.height)) : .zero
                 ))

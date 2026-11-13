@@ -1218,6 +1218,7 @@ private final class AMLLNativeRow: UIView {
     private let maskWords: [AMLLWordMask.Word]
     private let blossomLayout: LyricsBlossomRunLayout
     private var blossomSample: LyricsBlossomRunLayout.Sample?
+    private var runFillBases: [ObjectIdentifier: CALayer] = [:]
 
     private let sharpImage: UIImage
     private let sharpRubyImage: UIImage
@@ -1496,12 +1497,40 @@ private final class AMLLNativeRow: UIView {
         return (edge, feather)
     }
 
+    private func runFill(range: NSRange, row: AMLLFrameState.Row,
+                         configuration: LyricsRenderConfiguration) -> LyricsBlossomRunFill? {
+        guard configuration.animationStyle == .appleMusic164,
+              (configuration.appleMusicAnimation ?? .init()).selectionFamily == 2,
+              let blossomSample, blossomLayout.edge(for: range, sample: blossomSample) != nil else { return nil }
+        return .init(bright: row.brightAlpha, dark: row.darkAlpha)
+    }
+
+    private func applyRunFillBase(to piece: CALayer, opacity: Float) {
+        let key = ObjectIdentifier(piece)
+        let base: CALayer
+        if let existing = runFillBases[key] { base = existing }
+        else {
+            base = CALayer()
+            base.contents = piece.contents
+            base.contentsRect = piece.contentsRect
+            base.contentsScale = piece.contentsScale
+            layer.insertSublayer(base, below: piece)
+            runFillBases[key] = base
+        }
+        base.bounds = piece.bounds
+        base.position = piece.position
+        base.transform = piece.transform
+        base.opacity = opacity
+        base.isHidden = piece.isHidden
+    }
+
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
         if accessibilityConfiguration != configuration {
             accessibilityConfiguration = configuration
             accessibilityLabel = layoutLineAccessibilityText()
         }
         let bright = row.brightAlpha, dark = row.darkAlpha
+        for base in runFillBases.values { base.opacity = 0 }
         let weights = LyricsAnimationBlur.weights(radius: row.blur, maximum: blurMaximum)
         let sharpWeight = weights.sharp
         let calibrated = configuration.usesCalibratedApple164Appearance
@@ -1572,7 +1601,10 @@ private final class AMLLNativeRow: UIView {
                 maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
-            entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
+            let fill = runFill(range: entry.fragment.range, row: row, configuration: configuration)
+            if let fill { applyRunFillBase(to: entry.layer, opacity: Float(fill.base) * sharpWeight) }
+            entry.mask.colors = [UIColor.white.withAlphaComponent(fill?.overlay ?? bright).cgColor,
+                                 UIColor.white.withAlphaComponent(fill == nil ? dark : 0).cgColor]
             entry.mask.locations = [0, 1]
             // Let the gradient extend beyond the fragment. Clamping stops to [0,1]
             // changes the feather slope when a word enters or leaves the mask.
@@ -1610,7 +1642,10 @@ private final class AMLLNativeRow: UIView {
                 maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
-            entry.mask.colors = [UIColor.white.withAlphaComponent(bright).cgColor, UIColor.white.withAlphaComponent(dark).cgColor]
+            let fill = runFill(range: entry.fragment.range, row: row, configuration: configuration)
+            if let fill { applyRunFillBase(to: entry.layer, opacity: Float(fill.base) * sharpWeight) }
+            entry.mask.colors = [UIColor.white.withAlphaComponent(fill?.overlay ?? bright).cgColor,
+                                 UIColor.white.withAlphaComponent(fill == nil ? dark : 0).cgColor]
             entry.mask.locations = [0, 1]
             entry.mask.startPoint = CGPoint(x: entry.fragment.rtl ? 1 - start : start, y: 0.5)
             entry.mask.endPoint = CGPoint(x: entry.fragment.rtl ? 1 - end : end, y: 0.5)
@@ -1644,16 +1679,28 @@ private final class AMLLNativeRow: UIView {
             for entry in words where !entry.layer.isHidden {
                 let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
                     maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
+                let fill = runFill(range: entry.fragment.range, row: row, configuration: configuration)
+                if let fill {
+                    pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
+                        rtl: entry.fragment.rtl, edge: entry.fragment.rect.width, feather: 0,
+                        dark: fill.base, bright: fill.base, receivesHighlight: false))
+                }
                 pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
                                     rtl: entry.fragment.rtl, edge: edge, feather: feather,
-                                    dark: row.darkAlpha, bright: row.brightAlpha))
+                                    dark: fill == nil ? row.darkAlpha : 0, bright: fill?.overlay ?? row.brightAlpha))
             }
             for entry in characters {
                 let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
                     maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
+                let fill = runFill(range: entry.fragment.range, row: row, configuration: configuration)
+                if let fill {
+                    pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
+                        rtl: entry.fragment.rtl, edge: entry.fragment.rect.width, feather: 0,
+                        dark: fill.base, bright: fill.base, receivesHighlight: false))
+                }
                 pieces.append(.init(rect: entry.fragment.rect, transform: entry.layer.affineTransform(),
                                     rtl: entry.fragment.rtl, edge: edge, feather: feather,
-                                    dark: row.darkAlpha, bright: row.brightAlpha,
+                                    dark: fill == nil ? row.darkAlpha : 0, bright: fill?.overlay ?? row.brightAlpha,
                                     glowRadius: entry.layer.shadowRadius, glowOpacity: Double(entry.layer.shadowOpacity)))
             }
         }
@@ -1664,6 +1711,7 @@ private final class AMLLNativeRow: UIView {
             base.opacity = 0
             words.forEach { $0.layer.opacity = 0 }
             characters.forEach { $0.layer.opacity = 0 }
+            runFillBases.values.forEach { $0.opacity = 0 }
             return true
         }
         return false

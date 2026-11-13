@@ -174,7 +174,7 @@ final class LyricsBlossomMechanismTests: XCTestCase {
         XCTAssertEqual(Schedule.lead(), 0.8947590697, accuracy: 1e-9)
         XCTAssertEqual(Schedule.lead(family: 3), 0.891968727, accuracy: 1e-7)
         XCTAssertNotEqual(Schedule.lead(gap: 0.2, adaptive: true), Schedule.lead(gap: 0.75, adaptive: true))
-        XCTAssertFalse(Schedule.supported(2))
+        XCTAssertTrue(Schedule.supported(2))
         let records: [Schedule.Record] = [
             .init(index: 0, start: 0, end: 3, lastWordEnd: 3),
             .init(index: 1, start: 1, end: 2, lastWordEnd: 2),

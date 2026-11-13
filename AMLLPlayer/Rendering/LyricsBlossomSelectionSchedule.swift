@@ -26,12 +26,15 @@ struct LyricsBlossomSelectionSchedule {
 
     struct Output {
         var selected: [Int] = []
+        /// Activity is consumed before enter/exit keys update display selection.
+        var active: [Int] = []
         var pending: Int?
         var deadline = -1.0
         var kind = Kind.none
         var catchUp: [Int] = []
         var previewCode = 0
         var removed: Int?
+        var enterIndex: Int?
         var takeover = false
         var diagnostic = ""
         var entered: [Int] = []
@@ -44,7 +47,7 @@ struct LyricsBlossomSelectionSchedule {
     private var positionTicket: Ticket?
     private var bypassClock = false
 
-    static func supported(_ family: Int) -> Bool { family == 3 || family == 0 }
+    static func supported(_ family: Int) -> Bool { family == 2 || family == 3 || family == 0 }
 
     static func lead(family: Int = 0, gap: Double = 0, adaptive: Bool = false) -> Double {
         let u = (min(0.75, max(0.2, gap)) - 0.2) / 0.55
@@ -70,6 +73,7 @@ struct LyricsBlossomSelectionSchedule {
         guard let p = records.firstIndex(where: { $0.index == output.pending }) else { return output }
         let pendingRecord = records[p]
         let back = selected.last.flatMap { key in records.firstIndex { $0.index == key } }
+        if family == 2, !selected.isEmpty, back == nil { return output }
         let currentIndex: Int?
         if family == 2 {
             currentIndex = selected.compactMap { key in records.firstIndex { $0.index == key } }
@@ -102,7 +106,8 @@ struct LyricsBlossomSelectionSchedule {
         }
         guard (special || !ticketHold), pendingRecord.start <= now + lead else { return output }
         if current == nil {
-            output.selected = [pendingRecord.index]
+            if family == 2 { output.selected.append(pendingRecord.index) }
+            else { output.selected = [pendingRecord.index] }
             output.kind = .initial
         } else if increasing && room && pendingRecord.start < now {
             output.selected.append(pendingRecord.index)
@@ -118,6 +123,7 @@ struct LyricsBlossomSelectionSchedule {
             }
         }
         guard output.kind != .none else { return output }
+        output.enterIndex = pendingRecord.index
         output.pending = records.indices.contains(p + 1) ? records[p + 1].index : nil
         let until = now + (output.kind == .append ? 0.3 : lead + 0.5)
         if family == 3 {
@@ -139,15 +145,16 @@ struct LyricsBlossomSelectionSchedule {
         return records.indices.contains(i + 1) ? records[i + 1].index : (retainLast ? records[i].index : nil)
     }
 
-    mutating func rebase(records: [Record], now: Double, capacity: Int, bypassClock: Bool) {
-        let selected = Array(records.filter { $0.start <= now && now < $0.end }.suffix(capacity)).map(\.index)
+    mutating func rebase(records: [Record], now: Double, capacity: Int, bypassClock: Bool, family: Int = 0) {
+        let overlapping = records.filter { $0.start <= now && now < $0.end }
+        let selected = (family == 2 ? overlapping : Array(overlapping.suffix(capacity))).map(\.index)
         let pending = selected.last.flatMap { key in
             records.firstIndex { $0.index == key }.flatMap { i in
                 records.indices.contains(i + 1) ? records[i + 1].index : nil
             }
         }
-        state = Output(selected: selected,
-                       pending: selected.isEmpty ? Self.seed(in: records, at: now) : pending)
+        state = Output(selected: selected, active: selected,
+                       pending: selected.isEmpty ? Self.seed(in: records, at: now, retainLast: family != 2) : pending)
         tickets.removeAll()
         positionTicket = nil
         lastPulse = -.infinity
@@ -160,7 +167,7 @@ struct LyricsBlossomSelectionSchedule {
     }
 
     mutating func installed(_ ticket: Ticket, family: Int, kind: Kind) {
-        guard kind != .none else { return }
+        guard kind != .none || family == 2 else { return }
         if family == 3 {
             if ticket.channel == .position && kind != .append { positionTicket = ticket }
         } else {
@@ -170,21 +177,31 @@ struct LyricsBlossomSelectionSchedule {
 
     mutating func update(family: Int, now: Double, wall: Double, records: [Record],
                          capacity: Int, running: Bool, rebased: Bool, browsing: Bool,
+                         adaptive: Bool = false,
                          isPending: (Ticket) -> Bool) -> Output {
         if !rebased { bypassClock = false }
         if let positionTicket, !isPending(positionTicket) { self.positionTicket = nil }
         tickets = tickets.filter(isPending)
         let ticketHold = !bypassClock && !tickets.isEmpty
         let clockHold = !bypassClock && state.deadline >= 0 && now < state.deadline
-        let mainHold = family == 3 ? positionTicket != nil : ticketHold || clockHold
+        let mainHold = family == 3 ? positionTicket != nil : ticketHold || (family != 2 && clockHold)
         let pulse = running && !rebased && !records.isEmpty
-            && (family != 3 || (wall.isFinite && wall - lastPulse >= 1.0 / 30))
-        var output = Output(selected: state.selected, pending: state.pending, deadline: state.deadline)
+            && ((family != 2 && family != 3) || (wall.isFinite && wall - lastPulse >= 1.0 / 30))
+        var output = Output(selected: state.selected, active: state.active, pending: state.pending, deadline: state.deadline)
         if pulse {
             lastPulse = wall
-            output = Self.dispatch(family: family, now: now, records: records, selected: state.selected,
+            output = Self.dispatch(family: family, now: now, records: records, selected: state.active,
                 pending: state.pending, capacity: capacity, mainHold: mainHold, ticketHold: ticketHold,
-                deadline: state.deadline, bypassClock: bypassClock)
+                deadline: state.deadline, bypassClock: bypassClock, adaptive: adaptive)
+            output.active = output.selected
+            if family == 2 {
+                output.selected = state.selected
+                if let removed = output.removed { output.selected.removeAll { $0 == removed } }
+                if let entered = output.enterIndex {
+                    if output.kind == .replace { output.selected = [entered] }
+                    else { output.selected.append(entered) }
+                }
+            }
             output.entered = output.selected.filter { !state.selected.contains($0) }
             output.left = state.selected.filter { !output.selected.contains($0) }
         }

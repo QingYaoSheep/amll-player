@@ -91,7 +91,7 @@ final class AMLLNativeCanvas: UIView {
         var romanization: AMLLCoreTextLayout?
         var romanizationCue: RomanizationTTMLTrack.Cue?
         var alignedRomanization: Bool
-        var auxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
+        @MainActor var auxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
             var result = original.auxiliaryRegions.compactMapValues { rects in rects.map(\.minY).min().map { $0 - original.mainOrigin.y } }
             if romanization != nil, let y = original.romanizationSlotY { result[.romanization] = y - original.mainOrigin.y }
             return result

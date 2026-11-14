@@ -5,7 +5,7 @@ import SwiftUI
 struct ImmersiveLyricsArtworkBackdrop: View {
     @Bindable var model: AppModel
     let item: PlaybackItem
-    let layout: ImmersiveLyricsLayout
+    let layout: ImmersiveLyricsLayout?
     let viewport: CGSize
     let active: Bool
     let artworkSource: (ImmersiveLyricsArtworkSource) -> Void
@@ -23,7 +23,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
             && loader.trackID == item.uri && loader.playbackURL != nil
     }
     private var displayedSource: ImmersiveLyricsArtworkSource {
-        if hasVideo, loader.hasPresentedFrame, let size = loader.videoSize {
+        if hasVideo, let size = loader.videoSize {
             return .init(trackID: item.uri, size: size, isVideo: true)
         }
         return .init(trackID: item.uri, size: still.frame(for: item.artworkURL)?.size ?? CGSize(width: 1, height: 1), isVideo: false)
@@ -37,22 +37,23 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     var body: some View {
         ZStack {
         ImmersiveArtworkMedia(video: video, frames: frames,
-            layout: .immersive(cover: layout.cover, viewport: viewport, configuration: configuration,
+            layout: layout.map { .immersive(cover: $0.cover, viewport: viewport, configuration: configuration,
                 tuning: debug.configuration, presentsFrame: hasVideo && loader.hasPresentedFrame,
-                reduceTransparency: reduceTransparency),
-            background: AMLLBackground(artworkURL: item.artworkURL, active: active,
+                reduceTransparency: reduceTransparency) } ?? .inline(frame: .zero, visible: false, presentsFrame: false, radius: 0),
+            background: layout.map { _ in AMLLBackground(artworkURL: item.artworkURL, active: active,
                 blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
                 color: configuration.backgroundColor ?? .sourceDefault,
                 gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
-                flowing: configuration.flowingBackground ?? .init(), dimming: 0),
+                flowing: configuration.flowingBackground ?? .init(), dimming: 0) },
             still: still.frame(for: item.artworkURL))
-            .id(loader.requestToken)
+            .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.cover)
         }
             .onChange(of: displayedSource, initial: true) { _, source in artworkSource(source) }
             .task(id: item.uri + "|" + (item.artworkURL?.absoluteString ?? "")) { await still.load(item.artworkURL) }
             .task(id: requestKey) {
                 let settings = configuration.animatedArtwork ?? .init()
-                guard settings.enabled, !reduceMotion, network.permits(allowCellular: settings.allowCellular) else { loader.reset(); return }
+                guard configuration.immersiveLyrics == true, settings.enabled, !reduceMotion,
+                      network.permits(allowCellular: settings.allowCellular) else { loader.reset(); return }
                 await loader.loadForLyrics(item: item, coordinator: model.lyrics, settings: settings, prefersPortrait: true)
             }
             .allowsHitTesting(false).accessibilityHidden(true)
@@ -60,7 +61,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     private var video: AnimatedArtwork? {
         guard hasVideo, let url = loader.playbackURL else { return nil }
         let token = loader.requestToken
-        return AnimatedArtwork(url: url, active: active && model.playbackSnapshot?.isPlaying == true,
+        return AnimatedArtwork(url: url, active: layout != nil && active && model.playbackSnapshot?.isPlaying == true,
             allowCellular: configuration.animatedArtwork?.allowCellular ?? false, reflectionFrames: frames,
             onFailure: { url, error in loader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
             onState: { url, state in loader.playbackChanged(token: token, url: url, state: state) },
@@ -76,7 +77,7 @@ extension AnimatedArtworkLoader {
         let candidate = coordinator.selection.candidate
         let lyricsSettings = coordinator.settings
         await load(trackID: item.uri, kind: prefersPortrait ? .portraitVideo : .squareVideo,
-            fallbackKind: prefersPortrait ? .squareVideo : nil, streamWhileDownloading: true, assets: {
+            fallbackKind: prefersPortrait ? .squareVideo : nil, streamWhileDownloading: true, reuseReadyResource: true, assets: {
                 let songID: String
                 if let candidate, candidate.source == .apple { songID = candidate.sourceID }
                 else {

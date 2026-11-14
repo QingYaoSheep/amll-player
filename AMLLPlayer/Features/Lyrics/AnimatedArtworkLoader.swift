@@ -8,6 +8,7 @@ final class AnimatedArtworkLoader {
     private(set) var localURL: URL?
     private(set) var trackID: String?
     private(set) var kind: ArtworkAsset.Kind?
+    private(set) var requestedKind: ArtworkAsset.Kind?
     private(set) var failureCode: String?
     private(set) var streamingURL: URL?
     private(set) var playbackState: ArtworkPlaybackState = .preparing
@@ -57,16 +58,20 @@ final class AnimatedArtworkLoader {
         streamingURL = nil
         playbackState = .preparing
         hasPresentedFrame = false; videoSize = nil
+        requestedKind = nil
     }
 
     func load(trackID: String, kind: ArtworkAsset.Kind = .squareVideo,
               fallbackKind: ArtworkAsset.Kind? = nil,
-              streamWhileDownloading: Bool = false,
+              streamWhileDownloading: Bool = false, reuseReadyResource: Bool = false,
               assets: @MainActor () async throws -> [ArtworkAsset],
               download: @MainActor (URL) async throws -> URL) async
     {
+        if reuseReadyResource, self.trackID == trackID, requestedKind == kind, playbackURL != nil,
+           status == .ready || status == .streaming { return }
         reset()
         self.trackID = trackID
+        requestedKind = kind
         status = .loading
         let revision = revision
         do {
@@ -89,7 +94,7 @@ final class AnimatedArtworkLoader {
             if playbackURL != local {
                 playbackState = .preparing
                 hasPresentedFrame = false
-                videoSize = nil
+                // A downloaded copy keeps the same already-observed aspect ratio.
             }
             localURL = local; self.kind = asset.kind; status = .ready
         } catch {

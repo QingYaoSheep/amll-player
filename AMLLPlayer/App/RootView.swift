@@ -69,7 +69,7 @@ struct RootView: View {
         if model.renderPreferences.profile == .amll {
             AMLLLyricsPlayer(model: model, usesSystemZoom: !reduceMotion)
         } else {
-            FullscreenLyricsPlayer(model: model)
+            FullscreenLyricsPlayer(model: model, usesSystemZoom: !reduceMotion)
         }
     }
 }

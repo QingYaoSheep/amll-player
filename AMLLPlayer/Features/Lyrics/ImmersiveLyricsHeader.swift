@@ -14,15 +14,17 @@ struct ImmersiveLyricsHeader: View {
     var body: some View {
         let configuration = model.renderPreferences.configuration
         HStack(alignment: .center, spacing: 4) {
-            VStack(alignment: .leading, spacing: 3) {
+            LyricsTrackTransition(item: item) { displayed in
+              VStack(alignment: .leading, spacing: 3) {
                 if configuration.showTitle {
-                    Text(item.title).font(.system(size: titleSize, weight: .bold))
+                    Text(displayed.title).font(.system(size: titleSize, weight: .bold))
                         .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 }
                 if configuration.showArtist {
-                    Text(item.artistLine).font(.system(size: artistSize)).foregroundStyle(.white.opacity(0.65))
+                    Text(displayed.artistLine).font(.system(size: artistSize)).foregroundStyle(.white.opacity(0.65))
                         .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 }
+              }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)

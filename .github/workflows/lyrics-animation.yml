@@ -11,6 +11,11 @@ on:
       - 'AMLLPlayer/Rendering/LyricsBlossomSelectionSchedule.swift'
       - 'AMLLPlayerTests/LyricsBlossomMechanismTests.swift'
       - 'AMLLPlayerTests/LyricsBlossomFamilyTwoTests.swift'
+      - 'AMLLPlayer/Features/Lyrics/LyricsPagePresentation.swift'
+      - 'AMLLPlayer/Features/Lyrics/AMLLLyricsPlayer.swift'
+      - 'AMLLPlayer/Features/Lyrics/FullscreenLyricsPlayer.swift'
+      - 'AMLLPlayer/Features/Lyrics/ImmersiveArtworkMedia.swift'
+      - 'AMLLPlayerTests/LyricsPagePresentationTests.swift'
       - 'AMLLPlayerTests/Fixtures/blossom-family2*'
       - 'AMLLPlayer/Rendering/LyricsBlossomScaleWait.swift'
       - 'AMLLPlayerTests/LyricsBlossomRunLayoutTests.swift'
@@ -66,6 +71,7 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsBlossomRunLayoutTests
           -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests
           -only-testing:AMLLPlayerTests/LyricsBlossomFamilyTwoTests
+          -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
           -only-testing:AMLLPlayerTests/AMLLSeekMotionTests
           -only-testing:AMLLPlayerTests/AMLLSeekCanvasTests
           -only-testing:AMLLPlayerTests/AppleMusicIntegrationTests/testApplePlaybackSnapshotUpdatesLyricsSeekRevisionAndIgnoresSpotifySnapshot

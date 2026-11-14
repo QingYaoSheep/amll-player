@@ -26,6 +26,8 @@ struct AMLLLyricsPlayer: View {
     @State private var artworkReflectionFrames = ArtworkReflectionFrames()
     @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
     @State private var showingArtworkDebug = false
+    @State private var presentation = LyricsPagePresentationCoordinator()
+    @State private var artworkFrame: CGRect?
     @GestureState private var dismissalDrag: CGFloat = 0
 
     init(model: AppModel, usesSystemZoom: Bool = false, presentation: LyricsQuickSettingsPresentation? = nil) {
@@ -43,25 +45,23 @@ struct AMLLLyricsPlayer: View {
             let metrics = AppleMusicLyricsLayoutMetrics.responsive(in: geometry.size)
             let drag = dismissalTransform(height: geometry.size.height)
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
+            let canvasLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom, retainingHidden: true)
             let immersive = lyricLayout != nil || (model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: geometry.size) } ?? false)
             ZStack {
                 ZStack {
                     Color(white: 0.08)
-                    if let item = model.playbackSnapshot?.item, let lyricLayout {
-                        immersiveLyricsArtwork(item, layout: lyricLayout, size: geometry.size,
-                                               cornerRadius: drag.radius, opacity: drag.opacity)
-                    } else if let item = model.playbackSnapshot?.item, mountsImmersiveArtwork(item, size: geometry.size) {
-                        immersiveArtworkLayers(item, size: geometry.size, cornerRadius: drag.radius, opacity: drag.opacity)
-                    } else {
-                        artworkBackground(meshForegroundBlending: needsMeshForegroundBlending(immersive: immersive))
-                        Color.black.opacity(configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
+                    artworkBackground(meshForegroundBlending: needsMeshForegroundBlending(immersive: immersive), enabled: !immersive)
+                        .opacity(immersive ? 0 : 1)
+                    Color.black.opacity(immersive ? 0 : configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
+                    if let item = model.playbackSnapshot?.item {
+                        mediaBackdrop(item, layout: lyricLayout, immersive: immersive, size: geometry.size)
                     }
                 }
                 // A stable sibling, not an overlay whose identity inherits
                 // the conditional background's identity.
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
-                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: lyricLayout)
+                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: canvasLayout)
                     } else {
                         ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                     }
@@ -70,6 +70,12 @@ struct AMLLLyricsPlayer: View {
             }
             .modifier(LyricsPageCompositing())
             .modifier(LyricsPageDynamicRange())
+            .coordinateSpace(name: "lyricsPage")
+            .onPreferenceChange(LyricsArtworkFrameKey.self) { if let frame = $0, frame.width > 0 { artworkFrame = frame } }
+            .onChange(of: LyricsPagePresentationCoordinator.Mode(showsLyrics: configuration.showLyrics,
+                immersive: lyricLayout != nil), initial: true) { _, mode in
+                presentation.update(mode, reduceMotion: reduceMotion)
+            }
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
             }
@@ -128,10 +134,16 @@ struct AMLLLyricsPlayer: View {
                         lyricLayout: ImmersiveLyricsLayout?) -> some View {
         if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
             tabletPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
-        } else if configuration.showLyrics {
-            lyricsPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size, layout: lyricLayout)
         } else {
-            artworkPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
+            ZStack(alignment: .topLeading) {
+                lyricsPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size, layout: lyricLayout)
+                    .opacity(presentation.mode.showsLyrics ? 1 : 0)
+                    .allowsHitTesting(configuration.showLyrics).accessibilityHidden(!configuration.showLyrics)
+                artworkPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
+                    .opacity(presentation.mode.showsLyrics ? 0 : 1)
+                    .allowsHitTesting(!configuration.showLyrics).accessibilityHidden(configuration.showLyrics)
+            }
+            .animation(LyricsPageMotion.content, value: presentation.mode.showsLyrics)
         }
     }
 
@@ -142,27 +154,31 @@ struct AMLLLyricsPlayer: View {
         // changes; seek state, source timing and the live frame engine persist.
         return ScrollView(.vertical) {
             ZStack(alignment: .topLeading) {
-                lyricCanvas(snapshot, fadeTop: layout != nil ? 0 : (configuration.showMetadata ?? true)
+                LyricsPageViewport(rect: rect, reduceMotion: reduceMotion) {
+                  lyricCanvas(snapshot, fadeTop: layout != nil ? 0 : (configuration.showMetadata ?? true)
                     ? metrics.compactArtworkTop + metrics.compactArtworkSize : 44,
                     renderConfiguration: lyricConfiguration(layout: layout, page: size))
                     .padding(.horizontal, layout == nil ? max(0, metrics.horizontalInset - 20) : 0)
-                    .frame(width: rect.width, height: rect.height)
-                    .offset(x: rect.minX, y: rect.minY)
-                if let layout {
+                }
+                ZStack {
+                    LyricsTrackTransition(item: item) { compactMetadata(item: $0, metrics: metrics) }
+                        .opacity(layout == nil && (configuration.showMetadata ?? true) ? 1 : 0)
+                        .allowsHitTesting(layout == nil).accessibilityHidden(layout != nil)
                     ImmersiveLyricsHeader(model: model, snapshot: snapshot, item: item, presentation: quickSettings,
-                        additive: layout.overlaysArtwork)
-                        .frame(width: layout.information.width)
+                        additive: layout?.overlaysArtwork ?? false)
                         .background {
                             GeometryReader { proxy in
                                 Color.clear.preference(key: ImmersiveInformationHeightKey.self, value: proxy.size.height)
                             }
                         }
-                        .offset(x: layout.information.minX, y: layout.information.minY)
-                } else if configuration.showMetadata ?? true {
-                    compactMetadata(item: item, metrics: metrics)
-                        .padding(.horizontal, metrics.horizontalInset)
-                        .padding(.top, metrics.compactArtworkTop)
+                        .opacity(layout != nil ? 1 : 0)
+                        .allowsHitTesting(layout != nil).accessibilityHidden(layout == nil)
                 }
+                .frame(width: layout?.information.width ?? max(1, size.width - metrics.horizontalInset * 2))
+                .offset(x: layout?.information.minX ?? metrics.horizontalInset,
+                        y: layout?.information.minY ?? metrics.compactArtworkTop)
+                .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.information)
+                .animation(LyricsPageMotion.content, value: layout != nil)
             }
             .frame(width: size.width, height: layout?.contentHeight ?? size.height, alignment: .topLeading)
         }
@@ -190,9 +206,10 @@ struct AMLLLyricsPlayer: View {
         let artworkSide = min(size.width - metrics.expandedArtworkInset * 2, size.height * 0.405)
         return VStack(spacing: 0) {
             artwork(item, side: artworkSide, radius: 12,
-                    hideStatic: mountsImmersiveArtwork(item, size: size) && artworkLoader.hasPresentedFrame)
+                    hideStatic: mountsImmersiveArtwork(item, size: size) && artworkLoader.hasPresentedFrame,
+                    recordsFrame: !configuration.showLyrics)
                 .padding(.top, metrics.expandedArtworkTop)
-            fullMetadata(item: item)
+            LyricsTrackTransition(item: item) { fullMetadata(item: $0) }
                 .padding(.top, metrics.expandedMetadataGap)
                 .padding(.horizontal, 8)
             if configuration.showControls {
@@ -239,6 +256,8 @@ struct AMLLLyricsPlayer: View {
             }
             .frame(width: min(440, size.width * 0.42))
             lyricCanvas(snapshot)
+                .opacity(presentation.mode.showsLyrics ? 1 : 0)
+                .allowsHitTesting(configuration.showLyrics).accessibilityHidden(!configuration.showLyrics)
         }
         .padding(.horizontal, max(36, metrics.horizontalInset))
         .padding(.top, max(96, metrics.compactArtworkTop))
@@ -254,7 +273,7 @@ struct AMLLLyricsPlayer: View {
                     model: model,
                     snapshot: snapshot,
                     configuration: renderConfiguration ?? configuration,
-                    active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
+                    active: presentation.rendersLyrics && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                     resumeToken: resumeToken,
                     fadeTop: fadeTop,
                     browsing: { browsing = $0 }
@@ -291,7 +310,7 @@ struct AMLLLyricsPlayer: View {
 
     private func compactMetadata(item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics) -> some View {
         HStack(spacing: 12) {
-            artwork(item, side: metrics.compactArtworkSize, radius: 11)
+            artwork(item, side: metrics.compactArtworkSize, radius: 11, recordsFrame: configuration.showLyrics)
             VStack(alignment: .leading, spacing: 2) {
                 if configuration.showTitle {
                     AMLLMetadataText(text: item.title, size: 17, bold: true, enabled: configuration.marquee)
@@ -364,7 +383,7 @@ struct AMLLLyricsPlayer: View {
     }
 
     private var stillArtworkRequestKey: String? {
-        guard usesImmersiveLyrics, let item = model.playbackSnapshot?.item else { return nil }
+        guard let item = model.playbackSnapshot?.item else { return nil }
         return item.uri + "|" + (item.artworkURL?.absoluteString ?? "")
     }
 
@@ -372,11 +391,13 @@ struct AMLLLyricsPlayer: View {
         stillArtwork.frame(for: model.playbackSnapshot?.item?.artworkURL)
     }
 
-    private func immersiveLyricsLayout(size: CGSize, bottomInset: CGFloat) -> ImmersiveLyricsLayout? {
-        guard ImmersiveLyricsLayout.isEnabled(configuration, isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+    private func immersiveLyricsLayout(size: CGSize, bottomInset: CGFloat, retainingHidden: Bool = false) -> ImmersiveLyricsLayout? {
+        var layoutConfiguration = configuration
+        if retainingHidden { layoutConfiguration.showLyrics = true }
+        guard ImmersiveLyricsLayout.isEnabled(layoutConfiguration, isPhone: UIDevice.current.userInterfaceIdiom == .phone,
                                               viewport: size) else { return nil }
         let source: CGSize
-        let presentsVideo = immersiveLyricsHasVideo && artworkLoader.hasPresentedFrame && artworkLoader.videoSize != nil
+        let presentsVideo = immersiveLyricsHasVideo && artworkLoader.videoSize != nil
         if presentsVideo, let actual = artworkLoader.videoSize { source = actual }
         else { source = currentStillFrame?.size ?? CGSize(width: 1, height: 1) }
         return .resolve(viewport: size, artwork: source, informationHeight: immersiveInformationHeight,
@@ -415,30 +436,41 @@ struct AMLLLyricsPlayer: View {
     }
 
     private func artwork(_ item: PlaybackItem, side: CGFloat, radius: CGFloat,
-                         hideStatic: Bool = false) -> some View
+                         hideStatic: Bool = false, recordsFrame: Bool = true) -> some View
     {
-        PlaybackArtworkImage(url: item.artworkURL) { image in image.resizable().scaledToFill() }
-            placeholder: { RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
+        RoundedRectangle(cornerRadius: radius).fill(.white.opacity(0.1))
+            .overlay { if currentStillFrame == nil { Image(systemName: "music.note").font(.largeTitle) } }
             .frame(width: side, height: side)
-            .overlay {
-                if AMLLArtworkDisplayPolicy.mountsSquare(
-                    enabled: configuration.animatedArtwork?.enabled == true, reduceMotion: reduceMotion,
-                    staticLyricsCover: phoneLyricsUsesStaticArtwork, kind: artworkLoader.kind,
-                    currentTrack: artworkLoader.trackID == item.uri, hasURL: artworkLoader.playbackURL != nil
-                ),
-                    let url = artworkLoader.playbackURL
-                {
-                    let token = artworkLoader.requestToken
-                    AnimatedArtwork(url: url, active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage && model.playbackSnapshot?.isPlaying == true, allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
-                                    onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
-                                    onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) })
-                        .id(token)
-                }
-            }
             .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? radius, style: .continuous))
-            .opacity(hideStatic ? 0 : 1)
-            .id(item.uri)
+            .lyricsArtworkFrame(enabled: recordsFrame)
+            .opacity(hideStatic || currentStillFrame != nil || (showsInlineVideo && artworkLoader.hasPresentedFrame) ? 0 : 1)
             .accessibilityHidden(true)
+    }
+
+    private var showsInlineVideo: Bool {
+        AMLLArtworkDisplayPolicy.mountsSquare(enabled: configuration.animatedArtwork?.enabled == true,
+            reduceMotion: reduceMotion, staticLyricsCover: phoneLyricsUsesStaticArtwork, kind: artworkLoader.kind,
+            currentTrack: artworkLoader.trackID == model.playbackSnapshot?.item?.uri, hasURL: artworkLoader.playbackURL != nil)
+    }
+
+    private func mediaBackdrop(_ item: PlaybackItem, layout: ImmersiveLyricsLayout?, immersive: Bool, size: CGSize) -> some View {
+        let canKeepVideo = immersiveLyricsHasVideo
+        let cover = layout?.cover ?? AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
+        let mediaLayout: ImmersiveArtworkMedia.Layout = immersive
+            ? .immersive(cover: cover, viewport: size, configuration: configuration,
+                tuning: artworkDebug.configuration, presentsFrame: canKeepVideo && artworkLoader.hasPresentedFrame,
+                reduceTransparency: reduceTransparency)
+            : .inline(frame: artworkFrame ?? CGRect(x: 0, y: 0, width: 1, height: 1),
+                visible: currentStillFrame != nil || showsInlineVideo, presentsFrame: showsInlineVideo && artworkLoader.hasPresentedFrame,
+                radius: configuration.artworkCornerRadius ?? 12)
+        var video = canKeepVideo ? immersiveVideo(item) : nil
+        if !immersive && !showsInlineVideo { video?.active = false }
+        return ImmersiveArtworkMedia(video: video, frames: artworkReflectionFrames,
+            layout: mediaLayout, background: immersive ? artworkBackground() : nil,
+            still: currentStillFrame)
+            .frame(width: size.width, height: size.height)
+            .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: mediaLayout.video)
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private func immersiveVideo(_ item: PlaybackItem) -> AnimatedArtwork {
@@ -467,9 +499,9 @@ struct AMLLLyricsPlayer: View {
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 
-    private func artworkBackground(meshForegroundBlending: Bool = false) -> AMLLBackground {
+    private func artworkBackground(meshForegroundBlending: Bool = false, enabled: Bool = true) -> AMLLBackground {
         AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
-            active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
+            active: enabled && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
             blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
             color: configuration.backgroundColor ?? .sourceDefault,
             gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,

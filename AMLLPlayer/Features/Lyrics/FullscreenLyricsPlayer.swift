@@ -36,6 +36,7 @@ struct AlbumArtworkBackground: View {
 
 struct FullscreenLyricsPlayer: View {
     @Bindable var model: AppModel
+    var usesSystemZoom = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -54,6 +55,7 @@ struct FullscreenLyricsPlayer: View {
     @State private var artworkReflectionFrames = ArtworkReflectionFrames()
     @State private var showingArtworkDebug = false
     @State private var immersiveViewport = false
+    @State private var presentation = LyricsPagePresentationCoordinator()
     private var configuration: LyricsRenderConfiguration {
         model.renderPreferences.configuration.validated()
     }
@@ -69,15 +71,15 @@ struct FullscreenLyricsPlayer: View {
                         informationTextBottom: immersiveInformationTextBottom,
                         artworkAdjustment: artworkDebug.configuration[.video]) : nil
                 ZStack {
-                    if let layout, let item = model.playbackSnapshot?.item {
+                    AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
+                                           blur: configuration.backgroundBlur)
+                        .opacity(layout == nil ? 1 : 0)
+                    if let item = model.playbackSnapshot?.item {
                         ImmersiveLyricsArtworkBackdrop(model: model, item: item, layout: layout, viewport: geometry.size,
                             active: pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                             artworkSource: { source in
                                 if source.trackID == model.playbackSnapshot?.item?.uri { immersiveArtworkSource = source }
                             }, frames: artworkReflectionFrames)
-                    } else {
-                        AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
-                                               blur: configuration.backgroundBlur)
                     }
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         let columns = geometry.size.width >= 700 || (geometry.size.width > geometry.size.height && geometry.size.width >= 550)
@@ -108,6 +110,10 @@ struct FullscreenLyricsPlayer: View {
                     }
                 }
                 .onChange(of: layout != nil, initial: true) { _, enabled in immersiveViewport = enabled }
+                .onChange(of: LyricsPagePresentationCoordinator.Mode(showsLyrics: configuration.showLyrics,
+                    immersive: layout != nil), initial: true) { _, mode in
+                    presentation.update(mode, reduceMotion: reduceMotion)
+                }
                 .onPreferenceChange(ImmersiveInformationHeightKey.self) { height in
                     if height > 0, abs(immersiveInformationHeight - height) > 0.5 { immersiveInformationHeight = height }
                 }
@@ -176,6 +182,7 @@ struct FullscreenLyricsPlayer: View {
                                 Color.clear.preference(key: ImmersiveInformationHeightKey.self, value: proxy.size.height)
                             } }
                             .padding(.bottom, layout.lyrics.minY - layout.information.maxY)
+                            .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout.information)
                     } else {
                         ScrollView { metadata(item, wide: false) }
                             .frame(height: headerHeight).padding(.bottom, 8)
@@ -210,7 +217,7 @@ struct FullscreenLyricsPlayer: View {
                     {
                         dismiss()
                     }
-                })
+            }, including: usesSystemZoom ? .none : .all)
             .accessibilityHidden(!immersiveViewport)
             .accessibilityAddTraits(immersiveViewport ? .isButton : [])
             .accessibilityAction(.escape) { dismiss() }
@@ -220,12 +227,13 @@ struct FullscreenLyricsPlayer: View {
         let showLarge = !configuration.showLyrics || wide || configuration.coverLayout == .normal
         VStack(spacing: 10) {
             if configuration.coverLayout != .immersive || !configuration.showLyrics {
-                PlaybackArtworkImage(url: item.artworkURL) { image in image.resizable().scaledToFit() }
+                LyricsTrackTransition(item: item) { displayed in
+                  PlaybackArtworkImage(url: displayed.artworkURL) { image in image.resizable().scaledToFit() }
                     placeholder: { RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
                     .frame(width: showLarge ? (wide ? 260 : 160) : 48, height: showLarge ? (wide ? 260 : 160) : 48)
                     .clipShape(RoundedRectangle(cornerRadius: showLarge ? 16 : 8))
-                    .id(item.uri)
                     .accessibilityHidden(true)
+                }
             }
             if configuration.showTitle {
                 MarqueeText(text: item.title, fontSize: 22, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !quickSettings.suspendsPage && !reduceMotion)
@@ -250,14 +258,10 @@ struct FullscreenLyricsPlayer: View {
 
     @ViewBuilder private func lyricContent(_ snapshot: PlaybackSnapshot, immersiveLayout: ImmersiveLyricsLayout? = nil) -> some View {
         let renderConfiguration = compatibilityConfiguration(layout: immersiveLayout)
-        if !configuration.showLyrics {
-            Spacer(minLength: 0)
-            Button("render.showLyrics") { model.renderPreferences.configuration.showLyrics = true }
-            Spacer(minLength: 0)
-        } else if let document = model.lyrics.document, !document.lines.isEmpty {
+        if let document = model.lyrics.document, !document.lines.isEmpty {
             VStack(spacing: 0) {
                 NativeLyricsView(document: document, configuration: renderConfiguration, offset: model.lyrics.effectiveOffset,
-                                 duration: snapshot.duration, playing: snapshot.isPlaying, active: pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
+                                 duration: snapshot.duration, playing: snapshot.isPlaying, active: presentation.rendersLyrics && pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                                  canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
                                  position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
                                  resumeToken: resumeToken, browsing: { browsing = $0 },
@@ -271,6 +275,13 @@ struct FullscreenLyricsPlayer: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .bottom) {
                 if immersiveLayout != nil, browsing { returnCurrentButton }
+            }
+            .opacity(presentation.mode.showsLyrics ? 1 : 0)
+            .allowsHitTesting(configuration.showLyrics).accessibilityHidden(!configuration.showLyrics)
+            .overlay {
+                if !configuration.showLyrics {
+                    Button("render.showLyrics") { model.renderPreferences.configuration.showLyrics = true }
+                }
             }
         } else {
             VStack(spacing: 16) {

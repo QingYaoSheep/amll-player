@@ -24,6 +24,16 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         var cornerRadius: CGFloat = 0
         var pageOpacity = 1.0
         var blurProfile: ImmersiveBackgroundBlurProfile? = nil
+        var videoCornerRadius: CGFloat = 0
+
+        static func inline(frame: CGRect, visible: Bool, presentsFrame: Bool, radius: CGFloat) -> Self {
+            var tuning = ImmersiveArtworkDebugConfiguration()
+            for layer in ImmersiveArtworkLayer.allCases { tuning[layer].enabled = false }
+            tuning[.video].enabled = visible
+            return .init(video: frame, reflection: .zero, transition: .zero, bottomFade: .zero,
+                tuning: tuning, presentsFrame: presentsFrame, reflectionEnabled: false,
+                reduceTransparency: false, videoCornerRadius: radius)
+        }
 
         /// Both immersive pages use the same calibrated content rectangles.
         /// Lyrics and controls live above this native backdrop, never in its blur.
@@ -48,8 +58,9 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
     }
 
     func makeUIView(context _: Context) -> Surface { Surface(frames: frames) }
-    func updateUIView(_ view: Surface, context _: Context) {
-        view.configure(video: video, layout: layout, background: background, still: still)
+    func updateUIView(_ view: Surface, context: Context) {
+        view.configure(video: video, layout: layout, background: background, still: still,
+            animation: context.transaction.animation)
     }
     static func dismantleUIView(_ view: Surface, coordinator _: ()) { view.dismantle() }
 
@@ -87,6 +98,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             let layout: Layout
             let background: AMLLBackground?
             let still: ImmersiveStillFrame?
+            let animation: Animation?
         }
         private var pendingConfiguration: PendingConfiguration?
         private var waitingForAttachment = false
@@ -118,9 +130,9 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         required init?(coder _: NSCoder) { nil }
 
         func configure(video: AnimatedArtwork?, layout: Layout, background: AMLLBackground? = nil,
-                       still: ImmersiveStillFrame? = nil) {
+                       still: ImmersiveStillFrame? = nil, animation: Animation? = nil) {
             guard !dismantled else { return }
-            pendingConfiguration = PendingConfiguration(video: video, layout: layout, background: background, still: still)
+            pendingConfiguration = PendingConfiguration(video: video, layout: layout, background: background, still: still, animation: animation)
             applyPendingConfiguration()
         }
 
@@ -180,9 +192,17 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 videoSurface.onState = video.onState
                 videoSurface.onFirstFrame = video.onFirstFrame
             }
+            if background == nil, let host = backgroundHost {
+                host.willMove(toParent: nil); host.view.removeFromSuperview(); host.removeFromParent()
+                backgroundHost = nil
+            }
+            let wasPresented = appliedLayout != nil
+            let contentChanged = previousLayout?.presentsFrame != layout.presentsFrame
             previousLayout = layout
             if sourceChanged { appliedLayout = nil }
-            applyLayout(layout)
+            if wasPresented, let animation = pendingConfiguration.animation ?? (contentChanged ? LyricsPageMotion.content : nil) {
+                UIView.animate(animation) { self.applyLayout(layout, animated: true) }
+            } else { applyLayout(layout) }
             if let video {
                 configuredVideo = true
                 videoSurface.configure(url: video.url, active: video.active, allowCellular: video.allowCellular,
@@ -240,12 +260,12 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             }
         }
 
-        private func applyLayout(_ layout: Layout) {
+        private func applyLayout(_ layout: Layout, animated: Bool = false) {
             guard frames.ownsPresentation(presentation) else { return }
             guard appliedLayout != layout || appliedBounds != bounds else { return }
             appliedLayout = layout
             appliedBounds = bounds
-            CATransaction.begin(); CATransaction.setDisableActions(true)
+            CATransaction.begin(); CATransaction.setDisableActions(!animated)
             let tuning = layout.tuning
             layer.cornerRadius = layout.cornerRadius
             backgroundSurface.frame = layout.background ?? bounds
@@ -259,9 +279,12 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                     ? layout.backgroundDimming : tuning[.dimming].opacity) * layout.pageOpacity))
 
             videoPlane.frame = layout.video
+            videoPlane.layer.cornerRadius = layout.videoCornerRadius
+            videoPlane.clipsToBounds = layout.videoCornerRadius > 0
             storedVideoSurface?.frame = videoPlane.bounds
             stillSurface.frame = videoPlane.bounds
-            stillSurface.isHidden = hasVideo && layout.presentsFrame
+            stillSurface.isHidden = stillFrame == nil
+            stillSurface.alpha = hasVideo && layout.presentsFrame ? 0 : 1
             // Keep the real layer drawing beneath its still fallback so its
             // first-frame readiness cannot depend on unhiding that same layer.
             storedVideoSurface?.isHidden = !hasVideo
@@ -317,8 +340,16 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         /// using CALayer.render, so its current frame comes from the same player.
         /// No offscreen/hidden/upper video is kept in the blur input.
         private func captureBlurInput() -> ImmersiveBlurInput? {
-            guard frames.ownsPresentation(presentation), let layout = previousLayout, let profile = blurProfile,
+            guard frames.ownsPresentation(presentation), let layout = previousLayout, let targetProfile = blurProfile,
                   window != nil, !transitionSurface.isHidden else { return nil }
+            // UIKit/SwiftUI animations change presentation geometry before the
+            // model reaches it. Sampling target rectangles makes the blur lead
+            // the visible video by the entire transition duration.
+            func presentedFrame(_ view: UIView) -> CGRect { view.layer.presentation()?.frame ?? view.frame }
+            func presentedOpacity(_ view: UIView) -> Double { Double(view.layer.presentation()?.opacity ?? Float(view.alpha)) }
+            let videoFrame = presentedFrame(videoPlane)
+            let profile = ImmersiveBackgroundBlurProfile(frame: presentedFrame(transitionSurface),
+                fullStrengthY: targetProfile.fullStrengthY + (videoPlane.isHidden ? 0 : videoFrame.maxY - layout.video.maxY))
             // Sample now rather than using the older asynchronously rendered
             // reflection. Both media planes below use this exact pixel buffer.
             if hasVideo { storedVideoSurface?.refreshReflectionFrame(hostTime: CACurrentMediaTime()) }
@@ -345,8 +376,9 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             frames.blurInputs = []
             frames.blurWaitingForVideoFrame = false
             for view in ordered.prefix(effectIndex) {
-                guard !view.isHidden, view.alpha > 0,
-                      view.frame.intersects(region) else { continue }
+                let frame = presentedFrame(view)
+                let opacity = presentedOpacity(view)
+                guard !view.isHidden, opacity > 0, frame.intersects(region) else { continue }
                 if view === videoPlane {
                     guard layout.presentsFrame || stillFrame != nil, (storedVideoSurface?.layer.opacity ?? 1) > 0 else { continue }
                     guard let buffer = currentBuffer else {
@@ -357,20 +389,20 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                         return nil
                     }
                     let mask = (videoPlane.mask as? UIImageView)?.image?.cgImage
-                    layers.append(.video(buffer, frame: videoPlane.frame, mask: mask, opacity: Double(videoPlane.alpha)))
+                    layers.append(.video(buffer, frame: frame, mask: mask, opacity: opacity))
                     frames.blurInputs.append("完整视频")
                 } else if view === reflectionPlane {
                     guard let buffer = currentBuffer, reflectionSurface.layer.opacity > 0 else { continue }
                     let mask = (reflectionPlane.mask as? UIImageView)?.image?.cgImage
-                    layers.append(.reflection(buffer, frame: reflectionPlane.frame, mask: mask,
-                        opacity: Double(reflectionPlane.alpha) * Double(reflectionSurface.layer.opacity)))
+                    layers.append(.reflection(buffer, frame: frame, mask: mask,
+                        opacity: opacity * Double(reflectionSurface.layer.presentation()?.opacity ?? reflectionSurface.layer.opacity)))
                     frames.blurInputs.append("封面倒影")
                 } else if view === dimmingSurface, let color = view.backgroundColor {
-                    layers.append(.solid(CIColor(color: color), frame: view.frame))
+                    layers.append(.solid(CIColor(color: color), frame: frame))
                     frames.blurInputs.append("暗度")
                 } else if view === backgroundSurface, usesNativeBackground,
                           let frame = backgroundFrames.current(viewport: view.bounds.size) {
-                    layers.append(.background(frame, frame: view.frame, opacity: Double(view.alpha)))
+                    layers.append(.background(frame, frame: presentedFrame(view), opacity: opacity))
                     nativeBackgroundCaptures += 1
                     frames.blurInputs.append("背景（GPU 共享）")
                 } else {

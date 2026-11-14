@@ -264,10 +264,10 @@ final class AMLLNativeCanvas: UIView {
         if self.configuration.lyricBlurLevel != configuration.lyricBlurLevel {
             blurLevelChangedAt = CACurrentMediaTime()
         }
+        if oldLayoutSettings != Self.layoutSettings(auxiliaryFade.layoutConfiguration(configuration)) {
+            dirty = true; needsFrame = true
+        }
         if configurationChanged {
-            if oldLayoutSettings != Self.layoutSettings(auxiliaryFade.layoutConfiguration(configuration)) {
-                dirty = true
-            }
             needsFrame = true
         }
         let accessibilityChanged = self.reduceMotion != reduceMotion || self.reduceTransparency != reduceTransparency

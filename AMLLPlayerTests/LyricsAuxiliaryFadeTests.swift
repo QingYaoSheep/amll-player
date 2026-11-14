@@ -259,4 +259,30 @@ import XCTest
         }
         return try (red(20), red(80))
     }
+
+    func testProductionCanvasHidingMidFadeDropsTheSlotBeforeReopening() throws {
+        var line = LyricLine(id: "hidden", text: "Hello", start: 0, end: 5)
+        line.translation = "Translation"
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "hidden-aux", title: "Hidden", artists: []),
+            lines: [line], language: "en", selectionReason: "Interrupted auxiliary fade")
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.frame); window.addSubview(canvas); window.isHidden = false
+        defer { canvas.stop(); window.isHidden = true }
+        canvas.position = { 1 }
+        let input = AMLLPlayerInput(position: 1, playing: false)
+        var config = LyricsRenderConfiguration(); config.translation = true
+        canvas.configure(document: document, configuration: config, input: input, active: true, reduceMotion: false)
+        canvas.layoutIfNeeded(); canvas.advanceFrame(delta: 0)
+        let before = canvas.layoutBuildCount
+        config.translation = false
+        canvas.configure(document: document, configuration: config, input: input, active: true, reduceMotion: false)
+        canvas.configure(document: document, configuration: config, input: input, active: false, reduceMotion: false)
+        canvas.layoutIfNeeded(); canvas.advanceFrame(delta: 0)
+        XCTAssertGreaterThan(canvas.layoutBuildCount, before, "Snapping while hidden must invalidate the retained auxiliary layout even when preferences did not change")
+        let cleaned = canvas.layoutBuildCount
+        canvas.configure(document: document, configuration: config, input: input, active: true, reduceMotion: false)
+        canvas.layoutIfNeeded(); canvas.advanceFrame(delta: 0)
+        XCTAssertEqual(canvas.layoutBuildCount, cleaned)
+        XCTAssertEqual(canvas.frameState?.lyricTime, 1)
+    }
 }

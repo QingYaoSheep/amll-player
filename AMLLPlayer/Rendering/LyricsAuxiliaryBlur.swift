@@ -19,6 +19,13 @@ struct LyricsAuxiliaryBlurParts: @unchecked Sendable {
     var estimatedBytes: Int { body.estimatedBytes + auxiliary.values.reduce(0) { $0 + $1.estimatedBytes } }
 }
 
+struct LyricsAuxiliaryBlurStarter {
+    let parts: LyricsAuxiliaryBlurParts
+    let size: CGSize
+    let origin: CGPoint
+    let alphas: [LyricsAuxiliaryKind: Double]
+}
+
 /// Re-rasterize only on a visibility change, then let Core Animation dissolve
 /// the two textures. Identical primary glyph pixels are never opacity-masked.
 actor LyricsAuxiliaryBlurDecoder {
@@ -93,16 +100,51 @@ actor LyricsAuxiliaryBlurDecoder {
     private var task: Task<Void, Never>?
     private var generation = 0
     private var parts: LyricsAuxiliaryBlurParts?
+    private var partsSize: CGSize?
+    private var partsOrigin: CGPoint?
     private var children: [LyricsAuxiliaryKind: [CALayer]] = [:]
     private var starts: [LyricsAuxiliaryKind: Double] = [:]
     private var initialAlphas: [LyricsAuxiliaryKind: Double] = [:]
     private var normalPublished = false
     var didInstall: (Double, Int) -> Void = { _, _ in }
+    var decode: (LyricsAuxiliaryBlurSource, Double) async -> LyricsAuxiliaryBlurParts? = { source, maximum in
+        await LyricsAuxiliaryBlurDecoder.shared.split(source, maximum: maximum)
+    }
     var isSeparated: Bool { parts != nil }
     var isPreparing: Bool { task != nil }
 
     init(near: CALayer, far: CALayer) { self.near = near; self.far = far }
     deinit { task?.cancel() }
+
+    func snapshot(origin: CGPoint) -> LyricsAuxiliaryBlurStarter? {
+        guard let body = parts?.body ?? normal else { return nil }
+        let captured = parts ?? .init(body: body, auxiliary: [:])
+        var alphas = initialAlphas
+        if normalPublished { for kind in source?.kinds ?? [] { alphas[kind] = 1 } }
+        for (kind, layers) in children {
+            if let layer = layers.first { alphas[kind] = Double(layer.presentation()?.opacity ?? layer.opacity) }
+        }
+        return .init(parts: captured, size: partsSize ?? size, origin: partsOrigin ?? origin, alphas: alphas)
+    }
+
+    func showStarter(_ starter: LyricsAuxiliaryBlurStarter, origin: CGPoint) {
+        removeChildren(); parts = starter.parts
+        partsSize = starter.size; partsOrigin = starter.origin
+        initialAlphas = Dictionary(uniqueKeysWithValues: LyricsAuxiliaryKind.allCases.map { ($0, starter.alphas[$0] ?? 0) })
+        starter.parts.body.install(near: near, far: far, size: starter.size, animated: false)
+        let delta = CGPoint(x: origin.x - starter.origin.x, y: origin.y - starter.origin.y)
+        near.frame = near.frame.offsetBy(dx: delta.x, dy: delta.y)
+        far.frame = far.frame.offsetBy(dx: delta.x, dy: delta.y)
+        for (kind, images) in starter.parts.auxiliary {
+            children[kind] = [(near, images.near), (far, images.far)].map { parent, image -> CALayer in
+                let child = CALayer(); child.frame = parent.bounds; child.contents = image.cgImage; child.contentsScale = image.scale
+                child.name = "auxiliaryBlur." + String(describing: kind)
+                child.opacity = Float(initialAlphas[kind] ?? 0); parent.addSublayer(child)
+                return child
+            }
+        }
+        didInstall(starter.parts.body.maximum, starter.parts.estimatedBytes)
+    }
 
     func reset() {
         task?.cancel(); task = nil; generation &+= 1
@@ -132,8 +174,9 @@ actor LyricsAuxiliaryBlurDecoder {
     private func prepare() {
         guard let source, let normal else { return }
         let ticket = generation, maximum = normal.maximum
+        let decode = decode
         task = Task { [weak self] in
-            let result = await LyricsAuxiliaryBlurDecoder.shared.split(source, maximum: maximum)
+            let result = await decode(source, maximum)
             guard !Task.isCancelled, let self, self.generation == ticket, let result, let fade = self.fade else { return }
             self.task = nil
             CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -142,7 +185,7 @@ actor LyricsAuxiliaryBlurDecoder {
             for (kind, layers) in self.children {
                 if let layer = layers.first { initial[kind] = Double(layer.presentation()?.opacity ?? layer.opacity) }
             }
-            self.removeChildren(); self.parts = result
+            self.removeChildren(); self.parts = result; self.partsSize = self.size
             result.body.install(near: self.near, far: self.far, size: self.size, animated: replacing)
             for (kind, images) in result.auxiliary {
                 let pair = [(self.near, images.near), (self.far, images.far)].map { parent, image -> CALayer in
@@ -181,7 +224,7 @@ actor LyricsAuxiliaryBlurDecoder {
 
     private func removeChildren() {
         children.values.flatMap { $0 }.forEach { $0.removeFromSuperlayer() }
-        children.removeAll(); starts.removeAll(); parts = nil
+        children.removeAll(); starts.removeAll(); parts = nil; partsSize = nil; partsOrigin = nil
     }
 
     private func restore(animated: Bool) {

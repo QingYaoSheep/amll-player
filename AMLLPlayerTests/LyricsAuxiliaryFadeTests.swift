@@ -151,6 +151,56 @@ import XCTest
         }
     }
 
+    func testRetainedBlurSurvivesDelayedIncomingPreparation() async throws {
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = false
+        func image(auxiliary: Bool) throws -> CGImage {
+            try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 80, height: 100), format: format).image { renderer in
+                renderer.cgContext.setFillColor(UIColor.white.cgColor)
+                renderer.cgContext.fill(CGRect(x: 10, y: 10, width: 20, height: 20))
+                if auxiliary { renderer.cgContext.fill(CGRect(x: 10, y: 60, width: 20, height: 10)) }
+            }.cgImage)
+        }
+        let mainSource = LyricsAuxiliaryBlurSource.raster(try image(auxiliary: false), scale: 1, regions: [:])
+        let fullSource = LyricsAuxiliaryBlurSource.raster(try image(auxiliary: true), scale: 1,
+            regions: [.translation: [CGRect(x: 0, y: 60, width: 80, height: 10)]])
+        let oldValue = await LyricsAuxiliaryBlurDecoder.shared.decode(mainSource, hidden: [], maximum: 12)
+        let newValue = await LyricsAuxiliaryBlurDecoder.shared.decode(fullSource, hidden: [], maximum: 12)
+        let old = try XCTUnwrap(oldValue), new = try XCTUnwrap(newValue)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene); window.frame = scene.coordinateSpace.bounds
+        window.rootViewController = UIViewController(); window.makeKeyAndVisible()
+        window.rootViewController?.view.backgroundColor = .black
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 80, height: 100))
+        window.rootViewController?.view.addSubview(view)
+        let near = CALayer(), far = CALayer(); near.opacity = 0
+        view.layer.addSublayer(near); view.layer.addSublayer(far)
+        let original = LyricsAuxiliaryBlurPresentation(near: near, far: far)
+        let fade = LyricsAuxiliaryFade()
+        var config = LyricsRenderConfiguration(); config.translation = false; fade.reset(config)
+        defer { fade.cancel(); window.isHidden = true; previous?.makeKey() }
+        original.install(old, source: mainSource, size: view.bounds.size, fade: fade)
+        try await Task.sleep(for: .milliseconds(30))
+        let before = try pixels(view)
+        let starter = try XCTUnwrap(original.snapshot(origin: .zero))
+        let replacement = LyricsAuxiliaryBlurPresentation(near: near, far: far)
+        replacement.decode = { source, maximum in
+            try? await Task.sleep(for: .milliseconds(120))
+            return await LyricsAuxiliaryBlurDecoder.shared.split(source, maximum: maximum)
+        }
+        config.translation = true; fade.update(config, animated: true)
+        replacement.showStarter(starter, origin: .zero)
+        replacement.install(new, source: fullSource, size: view.bounds.size, fade: fade)
+        try await Task.sleep(for: .milliseconds(55))
+        let held = try pixels(view)
+        XCTAssertEqual(held.0, before.0, accuracy: 2, "Keep the previous main blur while the new body texture is prepared")
+        XCTAssertLessThan(held.1, 2, "The incoming annotation must not appear before preparation")
+        try await Task.sleep(for: .milliseconds(250))
+        let final = try pixels(view)
+        XCTAssertEqual(final.0, before.0, accuracy: 3)
+        XCTAssertGreaterThan(final.1, held.1)
+    }
+
     func testProductionCanvasRetainsOutgoingLayoutAndBothWordClocks() async throws {
         var line = LyricLine(id: "one", text: "Hello", start: 0, end: 5,
             words: [.init(text: "Hello", start: 0, end: 5)], precision: .word)

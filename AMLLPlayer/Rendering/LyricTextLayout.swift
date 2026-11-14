@@ -181,12 +181,14 @@ final class LyricRowView: UIView {
     }
 
     func configure(line: LyricLine, layout: LyricTextLayout, scale: CGFloat, configuration: LyricsRenderConfiguration, blur: Bool, canSeek: Bool,
-                   auxiliaryFade: LyricsAuxiliaryFade? = nil, onSeek: @escaping () -> Void) {
+                   auxiliaryFade: LyricsAuxiliaryFade? = nil, blurStarter: LyricsAuxiliaryBlurStarter? = nil,
+                   onSeek: @escaping () -> Void) {
         self.line = line; self.onSeek = onSeek
         auxiliaryBlur.reset()
         auxiliaryRegions = layout.auxiliaryRegions; auxiliaryRevision = -1
         self.auxiliaryFade = auxiliaryFade
         auxiliaryBlurEnabled = blur
+        if let blurStarter { auxiliaryBlur.showStarter(blurStarter, origin: .zero) }
         let context = [line.text] + configuration.auxiliaryText(for: line)
         accessibilityLabel = context.filter { !$0.isEmpty }.joined(separator: ", ")
         accessibilityIdentifier = "lyricRow." + line.id
@@ -240,6 +242,8 @@ final class LyricRowView: UIView {
         base.mask = isUsingBlur && auxiliaryBlur.isSeparated ? nil : fade.mask(bounds: base.bounds, regions: auxiliaryRegions)
         highlight.mask = fade.mask(bounds: highlight.bounds, regions: auxiliaryRegions)
     }
+
+    func captureAuxiliaryBlur() -> LyricsAuxiliaryBlurStarter? { auxiliaryBlur.snapshot(origin: .zero) }
 
     func update(time: Double, active: Bool, configuration: LyricsRenderConfiguration, policy: RenderQualityPolicy,
                 reduceMotion: Bool, delta: TimeInterval = 1.0 / 60.0, blurLevel: Double = 0)

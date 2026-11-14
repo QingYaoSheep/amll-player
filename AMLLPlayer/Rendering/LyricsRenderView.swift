@@ -70,6 +70,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     private var lastSize = CGSize.zero
     private var frames: [CGRect] = []
     private var rows: [Int: LyricRowView] = [:]
+    private var auxiliaryBlurStarters: [Int: LyricsAuxiliaryBlurStarter] = [:]
     private var pool: [LyricRowView] = []
     private var layouts: [Int: LyricTextLayout] = [:]
     private var layoutOrder: [Int] = []
@@ -129,6 +130,8 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         else { auxiliaryFade.update(configuration, animated: active && window != nil) }
         if self.document != document {
             self.document = document; timeline = LyricsTimeline(lines: document.lines)
+            builtAuxiliary = (configuration.translation, configuration.romanization)
+            auxiliaryBlurStarters.removeAll()
             follow.reset(); motion = LyricsMotionModel(); previousTime = nil; lastFocus = nil; lastActive = []; needsRebuild = true
             scroll.setContentOffset(scroll.contentOffset, animated: false)
             DispatchQueue.main.async { [weak self] in self?.browsing(false) }
@@ -164,6 +167,8 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             let resized = bounds.size != lastSize
             lastSize = bounds.size; needsRebuild = false
             let effective = auxiliaryFade.layoutConfiguration(configuration)
+            let auxiliaryChanged = builtAuxiliary?.0 != effective.translation || builtAuxiliary?.1 != effective.romanization
+            auxiliaryBlurStarters = auxiliaryChanged ? rows.compactMapValues { $0.captureAuxiliaryBlur() } : [:]
             builtAuxiliary = (effective.translation, effective.romanization)
             rows.values.forEach { $0.removeFromSuperview() }; rows.removeAll(); pool.removeAll()
             layouts.removeAll(); layoutOrder.removeAll(); frames.removeAll()
@@ -363,7 +368,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             let line = timeline.lines[key]
             row.configure(line: line, layout: makeLayout(key), scale: window?.screen.scale ?? 2,
                           configuration: configuration, blur: configuration.blurInactive && !reduceMotion, canSeek: canSeek,
-                          auxiliaryFade: auxiliaryFade)
+                          auxiliaryFade: auxiliaryFade, blurStarter: auxiliaryBlurStarters.removeValue(forKey: key))
             { [weak self] in
                 guard let self, self.canSeek else { return }
                 self.seek(LyricsTimeline.seekTarget(line: line, offset: self.offset, duration: self.duration))
@@ -378,6 +383,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             scroll.addSubview(row); rows[key] = row
         }
         scroll.accessibilityElements = rows.keys.sorted().compactMap { rows[$0] }
+        auxiliaryBlurStarters.removeAll()
     }
 
     func scrollViewWillBeginDragging(_: UIScrollView) {

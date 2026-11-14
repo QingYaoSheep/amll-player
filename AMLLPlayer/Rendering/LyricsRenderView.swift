@@ -13,6 +13,7 @@ struct NativeLyricsView: UIViewRepresentable {
     let seek: (Double) -> Void
     let resumeToken: Int
     let browsing: (Bool) -> Void
+    var playbackFrame: (() -> LyricsPlaybackFrame)? = nil
     var fadeTop: CGFloat? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -22,6 +23,7 @@ struct NativeLyricsView: UIViewRepresentable {
 
     func updateUIView(_ view: LyricsRenderView, context _: Context) {
         view.position = position; view.seek = seek; view.browsing = browsing
+        view.playbackFrame = playbackFrame
         view.fadeTop = fadeTop
         view.update(document: document, configuration: configuration.validated(), offset: offset, duration: duration,
                     playing: playing, active: active, canSeek: canSeek, reduceMotion: reduceMotion, resumeToken: resumeToken)
@@ -34,6 +36,9 @@ struct NativeLyricsView: UIViewRepresentable {
 
 @MainActor
 final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
+    var playbackFrame: (() -> LyricsPlaybackFrame)?
+    private var auxiliarySeekRevision: Int?
+    private var auxiliaryConfirmation: UUID?
     var fadeTop: CGFloat? { didSet { if oldValue != fadeTop { setNeedsLayout() } } }
     private let viewportFade = CAGradientLayer()
     private var fadeSize = CGSize.zero
@@ -137,7 +142,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         let changedAuxiliary: Set<LyricsAuxiliaryKind> = Set(LyricsAuxiliaryKind.allCases.filter {
             $0 == .translation ? self.configuration.translation != configuration.translation : self.configuration.romanization != configuration.romanization
         })
-        if self.document != document { auxiliaryReflow.reset(); auxiliarySlotReflow.reset() }
+        if self.document != document || reduceMotion { auxiliaryReflow.reset(); auxiliarySlotReflow.reset() }
         else if !changedAuxiliary.isEmpty {
             auxiliaryReflow.capture(rows.mapValues { $0.mainPosition(in: layer) }, kinds: changedAuxiliary)
             let slots = rows.flatMap { index, row in row.presentedAuxiliarySlots.map { (LyricsAuxiliaryMotion.slotKey(row: index, kind: $0.key), $0.value) } }
@@ -284,6 +289,13 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         let playbackTime = position()
         let state = timeline.state(position: playbackTime, offset: offset, advance: configuration.advance)
         let jumped = previousTime.map { abs(state.time - $0) > 1 } ?? true
+        var confirmedSeek = false
+        if let frame = playbackFrame?(), frame.pending == nil {
+            confirmedSeek = auxiliarySeekRevision.map { $0 != frame.seekRevision } ?? false
+            if let confirmation = frame.confirmation, auxiliaryConfirmation != confirmation.requestID { confirmedSeek = true }
+            auxiliarySeekRevision = frame.seekRevision; auxiliaryConfirmation = frame.confirmation?.requestID
+        }
+        if jumped || confirmedSeek { auxiliaryReflow.reset(); auxiliarySlotReflow.reset() }
         previousTime = state.time
         if state.focus != lastFocus {
             let interval: TimeInterval? = state.focus.flatMap { focus in

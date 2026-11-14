@@ -258,7 +258,7 @@ final class AMLLNativeCanvas: UIView {
         let changedAuxiliary: Set<LyricsAuxiliaryKind> = Set(LyricsAuxiliaryKind.allCases.filter {
             $0 == .translation ? self.configuration.translation != configuration.translation : self.configuration.romanization != configuration.romanization
         })
-        if documentChanged || self.input.seekRevision != input.seekRevision { auxiliaryReflow.reset(); auxiliarySlotReflow.reset() }
+        if documentChanged || reduceMotion || self.input.seekRevision != input.seekRevision { auxiliaryReflow.reset(); auxiliarySlotReflow.reset() }
         else if !changedAuxiliary.isEmpty {
             auxiliaryReflow.capture(rowViews.mapValues { $0.mainPosition(in: layer) }, kinds: changedAuxiliary)
             let slots = rowViews.flatMap { index, row in row.presentedAuxiliarySlots.map { (LyricsAuxiliaryMotion.slotKey(row: index, kind: $0.key), $0.value) } }
@@ -566,7 +566,11 @@ final class AMLLNativeCanvas: UIView {
         }
         // Mutate the unique stored engine. Copying the struct here makes its
         // group-motion array copy on write once per display refresh.
+        let previousAnchor = engine!.timeAnchorRevision
         let state = engine!.render(input, delta: delta)
+        if frameState != nil, engine!.timeAnchorRevision != previousAnchor {
+            auxiliaryReflow.reset(); auxiliarySlotReflow.reset()
+        }
         input.seeking = false
         PlaybackSeekDiagnostics.shared.frame(canvas: canvasID, state: state, confirmation: sampledConfirmation)
         let engineFinished = performanceRecordingEnabled ? CACurrentMediaTime() : 0
@@ -1371,7 +1375,11 @@ private final class AMLLNativeRow: UIView {
             guard let self else { return }
             self.blurMaximum = maximum; self.blurBytes = bytes
             self.invalidateVisualCache()
-            (self.superview?.superview as? AMLLNativeCanvas)?.auxiliaryPixelsReady()
+            var ancestor = self.superview
+            while let view = ancestor {
+                if let canvas = view as? AMLLNativeCanvas { canvas.auxiliaryPixelsReady(); break }
+                ancestor = view.superview
+            }
         }
         return presentation
     }()

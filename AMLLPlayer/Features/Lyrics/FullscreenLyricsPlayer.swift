@@ -301,6 +301,7 @@ struct FullscreenLyricsPlayer: View {
                                  canSeek: snapshot.restrictions.canSeek && !model.isPerformingAction,
                                  position: { model.progress() }, seek: { target in Task { await model.seek(to: target) } },
                                  resumeToken: resumeToken, browsing: { browsing = $0 },
+                                 playbackFrame: { model.lyricsPlaybackFrame() },
                                  fadeTop: immersiveLayout != nil ? 0 : nil)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if immersiveLayout == nil {

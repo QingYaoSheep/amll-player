@@ -74,14 +74,20 @@ import XCTest
             window.rootViewController?.view.addSubview(view)
             var config = LyricsRenderConfiguration(); config.translation = false; config.romanization = true; config.romanizationFirst = false
             config.blurInactive = false; config.hdr = .init(enabled: false)
+            var songPosition = 1.0, seekRevision = 0
+            var reduceMotion = false
+            func playback() -> LyricsPlaybackFrame {
+                .init(snapshot: nil, position: songPosition, playing: false, seekRevision: seekRevision,
+                    pending: nil, confirmation: nil, legacySeekPosition: nil)
+            }
             func update() {
                 if let canvas = view as? AMLLNativeCanvas {
-                    canvas.position = { 1 }
-                    canvas.configure(document: document, configuration: config, input: .init(position: 1, playing: false), active: true, reduceMotion: false)
+                    canvas.position = { songPosition }; canvas.playbackFrame = { playback() }
+                    canvas.configure(document: document, configuration: config, input: .init(position: songPosition, playing: false), active: true, reduceMotion: reduceMotion)
                 } else if let canvas = view as? LyricsRenderView {
-                    canvas.position = { 1 }
+                    canvas.position = { songPosition }; canvas.playbackFrame = { playback() }
                     canvas.update(document: document, configuration: config, offset: 0, duration: 20, playing: false,
-                        active: true, canSeek: true, reduceMotion: false, resumeToken: 0)
+                        active: true, canSeek: true, reduceMotion: reduceMotion, resumeToken: 0)
                 }
                 view.layoutIfNeeded()
             }
@@ -129,6 +135,22 @@ import XCTest
             XCTAssertEqual(try XCTUnwrap(positions()[0]), main, accuracy: 2)
             XCTAssertEqual(try pronunciationPosition(), pronunciationBefore, accuracy: 2)
             if let canvas = view as? AMLLNativeCanvas { XCTAssertEqual(canvas.frameState?.lyricTime, 1) }
+            config.translation = true; update()
+            try await Task.sleep(for: .milliseconds(80))
+            XCTAssertLessThan(try gap(), expanded)
+            // No configure call: exercise the same trusted frame-driven path
+            // that can consume the seek revision before SwiftUI refreshes.
+            songPosition = 1.2; seekRevision += 1
+            try await Task.sleep(for: .milliseconds(80))
+            XCTAssertEqual(try gap(), expanded, accuracy: 2, "A confirmed small seek must clear old reflow offsets")
+            if let canvas = view as? AMLLNativeCanvas { XCTAssertEqual(canvas.frameState?.lyricTime ?? 0, 1.2, accuracy: 0.001) }
+            config.translation = false; update()
+            try await Task.sleep(for: .milliseconds(70))
+            reduceMotion = true; update()
+            try await Task.sleep(for: .milliseconds(40))
+            let reduced = try gap()
+            try await Task.sleep(for: .milliseconds(120))
+            XCTAssertEqual(try gap(), reduced, accuracy: 1, "Reduce Motion must cancel an already installed spring")
         }
     }
 }

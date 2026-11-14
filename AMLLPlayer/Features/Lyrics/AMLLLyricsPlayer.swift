@@ -225,7 +225,7 @@ struct AMLLLyricsPlayer: View {
                 .matchedGeometryEffect(id: "metadata", in: metadataMotion, properties: .position,
                     isSource: !configuration.showLyrics)
                 .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: configuration.showLyrics)
-            if configuration.showControls {
+            if configuration.showControls && (presentation.rendersArtworkControls || !configuration.showLyrics) {
               VStack(spacing: 0) {
                 LyricsProgressControl(model: model, snapshot: snapshot)
                     .padding(.horizontal, 8)
@@ -243,9 +243,9 @@ struct AMLLLyricsPlayer: View {
                 bottomActions
                     .padding(.top, metrics.bottomActionsTopGap)
               }
-              .offset(y: reduceMotion || !configuration.showLyrics ? 0
+              .offset(y: reduceMotion || !presentation.mode.showsLyrics ? 0
                 : metrics.compactArtworkTop - metrics.expandedArtworkTop - artworkSide - metrics.expandedMetadataGap)
-              .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: configuration.showLyrics)
+              .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: presentation.mode.showsLyrics)
             }
             Spacer(minLength: 12)
         }

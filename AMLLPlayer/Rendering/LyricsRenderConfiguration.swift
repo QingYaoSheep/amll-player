@@ -153,6 +153,10 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     }
 
     func auxiliaryText(for line: LyricLine, displayingInlineRomanization: Bool = false) -> [String] {
+        auxiliaryEntries(for: line, displayingInlineRomanization: displayingInlineRomanization).map(\.text)
+    }
+
+    func auxiliaryEntries(for line: LyricLine, displayingInlineRomanization: Bool = false) -> [(kind: LyricsAuxiliaryKind, text: String)] {
         let translationText = translation ? line.translation : ""
         let generated = line.generatedRomanization?.map(\.romanized).joined(separator: " ") ?? ""
         let wordRomanization = line.words.compactMap(\.romanWord).joined(separator: " ")
@@ -180,8 +184,9 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
                 romanizationRows.append(line.romanization.isEmpty ? wordRomanization : line.romanization)
             }
         }
-        return (romanizationFirst ? romanizationRows + [translationText] : [translationText] + romanizationRows)
-            .filter { !$0.isEmpty }
+        let translated: [(kind: LyricsAuxiliaryKind, text: String)] = translationText.isEmpty ? [] : [(.translation, translationText)]
+        let romanized: [(kind: LyricsAuxiliaryKind, text: String)] = romanizationRows.filter { !$0.isEmpty }.map { (.romanization, $0) }
+        return romanizationFirst ? romanized + translated : translated + romanized
     }
 
     func accessibilityText(for line: LyricLine, displayingInlineRomanization: Bool) -> String {

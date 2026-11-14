@@ -9,6 +9,8 @@ fileprivate struct AMLLCoreTextRasterRow {
     var auxiliary = false
     var ruby = false
     var romanization = false
+    var auxiliaryKind: LyricsAuxiliaryKind? = nil
+    var auxiliaryRect: CGRect? = nil
 }
 
 /// Immutable Core Text data crosses the main-actor boundary only for image
@@ -17,6 +19,21 @@ struct AMLLCoreTextRasterSnapshot: @unchecked Sendable {
     fileprivate let size: CGSize
     fileprivate let rows: [AMLLCoreTextRasterRow]
     nonisolated(unsafe) private static let rasterContext = CIContext(options: nil)
+
+    func hidingAuxiliary(_ kinds: Set<LyricsAuxiliaryKind>) -> Self {
+        .init(size: size, rows: rows.filter { row in
+            if let kind = row.auxiliaryKind, kinds.contains(kind) { return false }
+            return !(row.romanization && kinds.contains(.romanization))
+        })
+    }
+
+    var auxiliaryKinds: Set<LyricsAuxiliaryKind> {
+        Set(rows.compactMap { $0.auxiliaryKind ?? ($0.romanization ? .romanization : nil) })
+    }
+
+    func onlyAuxiliary(_ kind: LyricsAuxiliaryKind?) -> Self {
+        .init(size: size, rows: rows.filter { ($0.auxiliaryKind ?? ($0.romanization ? .romanization : nil)) == kind })
+    }
 
     func raster(scale: CGFloat, auxiliary: Bool? = nil, ruby: Bool? = nil,
                 romanization: Bool? = nil, blurRadius: CGFloat = 0) -> UIImage {
@@ -50,6 +67,14 @@ struct AMLLCoreTextRasterSnapshot: @unchecked Sendable {
 /// Core Text shapes glyphs; the pinned AMLL cost function chooses the line breaks.
 @MainActor
 final class AMLLCoreTextLayout {
+    var auxiliaryRegions: [LyricsAuxiliaryKind: [CGRect]] {
+        var result: [LyricsAuxiliaryKind: [CGRect]] = [:]
+        for row in rows {
+            if let kind = row.auxiliaryKind, let rect = row.auxiliaryRect { result[kind, default: []].append(rect) }
+        }
+        result[.romanization, default: []] += rubyFragments.filter { $0.kind == .romanization }.map(\.rect)
+        return result
+    }
     struct RubyFragment {
         enum Kind: String { case ruby, romanization }
         var rect: CGRect
@@ -640,7 +665,7 @@ final class AMLLCoreTextLayout {
         // lyricLineWrapper uses a .3em flex gap between the main and
         // auxiliary rows. Keeping it in the cached layout also keeps the
         // engine's measured group height aligned with the pixels.
-        let auxiliaryTexts = configuration.auxiliaryText(for: line, displayingInlineRomanization: hasWordRomanization)
+        let auxiliaryTexts = configuration.auxiliaryEntries(for: line, displayingInlineRomanization: hasWordRomanization)
         var separateRomanizationY: CGFloat?
         if romanizationReserve > 0 && configuration.romanizationFirst {
             y += font.pointSize * 0.3
@@ -652,7 +677,7 @@ final class AMLLCoreTextLayout {
         }
         for auxiliary in auxiliaryTexts {
             let auxiliaryFont = font.withSize(max(10, font.pointSize * (configuration.auxiliaryScale ?? 0.5)))
-            let value = NSAttributedString(string: auxiliary, attributes: [.font: auxiliaryFont, .foregroundColor: UIColor.white.withAlphaComponent(0.3)])
+            let value = NSAttributedString(string: auxiliary.text, attributes: [.font: auxiliaryFont, .foregroundColor: UIColor.white.withAlphaComponent(0.3)])
             let typesetter = CTTypesetterCreateWithAttributedString(value)
             var cursor = 0
             while cursor < value.length {
@@ -660,7 +685,9 @@ final class AMLLCoreTextLayout {
                 let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: cursor, length: count))
                 let rowWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
                 rows.append(.init(line: ctLine, origin: CGPoint(x: line.isDuet || line.isRTL ? availableWidth - rowWidth : 0,
-                                                                y: y + auxiliaryFont.ascender), auxiliary: true))
+                                                                y: y + auxiliaryFont.ascender), auxiliary: true,
+                                  auxiliaryKind: auxiliary.kind,
+                                  auxiliaryRect: CGRect(x: 0, y: y, width: availableWidth, height: auxiliaryFont.pointSize * 1.5)))
                 y += auxiliaryFont.pointSize * 1.5
                 cursor += count
             }

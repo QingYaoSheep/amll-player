@@ -13,12 +13,14 @@ final class LyricsPagePresentationCoordinator {
 
     private(set) var mode = Mode(showsLyrics: true, immersive: false)
     private(set) var rendersLyrics = true
+    private(set) var rendersArtworkControls = false
     private(set) var revision = 0
     private var initialized = false
 
     init(showsLyrics: Bool = true) {
         mode.showsLyrics = showsLyrics
         rendersLyrics = showsLyrics
+        rendersArtworkControls = !showsLyrics
     }
 
     func update(_ target: Mode, reduceMotion: Bool) {
@@ -34,12 +36,14 @@ final class LyricsPagePresentationCoordinator {
     func begin(_ target: Mode) {
         revision &+= 1
         if target.showsLyrics { rendersLyrics = true }
+        else { rendersArtworkControls = true }
         mode = target
     }
 
     func finish(_ ticket: Int) {
         guard ticket == revision else { return }
         rendersLyrics = mode.showsLyrics
+        rendersArtworkControls = !mode.showsLyrics
     }
 }
 

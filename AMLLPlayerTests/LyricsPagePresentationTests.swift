@@ -12,12 +12,14 @@ final class LyricsPagePresentationTests: XCTestCase {
         state.begin(.init(showsLyrics: true, immersive: false))
         state.begin(.init(showsLyrics: false, immersive: false))
         let hiding = state.revision
+        XCTAssertTrue(state.rendersArtworkControls)
         XCTAssertTrue(state.rendersLyrics, "Keep the canvas rendering throughout its outgoing fade")
         state.begin(.init(showsLyrics: true, immersive: true))
         state.finish(hiding)
         XCTAssertTrue(state.rendersLyrics, "A stale removal callback cannot deactivate a reopened canvas")
         state.finish(state.revision)
         XCTAssertTrue(state.rendersLyrics)
+        XCTAssertFalse(state.rendersArtworkControls, "Invisible footer controls must leave the accessibility tree after their fade")
         XCTAssertTrue(state.mode.immersive)
     }
 

@@ -5,6 +5,8 @@ struct AMLLPreparedBlurImages: @unchecked Sendable {
     let near: UIImage
     let far: UIImage
 
+    init(maximum: Double, near: UIImage, far: UIImage) { self.maximum = maximum; self.near = near; self.far = far }
+
     init(snapshot: AMLLCoreTextRasterSnapshot, scale: CGFloat, maximum: Double,
          hideRomanization: Bool = false, overlay: Bool = false) {
         self.maximum = maximum
@@ -17,8 +19,8 @@ struct AMLLPreparedBlurImages: @unchecked Sendable {
 
     var estimatedBytes: Int { rasterBytes(near) + rasterBytes(far) }
 
-    @MainActor func install(near nearLayer: CALayer, far farLayer: CALayer, size: CGSize) {
-        let allowsFade = !UIAccessibility.isReduceMotionEnabled && !UIAccessibility.isReduceTransparencyEnabled
+    @MainActor func install(near nearLayer: CALayer, far farLayer: CALayer, size: CGSize, animated: Bool = true) {
+        let allowsFade = animated && !UIAccessibility.isReduceMotionEnabled && !UIAccessibility.isReduceTransparencyEnabled
         for (layer, image) in [(nearLayer, near), (farLayer, far)] {
             // The requested radius may already be above the old texture's maximum.
             // Fade visible replacements so the new texture does not jump into view.

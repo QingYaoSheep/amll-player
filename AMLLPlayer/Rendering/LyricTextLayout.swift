@@ -25,6 +25,7 @@ final class LyricTextLayout {
 
     let size: CGSize
     let fragments: [Fragment]
+    let auxiliaryRegions: [LyricsAuxiliaryKind: [CGRect]]
     private let manager: NSLayoutManager
     private let storage: NSTextStorage
     private let container: NSTextContainer
@@ -46,15 +47,18 @@ final class LyricTextLayout {
         let attributed = NSMutableAttributedString(string: line.text, attributes: [
             .font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking, .paragraphStyle: paragraph,
         ])
-        for text in configuration.auxiliaryText(for: line) {
+        var auxiliaryRanges: [(LyricsAuxiliaryKind, NSRange)] = []
+        for entry in configuration.auxiliaryEntries(for: line) {
             guard let auxiliaryParagraph = paragraph.mutableCopy() as? NSMutableParagraphStyle else { continue }
             auxiliaryParagraph.minimumLineHeight = font.pointSize * AMLLMotionMetrics.auxiliaryLineScale * 1.5
             auxiliaryParagraph.maximumLineHeight = font.pointSize * AMLLMotionMetrics.auxiliaryLineScale * 1.5
-            attributed.append(NSAttributedString(string: "\n" + text, attributes: [
+            let start = attributed.length + 1
+            attributed.append(NSAttributedString(string: "\n" + entry.text, attributes: [
                 .font: font.withSize(font.pointSize * AMLLMotionMetrics.auxiliaryLineScale),
                 .foregroundColor: UIColor.white.withAlphaComponent(AMLLMotionMetrics.auxiliaryLineOpacity),
                 .paragraphStyle: auxiliaryParagraph,
             ]))
+            auxiliaryRanges.append((entry.kind, NSRange(location: start, length: (entry.text as NSString).length)))
         }
         storage = NSTextStorage(attributedString: attributed)
         manager = NSLayoutManager()
@@ -64,6 +68,13 @@ final class LyricTextLayout {
         manager.addTextContainer(container)
         manager.ensureLayout(for: container)
         size = CGSize(width: max(1, width), height: ceil(manager.usedRect(for: container).maxY) + 8)
+        var regions: [LyricsAuxiliaryKind: [CGRect]] = [:]
+        for (kind, range) in auxiliaryRanges {
+            let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let rect = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            regions[kind, default: []].append(CGRect(x: 0, y: rect.minY, width: max(1, width), height: rect.height))
+        }
+        auxiliaryRegions = regions
         var result: [Fragment] = []
         let text = line.text as NSString
         var cursor = 0
@@ -129,6 +140,21 @@ final class LyricTextLayout {
 
 @MainActor
 final class LyricRowView: UIView {
+    private var auxiliaryRegions: [LyricsAuxiliaryKind: [CGRect]] = [:]
+    private var auxiliaryRevision = -1
+    private var auxiliaryMaskUsesBlur = false
+    private var isUsingBlur = false
+    private var lastBlurLevel = 0.0
+    private weak var auxiliaryFade: LyricsAuxiliaryFade?
+    private var auxiliaryBlurEnabled = false
+    private let auxiliaryNear = CALayer(), auxiliaryFar = CALayer()
+    private lazy var auxiliaryBlur: LyricsAuxiliaryBlurPresentation = {
+        let presentation = LyricsAuxiliaryBlurPresentation(near: auxiliaryNear, far: auxiliaryFar)
+        presentation.didInstall = { [weak self] _, _ in
+            (self?.superview?.superview as? LyricsRenderView)?.auxiliaryPixelsReady()
+        }
+        return presentation
+    }()
     private let base = CALayer()
     private let highlight = CALayer()
     private var pieces: [(CALayer, CAGradientLayer, LyricTextLayout.Fragment)] = []
@@ -145,7 +171,7 @@ final class LyricRowView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        layer.addSublayer(base); layer.addSublayer(highlight)
+        layer.addSublayer(base); layer.addSublayer(auxiliaryNear); layer.addSublayer(auxiliaryFar); layer.addSublayer(highlight)
         isAccessibilityElement = true
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
     }
@@ -154,8 +180,13 @@ final class LyricRowView: UIView {
         nil
     }
 
-    func configure(line: LyricLine, layout: LyricTextLayout, scale: CGFloat, configuration: LyricsRenderConfiguration, blur: Bool, canSeek: Bool, onSeek: @escaping () -> Void) {
+    func configure(line: LyricLine, layout: LyricTextLayout, scale: CGFloat, configuration: LyricsRenderConfiguration, blur: Bool, canSeek: Bool,
+                   auxiliaryFade: LyricsAuxiliaryFade? = nil, onSeek: @escaping () -> Void) {
         self.line = line; self.onSeek = onSeek
+        auxiliaryBlur.reset()
+        auxiliaryRegions = layout.auxiliaryRegions; auxiliaryRevision = -1
+        self.auxiliaryFade = auxiliaryFade
+        auxiliaryBlurEnabled = blur
         let context = [line.text] + configuration.auxiliaryText(for: line)
         accessibilityLabel = context.filter { !$0.isEmpty }.joined(separator: ", ")
         accessibilityIdentifier = "lyricRow." + line.id
@@ -165,6 +196,11 @@ final class LyricRowView: UIView {
         sharp = layout.image(scale: scale).cgImage
         softNear = blur ? layout.image(scale: scale, blurRadius: 2).cgImage : sharp
         softFar = blur ? layout.image(scale: scale, blurRadius: 5).cgImage : softNear
+        if let near = softNear, let far = softFar, let sharp {
+            auxiliaryBlur.install(.init(maximum: 5, near: UIImage(cgImage: near, scale: scale, orientation: .up),
+                far: UIImage(cgImage: far, scale: scale, orientation: .up)),
+                source: .raster(sharp, scale: scale, regions: auxiliaryRegions), size: layout.size, fade: blur ? auxiliaryFade : nil)
+        }
         base.frame = CGRect(origin: .zero, size: layout.size); base.contents = softNear
         highlight.frame = base.frame; highlight.contents = sharp; highlight.opacity = 0
         for fragment in layout.fragments {
@@ -194,18 +230,36 @@ final class LyricRowView: UIView {
         accessibilityHint = value ? NSLocalizedString("render.seekHint", comment: "") : nil
     }
 
+    func updateAuxiliaryVisibility(_ fade: LyricsAuxiliaryFade) {
+        auxiliaryFade = fade
+        if auxiliaryBlurEnabled { auxiliaryBlur.update(fade) }
+        let changed = auxiliaryRevision != fade.revision
+        guard changed || auxiliaryMaskUsesBlur != isUsingBlur else { return }
+        auxiliaryRevision = fade.revision
+        auxiliaryMaskUsesBlur = isUsingBlur
+        base.mask = isUsingBlur && auxiliaryBlur.isSeparated ? nil : fade.mask(bounds: base.bounds, regions: auxiliaryRegions)
+        highlight.mask = fade.mask(bounds: highlight.bounds, regions: auxiliaryRegions)
+    }
+
     func update(time: Double, active: Bool, configuration: LyricsRenderConfiguration, policy: RenderQualityPolicy,
                 reduceMotion: Bool, delta: TimeInterval = 1.0 / 60.0, blurLevel: Double = 0)
     {
         guard let line else { return }
+        isUsingBlur = !(active || !policy.blur || !configuration.blurInactive)
+        lastBlurLevel = blurLevel
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        if active || !policy.blur || !configuration.blurInactive {
+        let separated = isUsingBlur && auxiliaryBlur.isSeparated
+        let waiting = isUsingBlur && auxiliaryBlur.isPreparing && !auxiliaryBlur.isSeparated
+        if !isUsingBlur || waiting {
             base.contents = sharp
         } else {
             base.contents = blurLevel >= 3.5 ? softFar : softNear
         }
         let lineOpacity = line.isBackground ? AMLLMotionMetrics.backgroundLineOpacity : 1
-        base.opacity = Float((active ? 0.4 : 0.2) * lineOpacity)
+        let alpha = Float((active ? 0.4 : 0.2) * lineOpacity)
+        base.opacity = separated ? 0 : alpha
+        auxiliaryNear.opacity = separated && blurLevel < 3.5 ? alpha : 0
+        auxiliaryFar.opacity = separated && blurLevel >= 3.5 ? alpha : 0
         // LRC is a genuine line-level highlight; never manufacture word progress.
         highlight.opacity = pieces.isEmpty && active ? Float(lineOpacity) : 0
         for (piece, mask, fragment) in pieces {

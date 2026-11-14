@@ -46,6 +46,17 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     private var timeline = LyricsTimeline(lines: [])
     private var document: LyricsDocument?
     private var configuration = LyricsRenderConfiguration()
+    private var builtAuxiliary: (Bool, Bool)?
+    private lazy var auxiliaryFade: LyricsAuxiliaryFade = {
+        let fade = LyricsAuxiliaryFade()
+        fade.didFinish = { [weak self, weak fade] in
+            guard let self, let fade else { return }
+            let effective = fade.layoutConfiguration(self.configuration)
+            if self.builtAuxiliary?.0 != effective.translation || self.builtAuxiliary?.1 != effective.romanization { self.needsRebuild = true }
+            self.setNeedsLayout(); self.syncDisplayLink()
+        }
+        return fade
+    }()
     private var offset = 0.0, duration = 0.0
     private var playing = false, active = true, canSeek = false, reduceMotion = false
     private var resumeToken = 0
@@ -113,6 +124,9 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     func update(document: LyricsDocument, configuration: LyricsRenderConfiguration, offset: Double, duration: Double,
                 playing: Bool, active: Bool, canSeek: Bool, reduceMotion: Bool, resumeToken: Int)
     {
+        let previousLayout = auxiliaryFade.layoutConfiguration(self.configuration)
+        if self.document != document { auxiliaryFade.reset(configuration) }
+        else { auxiliaryFade.update(configuration, animated: active && window != nil) }
         if self.document != document {
             self.document = document; timeline = LyricsTimeline(lines: document.lines)
             follow.reset(); motion = LyricsMotionModel(); previousTime = nil; lastFocus = nil; lastActive = []; needsRebuild = true
@@ -120,7 +134,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             DispatchQueue.main.async { [weak self] in self?.browsing(false) }
         }
         preserveNextResize = preserveNextResize || (self.configuration.immersiveLyrics == true) != (configuration.immersiveLyrics == true)
-        if self.configuration != configuration || self.reduceMotion != reduceMotion {
+        if previousLayout != auxiliaryFade.layoutConfiguration(configuration) || self.reduceMotion != reduceMotion {
             needsRebuild = true
         }
         self.configuration = configuration; self.offset = offset; self.duration = duration
@@ -149,6 +163,8 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         if bounds.size != lastSize || needsRebuild {
             let resized = bounds.size != lastSize
             lastSize = bounds.size; needsRebuild = false
+            let effective = auxiliaryFade.layoutConfiguration(configuration)
+            builtAuxiliary = (effective.translation, effective.romanization)
             rows.values.forEach { $0.removeFromSuperview() }; rows.removeAll(); pool.removeAll()
             layouts.removeAll(); layoutOrder.removeAll(); frames.removeAll()
             if resized, configuration.immersiveLyrics != true, !preserveNextResize {
@@ -267,6 +283,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             let blur = lineBlur(index: index, state: state, active: active)
             row.update(time: state.time, active: active, configuration: configuration, policy: policy,
                        reduceMotion: reduceMotion, delta: dt, blurLevel: blur)
+            row.updateAuxiliaryVisibility(auxiliaryFade)
         }
         CATransaction.commit()
         dots.isHidden = true
@@ -308,13 +325,15 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         }
         let line = timeline.lines[index]
         let width = bounds.width - lineInset(background: line.isBackground) * 2
-        let layout = LyricTextLayout(line: line, width: width, configuration: configuration, traits: traitCollection)
+        let layout = LyricTextLayout(line: line, width: width, configuration: auxiliaryFade.layoutConfiguration(configuration), traits: traitCollection)
         layouts[index] = layout; layoutOrder.append(index)
         if layoutOrder.count > 48 {
             layouts.removeValue(forKey: layoutOrder.removeFirst())
         }
         return layout
     }
+
+    func auxiliaryPixelsReady() { setNeedsLayout(); syncDisplayLink() }
 
     private func recycleRows() {
         let area = CGRect(x: 0, y: scroll.contentOffset.y - 100, width: bounds.width, height: bounds.height + 200)
@@ -343,7 +362,8 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             row.transform = .identity; row.frame = frames[key]
             let line = timeline.lines[key]
             row.configure(line: line, layout: makeLayout(key), scale: window?.screen.scale ?? 2,
-                          configuration: configuration, blur: configuration.blurInactive && !reduceMotion, canSeek: canSeek)
+                          configuration: configuration, blur: configuration.blurInactive && !reduceMotion, canSeek: canSeek,
+                          auxiliaryFade: auxiliaryFade)
             { [weak self] in
                 guard let self, self.canSeek else { return }
                 self.seek(LyricsTimeline.seekTarget(line: line, offset: self.offset, duration: self.duration))

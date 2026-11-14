@@ -16,6 +16,8 @@ on:
       - 'AMLLPlayer/Features/Lyrics/FullscreenLyricsPlayer.swift'
       - 'AMLLPlayer/Features/Lyrics/ImmersiveArtworkMedia.swift'
       - 'AMLLPlayerTests/LyricsPagePresentationTests.swift'
+      - 'AMLLPlayer/Rendering/LyricsAuxiliaryFade.swift'
+      - 'AMLLPlayerTests/LyricsAuxiliaryFadeTests.swift'
       - 'AMLLPlayerTests/Fixtures/blossom-family2*'
       - 'AMLLPlayer/Rendering/LyricsBlossomScaleWait.swift'
       - 'AMLLPlayerTests/LyricsBlossomRunLayoutTests.swift'
@@ -72,6 +74,7 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests
           -only-testing:AMLLPlayerTests/LyricsBlossomFamilyTwoTests
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
+          -only-testing:AMLLPlayerTests/LyricsAuxiliaryFadeTests
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testPhoneMetadataTravelsWithTheCoverInsteadOfOnlyCrossfading
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRetainedHiddenCanvasResumesAtTheLatestConfirmedAudioTime

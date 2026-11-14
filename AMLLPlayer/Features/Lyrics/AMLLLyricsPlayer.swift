@@ -28,12 +28,13 @@ struct AMLLLyricsPlayer: View {
     @State private var showingArtworkDebug = false
     @State private var presentation = LyricsPagePresentationCoordinator()
     @State private var artworkFrame: CGRect?
-    @GestureState private var dismissalDrag: CGFloat = 0
+    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.32, dampingFraction: 0.9))) private var dismissalDrag: CGFloat = 0
 
     init(model: AppModel, usesSystemZoom: Bool = false, presentation: LyricsQuickSettingsPresentation? = nil) {
         self.model = model
         self.usesSystemZoom = usesSystemZoom
         _quickSettings = State(initialValue: presentation ?? LyricsQuickSettingsPresentation())
+        _presentation = State(initialValue: LyricsPagePresentationCoordinator(showsLyrics: model.renderPreferences.configuration.showLyrics))
     }
 
     private var configuration: LyricsRenderConfiguration {
@@ -52,6 +53,7 @@ struct AMLLLyricsPlayer: View {
                     Color(white: 0.08)
                     artworkBackground(meshForegroundBlending: needsMeshForegroundBlending(immersive: immersive), enabled: !immersive)
                         .opacity(immersive ? 0 : 1)
+                        .animation(LyricsPageMotion.content, value: immersive)
                     Color.black.opacity(immersive ? 0 : configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
                     if let item = model.playbackSnapshot?.item {
                         mediaBackdrop(item, layout: lyricLayout, immersive: immersive, size: geometry.size)
@@ -412,19 +414,6 @@ struct AMLLLyricsPlayer: View {
             && artworkLoader.trackID == model.playbackSnapshot?.item?.uri && artworkLoader.playbackURL != nil
     }
 
-    private func immersiveLyricsArtwork(_ item: PlaybackItem, layout: ImmersiveLyricsLayout, size: CGSize,
-                                        cornerRadius: CGFloat, opacity: Double) -> some View {
-        return ImmersiveArtworkMedia(video: immersiveLyricsHasVideo ? immersiveVideo(item) : nil,
-            frames: artworkReflectionFrames,
-            layout: .immersive(cover: layout.cover, viewport: size, configuration: configuration,
-                tuning: artworkDebug.configuration, presentsFrame: immersiveLyricsHasVideo && artworkLoader.hasPresentedFrame,
-                reduceTransparency: reduceTransparency, cornerRadius: cornerRadius, opacity: opacity),
-            background: artworkBackground(), still: currentStillFrame)
-            .id(artworkLoader.requestToken)
-            .frame(width: size.width, height: size.height)
-            .allowsHitTesting(false).accessibilityHidden(true)
-    }
-
     private func mountsImmersiveArtwork(_ item: PlaybackItem, size: CGSize) -> Bool {
         AMLLArtworkDisplayPolicy.mountsImmersive(
             enabled: configuration.animatedArtwork?.enabled == true, reduceMotion: reduceMotion,
@@ -485,18 +474,6 @@ struct AMLLLyricsPlayer: View {
                                onFirstFrame: { url, videoSize in artworkLoader.firstFramePresented(token: token, url: url, size: videoSize) },
                                gravity: .resizeAspect,
                                fadesBottom: false)
-    }
-
-    private func immersiveArtworkLayers(_ item: PlaybackItem, size: CGSize, cornerRadius: CGFloat, opacity: Double) -> some View {
-        let originalVideo = AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
-        return ImmersiveArtworkMedia(video: immersiveVideo(item), frames: artworkReflectionFrames,
-            layout: .immersive(cover: originalVideo, viewport: size, configuration: configuration,
-                tuning: artworkDebug.configuration, presentsFrame: artworkLoader.hasPresentedFrame,
-                reduceTransparency: reduceTransparency, cornerRadius: cornerRadius, opacity: opacity),
-            background: artworkBackground())
-        .id(artworkLoader.requestToken)
-        .frame(width: size.width, height: size.height)
-        .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private func artworkBackground(meshForegroundBlending: Bool = false, enabled: Bool = true) -> AMLLBackground {

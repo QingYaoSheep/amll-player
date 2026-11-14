@@ -46,7 +46,7 @@ struct FullscreenLyricsPlayer: View {
     @State private var quickSettings = LyricsQuickSettingsPresentation()
     @State private var browsing = false
     @State private var resumeToken = 0
-    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.3, dampingFraction: 1))) private var drag: CGFloat = 0
+    @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.32, dampingFraction: 0.9))) private var drag: CGFloat = 0
     @State private var pageVisible = false
     @State private var immersiveArtworkSource = ImmersiveLyricsArtworkSource.placeholder
     @State private var immersiveInformationHeight: CGFloat = 64
@@ -58,6 +58,12 @@ struct FullscreenLyricsPlayer: View {
     @State private var presentation = LyricsPagePresentationCoordinator()
     private var configuration: LyricsRenderConfiguration {
         model.renderPreferences.configuration.validated()
+    }
+
+    init(model: AppModel, usesSystemZoom: Bool = false) {
+        self.model = model
+        self.usesSystemZoom = usesSystemZoom
+        _presentation = State(initialValue: LyricsPagePresentationCoordinator(showsLyrics: model.renderPreferences.configuration.showLyrics))
     }
 
     var body: some View {
@@ -170,28 +176,34 @@ struct FullscreenLyricsPlayer: View {
                              layout: ImmersiveLyricsLayout?) -> some View {
         GeometryReader { available in
             let headerHeight = min(size.height * 0.38, configuration.coverLayout == .normal ? 290 : 180)
+            let viewport = layout.map { CGRect(x: $0.lyrics.minX, y: max(0, $0.lyrics.minY - 44),
+                width: $0.lyrics.width, height: $0.lyrics.height) }
+                ?? CGRect(x: 0, y: headerHeight + 8, width: available.size.width,
+                    height: max(1, available.size.height - headerHeight - 8))
             ScrollView(.vertical) {
-                VStack(spacing: 0) {
-                    if let layout {
-                        Color.clear.frame(height: max(0, layout.information.minY - 44))
-                            .accessibilityHidden(true)
+                ZStack(alignment: .topLeading) {
+                    LyricsPageViewport(rect: viewport, reduceMotion: reduceMotion) {
+                        lyricContent(snapshot, immersiveLayout: layout)
+                    }
+                    ZStack {
+                        ScrollView { metadata(item, wide: false) }
+                            .frame(height: headerHeight)
+                            .opacity(layout == nil ? 1 : 0)
+                            .allowsHitTesting(layout == nil).accessibilityHidden(layout != nil)
                         ImmersiveLyricsHeader(model: model, snapshot: snapshot, item: item, presentation: quickSettings,
-                            additive: layout.overlaysArtwork)
-                            .frame(width: layout.information.width)
+                            additive: layout?.overlaysArtwork ?? false)
                             .background { GeometryReader { proxy in
                                 Color.clear.preference(key: ImmersiveInformationHeightKey.self, value: proxy.size.height)
                             } }
-                            .padding(.bottom, layout.lyrics.minY - layout.information.maxY)
-                            .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout.information)
-                    } else {
-                        ScrollView { metadata(item, wide: false) }
-                            .frame(height: headerHeight).padding(.bottom, 8)
+                            .opacity(layout == nil ? 0 : 1)
+                            .allowsHitTesting(layout != nil).accessibilityHidden(layout == nil)
                     }
-                    // Stable child: retain the compatibility renderer across toggles.
-                    lyricContent(snapshot, immersiveLayout: layout)
-                        .frame(height: layout?.lyrics.height ?? max(1, available.size.height - headerHeight - 8))
+                    .frame(width: layout?.information.width ?? available.size.width)
+                    .offset(x: layout?.information.minX ?? 0, y: max(0, (layout?.information.minY ?? 44) - 44))
+                    .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.information)
+                    .animation(LyricsPageMotion.content, value: layout != nil)
                 }
-                .frame(maxWidth: .infinity)
+                .frame(width: available.size.width, height: max(available.size.height, viewport.maxY), alignment: .topLeading)
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
@@ -236,12 +248,16 @@ struct FullscreenLyricsPlayer: View {
                 }
             }
             if configuration.showTitle {
-                MarqueeText(text: item.title, fontSize: 22, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !quickSettings.suspendsPage && !reduceMotion)
+                LyricsTrackTransition(item: item) { displayed in
+                  MarqueeText(text: displayed.title, fontSize: 22, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !quickSettings.suspendsPage && !reduceMotion)
                     .frame(height: typeSize.isAccessibilitySize ? 80 : 32)
+                }
             }
             if configuration.showArtist {
-                MarqueeText(text: item.artistLine, fontSize: 16, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !quickSettings.suspendsPage && !reduceMotion)
+                LyricsTrackTransition(item: item) { displayed in
+                  MarqueeText(text: displayed.artistLine, fontSize: 16, enabled: configuration.marquee && scenePhase == .active && pageVisible && !search && !devices && !quickSettings.suspendsPage && !reduceMotion)
                     .frame(height: typeSize.isAccessibilitySize ? 64 : 26).opacity(0.75)
+                }
             }
             if configuration.showAlbum, let album = item.albumTitle {
                 Text(album).font(.caption).lineLimit(2)

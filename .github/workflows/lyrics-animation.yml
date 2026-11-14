@@ -72,6 +72,8 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests
           -only-testing:AMLLPlayerTests/LyricsBlossomFamilyTwoTests
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRetainedHiddenCanvasResumesAtTheLatestConfirmedAudioTime
           -only-testing:AMLLPlayerTests/AMLLSeekMotionTests
           -only-testing:AMLLPlayerTests/AMLLSeekCanvasTests
           -only-testing:AMLLPlayerTests/AppleMusicIntegrationTests/testApplePlaybackSnapshotUpdatesLyricsSeekRevisionAndIgnoresSpotifySnapshot

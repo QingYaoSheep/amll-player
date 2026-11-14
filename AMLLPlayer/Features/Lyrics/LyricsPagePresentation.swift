@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import CoreImage
 
 /// Presentation state only. Never owns a document, song clock or seek request.
 @MainActor @Observable
@@ -13,6 +14,11 @@ final class LyricsPagePresentationCoordinator {
     private(set) var rendersLyrics = true
     private(set) var revision = 0
     private var initialized = false
+
+    init(showsLyrics: Bool = true) {
+        mode.showsLyrics = showsLyrics
+        rendersLyrics = showsLyrics
+    }
 
     func update(_ target: Mode, reduceMotion: Bool) {
         guard !initialized || mode != target else { return }
@@ -32,11 +38,27 @@ final class LyricsPagePresentationCoordinator {
     }
 }
 
-enum LyricsPageMotion {
+@MainActor enum LyricsPageMotion {
     // Same content-change curve as the existing product controls.
     static let content = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.2)
     static let geometry = Animation.timingCurve(0.77, 0, 0.175, 1, duration: 0.24)
     static let returnSpring = LyricsQuickSettingsPresentation.motionAnimation
+}
+
+/// Retained decoder pixels are immutable. Conversion is performed once per
+/// resource transition, away from the UI thread; never on a display tick.
+struct LyricsArtworkSnapshot: @unchecked Sendable { let buffer: CVPixelBuffer }
+
+actor LyricsArtworkSnapshotDecoder {
+    static let shared = LyricsArtworkSnapshotDecoder()
+    private let context = CIContext(options: [.cacheIntermediates: false])
+
+    func decode(_ input: LyricsArtworkSnapshot) -> ImmersiveStillFrame? {
+        guard !Task.isCancelled else { return nil }
+        let source = ArtworkReflectionImage.decodedVideoSource(input.buffer)
+        guard let image = context.createCGImage(source, from: source.extent), !Task.isCancelled else { return nil }
+        return ImmersiveStillFrame(image: image, buffer: input.buffer)
+    }
 }
 
 /// Only cover/metadata content belongs here; never wrap the lyric canvas.
@@ -50,27 +72,30 @@ struct LyricsTrackTransition<Content: View>: View {
     @State private var revision = 0
 
     var body: some View {
-        ZStack {
-            content(item)
+        ZStack(alignment: .leading) {
+            content(item).opacity(outgoing == nil ? 1 : 1 - outgoingOpacity)
             if let outgoing {
                 content(outgoing)
                     .opacity(outgoingOpacity)
                     .allowsHitTesting(false).accessibilityHidden(true)
+                    .id(revision)
+                    .onAppear {
+                        let ticket = revision
+                        withAnimation(LyricsPageMotion.content, completionCriteria: .removed) {
+                            outgoingOpacity = 0
+                        } completion: {
+                            if revision == ticket { self.outgoing = nil }
+                        }
+                    }
             }
         }
         .onChange(of: item.uri, initial: true) { _, _ in
             revision &+= 1
-            let ticket = revision
             outgoing = current
             current = item
-            guard outgoing != nil else { return }
-            outgoingOpacity = 1
-            withAnimation(LyricsPageMotion.content, completionCriteria: .removed) {
-                outgoingOpacity = 0
-            } completion: {
-                if revision == ticket { outgoing = nil }
-            }
+            outgoingOpacity = outgoing == nil ? 0 : 1
         }
+        .onChange(of: item) { old, new in if old.uri == new.uri { current = new } }
     }
 }
 

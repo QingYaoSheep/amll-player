@@ -79,6 +79,13 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         let transitionSurface = ImmersiveLiveBlurSurface()
         let videoPlane = UIView()
         let stillSurface = UIImageView()
+        private let outgoingSurface = UIImageView()
+        private let outgoingReflection = ArtworkReflection.Surface()
+        private var outgoingBuffer: CVPixelBuffer?
+        private var snapshotTask: Task<Void, Never>?
+        private var snapshotRevision = 0
+        private var configuredURL: URL?
+        private(set) var outgoingFrameCount = 0
         let backgroundSurface = UIView()
         let dimmingSurface = UIView()
         private let frames: ArtworkReflectionFrames
@@ -118,7 +125,12 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             clipsToBounds = true
             stillSurface.contentMode = .scaleAspectFit
             videoPlane.addSubview(stillSurface)
+            outgoingSurface.contentMode = .scaleAspectFit
+            outgoingSurface.isUserInteractionEnabled = false
+            videoPlane.addSubview(outgoingSurface)
+            outgoingReflection.isUserInteractionEnabled = false
             reflectionPlane.addSubview(reflectionSurface)
+            reflectionPlane.addSubview(outgoingReflection)
             for view in [backgroundSurface, dimmingSurface, videoPlane, reflectionPlane, transitionSurface] {
                 view.isOpaque = false
                 addSubview(view)
@@ -161,7 +173,12 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             }
             let video = pendingConfiguration.video
             let layout = pendingConfiguration.layout
+            let wasPresented = appliedLayout != nil
             let sourceChanged = hasVideo != (video != nil) || stillFrame?.image !== pendingConfiguration.still?.image
+            if configuredURL != video?.url || (stillFrame != nil && stillFrame?.image !== pendingConfiguration.still?.image) {
+                retainOutgoingFrame()
+            }
+            configuredURL = video?.url
             hasVideo = video != nil
             if stillFrame?.image !== pendingConfiguration.still?.image {
                 stillFrame = pendingConfiguration.still
@@ -196,12 +213,14 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 host.willMove(toParent: nil); host.view.removeFromSuperview(); host.removeFromParent()
                 backgroundHost = nil
             }
-            let wasPresented = appliedLayout != nil
             let contentChanged = previousLayout?.presentsFrame != layout.presentsFrame
             previousLayout = layout
             if sourceChanged { appliedLayout = nil }
-            if wasPresented, let animation = pendingConfiguration.animation ?? (contentChanged ? LyricsPageMotion.content : nil) {
-                UIView.animate(animation) { self.applyLayout(layout, animated: true) }
+            if wasPresented, let animation = pendingConfiguration.animation ?? (contentChanged || sourceChanged ? LyricsPageMotion.content : nil) {
+                UIView.animate(animation) { self.applyLayout(layout, animated: true) } completion: { [weak self] in
+                    guard let self, self.appliedLayout == layout else { return }
+                    self.finishVisibility(layout)
+                }
             } else { applyLayout(layout) }
             if let video {
                 configuredVideo = true
@@ -283,17 +302,20 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             videoPlane.clipsToBounds = layout.videoCornerRadius > 0
             storedVideoSurface?.frame = videoPlane.bounds
             stillSurface.frame = videoPlane.bounds
+            outgoingSurface.frame = videoPlane.bounds
             stillSurface.isHidden = stillFrame == nil
             stillSurface.alpha = hasVideo && layout.presentsFrame ? 0 : 1
             // Keep the real layer drawing beneath its still fallback so its
             // first-frame readiness cannot depend on unhiding that same layer.
             storedVideoSurface?.isHidden = !hasVideo
-            videoPlane.isHidden = !tuning[.video].enabled
-            videoPlane.alpha = tuning[.video].opacity * layout.pageOpacity
+            videoPlane.isHidden = !tuning[.video].enabled && !animated
+            videoPlane.alpha = tuning[.video].enabled ? tuning[.video].opacity * layout.pageOpacity : 0
             reflectionPlane.frame = layout.reflection
             reflectionSurface.frame = reflectionPlane.bounds
+            outgoingReflection.frame = reflectionPlane.bounds
             let presentsMedia = layout.presentsFrame || stillFrame != nil
-            reflectionPlane.isHidden = !layout.reflectionEnabled || !presentsMedia || !tuning[.reflection].enabled
+            reflectionPlane.isHidden = (!layout.reflectionEnabled || !presentsMedia || !tuning[.reflection].enabled) && !animated
+            reflectionPlane.alpha = layout.reflectionEnabled && presentsMedia && tuning[.reflection].enabled ? 1 : 0
             reflectionSurface.isHidden = reflectionPlane.isHidden
             reflectionSurface.configure(opacity: tuning[.reflection].opacity * layout.pageOpacity)
             var profile = layout.blurProfile ?? .init(frame: layout.transition, fullStrengthY: layout.video.maxY)
@@ -334,6 +356,50 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             reflectionSurface.setNeedsLayout()
             frames.replayLatest()
             if !hasVideo || !layout.presentsFrame, let stillFrame { reflectionSurface.display(stillFrame.buffer) }
+        }
+
+        private func finishVisibility(_ layout: Layout) {
+            videoPlane.isHidden = !layout.tuning[.video].enabled
+            reflectionPlane.isHidden = !layout.reflectionEnabled || !(layout.presentsFrame || stillFrame != nil)
+                || !layout.tuning[.reflection].enabled
+        }
+
+        private func retainOutgoingFrame() {
+            snapshotRevision &+= 1
+            let ticket = snapshotRevision
+            snapshotTask?.cancel()
+            snapshotTask = nil
+            outgoingSurface.layer.removeAllAnimations()
+            outgoingReflection.layer.removeAllAnimations()
+            outgoingSurface.image = nil; outgoingBuffer = nil; outgoingReflection.clear()
+            outgoingFrameCount = 0
+            if hasVideo, let buffer = frames.currentBuffer {
+                let input = LyricsArtworkSnapshot(buffer: buffer)
+                let started = CACurrentMediaTime()
+                snapshotTask = Task { @MainActor [weak self] in
+                    let decoded = await LyricsArtworkSnapshotDecoder.shared.decode(input)
+                    guard !Task.isCancelled, let self, self.snapshotRevision == ticket, let decoded,
+                          CACurrentMediaTime() - started < 0.2 else { return }
+                    self.fadeOutgoing(decoded, ticket: ticket)
+                }
+            } else if let stillFrame { fadeOutgoing(stillFrame, ticket: ticket) }
+        }
+
+        private func fadeOutgoing(_ frame: ImmersiveStillFrame, ticket: Int) {
+            outgoingSurface.image = UIImage(cgImage: frame.image)
+            outgoingSurface.alpha = 1
+            outgoingBuffer = frame.buffer; outgoingFrameCount = 1
+            outgoingReflection.alpha = CGFloat(reflectionSurface.layer.opacity)
+            outgoingReflection.display(frame.buffer)
+            UIView.animate(LyricsPageMotion.content) {
+                self.outgoingSurface.alpha = 0
+                self.outgoingReflection.alpha = 0
+            } completion: { [weak self] in
+                guard let self, self.snapshotRevision == ticket else { return }
+                self.outgoingSurface.image = nil; self.outgoingBuffer = nil
+                self.outgoingReflection.clear(); self.outgoingFrameCount = 0
+                self.snapshotTask = nil
+            }
         }
 
         /// Snapshot only actual lower planes. AVPlayerLayer cannot be rendered
@@ -390,12 +456,20 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                     }
                     let mask = (videoPlane.mask as? UIImageView)?.image?.cgImage
                     layers.append(.video(buffer, frame: frame, mask: mask, opacity: opacity))
+                    if let old = outgoingBuffer, let alpha = outgoingSurface.layer.presentation()?.opacity, alpha > 0 {
+                        layers.append(.video(old, frame: AMLLImmersiveArtworkGeometry.fittedFrame(container: frame,
+                            source: CGSize(width: CVPixelBufferGetWidth(old), height: CVPixelBufferGetHeight(old))),
+                            mask: mask, opacity: opacity * Double(alpha)))
+                    }
                     frames.blurInputs.append("完整视频")
                 } else if view === reflectionPlane {
                     guard let buffer = currentBuffer, reflectionSurface.layer.opacity > 0 else { continue }
                     let mask = (reflectionPlane.mask as? UIImageView)?.image?.cgImage
                     layers.append(.reflection(buffer, frame: frame, mask: mask,
                         opacity: opacity * Double(reflectionSurface.layer.presentation()?.opacity ?? reflectionSurface.layer.opacity)))
+                    if let old = outgoingBuffer, let alpha = outgoingReflection.layer.presentation()?.opacity, alpha > 0 {
+                        layers.append(.reflection(old, frame: frame, mask: mask, opacity: opacity * Double(alpha)))
+                    }
                     frames.blurInputs.append("封面倒影")
                 } else if view === dimmingSurface, let color = view.backgroundColor {
                     layers.append(.solid(CIColor(color: color), frame: frame))
@@ -421,6 +495,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         }
 
         func stop() {
+            snapshotRevision &+= 1
+            snapshotTask?.cancel(); snapshotTask = nil
+            outgoingSurface.image = nil; outgoingBuffer = nil
+            outgoingReflection.clear(); outgoingFrameCount = 0; configuredURL = nil
             frames.recordLifecycle("停止视图（\(window == nil ? "未挂载" : "已挂载")，\(Int(bounds.width))×\(Int(bounds.height)) pt）", presentation: presentation)
             pendingConfiguration = nil
             waitingForAttachment = false

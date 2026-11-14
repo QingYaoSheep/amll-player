@@ -316,7 +316,7 @@ import XCTest
         print("[SEEK-V2] page frames=\(frames.count) first=\(first.rows[4].y) before=\(initialY) final=\(finalY)")
     }
 
-    func testHiddenCanvasStartsAtTheLatestConfirmedAudioTime() async throws {
+    func testRetainedHiddenCanvasResumesAtTheLatestConfirmedAudioTime() async throws {
         let (model, player, song) = try await makeModel()
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
@@ -329,18 +329,46 @@ import XCTest
         let old = try await waitForCanvas(host.view)
         try await pauseFixture(model, player)
         model.renderPreferences.configuration.showLyrics = false
-        try await wait { findCanvas(host.view) == nil }
+        try await Task.sleep(for: .milliseconds(350))
+        XCTAssertTrue(findCanvas(host.view) === old, "Visibility transitions must retain the real canvas")
         await model.seek(to: 20.25, entry: .progress, trackURI: song.uri)
         XCTAssertEqual(player.currentTime().seconds, 20.25, accuracy: 0.1)
         model.renderPreferences.configuration.showLyrics = true
         let current = try await waitForCanvas(host.view)
-        XCTAssertFalse(current === old)
-        try await wait { current.frameState != nil }
+        XCTAssertTrue(current === old)
+        try await wait { abs((current.frameState?.lyricTime ?? -1) - model.progress()) < 0.15 }
         let frame = try XCTUnwrap(current.frameState)
         XCTAssertEqual(frame.lyricTime, model.progress(), accuracy: 0.15)
         let displayStart = AMLLDisplayDocument(lines: try XCTUnwrap(model.lyrics.document).lines).lines[5].start
         XCTAssertEqual(frame.rows[5].wordClock.time + displayStart, frame.lyricTime, accuracy: 0.1)
         XCTAssertFalse(frame.rows[5].fillComplete)
+    }
+
+    func testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas() async throws {
+        let (model, player, song) = try await makeModel()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; previous?.makeKey() }
+        try await start(model, song); try await pauseFixture(model, player)
+        await model.seek(to: 8.75)
+        let canvas = try await waitForCanvas(host.view)
+        let document = model.lyrics.documentRevision, seek = model.lyricsSeekRevision, audioItem = player.currentItem
+        for (shown, immersive) in [(true, true), (false, true), (true, false), (true, true), (true, false)] {
+            model.renderPreferences.configuration.showLyrics = shown
+            model.renderPreferences.configuration.immersiveLyrics = immersive
+            try await Task.sleep(for: .milliseconds(70))
+            host.view.layoutIfNeeded()
+            XCTAssertTrue(findCanvas(host.view) === canvas)
+            XCTAssertEqual(descendants(host.view).filter { $0 is AMLLNativeCanvas }.count, 1)
+            XCTAssertEqual(model.lyrics.documentRevision, document)
+            XCTAssertEqual(model.lyricsSeekRevision, seek)
+            XCTAssertTrue(player.currentItem === audioItem)
+            XCTAssertEqual(player.currentTime().seconds, 8.75, accuracy: 0.1)
+        }
     }
 
     private func pauseFixture(_ model: AppModel, _ player: AVPlayer) async throws {

@@ -51,10 +51,6 @@ struct AMLLLyricsPlayer: View {
             ZStack {
                 ZStack {
                     Color(white: 0.08)
-                    artworkBackground(meshForegroundBlending: needsMeshForegroundBlending(immersive: immersive), enabled: !immersive)
-                        .opacity(immersive ? 0 : 1)
-                        .animation(LyricsPageMotion.content, value: immersive)
-                    Color.black.opacity(immersive ? 0 : configuration.backgroundDimming ?? 0.16).allowsHitTesting(false)
                     if let item = model.playbackSnapshot?.item {
                         mediaBackdrop(item, layout: lyricLayout, immersive: immersive, size: geometry.size)
                     }
@@ -341,6 +337,7 @@ struct AMLLLyricsPlayer: View {
                 }
             }
             Spacer(minLength: 8)
+            LyricsPageControls {
             if model.selectedMusicService == .appleMusic {
                 AppleMusicCurrentFavorite(model: model)
             } else if model.selectedMusicService == .netease {
@@ -349,6 +346,7 @@ struct AMLLLyricsPlayer: View {
                 lyricsActionsMenu
             }
             optionsMenu
+            }
         }
         .frame(height: metrics.compactArtworkSize)
     }
@@ -370,6 +368,7 @@ struct AMLLLyricsPlayer: View {
                 }
             }
             Spacer(minLength: 8)
+            LyricsPageControls {
             if model.selectedMusicService == .appleMusic {
                 AppleMusicCurrentFavorite(model: model)
             } else if model.selectedMusicService == .netease {
@@ -378,6 +377,7 @@ struct AMLLLyricsPlayer: View {
                 lyricsActionsMenu
             }
             optionsMenu
+            }
         }
     }
 
@@ -462,11 +462,13 @@ struct AMLLLyricsPlayer: View {
                 visible: showsInlineCover && (currentStillFrame != nil || showsInlineVideo),
                 presentsFrame: showsInlineVideo && artworkLoader.hasPresentedFrame,
                 radius: configuration.artworkCornerRadius ?? (AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size)
-                    ? 14 : configuration.showLyrics ? 11 : 12))
+                    ? 14 : configuration.showLyrics ? 11 : 12), dimming: configuration.backgroundDimming ?? 0.16)
         var video = canKeepVideo ? immersiveVideo(item) : nil
         if !immersive && !showsInlineVideo { video?.active = false }
         return ImmersiveArtworkMedia(video: video, frames: artworkReflectionFrames,
-            layout: mediaLayout, background: immersive ? artworkBackground() : nil,
+            layout: mediaLayout,
+            background: artworkBackground(meshForegroundBlending: needsMeshForegroundBlending(immersive: immersive),
+                enabled: !immersive || artworkDebug.configuration[.background].enabled),
             still: currentStillFrame)
             .frame(width: size.width, height: size.height)
             .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: mediaLayout.video)
@@ -621,6 +623,7 @@ struct AMLLLyricsPlayer: View {
     }
 
     private var lyricsActionsMenu: some View {
+        LyricsPageControls {
         Menu {
             Button("lyrics.find", systemImage: "magnifyingglass") { search = true }
             Button("lyrics.refresh", systemImage: "arrow.clockwise") { model.lyrics.reload(force: true) }
@@ -637,6 +640,7 @@ struct AMLLLyricsPlayer: View {
         }
         .accessibilityIdentifier("lyricsActions")
         .disabled(model.lyrics.track == nil || !model.lyrics.settings.enabled)
+        }
     }
 
     private func dismissalHandle(metrics: AppleMusicLyricsLayoutMetrics) -> some View {
@@ -644,7 +648,7 @@ struct AMLLLyricsPlayer: View {
             Capsule()
                 .fill(.white.opacity(0.48))
                 .frame(width: metrics.handleSize.width, height: metrics.handleSize.height)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity).frame(height: 44)
         }
         .buttonStyle(.plain)
         .padding(.top, metrics.handleTop - 20)

@@ -51,6 +51,12 @@ extension EnvironmentValues {
     }
 }
 
+struct LyricsPageControls<Content: View>: View {
+    @Environment(\.lyricsPageControlsEnabled) private var enabled
+    @ViewBuilder var content: () -> Content
+    var body: some View { if enabled { content() } }
+}
+
 @MainActor enum LyricsPageMotion {
     static let contentDuration: TimeInterval = 0.2
     static let contentTimingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)

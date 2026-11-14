@@ -97,6 +97,10 @@ final class LyricsPagePresentationTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(350))
         surface.stillSurface.isHidden = false
         surface.stillSurface.alpha = 0.5
+        for _ in 0 ..< 100 {
+            if abs((surface.stillSurface.layer.presentation()?.opacity ?? 0) - 0.5) < 0.01 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
         let visible = surface.visibleMediaSnapshot()
         XCTAssertEqual(visible.layers.count, 2, "The actual video and half-visible poster both supply the outgoing snapshot")
         let input = try XCTUnwrap(surface.transitionSurface.capture?())

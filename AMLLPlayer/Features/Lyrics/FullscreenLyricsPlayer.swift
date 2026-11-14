@@ -214,7 +214,7 @@ struct FullscreenLyricsPlayer: View {
 
     private var dismissalHandle: some View {
         Capsule().fill(.white.opacity(0.4)).frame(width: 36, height: 5)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity).frame(height: 44)
             .accessibilityIdentifier(immersiveViewport ? "closeLyricsPlayer" : "lyricsDismissHandle")
             .accessibilityLabel(Text("common.done"))
             .onTapGesture { if immersiveViewport { dismiss() } }

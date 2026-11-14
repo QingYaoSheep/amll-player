@@ -34,6 +34,7 @@ struct ImmersiveLyricsHeader: View {
                         value: proxy.frame(in: .named("immersiveLyricsHeader")).maxY)
                 }
             }
+            LyricsPageControls {
             if configuration.showControls {
                 Button { Task { await model.togglePlayPause() } } label: {
                     Image(systemName: snapshot.isPlaying ? "pause.fill" : "play.fill")
@@ -46,6 +47,7 @@ struct ImmersiveLyricsHeader: View {
             if model.selectedMusicService == .appleMusic { AppleMusicCurrentFavorite(model: model) }
             else if model.selectedMusicService == .netease { NetEaseCurrentFavorite(model: model) }
             LyricsQuickSettingsButton(presentation: presentation)
+            }
         }
         .buttonStyle(.plain)
         .frame(minHeight: 44)

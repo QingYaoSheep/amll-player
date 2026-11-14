@@ -182,11 +182,14 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         surface.layoutIfNeeded()
         XCTAssertFalse(surface.stillSurface.isHidden)
         try await waitUntil { presented }
-        let item = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player?.currentItem)
+        let player = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player)
+        let item = try XCTUnwrap(player.currentItem)
         surface.configure(video: video, layout: layout(true), still: still)
         XCTAssertFalse(surface.stillSurface.isHidden, "Keep the poster while it fades over the first video frame")
         try await waitUntil { surface.stillSurface.isHidden }
-        XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player?.currentItem === item)
+        XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player === player)
+        XCTAssertEqual((player.currentItem?.asset as? AVURLAsset)?.url, (item.asset as? AVURLAsset)?.url,
+            "A looper may advance its item during the fade, but the same player and resource must continue")
         surface.configure(video: nil, layout: layout(false), still: still)
         try await waitUntil { !surface.hasVideoPlayer }
         XCTAssertFalse(surface.hasVideoPlayer)
@@ -1057,7 +1060,8 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         // with its cached identity. Only that replacement gets a new source.
         current.configure(video: AnimatedArtwork(url: cachedURL, active: false), layout: layout)
         current.layoutIfNeeded()
-        try await waitUntil { playerLayer.isReadyForDisplay && frames.hasFrame && current.reflectionSurface.layer.contents != nil }
+        try await waitUntil { frames.sessionDiagnostic != session && playerLayer.isReadyForDisplay && frames.hasFrame
+            && current.reflectionSurface.layer.contents != nil }
         XCTAssertNotEqual(frames.sessionDiagnostic, session)
         XCTAssertEqual(playerLayer.player?.rate, 0)
         retired.configure(video: AnimatedArtwork(url: url, active: true), layout: layout)

@@ -28,10 +28,13 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         var videoCornerRadius: CGFloat = 0
         var fitsArtwork = true
 
-        static func inline(frame: CGRect, visible: Bool, presentsFrame: Bool, radius: CGFloat) -> Self {
+        static func inline(frame: CGRect, visible: Bool, presentsFrame: Bool, radius: CGFloat, dimming: Double = 0.16) -> Self {
             var tuning = ImmersiveArtworkDebugConfiguration()
             for layer in ImmersiveArtworkLayer.allCases { tuning[layer].enabled = false }
             tuning[.video].enabled = visible
+            tuning[.background].enabled = true
+            tuning[.dimming].enabled = true
+            tuning[.dimming].opacity = dimming
             return .init(video: frame, reflection: .zero, transition: .zero, bottomFade: .zero,
                 tuning: tuning, presentsFrame: presentsFrame, reflectionEnabled: false,
                 reduceTransparency: false, videoCornerRadius: radius, fitsArtwork: false)
@@ -228,6 +231,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                     let host = UIHostingController(rootView: background)
                     host.safeAreaRegions = []
                     host.view.backgroundColor = .clear
+                    host.view.isOpaque = false
                     backgroundSurface.addSubview(host.view)
                     backgroundHost = host
                     appliedLayout = nil

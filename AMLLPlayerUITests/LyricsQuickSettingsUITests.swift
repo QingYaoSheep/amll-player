@@ -114,6 +114,9 @@ final class LyricsQuickSettingsUITests: XCTestCase {
                 "Canvas \(canvas.frame), artist \(artist.frame), legacy \(legacy)")
             XCTAssertEqual(canvas.frame.minY, artist.frame.maxY, accuracy: 2,
                 "The upper lyric fade must start at the artist's bottom edge")
+            let controlsReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"),
+                object: app.buttons["immersiveLyricsPlayPause"])
+            XCTAssertEqual(XCTWaiter.wait(for: [controlsReady], timeout: 4), .completed)
             XCTAssertTrue(app.buttons["immersiveLyricsPlayPause"].isHittable)
             capture(app, name: legacy ? "Immersive-lyrics-custom" : "Immersive-lyrics-native")
             let debugButton = app.buttons["immersiveArtworkDebug"]

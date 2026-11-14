@@ -74,10 +74,15 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRetainedHiddenCanvasResumesAtTheLatestConfirmedAudioTime
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testOrdinaryMeshForegroundBlendingSurvivesReentryAndLayoutChanges
+          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testVideoFirstFrameReplacesStillFallbackWithoutRestartingPlayer
+          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testRetiredPresentationCannotInvalidateCurrentPlayersReflection
           -only-testing:AMLLPlayerTests/AMLLSeekMotionTests
           -only-testing:AMLLPlayerTests/AMLLSeekCanvasTests
           -only-testing:AMLLPlayerTests/AppleMusicIntegrationTests/testApplePlaybackSnapshotUpdatesLyricsSeekRevisionAndIgnoresSpotifySnapshot
           -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage
+          -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testImmersiveLyricsModeStaysOpenPersistsAndFallsBackInLandscape
+          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testLyricsSearchPreviewApplyAndManualLock
           -resultBundlePath build/Animation-tests.xcresult
           -collect-test-diagnostics never
           CODE_SIGNING_ALLOWED=NO

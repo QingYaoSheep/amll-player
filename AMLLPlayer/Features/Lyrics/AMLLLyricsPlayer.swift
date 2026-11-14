@@ -69,7 +69,9 @@ struct AMLLLyricsPlayer: View {
             .modifier(LyricsPageCompositing())
             .modifier(LyricsPageDynamicRange())
             .coordinateSpace(name: "lyricsPage")
-            .onPreferenceChange(LyricsArtworkFrameKey.self) { if let frame = $0, frame.width > 0 { artworkFrame = frame } }
+            .onPreferenceChange(LyricsArtworkFrameKey.self) {
+                if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: geometry.size), let frame = $0, frame.width > 0 { artworkFrame = frame }
+            }
             .onChange(of: LyricsPagePresentationCoordinator.Mode(showsLyrics: configuration.showLyrics,
                 immersive: lyricLayout != nil), initial: true) { _, mode in
                 presentation.update(mode, reduceMotion: reduceMotion)
@@ -455,6 +457,17 @@ struct AMLLLyricsPlayer: View {
 
     private func mediaBackdrop(_ item: PlaybackItem, layout: ImmersiveLyricsLayout?, immersive: Bool, size: CGSize) -> some View {
         let canKeepVideo = immersiveLyricsHasVideo
+        let metrics = AppleMusicLyricsLayoutMetrics.responsive(in: size)
+        let inlineFrame: CGRect
+        if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
+            inlineFrame = artworkFrame ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        } else if configuration.showLyrics {
+            inlineFrame = CGRect(x: metrics.horizontalInset, y: metrics.compactArtworkTop,
+                width: metrics.compactArtworkSize, height: metrics.compactArtworkSize)
+        } else {
+            let side = min(size.width - metrics.expandedArtworkInset * 2, size.height * 0.405)
+            inlineFrame = CGRect(x: (size.width - side) / 2, y: metrics.expandedArtworkTop, width: side, height: side)
+        }
         let showsInlineCover = !configuration.showLyrics || (configuration.showMetadata ?? true)
             || AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size)
         let cover = layout?.cover ?? AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
@@ -462,7 +475,7 @@ struct AMLLLyricsPlayer: View {
             ? .immersive(cover: cover, viewport: size, configuration: configuration,
                 tuning: artworkDebug.configuration, presentsFrame: canKeepVideo && artworkLoader.hasPresentedFrame,
                 reduceTransparency: reduceTransparency)
-            : .inline(frame: artworkFrame ?? CGRect(x: 0, y: 0, width: 1, height: 1),
+            : .inline(frame: inlineFrame,
                 visible: showsInlineCover && (currentStillFrame != nil || showsInlineVideo),
                 presentsFrame: showsInlineVideo && artworkLoader.hasPresentedFrame,
                 radius: configuration.artworkCornerRadius ?? (AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size)

@@ -95,6 +95,8 @@ actor LyricsAuxiliaryBlurDecoder {
     private let far: CALayer
     private var normal: AMLLPreparedBlurImages?
     private var source: LyricsAuxiliaryBlurSource?
+    private var sourceKinds = Set<LyricsAuxiliaryKind>()
+    private var lastFadeRevision = -1
     private var size = CGSize.zero
     private weak var fade: LyricsAuxiliaryFade?
     private var task: Task<Void, Never>?
@@ -127,6 +129,7 @@ actor LyricsAuxiliaryBlurDecoder {
 
     func showStarter(_ starter: LyricsAuxiliaryBlurStarter, origin: CGPoint) {
         removeChildren(); parts = starter.parts
+        lastFadeRevision = -1
         partsSize = starter.size; partsOrigin = starter.origin
         initialAlphas = Dictionary(uniqueKeysWithValues: LyricsAuxiliaryKind.allCases.map { ($0, starter.alphas[$0] ?? 0) })
         starter.parts.body.install(near: near, far: far, size: starter.size, animated: false)
@@ -146,12 +149,14 @@ actor LyricsAuxiliaryBlurDecoder {
 
     func reset() {
         task?.cancel(); task = nil; generation &+= 1
-        removeChildren(); normal = nil; source = nil; normalPublished = false; initialAlphas.removeAll()
+        removeChildren(); normal = nil; source = nil; sourceKinds.removeAll(); lastFadeRevision = -1
+        normalPublished = false; initialAlphas.removeAll()
         near.contents = nil; far.contents = nil
     }
 
     func install(_ images: AMLLPreparedBlurImages, source: LyricsAuxiliaryBlurSource, size: CGSize, fade: LyricsAuxiliaryFade?) {
         normal = images; self.source = source; self.size = size; self.fade = fade
+        sourceKinds = source.kinds; lastFadeRevision = -1
         if let fade, parts == nil {
             initialAlphas = Dictionary(uniqueKeysWithValues: source.kinds.map { ($0, normalPublished ? 1 : fade.value($0)) })
         }
@@ -161,12 +166,14 @@ actor LyricsAuxiliaryBlurDecoder {
     }
 
     func update(_ fade: LyricsAuxiliaryFade) {
+        guard lastFadeRevision != fade.revision else { return }
+        lastFadeRevision = fade.revision
         self.fade = fade
         if parts != nil {
             applyVisibility(fade)
-            if !fade.isAnimating, let source, source.kinds.isDisjoint(with: fade.hiddenKinds) { restore(animated: false) }
-        } else if task == nil, let source, !source.kinds.isEmpty,
-                  fade.isAnimating || !source.kinds.isDisjoint(with: fade.hiddenKinds) { prepare() }
+            if !fade.isAnimating, sourceKinds.isDisjoint(with: fade.hiddenKinds) { restore(animated: false) }
+        } else if task == nil, !sourceKinds.isEmpty,
+                  fade.isAnimating || !sourceKinds.isDisjoint(with: fade.hiddenKinds) { prepare() }
     }
 
     private func prepare() {
@@ -198,6 +205,7 @@ actor LyricsAuxiliaryBlurDecoder {
                 self.children[kind] = pair
             }
             self.applyVisibility(fade, initial: initial)
+            self.lastFadeRevision = -1
             CATransaction.commit()
             self.didInstall(maximum, result.estimatedBytes + normal.estimatedBytes)
         }

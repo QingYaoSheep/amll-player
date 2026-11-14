@@ -112,6 +112,7 @@ struct FullscreenLyricsPlayer: View {
                         .overlay(alignment: .bottom) {
                             if configuration.showControls, !columns {
                                 controls(snapshot).padding(.horizontal, 24).padding(.bottom, 8)
+                                    .environment(\.lyricsPageControlsEnabled, layout == nil)
                                     .background { GeometryReader { proxy in
                                         Color.clear.preference(key: LyricsPageControlsHeightKey.self, value: proxy.size.height)
                                     } }
@@ -389,8 +390,9 @@ struct LyricsProgressControl: View {
     @State private var editing = false
     @State private var editingTrackURI: String?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.lyricsPageControlsEnabled) private var controlsEnabled
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: !snapshot.isPlaying || scenePhase != .active)) { _ in
+        TimelineView(.animation(minimumInterval: 0.25, paused: !controlsEnabled || !snapshot.isPlaying || scenePhase != .active)) { _ in
             VStack(spacing: 0) {
                 LyricsCapsuleSlider(value: Binding(get: { editing ? draft : model.progress() }, set: { draft = $0; if editing { model.previewLyricsProgress($0, track: editingTrackURI) } }), maximum: max(1, snapshot.duration)) { value in
                     if value {
@@ -424,6 +426,9 @@ struct LyricsProgressControl: View {
         }
         .onChange(of: snapshot.item?.uri) { editing = false; editingTrackURI = nil; draft = 0; model.previewLyricsProgress(nil, track: nil) }
         .onDisappear { model.previewLyricsProgress(nil, track: nil) }
+        .onChange(of: controlsEnabled) { _, enabled in
+            if !enabled, editing { editing = false; editingTrackURI = nil; model.previewLyricsProgress(nil, track: nil) }
+        }
         .onChange(of: scenePhase) { if scenePhase != .active { editing = false; editingTrackURI = nil; model.previewLyricsProgress(nil, track: nil) } }
     }
 

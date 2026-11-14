@@ -107,9 +107,7 @@ actor LyricsAuxiliaryBlurDecoder {
     private var initialAlphas: [LyricsAuxiliaryKind: Double] = [:]
     private var normalPublished = false
     var didInstall: (Double, Int) -> Void = { _, _ in }
-    var decode: (LyricsAuxiliaryBlurSource, Double) async -> LyricsAuxiliaryBlurParts? = { source, maximum in
-        await LyricsAuxiliaryBlurDecoder.shared.split(source, maximum: maximum)
-    }
+    var decode: (@MainActor (LyricsAuxiliaryBlurSource, Double) async -> LyricsAuxiliaryBlurParts?)?
     var isSeparated: Bool { parts != nil }
     var isPreparing: Bool { task != nil }
 
@@ -176,7 +174,9 @@ actor LyricsAuxiliaryBlurDecoder {
         let ticket = generation, maximum = normal.maximum
         let decode = decode
         task = Task { [weak self] in
-            let result = await decode(source, maximum)
+            let result: LyricsAuxiliaryBlurParts?
+            if let decode { result = await decode(source, maximum) }
+            else { result = await LyricsAuxiliaryBlurDecoder.shared.split(source, maximum: maximum) }
             guard !Task.isCancelled, let self, self.generation == ticket, let result, let fade = self.fade else { return }
             self.task = nil
             CATransaction.begin(); CATransaction.setDisableActions(true)

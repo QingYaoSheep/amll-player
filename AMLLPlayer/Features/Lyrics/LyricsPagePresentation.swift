@@ -62,7 +62,9 @@ struct LyricsPageControls<Content: View>: View {
     static let contentTimingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
     // Same content-change curve as the existing product controls.
     static let content = Animation.timingCurve(0.23, 1, 0.32, 1, duration: contentDuration)
-    static let geometry = Animation.timingCurve(0.77, 0, 0.175, 1, duration: 0.24)
+    // Reuse the product's interruptible spring. Large cover resizes felt abrupt
+    // with the steep middle section of the former 240ms timing curve.
+    static let geometry = LyricsQuickSettingsPresentation.motionAnimation
     static let returnSpring = LyricsQuickSettingsPresentation.motionAnimation
 }
 
@@ -177,6 +179,11 @@ struct LyricsArtworkFrameKey: PreferenceKey {
     static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
         if let next = nextValue() { value = next }
     }
+}
+
+struct LyricsPageControlsHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 extension View {

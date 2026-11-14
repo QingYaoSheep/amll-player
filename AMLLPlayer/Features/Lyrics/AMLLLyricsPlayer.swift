@@ -28,6 +28,7 @@ struct AMLLLyricsPlayer: View {
     @State private var showingArtworkDebug = false
     @State private var presentation = LyricsPagePresentationCoordinator()
     @State private var artworkFrame: CGRect?
+    @Namespace private var metadataMotion
     @GestureState(resetTransaction: Transaction(animation: .spring(response: 0.32, dampingFraction: 0.9))) private var dismissalDrag: CGFloat = 0
 
     init(model: AppModel, usesSystemZoom: Bool = false, presentation: LyricsQuickSettingsPresentation? = nil) {
@@ -183,7 +184,10 @@ struct AMLLLyricsPlayer: View {
                 .frame(height: layout?.information.height ?? metrics.compactArtworkSize, alignment: .topLeading)
                 .offset(x: layout?.information.minX ?? metrics.horizontalInset,
                         y: layout?.information.minY ?? metrics.compactArtworkTop)
+                .matchedGeometryEffect(id: "metadata", in: metadataMotion, properties: .position,
+                    isSource: configuration.showLyrics)
                 .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.information)
+                .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: configuration.showLyrics)
                 .animation(LyricsPageMotion.content, value: layout != nil)
             }
             .frame(width: size.width, height: layout?.contentHeight ?? size.height, alignment: .topLeading)
@@ -218,7 +222,11 @@ struct AMLLLyricsPlayer: View {
             fullMetadata(item: item)
                 .padding(.top, metrics.expandedMetadataGap)
                 .padding(.horizontal, 8)
+                .matchedGeometryEffect(id: "metadata", in: metadataMotion, properties: .position,
+                    isSource: !configuration.showLyrics)
+                .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: configuration.showLyrics)
             if configuration.showControls {
+              VStack(spacing: 0) {
                 LyricsProgressControl(model: model, snapshot: snapshot)
                     .padding(.horizontal, 8)
                     .padding(.top, metrics.metadataToProgressGap)
@@ -234,6 +242,10 @@ struct AMLLLyricsPlayer: View {
                 }
                 bottomActions
                     .padding(.top, metrics.bottomActionsTopGap)
+              }
+              .offset(y: reduceMotion || !configuration.showLyrics ? 0
+                : metrics.compactArtworkTop - metrics.expandedArtworkTop - artworkSide - metrics.expandedMetadataGap)
+              .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: configuration.showLyrics)
             }
             Spacer(minLength: 12)
         }

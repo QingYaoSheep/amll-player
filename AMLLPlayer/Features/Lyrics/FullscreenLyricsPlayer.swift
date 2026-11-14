@@ -56,6 +56,7 @@ struct FullscreenLyricsPlayer: View {
     @State private var showingArtworkDebug = false
     @State private var immersiveViewport = false
     @State private var presentation = LyricsPagePresentationCoordinator()
+    @State private var phoneControlsHeight: CGFloat = 0
     private var configuration: LyricsRenderConfiguration {
         model.renderPreferences.configuration.validated()
     }
@@ -106,8 +107,19 @@ struct FullscreenLyricsPlayer: View {
                             } else {
                                 phoneLyrics(snapshot: snapshot, item: item, size: geometry.size, layout: layout)
                             }
-                            if configuration.showControls, !columns, layout == nil {
+                        }
+                        .padding(.bottom, configuration.showControls && !columns && layout == nil ? phoneControlsHeight + 8 : 0)
+                        .overlay(alignment: .bottom) {
+                            if configuration.showControls, !columns {
                                 controls(snapshot).padding(.horizontal, 24).padding(.bottom, 8)
+                                    .background { GeometryReader { proxy in
+                                        Color.clear.preference(key: LyricsPageControlsHeightKey.self, value: proxy.size.height)
+                                    } }
+                                    .offset(y: reduceMotion || layout == nil ? 0 : phoneControlsHeight + 8)
+                                    .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout != nil)
+                                    .opacity(layout == nil ? 1 : 0)
+                                    .animation(LyricsPageMotion.content, value: layout != nil)
+                                    .allowsHitTesting(layout == nil).accessibilityHidden(layout != nil)
                             }
                         }
                         .offset(y: reduceMotion ? 0 : drag)
@@ -122,6 +134,9 @@ struct FullscreenLyricsPlayer: View {
                 }
                 .onPreferenceChange(ImmersiveInformationHeightKey.self) { height in
                     if height > 0, abs(immersiveInformationHeight - height) > 0.5 { immersiveInformationHeight = height }
+                }
+                .onPreferenceChange(LyricsPageControlsHeightKey.self) { height in
+                    if height > 0, abs(phoneControlsHeight - height) > 0.5 { phoneControlsHeight = height }
                 }
                 .onPreferenceChange(ImmersiveInformationTextBottomKey.self) { bottom in
                     if let bottom, abs((immersiveInformationTextBottom ?? -1) - bottom) > 0.5 { immersiveInformationTextBottom = bottom }
@@ -246,6 +261,7 @@ struct FullscreenLyricsPlayer: View {
                     placeholder: { RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.1)).overlay { Image(systemName: "music.note").font(.largeTitle) } }
                     .frame(width: showLarge ? (wide ? 260 : 160) : 48, height: showLarge ? (wide ? 260 : 160) : 48)
                     .clipShape(RoundedRectangle(cornerRadius: showLarge ? 16 : 8))
+                    .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: showLarge)
                     .accessibilityHidden(true)
                 }
             }

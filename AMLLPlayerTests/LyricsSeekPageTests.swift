@@ -395,6 +395,48 @@ import XCTest
         try await wait("lyrics ready") { model.lyrics.document != nil && model.playbackSnapshot?.item != nil }
     }
 
+    func testPhoneMetadataTravelsWithTheCoverInsteadOfOnlyCrossfading() async throws {
+        let (model, player, song) = try await makeModel()
+        model.renderPreferences.configuration.marquee = false
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        let host = UIHostingController(rootView: AMLLLyricsPlayer(model: model).environment(\.scenePhase, .active))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        host.view.frame = window.bounds; host.view.layoutIfNeeded()
+        defer { player.pause(); model.netEasePlayback.deselect(); window.isHidden = true; previous?.makeKey() }
+        try await start(model, song)
+        try await pauseFixture(model, player)
+        let canvas = try await waitForCanvas(host.view)
+        try await Task.sleep(for: .milliseconds(400))
+        let titles = descendants(host.view).compactMap { $0 as? AMLLMetadataText.Label }
+            .filter { $0.label.text == "Markers" }.sorted { $0.label.font.pointSize < $1.label.font.pointSize }
+        let compact = try XCTUnwrap(titles.first)
+        func presentedY() -> CGFloat {
+            let source = compact.layer.presentation() ?? compact.layer
+            return source.convert(source.bounds, to: window.layer.presentation() ?? window.layer).midY
+        }
+        let startY = presentedY(), revision = model.lyricsSeekRevision, item = player.currentItem
+        model.renderPreferences.configuration.showLyrics = false
+        var samples: [CGFloat] = []
+        for _ in 0 ..< 12 {
+            try await Task.sleep(for: .milliseconds(15))
+            samples.append(presentedY())
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        let endY = presentedY()
+        XCTAssertGreaterThan(endY - startY, 100)
+        XCTAssertTrue(samples.contains { $0 > startY + 2 && $0 < endY - 2 },
+            "Metadata must have visible intermediate positions, not stationary opacity changes: \(samples)")
+        model.renderPreferences.configuration.showLyrics = true
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(presentedY(), startY, accuracy: 1)
+        XCTAssertTrue(findCanvas(host.view) === canvas)
+        XCTAssertEqual(model.lyricsSeekRevision, revision)
+        XCTAssertTrue(player.currentItem === item)
+    }
+
     private func makeModel() async throws -> (AppModel, AVPlayer, MusicCatalogItem) {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "seek-markers", withExtension: "flac"))
         let session = NetEaseSession(api: SeekFixtureAPI(), store: SeekFixtureStore())

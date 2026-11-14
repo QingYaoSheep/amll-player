@@ -68,6 +68,9 @@ final class LyricsPagePresentationTests: XCTestCase {
         let mid = try XCTUnwrap(surface.videoPlane.layer.presentation()?.frame)
         XCTAssertGreaterThan(mid.width, start.width)
         XCTAssertLessThan(mid.width, end.width)
+        let mediaMid = try XCTUnwrap(surface.videoSurface.layer.presentation()?.bounds)
+        XCTAssertEqual(mediaMid.width, mid.width, accuracy: 2,
+            "The actual player image must scale with the animated plane instead of jumping to its destination bounds")
         XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player === player)
         // Reverse before completion: it starts from the visible intermediate value.
         surface.configure(video: video, layout: .inline(frame: start, visible: true, presentsFrame: false, radius: 12),

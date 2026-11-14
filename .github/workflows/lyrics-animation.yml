@@ -73,6 +73,7 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsBlossomFamilyTwoTests
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testPhoneMetadataTravelsWithTheCoverInsteadOfOnlyCrossfading
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRetainedHiddenCanvasResumesAtTheLatestConfirmedAudioTime
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testOrdinaryMeshForegroundBlendingSurvivesReentryAndLayoutChanges
           -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testVideoFirstFrameReplacesStillFallbackWithoutRestartingPlayer

@@ -1172,7 +1172,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
         guard auxiliaryRevision != fade.revision else { return }
         auxiliaryRevision = fade.revision
         for view in [romanization as UIView?, alignedRomanization as UIView?].compactMap({ $0 }) {
-            view.layer.mask = fade.mask(bounds: view.bounds, regions: [.romanization: [view.bounds]])
+            view.layer.mask = fade.fullPlaneMask(bounds: view.bounds, kind: .romanization)
         }
     }
 
@@ -1443,7 +1443,7 @@ private final class AMLLNativeRow: UIView {
         }
         for entry in rubyPieces {
             if let visibility = entry.visibility {
-                visibility.mask = fade.mask(bounds: visibility.bounds, regions: [.romanization: [visibility.bounds]])
+                visibility.mask = fade.fullPlaneMask(bounds: visibility.bounds, kind: .romanization)
             }
         }
     }

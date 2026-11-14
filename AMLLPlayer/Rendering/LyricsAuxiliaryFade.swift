@@ -78,6 +78,16 @@ enum LyricsAuxiliaryKind: CaseIterable, Hashable, Sendable { case translation, r
         return result
     }
 
+    func fullPlaneMask(bounds: CGRect, kind: LyricsAuxiliaryKind) -> CALayer? {
+        // The separate pronunciation plane includes padded blur pixels and
+        // a small word lift outside its typographic bounds.
+        let padding: CGFloat = 37
+        let extent = CGRect(x: 0, y: 0, width: bounds.width + padding * 2, height: bounds.height + padding * 2)
+        let result = mask(bounds: extent, regions: [kind: [extent]])
+        result?.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        return result
+    }
+
     /// The mask is attached only to SDR annotation planes, never the HDR
     /// or main word layers. No bitmap capture or additional display link.
     func mask(bounds: CGRect, regions: [LyricsAuxiliaryKind: [CGRect]], origin: CGPoint = .zero,

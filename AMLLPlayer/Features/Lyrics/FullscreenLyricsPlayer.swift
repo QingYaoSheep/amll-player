@@ -203,6 +203,7 @@ struct FullscreenLyricsPlayer: View {
                     }
                     ZStack(alignment: .topLeading) {
                         ScrollView { metadata(item, wide: false) }
+                            .environment(\.lyricsPageControlsEnabled, layout == nil)
                             .frame(height: headerHeight)
                             .opacity(layout == nil ? 1 : 0)
                             .allowsHitTesting(layout == nil).accessibilityHidden(layout != nil)

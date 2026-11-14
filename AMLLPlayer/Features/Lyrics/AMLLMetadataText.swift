@@ -10,6 +10,7 @@ struct AMLLMetadataText: UIViewRepresentable {
     var enabled: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.lyricsPageControlsEnabled) private var presentationEnabled
 
     func makeUIView(context _: Context) -> Label {
         Label()
@@ -17,7 +18,9 @@ struct AMLLMetadataText: UIViewRepresentable {
 
     func updateUIView(_ view: Label, context _: Context) {
         view.configure(text: text, size: size, bold: bold,
-                       enabled: enabled && !reduceMotion && scenePhase == .active)
+                       enabled: enabled && presentationEnabled && !reduceMotion && scenePhase == .active)
+        view.isUserInteractionEnabled = presentationEnabled
+        view.isAccessibilityElement = presentationEnabled
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: Label, context _: Context) -> CGSize? {

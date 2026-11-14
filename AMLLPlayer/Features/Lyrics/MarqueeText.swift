@@ -5,12 +5,15 @@ struct MarqueeText: UIViewRepresentable {
     let text: String
     let fontSize: CGFloat
     let enabled: Bool
+    @Environment(\.lyricsPageControlsEnabled) private var presentationEnabled
     func makeUIView(context _: Context) -> MarqueeLabel {
         MarqueeLabel()
     }
 
     func updateUIView(_ view: MarqueeLabel, context _: Context) {
-        view.update(text: text, fontSize: fontSize, enabled: enabled)
+        view.update(text: text, fontSize: fontSize, enabled: enabled && presentationEnabled)
+        view.isUserInteractionEnabled = presentationEnabled
+        view.isAccessibilityElement = presentationEnabled
     }
 
     static func dismantleUIView(_ uiView: MarqueeLabel, coordinator _: ()) {

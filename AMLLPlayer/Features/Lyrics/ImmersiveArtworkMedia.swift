@@ -81,11 +81,21 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         let transitionSurface = ImmersiveLiveBlurSurface()
         let videoPlane = UIView()
         let stillSurface = UIImageView()
-        private var outgoingSurface = UIImageView()
+        private let outgoingSurface = UIImageView()
         private let outgoingReflection = ArtworkReflection.Surface()
-        private var outgoingReflectionPlane = UIView()
+        private let outgoingReflectionPlane = UIView()
         private var outgoingBuffer: CVPixelBuffer?
         private var snapshotTask: Task<Void, Never>?
+        private var snapshotTimeout: Task<Void, Never>?
+        private struct MediaIdentity: Equatable {
+            let url: URL?
+            let image: ObjectIdentifier?
+        }
+        private var preparingMedia: MediaIdentity?
+        private var preparedMedia: MediaIdentity?
+        var decodeSnapshot: @Sendable (LyricsArtworkSnapshot) async -> ImmersiveStillFrame? = {
+            await LyricsArtworkSnapshotDecoder.shared.decode($0)
+        }
         private var snapshotRevision = 0
         private var configuredURL: URL?
         private var layoutRevision = 0
@@ -169,7 +179,6 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 }
                 return
             }
-            self.pendingConfiguration = nil
             waitingForAttachment = false
             guard frames.activate(presentation, reflection: reflectionSurface, blur: transitionSurface) else {
                 if !rejectedConfiguration {
@@ -181,13 +190,18 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             }
             let video = pendingConfiguration.video
             let layout = pendingConfiguration.layout
+            let identity = MediaIdentity(url: video?.url, image: pendingConfiguration.still.map { ObjectIdentifier($0.image) })
+            let changesMedia = configuredURL != video?.url || (stillFrame != nil && stillFrame?.image !== pendingConfiguration.still?.image)
+            if changesMedia, preparedMedia != identity {
+                if preparingMedia == identity { return }
+                if prepareOutgoingFrame(for: identity) { return }
+            } else if !changesMedia, preparingMedia != nil { cancelSnapshotPreparation() }
+            self.pendingConfiguration = nil
+            preparedMedia = nil
             let wasPresented = appliedLayout != nil
             let sourceChanged = hasVideo != (video != nil) || stillFrame?.image !== pendingConfiguration.still?.image
             if appliedLayout != layout || appliedBounds != bounds || sourceChanged { layoutRevision &+= 1 }
             let layoutTicket = layoutRevision
-            if configuredURL != video?.url || (stillFrame != nil && stillFrame?.image !== pendingConfiguration.still?.image) {
-                retainOutgoingFrame()
-            }
             configuredURL = video?.url
             hasVideo = video != nil
             if stillFrame?.image !== pendingConfiguration.still?.image {
@@ -385,20 +399,49 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 || !layout.tuning[.reflection].enabled
         }
 
-        private func retainOutgoingFrame() {
-            let input = visibleMediaSnapshot()
+        private func cancelSnapshotPreparation() {
             snapshotRevision &+= 1
+            snapshotTask?.cancel(); snapshotTask = nil
+            snapshotTimeout?.cancel(); snapshotTimeout = nil
+            preparingMedia = nil; preparedMedia = nil
+        }
+
+        /// Keep the old native planes on screen until their immutable snapshot
+        /// is ready. New configuration is coalesced, never displayed and then
+        /// covered by a delayed old image.
+        private func prepareOutgoingFrame(for identity: MediaIdentity) -> Bool {
+            let input = visibleMediaSnapshot()
+            cancelSnapshotPreparation()
+            guard !input.layers.isEmpty else { clearOutgoing(); return false }
             let ticket = snapshotRevision
-            snapshotTask?.cancel()
-            snapshotTask = nil
-            guard !input.layers.isEmpty else { clearOutgoing(); return }
+            preparingMedia = identity
             let started = CACurrentMediaTime()
+            let decode = decodeSnapshot
             snapshotTask = Task { @MainActor [weak self] in
-                let decoded = await LyricsArtworkSnapshotDecoder.shared.decode(input)
+                let decoded = await decode(input)
                 guard !Task.isCancelled, let self, self.snapshotRevision == ticket else { return }
-                guard let decoded, CACurrentMediaTime() - started < 0.2 else { self.clearOutgoing(); return }
-                self.fadeOutgoing(decoded, ticket: ticket)
+                self.completeSnapshot(decoded, identity: identity, ticket: ticket, started: started)
             }
+            snapshotTimeout = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(LyricsPageMotion.contentDuration))
+                guard !Task.isCancelled, let self, self.snapshotRevision == ticket else { return }
+                self.completeSnapshot(nil, identity: identity, ticket: ticket, started: started)
+            }
+            return true
+        }
+
+        private func completeSnapshot(_ frame: ImmersiveStillFrame?, identity: MediaIdentity, ticket: Int, started: CFTimeInterval) {
+            guard snapshotRevision == ticket else { return }
+            cancelSnapshotPreparation()
+            preparedMedia = identity
+            let duration = max(0, LyricsPageMotion.contentDuration - (CACurrentMediaTime() - started))
+            if let frame, duration > 0 {
+                outgoingSurface.image = UIImage(cgImage: frame.image)
+                outgoingBuffer = frame.buffer; outgoingFrameCount = 1
+                outgoingReflection.display(frame.buffer)
+            } else { clearOutgoing() }
+            applyPendingConfiguration()
+            if outgoingBuffer != nil { fadeOutgoing(duration: duration, ticket: snapshotRevision) }
         }
 
         func visibleMediaSnapshot() -> LyricsArtworkSnapshot {
@@ -422,38 +465,31 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         }
 
         private func clearOutgoing() {
+            outgoingSurface.layer.removeAnimation(forKey: "lyricsOutgoingOpacity")
+            outgoingReflectionPlane.layer.removeAnimation(forKey: "lyricsOutgoingOpacity")
             outgoingSurface.image = nil; outgoingBuffer = nil
-            outgoingReflection.clear(); outgoingFrameCount = 0; snapshotTask = nil
+            outgoingReflection.clear(); outgoingFrameCount = 0
         }
 
-        private func fadeOutgoing(_ frame: ImmersiveStillFrame, ticket: Int) {
-            // The new image already contains the interrupted dissolve. Give
-            // it a fresh opacity plane instead of multiplying the old fade a
-            // second time or inheriting an old UIKit presentation animation.
-            let replacement = UIImageView(frame: outgoingSurface.frame)
-            replacement.contentMode = outgoingSurface.contentMode
-            replacement.isUserInteractionEnabled = false
-            outgoingSurface.removeFromSuperview()
-            outgoingSurface = replacement
-            videoPlane.addSubview(replacement)
-            let reflectionPlane = UIView(frame: outgoingReflectionPlane.frame)
-            outgoingReflection.removeFromSuperview()
-            outgoingReflectionPlane.removeFromSuperview()
-            outgoingReflectionPlane = reflectionPlane
-            reflectionPlane.addSubview(outgoingReflection)
-            self.reflectionPlane.addSubview(reflectionPlane)
-            outgoingSurface.image = UIImage(cgImage: frame.image)
-            outgoingSurface.alpha = 1
-            outgoingBuffer = frame.buffer; outgoingFrameCount = 1
-            outgoingReflectionPlane.alpha = CGFloat(reflectionSurface.layer.opacity)
-            outgoingReflection.display(frame.buffer)
-            UIView.animate(LyricsPageMotion.content) {
-                self.outgoingSurface.alpha = 0
-                self.outgoingReflectionPlane.alpha = 0
-            } completion: { [weak self] in
-                guard let self, self.snapshotRevision == ticket else { return }
-                self.clearOutgoing()
+        private func fadeOutgoing(duration: CFTimeInterval, ticket: Int) {
+            // A separate opacity animation leaves the stable views' current
+            // geometry animation untouched, including resize reversals.
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            CATransaction.setCompletionBlock { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.snapshotRevision == ticket else { return }
+                    self.clearOutgoing()
+                }
             }
+            for (layer, opacity) in [(outgoingSurface.layer, Float(1)), (outgoingReflectionPlane.layer, reflectionSurface.layer.opacity)] {
+                layer.removeAnimation(forKey: "lyricsOutgoingOpacity")
+                layer.opacity = 0
+                let animation = CABasicAnimation(keyPath: "opacity")
+                animation.fromValue = opacity; animation.toValue = 0
+                animation.duration = duration; animation.timingFunction = LyricsPageMotion.contentTimingFunction
+                layer.add(animation, forKey: "lyricsOutgoingOpacity")
+            }
+            CATransaction.commit()
         }
 
         /// Snapshot only actual lower planes. AVPlayerLayer cannot be rendered
@@ -555,8 +591,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
 
         func stop() {
             layoutRevision &+= 1
-            snapshotRevision &+= 1
-            snapshotTask?.cancel(); snapshotTask = nil
+            cancelSnapshotPreparation()
             outgoingSurface.image = nil; outgoingBuffer = nil
             outgoingReflection.clear(); outgoingFrameCount = 0; configuredURL = nil
             frames.recordLifecycle("停止视图（\(window == nil ? "未挂载" : "已挂载")，\(Int(bounds.width))×\(Int(bounds.height)) pt）", presentation: presentation)

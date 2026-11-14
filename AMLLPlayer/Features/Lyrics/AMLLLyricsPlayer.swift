@@ -168,7 +168,8 @@ struct AMLLLyricsPlayer: View {
                     LyricsTrackTransition(item: item) { compactMetadata(item: $0, metrics: metrics) }
                         .environment(\.lyricsPageControlsEnabled, layout == nil && (configuration.showMetadata ?? true) && configuration.showLyrics)
                         .opacity(layout == nil && (configuration.showMetadata ?? true) ? 1 : 0)
-                        .allowsHitTesting(layout == nil).accessibilityHidden(layout != nil)
+                        .allowsHitTesting(layout == nil && (configuration.showMetadata ?? true) && configuration.showLyrics)
+                        .accessibilityHidden(layout != nil || !(configuration.showMetadata ?? true) || !configuration.showLyrics)
                     ImmersiveLyricsHeader(model: model, snapshot: snapshot, item: item, presentation: quickSettings,
                         additive: layout?.overlaysArtwork ?? false)
                         .environment(\.lyricsPageControlsEnabled, layout != nil && configuration.showLyrics)

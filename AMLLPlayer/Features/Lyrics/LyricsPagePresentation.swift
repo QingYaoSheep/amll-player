@@ -1,6 +1,7 @@
 import Observation
 import SwiftUI
 import CoreImage
+import QuartzCore
 
 /// Presentation state only. Never owns a document, song clock or seek request.
 @MainActor @Observable
@@ -51,8 +52,10 @@ extension EnvironmentValues {
 }
 
 @MainActor enum LyricsPageMotion {
+    static let contentDuration: TimeInterval = 0.2
+    static let contentTimingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
     // Same content-change curve as the existing product controls.
-    static let content = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.2)
+    static let content = Animation.timingCurve(0.23, 1, 0.32, 1, duration: contentDuration)
     static let geometry = Animation.timingCurve(0.77, 0, 0.175, 1, duration: 0.24)
     static let returnSpring = LyricsQuickSettingsPresentation.motionAnimation
 }

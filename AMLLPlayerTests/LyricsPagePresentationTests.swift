@@ -166,6 +166,41 @@ final class LyricsPagePresentationTests: XCTestCase {
         XCTAssertNotEqual(view.requestKey, ordinary, "The always-mounted compatibility backdrop must restart discovery when enabled")
     }
 
+    func testDelayedSnapshotCannotCoverAnAlreadyPresentedNewSong() async throws {
+        let red = try solidFrame(red: 1, green: 0, blue: 0)
+        let blue = try solidFrame(red: 0, green: 0, blue: 1)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds; window.rootViewController = UIViewController(); window.makeKeyAndVisible()
+        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        surface.frame = window.bounds; window.rootViewController?.view.addSubview(surface)
+        defer { surface.stop(); window.isHidden = true; previous?.makeKey() }
+        let start = CGRect(x: 20, y: 20, width: 100, height: 100)
+        let end = CGRect(x: 0, y: 0, width: 180, height: 240)
+        surface.configure(video: nil, layout: .inline(frame: start, visible: true, presentsFrame: false, radius: 0), still: red)
+        try await Task.sleep(for: .milliseconds(50))
+        let imageView = surface.stillSurface
+        surface.decodeSnapshot = { input in
+            try? await Task.sleep(for: .milliseconds(120))
+            return await LyricsArtworkSnapshotDecoder.shared.decode(input)
+        }
+        surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0),
+            still: blue, animation: LyricsPageMotion.geometry)
+        XCTAssertTrue(surface.stillSurface.image?.cgImage === red.image,
+            "Keep old native content until its outgoing frame is ready, rather than showing new then reverting")
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertTrue(surface.stillSurface === imageView)
+        XCTAssertTrue(surface.stillSurface.image?.cgImage === blue.image)
+        XCTAssertEqual(surface.outgoingFrameCount, 0)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let presented = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let pixel = try rgb(XCTUnwrap(presented.cgImage?.cropping(to: CGRect(x: 50, y: 50, width: 1, height: 1))))
+        XCTAssertGreaterThan(pixel[2], pixel[0] + 100, "A delayed old frame must not reappear over the new blue cover")
+    }
+
     private func solidFrame(red: CGFloat, green: CGFloat, blue: CGFloat) throws -> ImmersiveStillFrame {
         var storage: CVPixelBuffer?
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 8, 8, kCVPixelFormatType_32BGRA,

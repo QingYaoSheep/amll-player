@@ -17,6 +17,9 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     @State private var network = ArtworkNetworkPolicy.shared
     @State private var debug = ImmersiveArtworkDebugStore.shared
     private var configuration: LyricsRenderConfiguration { model.renderPreferences.configuration.validated() }
+    private var eligibleViewport: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone && viewport.height > viewport.width
+    }
     private var hasVideo: Bool {
         configuration.animatedArtwork?.enabled == true && !reduceMotion
             && network.permits(allowCellular: configuration.animatedArtwork?.allowCellular ?? false)
@@ -29,7 +32,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
         return .init(trackID: item.uri, size: still.frame(for: item.artworkURL)?.size ?? CGSize(width: 1, height: 1), isVideo: false)
     }
     var requestKey: String {
-        [item.uri, String(configuration.immersiveLyrics == true), String(configuration.animatedArtwork?.enabled == true), String(reduceMotion),
+        [item.uri, String(configuration.immersiveLyrics == true), String(eligibleViewport), String(configuration.animatedArtwork?.enabled == true), String(reduceMotion),
          String(configuration.animatedArtwork?.allowCellular == true),
          String(network.permits(allowCellular: configuration.animatedArtwork?.allowCellular ?? false)),
          model.lyrics.selection.candidate?.id ?? "", model.lyrics.settings.storefront, model.lyrics.settings.language].joined(separator: "|")
@@ -52,8 +55,12 @@ struct ImmersiveLyricsArtworkBackdrop: View {
             .task(id: item.uri + "|" + (item.artworkURL?.absoluteString ?? "")) { await still.load(item.artworkURL) }
             .task(id: requestKey) {
                 let settings = configuration.animatedArtwork ?? .init()
-                guard configuration.immersiveLyrics == true, settings.enabled, !reduceMotion,
+                guard settings.enabled, !reduceMotion,
                       network.permits(allowCellular: settings.allowCellular) else { loader.reset(); return }
+                guard configuration.immersiveLyrics == true, eligibleViewport else {
+                    if loader.trackID != item.uri { loader.reset() }
+                    return
+                }
                 await loader.loadForLyrics(item: item, coordinator: model.lyrics, settings: settings, prefersPortrait: true)
             }
             .allowsHitTesting(false).accessibilityHidden(true)

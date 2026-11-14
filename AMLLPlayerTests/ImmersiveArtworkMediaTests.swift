@@ -188,6 +188,7 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         try await waitUntil { surface.stillSurface.isHidden }
         XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player?.currentItem === item)
         surface.configure(video: nil, layout: layout(false), still: still)
+        try await waitUntil { !surface.hasVideoPlayer }
         XCTAssertFalse(surface.hasVideoPlayer)
         XCTAssertFalse(surface.stillSurface.isHidden)
         try await waitUntil { surface.reflectionSurface.layer.contents != nil }

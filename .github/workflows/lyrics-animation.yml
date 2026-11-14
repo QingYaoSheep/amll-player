@@ -1,6 +1,7 @@
 name: Lyrics animation regression
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - '.github/workflows/lyrics-animation.yml'
@@ -17,6 +18,13 @@ on:
       - 'AMLLPlayer/Features/Lyrics/ImmersiveArtworkMedia.swift'
       - 'AMLLPlayerTests/LyricsPagePresentationTests.swift'
       - 'AMLLPlayer/Rendering/LyricsAuxiliaryFade.swift'
+      - 'AMLLPlayer/Rendering/LyricsAuxiliaryBlur.swift'
+      - 'AMLLPlayer/Rendering/AMLLNativeLyricsView.swift'
+      - 'AMLLPlayer/Rendering/AMLLCoreTextLayout.swift'
+      - 'AMLLPlayer/Rendering/AMLLPreparedRowImages.swift'
+      - 'AMLLPlayer/Rendering/LyricTextLayout.swift'
+      - 'AMLLPlayer/Rendering/LyricsRenderView.swift'
+      - 'AMLLPlayer/Rendering/LyricsRenderConfiguration.swift'
       - 'AMLLPlayerTests/LyricsAuxiliaryFadeTests.swift'
       - 'AMLLPlayerTests/Fixtures/blossom-family2*'
       - 'AMLLPlayer/Rendering/LyricsBlossomScaleWait.swift'

@@ -57,6 +57,15 @@ struct LyricsPageControls<Content: View>: View {
     var body: some View { if enabled { content() } }
 }
 
+/// Apply to the actual control, since iOS 27 can expose a Button through an
+/// otherwise hidden SwiftUI container while its sibling layout is retained.
+struct LyricsPageControlVisibility: ViewModifier {
+    @Environment(\.lyricsPageControlsEnabled) private var enabled
+    func body(content: Content) -> some View {
+        content.accessibilityHidden(!enabled).allowsHitTesting(enabled).disabled(!enabled)
+    }
+}
+
 @MainActor enum LyricsPageMotion {
     static let contentDuration: TimeInterval = 0.2
     static let contentTimingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)

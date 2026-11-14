@@ -585,6 +585,7 @@ struct AMLLLyricsPlayer: View {
         }
         .buttonStyle(.plain)
         .disabled(disabled || model.isPerformingAction)
+        .modifier(LyricsPageControlVisibility())
     }
 
     private var bottomActions: some View {
@@ -592,14 +593,17 @@ struct AMLLLyricsPlayer: View {
             Button { model.renderPreferences.configuration.showLyrics = true } label: {
                 Label("render.showLyrics", systemImage: "quote.bubble")
             }
+            .modifier(LyricsPageControlVisibility())
             Spacer()
             Button { devices = true; Task { await model.loadDevices() } } label: {
                 Label("player.devices", systemImage: "airplayaudio")
             }
+            .modifier(LyricsPageControlVisibility())
             Spacer()
             Button { search = true } label: {
                 Label("lyrics.find", systemImage: "list.bullet")
             }
+            .modifier(LyricsPageControlVisibility())
         }
         .labelStyle(.iconOnly)
         .font(.system(size: 26, weight: .medium))

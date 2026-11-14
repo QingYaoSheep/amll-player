@@ -62,9 +62,11 @@ struct LyricsQuickSettingsButton: View {
     let presentation: LyricsQuickSettingsPresentation
     var systemImage = "ellipsis"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.lyricsPageControlsEnabled) private var controlsEnabled
     @AccessibilityFocusState private var focused: Bool
 
     var body: some View {
+        if controlsEnabled {
         Button { presentation.open(reduceMotion: reduceMotion) } label: {
             Label("render.options", systemImage: systemImage)
                 .labelStyle(.iconOnly)
@@ -76,6 +78,7 @@ struct LyricsQuickSettingsButton: View {
         .accessibilityIdentifier("lyricsDisplayOptions")
         .accessibilityFocused($focused)
         .onChange(of: presentation.focusRevision) { focused = true }
+        }
     }
 }
 

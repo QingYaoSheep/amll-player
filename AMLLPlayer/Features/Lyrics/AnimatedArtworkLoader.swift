@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+struct ArtworkDiscoveryIdentity: Equatable, Sendable {
+    let candidateID: String
+    let storefront: String
+    let language: String
+}
+
 @MainActor @Observable
 final class AnimatedArtworkLoader {
     enum Status: String { case idle, loading, streaming, ready, unavailable, failed }
@@ -9,6 +15,7 @@ final class AnimatedArtworkLoader {
     private(set) var trackID: String?
     private(set) var kind: ArtworkAsset.Kind?
     private(set) var requestedKind: ArtworkAsset.Kind?
+    private var discoveryIdentity: ArtworkDiscoveryIdentity?
     private(set) var failureCode: String?
     private(set) var streamingURL: URL?
     private(set) var playbackState: ArtworkPlaybackState = .preparing
@@ -59,19 +66,23 @@ final class AnimatedArtworkLoader {
         playbackState = .preparing
         hasPresentedFrame = false; videoSize = nil
         requestedKind = nil
+        discoveryIdentity = nil
     }
 
     func load(trackID: String, kind: ArtworkAsset.Kind = .squareVideo,
               fallbackKind: ArtworkAsset.Kind? = nil,
               streamWhileDownloading: Bool = false, reuseReadyResource: Bool = false,
+              discoveryIdentity: ArtworkDiscoveryIdentity? = nil,
               assets: @MainActor () async throws -> [ArtworkAsset],
               download: @MainActor (URL) async throws -> URL) async
     {
         if reuseReadyResource, self.trackID == trackID, requestedKind == kind, playbackURL != nil,
+           self.discoveryIdentity == discoveryIdentity,
            status == .ready || status == .streaming { return }
         reset()
         self.trackID = trackID
         requestedKind = kind
+        self.discoveryIdentity = discoveryIdentity
         status = .loading
         let revision = revision
         do {

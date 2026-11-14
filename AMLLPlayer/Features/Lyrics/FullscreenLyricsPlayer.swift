@@ -185,13 +185,14 @@ struct FullscreenLyricsPlayer: View {
                     LyricsPageViewport(rect: viewport, reduceMotion: reduceMotion) {
                         lyricContent(snapshot, immersiveLayout: layout)
                     }
-                    ZStack {
+                    ZStack(alignment: .topLeading) {
                         ScrollView { metadata(item, wide: false) }
                             .frame(height: headerHeight)
                             .opacity(layout == nil ? 1 : 0)
                             .allowsHitTesting(layout == nil).accessibilityHidden(layout != nil)
                         ImmersiveLyricsHeader(model: model, snapshot: snapshot, item: item, presentation: quickSettings,
                             additive: layout?.overlaysArtwork ?? false)
+                            .environment(\.lyricsPageControlsEnabled, layout != nil && configuration.showLyrics)
                             .background { GeometryReader { proxy in
                                 Color.clear.preference(key: ImmersiveInformationHeightKey.self, value: proxy.size.height)
                             } }
@@ -199,6 +200,7 @@ struct FullscreenLyricsPlayer: View {
                             .allowsHitTesting(layout != nil).accessibilityHidden(layout == nil)
                     }
                     .frame(width: layout?.information.width ?? available.size.width)
+                    .frame(height: layout?.information.height ?? headerHeight, alignment: .topLeading)
                     .offset(x: layout?.information.minX ?? 0, y: max(0, (layout?.information.minY ?? 44) - 44))
                     .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.information)
                     .animation(LyricsPageMotion.content, value: layout != nil)

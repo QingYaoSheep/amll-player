@@ -28,8 +28,8 @@ struct ImmersiveLyricsArtworkBackdrop: View {
         }
         return .init(trackID: item.uri, size: still.frame(for: item.artworkURL)?.size ?? CGSize(width: 1, height: 1), isVideo: false)
     }
-    private var requestKey: String {
-        [item.uri, String(configuration.animatedArtwork?.enabled == true), String(reduceMotion),
+    var requestKey: String {
+        [item.uri, String(configuration.immersiveLyrics == true), String(configuration.animatedArtwork?.enabled == true), String(reduceMotion),
          String(configuration.animatedArtwork?.allowCellular == true),
          String(network.permits(allowCellular: configuration.animatedArtwork?.allowCellular ?? false)),
          model.lyrics.selection.candidate?.id ?? "", model.lyrics.settings.storefront, model.lyrics.settings.language].joined(separator: "|")
@@ -77,7 +77,9 @@ extension AnimatedArtworkLoader {
         let candidate = coordinator.selection.candidate
         let lyricsSettings = coordinator.settings
         await load(trackID: item.uri, kind: prefersPortrait ? .portraitVideo : .squareVideo,
-            fallbackKind: prefersPortrait ? .squareVideo : nil, streamWhileDownloading: true, reuseReadyResource: true, assets: {
+            fallbackKind: prefersPortrait ? .squareVideo : nil, streamWhileDownloading: true, reuseReadyResource: true,
+            discoveryIdentity: .init(candidateID: candidate?.id ?? "", storefront: lyricsSettings.storefront,
+                language: lyricsSettings.language), assets: {
                 let songID: String
                 if let candidate, candidate.source == .apple { songID = candidate.sourceID }
                 else {

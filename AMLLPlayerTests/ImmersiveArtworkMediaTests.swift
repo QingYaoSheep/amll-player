@@ -184,7 +184,8 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         try await waitUntil { presented }
         let item = try XCTUnwrap((surface.videoSurface.layer as? AVPlayerLayer)?.player?.currentItem)
         surface.configure(video: video, layout: layout(true), still: still)
-        XCTAssertTrue(surface.stillSurface.isHidden)
+        XCTAssertFalse(surface.stillSurface.isHidden, "Keep the poster while it fades over the first video frame")
+        try await waitUntil { surface.stillSurface.isHidden }
         XCTAssertTrue((surface.videoSurface.layer as? AVPlayerLayer)?.player?.currentItem === item)
         surface.configure(video: nil, layout: layout(false), still: still)
         XCTAssertFalse(surface.hasVideoPlayer)

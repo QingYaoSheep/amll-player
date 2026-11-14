@@ -11,6 +11,7 @@ struct ImmersiveBlurInput: @unchecked Sendable {
         case background(AMLLBackgroundTextureFrame, frame: CGRect, opacity: Double)
         case solid(CIColor, frame: CGRect)
         case video(CVPixelBuffer, frame: CGRect, mask: CGImage?, opacity: Double)
+        case cover(CVPixelBuffer, frame: CGRect, mask: CGImage?, opacity: Double)
         case reflection(CVPixelBuffer, frame: CGRect, mask: CGImage?, opacity: Double)
     }
     let region: CGRect
@@ -54,11 +55,17 @@ enum ImmersiveBlurImage {
                     y: (input.region.maxY - frame.maxY) * input.scale,
                     width: frame.width * input.scale, height: frame.height * input.scale)
                 image = CIImage(color: color).cropped(to: rect).composited(over: image)
-            case let .video(buffer, frame, mask, opacity), let .reflection(buffer, frame, mask, opacity):
+            case let .video(buffer, frame, mask, opacity), let .cover(buffer, frame, mask, opacity), let .reflection(buffer, frame, mask, opacity):
                 let source = ArtworkReflectionImage.decodedVideoSource(buffer)
                 let localSize = CGSize(width: frame.width * input.scale, height: frame.height * input.scale)
                 let rect = CGRect(origin: .zero, size: localSize)
-                let fitted = AMLLImmersiveArtworkGeometry.fittedFrame(container: rect, source: source.extent.size)
+                let fitted: CGRect
+                if case .cover = plane {
+                    let factor = max(rect.width / source.extent.width, rect.height / source.extent.height)
+                    fitted = CGRect(x: (rect.width - source.extent.width * factor) / 2,
+                        y: (rect.height - source.extent.height * factor) / 2,
+                        width: source.extent.width * factor, height: source.extent.height * factor)
+                } else { fitted = AMLLImmersiveArtworkGeometry.fittedFrame(container: rect, source: source.extent.size) }
                 var video: CIImage
                 if case .reflection = plane {
                     video = ArtworkReflectionImage.image(source: source, outputSize: localSize)

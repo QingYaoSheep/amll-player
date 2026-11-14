@@ -24,17 +24,29 @@ final class LyricsPagePresentationCoordinator {
         guard !initialized || mode != target else { return }
         let animate = initialized
         initialized = true
-        revision &+= 1
-        let ticket = revision
-        if target.showsLyrics { rendersLyrics = true }
+        let ticket = revision &+ 1
         withAnimation(animate ? LyricsPageMotion.content : nil, completionCriteria: .removed) {
-            mode = target
+            begin(target)
         } completion: { [weak self] in self?.finish(ticket) }
+    }
+
+    func begin(_ target: Mode) {
+        revision &+= 1
+        if target.showsLyrics { rendersLyrics = true }
+        mode = target
     }
 
     func finish(_ ticket: Int) {
         guard ticket == revision else { return }
         rendersLyrics = mode.showsLyrics
+    }
+}
+
+private struct LyricsPageControlsEnabledKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    var lyricsPageControlsEnabled: Bool {
+        get { self[LyricsPageControlsEnabledKey.self] }
+        set { self[LyricsPageControlsEnabledKey.self] = newValue }
     }
 }
 
@@ -47,7 +59,17 @@ final class LyricsPagePresentationCoordinator {
 
 /// Retained decoder pixels are immutable. Conversion is performed once per
 /// resource transition, away from the UI thread; never on a display tick.
-struct LyricsArtworkSnapshot: @unchecked Sendable { let buffer: CVPixelBuffer }
+struct LyricsArtworkSnapshot: @unchecked Sendable {
+    struct Layer {
+        let buffer: CVPixelBuffer
+        let frame: CGRect
+        let opacity: CGFloat
+        let fits: Bool
+    }
+    let size: CGSize
+    let scale: CGFloat
+    let layers: [Layer]
+}
 
 actor LyricsArtworkSnapshotDecoder {
     static let shared = LyricsArtworkSnapshotDecoder()
@@ -55,9 +77,34 @@ actor LyricsArtworkSnapshotDecoder {
 
     func decode(_ input: LyricsArtworkSnapshot) -> ImmersiveStillFrame? {
         guard !Task.isCancelled else { return nil }
-        let source = ArtworkReflectionImage.decodedVideoSource(input.buffer)
-        guard let image = context.createCGImage(source, from: source.extent), !Task.isCancelled else { return nil }
-        return ImmersiveStillFrame(image: image, buffer: input.buffer)
+        guard input.size.width > 0, input.size.height > 0, !input.layers.isEmpty else { return nil }
+        let scale = min(input.scale, 1600 / max(input.size.width, input.size.height))
+        let extent = CGRect(x: 0, y: 0, width: max(1, ceil(input.size.width * scale)), height: max(1, ceil(input.size.height * scale)))
+        var composite = CIImage(color: .clear).cropped(to: extent)
+        for layer in input.layers {
+            let source = ArtworkReflectionImage.decodedVideoSource(layer.buffer)
+            let rect = CGRect(x: layer.frame.minX * scale, y: (input.size.height - layer.frame.maxY) * scale,
+                width: layer.frame.width * scale, height: layer.frame.height * scale)
+            guard rect.width > 0, rect.height > 0 else { continue }
+            let factor = layer.fits ? min(rect.width / source.extent.width, rect.height / source.extent.height)
+                : max(rect.width / source.extent.width, rect.height / source.extent.height)
+            let image = source.transformed(by: .init(translationX: -source.extent.minX, y: -source.extent.minY))
+                .transformed(by: .init(scaleX: factor, y: factor))
+                .transformed(by: .init(translationX: rect.midX - source.extent.width * factor / 2,
+                    y: rect.midY - source.extent.height * factor / 2))
+                .cropped(to: rect)
+                .applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: layer.opacity)])
+            composite = image.composited(over: composite)
+        }
+        guard !Task.isCancelled else { return nil }
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        var storage: CVPixelBuffer?
+        guard CVPixelBufferCreate(kCFAllocatorDefault, Int(extent.width), Int(extent.height), kCVPixelFormatType_32BGRA,
+            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &storage) == kCVReturnSuccess,
+            let buffer = storage, let image = context.createCGImage(composite, from: extent, format: .RGBA8, colorSpace: space) else { return nil }
+        context.render(composite, to: buffer, bounds: extent, colorSpace: space)
+        CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, space, .shouldPropagate)
+        return ImmersiveStillFrame(image: image, buffer: buffer)
     }
 }
 

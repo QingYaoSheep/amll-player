@@ -118,15 +118,24 @@ import XCTest
         var config = LyricsRenderConfiguration(); config.translation = true
         fade.reset(config)
         config.translation = false; fade.update(config, animated: true)
-        view.layer.speed = 0
         view.layer.mask = fade.mask(bounds: view.bounds, regions: [.translation: [CGRect(x: 0, y: 60, width: 80, height: 40)]])
         fade.cancel()
-        view.layer.timeOffset = 0.055
+        func setMaskTime(_ time: Double) {
+            for shape in view.layer.mask?.sublayers ?? [] {
+                guard let animation = shape.animation(forKey: "auxiliaryVisibility") else { continue }
+                // Pause the animation itself. Pausing its parent before the
+                // first commit lets CA choose that paused time as beginTime.
+                animation.speed = 0; animation.timeOffset = time
+                animation.isRemovedOnCompletion = false; animation.fillMode = .both
+                shape.add(animation, forKey: "auxiliaryVisibility")
+            }
+        }
+        setMaskTime(0.055)
         try await Task.sleep(for: .milliseconds(55))
         let first = try pixels(view)
         XCTAssertGreaterThan(first.0, 250, "Body pixels remain opaque")
         XCTAssertGreaterThan(first.1, 0); XCTAssertLessThan(first.1, 250, "The outgoing annotation has an intermediate alpha")
-        view.layer.timeOffset = 0.3
+        setMaskTime(0.3)
         try await Task.sleep(for: .milliseconds(30))
         let last = try pixels(view)
         XCTAssertGreaterThan(last.0, 250); XCTAssertLessThan(last.1, 2)

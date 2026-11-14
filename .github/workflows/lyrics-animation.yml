@@ -50,7 +50,7 @@ concurrency:
 jobs:
   regression:
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - name: Verify Xcode 27
@@ -67,6 +67,36 @@ jobs:
             xcodebuild -downloadPlatform iOS
           fi
           node Scripts/prepare-ci-simulators.cjs
+      - name: Test page presentation and auxiliary fades
+        run: >-
+          xcodebuild test
+          -project AMLLPlayer.xcodeproj
+          -scheme AMLLPlayer
+          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
+          -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
+          -only-testing:AMLLPlayerTests/LyricsAuxiliaryFadeTests
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testPhoneMetadataTravelsWithTheCoverInsteadOfOnlyCrossfading
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRetainedHiddenCanvasResumesAtTheLatestConfirmedAudioTime
+          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testOrdinaryMeshForegroundBlendingSurvivesReentryAndLayoutChanges
+          -resultBundlePath build/Page-presentation-tests.xcresult
+          -collect-test-diagnostics never
+          CODE_SIGNING_ALLOWED=NO
+      - name: Export presentation summary
+        if: always()
+        run: |
+          if [[ -d build/Page-presentation-tests.xcresult ]]; then
+            xcrun xcresulttool get test-results summary --path build/Page-presentation-tests.xcresult > build/Page-presentation-summary.json
+          fi
+      - name: Upload presentation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lyrics-page-presentation-evidence
+          path: |
+            build/Page-presentation-tests.xcresult
+            build/Page-presentation-summary.json
+          if-no-files-found: ignore
       - name: Test animation engine and real settings page
         run: >-
           xcodebuild test
@@ -81,12 +111,6 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsBlossomRunLayoutTests
           -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests
           -only-testing:AMLLPlayerTests/LyricsBlossomFamilyTwoTests
-          -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
-          -only-testing:AMLLPlayerTests/LyricsAuxiliaryFadeTests
-          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas
-          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testPhoneMetadataTravelsWithTheCoverInsteadOfOnlyCrossfading
-          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRetainedHiddenCanvasResumesAtTheLatestConfirmedAudioTime
-          -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testOrdinaryMeshForegroundBlendingSurvivesReentryAndLayoutChanges
           -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testVideoFirstFrameReplacesStillFallbackWithoutRestartingPlayer
           -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testRetiredPresentationCannotInvalidateCurrentPlayersReflection
           -only-testing:AMLLPlayerTests/AMLLSeekMotionTests

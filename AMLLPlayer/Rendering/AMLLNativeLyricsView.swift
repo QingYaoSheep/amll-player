@@ -97,6 +97,7 @@ final class AMLLNativeCanvas: UIView {
     private var heights: [Double] = []
     private var rowViews: [Int: AMLLCompositeRow] = [:]
     private var auxiliaryBlurStarters: [Int: LyricsAuxiliaryBlurStarter] = [:]
+    private var auxiliaryLayoutPreparation: UUID?
     private var retainedRows: [Int: AMLLCompositeRow] = [:]
     private var retainedOrder: [Int] = []
     private var preparedRows: [Int: AMLLPreparedCompositeImages] = [:]
@@ -265,6 +266,9 @@ final class AMLLNativeCanvas: UIView {
             blurLevelChangedAt = CACurrentMediaTime()
         }
         if oldLayoutSettings != Self.layoutSettings(auxiliaryFade.layoutConfiguration(configuration)) {
+            if auxiliaryLayoutPreparation == nil {
+                auxiliaryLayoutPreparation = auxiliaryFade.beginPreparation(Set(LyricsAuxiliaryKind.allCases))
+            }
             dirty = true; needsFrame = true
         }
         if configurationChanged {
@@ -304,9 +308,11 @@ final class AMLLNativeCanvas: UIView {
         }
         guard bounds.width > 0, bounds.height > 0, let display else { return }
         let layoutKey = currentLayoutKey()
+        var replacedAuxiliaryRows = false
         if dirty || lastLayoutKey != layoutKey {
             let auxiliaryChanged = lastLayoutKey?.settings.translation != layoutKey.settings.translation
                 || lastLayoutKey?.settings.romanization != layoutKey.settings.romanization
+            replacedAuxiliaryRows = engine != nil && auxiliaryChanged
             auxiliaryBlurStarters = engine != nil && auxiliaryChanged
                 ? rowViews.compactMapValues { $0.captureAuxiliaryBlur() } : [:]
             dirty = false
@@ -332,7 +338,7 @@ final class AMLLNativeCanvas: UIView {
         needsFrame = true
         // Debug's explicit replay has no display link. Production commits the
         // new size and the first frame together on the next CADisplayLink tick.
-        if link == nil { draw(delta: 0) }
+        if link == nil || auxiliaryLayoutPreparation != nil || replacedAuxiliaryRows { draw(delta: 0) }
     }
 
     fileprivate func auxiliaryPixelsReady() { needsFrame = true; syncLink() }
@@ -637,6 +643,10 @@ final class AMLLNativeCanvas: UIView {
             #endif
         }
         auxiliaryBlurStarters.removeAll()
+        if let token = auxiliaryLayoutPreparation {
+            auxiliaryLayoutPreparation = nil
+            auxiliaryFade.finishPreparation(token)
+        }
         if let interlude = state.interlude,
            let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
         {

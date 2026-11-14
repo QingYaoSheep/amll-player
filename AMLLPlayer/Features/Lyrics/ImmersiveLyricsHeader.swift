@@ -39,6 +39,7 @@ struct ImmersiveLyricsHeader: View {
                 Button { Task { await model.togglePlayPause() } } label: {
                     Image(systemName: snapshot.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 22, weight: .semibold)).frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .disabled(model.isPerformingAction || (snapshot.isPlaying ? !snapshot.restrictions.canPause : !snapshot.restrictions.canResume))
                 .accessibilityLabel(Text(snapshot.isPlaying ? "player.pause" : "player.play"))

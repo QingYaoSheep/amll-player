@@ -47,6 +47,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     private var document: LyricsDocument?
     private var configuration = LyricsRenderConfiguration()
     private var builtAuxiliary: (Bool, Bool)?
+    private var auxiliaryLayoutPreparation: UUID?
     private lazy var auxiliaryFade: LyricsAuxiliaryFade = {
         let fade = LyricsAuxiliaryFade()
         fade.didFinish = { [weak self, weak fade] in
@@ -138,6 +139,9 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         }
         preserveNextResize = preserveNextResize || (self.configuration.immersiveLyrics == true) != (configuration.immersiveLyrics == true)
         if previousLayout != auxiliaryFade.layoutConfiguration(configuration) || self.reduceMotion != reduceMotion {
+            if auxiliaryLayoutPreparation == nil {
+                auxiliaryLayoutPreparation = auxiliaryFade.beginPreparation(Set(LyricsAuxiliaryKind.allCases))
+            }
             needsRebuild = true
         }
         self.configuration = configuration; self.offset = offset; self.duration = duration
@@ -188,6 +192,9 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             scroll.contentSize = CGSize(width: bounds.width, height: y + bounds.height * (1 - configuration.anchor))
         }
         drawFrame(dt: 1 / 60)
+        if let token = auxiliaryLayoutPreparation {
+            auxiliaryLayoutPreparation = nil; auxiliaryFade.finishPreparation(token)
+        }
         if playing || !follow.following {
             syncDisplayLink()
         }

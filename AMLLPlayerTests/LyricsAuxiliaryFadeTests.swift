@@ -81,11 +81,21 @@ import XCTest
         defer { fade.cancel(); window.isHidden = true; previous?.makeKey() }
         try await Task.sleep(for: .milliseconds(30))
         let initial = try pixels(view)
+        presentation.decode = { source, maximum in
+            try? await Task.sleep(for: .milliseconds(260))
+            return await LyricsAuxiliaryBlurDecoder.shared.split(source, maximum: maximum)
+        }
         config.translation = false; fade.update(config, animated: true); presentation.update(fade)
+        try await Task.sleep(for: .milliseconds(220))
+        XCTAssertEqual(try pixels(view).1, initial.1, accuracy: 2, "A delayed split keeps existing pixels, rather than popping at the old deadline")
+        XCTAssertTrue(fade.layoutConfiguration(config).translation)
+        for _ in 0 ..< 200 where presentation.isPreparing { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(presentation.isPreparing)
         try await Task.sleep(for: .milliseconds(55))
         let middle = try pixels(view)
         XCTAssertEqual(middle.0, initial.0, accuracy: 3, "The common main-glyph blur must not dim during the texture dissolve")
         XCTAssertGreaterThan(initial.1, middle.1)
+        XCTAssertGreaterThan(middle.1, 0, "The prepared plane must still render an intermediate fade, even after preparation exceeded 200ms")
         try await Task.sleep(for: .milliseconds(220))
         XCTAssertLessThan(try pixels(view).1, 2, "No auxiliary halo may survive outside the old typographic box")
     }
@@ -233,13 +243,34 @@ import XCTest
         canvas.configure(document: document, configuration: config, input: input, active: true, reduceMotion: false)
         try await Task.sleep(for: .milliseconds(60))
         XCTAssertEqual(canvas.layoutBuildCount, builds, "Outgoing text must not be removed before its fade")
-        try await Task.sleep(for: .milliseconds(260))
-        canvas.layoutIfNeeded(); canvas.advanceFrame(delta: 0)
+        for _ in 0 ..< 200 where canvas.layoutBuildCount == builds {
+            try await Task.sleep(for: .milliseconds(10)); canvas.layoutIfNeeded(); canvas.advanceFrame(delta: 0)
+        }
         XCTAssertGreaterThan(canvas.layoutBuildCount, builds)
         let after = try XCTUnwrap(canvas.frameState)
         XCTAssertEqual(after.lyricTime, before.lyricTime)
         XCTAssertEqual(after.rows.first?.wordClock.time, before.rows.first?.wordClock.time)
         XCTAssertEqual(after.rows.first?.fillComplete, before.rows.first?.fillComplete)
+    }
+
+    func testSlowOutgoingPreparationDoesNotConsumeTheFadeOrCollapseItsSlot() async throws {
+        let fade = LyricsAuxiliaryFade(); defer { fade.cancel() }
+        var config = LyricsRenderConfiguration(); config.translation = true; config.romanization = true
+        fade.reset(config)
+        config.translation = false; fade.update(config, animated: true)
+        let first = fade.beginPreparation([.translation])
+        let second = fade.beginPreparation([.translation])
+        try await Task.sleep(for: .milliseconds(260))
+        XCTAssertEqual(fade.value(.translation), 1, "Preparation cannot spend the 200ms visible fade")
+        XCTAssertTrue(fade.layoutConfiguration(config).translation)
+        fade.finishPreparation(first)
+        XCTAssertTrue(fade.isWaiting(.translation), "Every visible source must be ready")
+        fade.finishPreparation(second)
+        try await Task.sleep(for: .milliseconds(55))
+        XCTAssertGreaterThan(fade.value(.translation), 0); XCTAssertLessThan(fade.value(.translation), 1)
+        XCTAssertEqual(fade.value(.romanization), 1)
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertFalse(fade.layoutConfiguration(config).translation)
     }
 
     private func pixels(_ view: UIView) throws -> (Double, Double) {

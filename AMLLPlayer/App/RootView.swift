@@ -12,6 +12,7 @@ struct RootView: View {
         Group {
             MusicBrowserView(model: model, playerNamespace: playerNamespace, openPlayer: { showingPlayer = true })
                 .id(model.catalog.identity)
+                .accessibilityHidden(showingPlayer)
         }
         .sheet(isPresented: $showingWelcome) {
             MusicWelcomeView(model: model) {

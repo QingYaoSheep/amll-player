@@ -100,6 +100,7 @@ actor LyricsAuxiliaryBlurDecoder {
     private var size = CGSize.zero
     private weak var fade: LyricsAuxiliaryFade?
     private var task: Task<Void, Never>?
+    private var preparationToken: UUID?
     private var generation = 0
     private var parts: LyricsAuxiliaryBlurParts?
     private var partsSize: CGSize?
@@ -149,6 +150,7 @@ actor LyricsAuxiliaryBlurDecoder {
 
     func reset() {
         task?.cancel(); task = nil; generation &+= 1
+        fade?.finishPreparation(preparationToken); preparationToken = nil
         removeChildren(); normal = nil; source = nil; sourceKinds.removeAll(); lastFadeRevision = -1
         normalPublished = false; initialAlphas.removeAll()
         near.contents = nil; far.contents = nil
@@ -161,6 +163,7 @@ actor LyricsAuxiliaryBlurDecoder {
             initialAlphas = Dictionary(uniqueKeysWithValues: source.kinds.map { ($0, normalPublished ? 1 : fade.value($0)) })
         }
         task?.cancel(); generation &+= 1
+        fade?.finishPreparation(preparationToken); preparationToken = nil
         if let fade, !source.kinds.isEmpty, fade.isAnimating || !source.kinds.isDisjoint(with: fade.hiddenKinds) { prepare() }
         else { restore(animated: true) }
     }
@@ -178,14 +181,21 @@ actor LyricsAuxiliaryBlurDecoder {
 
     private func prepare() {
         guard let source, let normal else { return }
+        preparationToken = fade?.beginPreparation(sourceKinds)
+        let heldFade = fade, heldToken = preparationToken
         let ticket = generation, maximum = normal.maximum
         let decode = decode
         task = Task { [weak self] in
+            defer { heldFade?.finishPreparation(heldToken) }
             let result: LyricsAuxiliaryBlurParts?
             if let decode { result = await decode(source, maximum) }
             else { result = await LyricsAuxiliaryBlurDecoder.shared.split(source, maximum: maximum) }
-            guard !Task.isCancelled, let self, self.generation == ticket, let result, let fade = self.fade else { return }
+            guard !Task.isCancelled, let self, self.generation == ticket, let fade = self.fade else { return }
             self.task = nil
+            guard let result else {
+                fade.finishPreparation(self.preparationToken); self.preparationToken = nil
+                return
+            }
             CATransaction.begin(); CATransaction.setDisableActions(true)
             let replacing = self.parts != nil
             var initial = self.initialAlphas
@@ -204,6 +214,7 @@ actor LyricsAuxiliaryBlurDecoder {
                 }
                 self.children[kind] = pair
             }
+            fade.finishPreparation(self.preparationToken); self.preparationToken = nil
             self.applyVisibility(fade, initial: initial)
             self.lastFadeRevision = -1
             CATransaction.commit()
@@ -217,10 +228,10 @@ actor LyricsAuxiliaryBlurDecoder {
             starts[kind] = fade.start(kind)
             for layer in layers {
                 let current = initial?[kind].map(Float.init) ?? layer.presentation()?.opacity ?? Float(fade.value(kind, now: now))
-                layer.opacity = Float(fade.target(kind))
+                layer.opacity = Float(fade.isWaiting(kind) ? fade.value(kind, now: now) : fade.target(kind))
                 layer.removeAnimation(forKey: "auxiliaryVisibility")
                 let duration = fade.deadline(kind) - now
-                if duration > 0 {
+                if duration > 0, !fade.isWaiting(kind) {
                     let animation = CABasicAnimation(keyPath: "opacity")
                     animation.fromValue = current; animation.toValue = layer.opacity
                     animation.duration = duration; animation.timingFunction = LyricsPageMotion.contentTimingFunction
@@ -238,6 +249,7 @@ actor LyricsAuxiliaryBlurDecoder {
     private func restore(animated: Bool) {
         guard let normal else { return }
         task?.cancel(); task = nil; generation &+= 1
+        fade?.finishPreparation(preparationToken); preparationToken = nil
         removeChildren()
         normal.install(near: near, far: far, size: size, animated: animated)
         normalPublished = true

@@ -97,6 +97,9 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             await LyricsArtworkSnapshotDecoder.shared.decode($0)
         }
         private var snapshotRevision = 0
+        private var outgoingRevision = 0
+        private var outgoingDeadline: CFTimeInterval?
+        private var frozenOutgoing: (video: Float, reflection: Float)?
         private var configuredURL: URL?
         private var layoutRevision = 0
         private(set) var outgoingFrameCount = 0
@@ -195,7 +198,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             if changesMedia, preparedMedia != identity {
                 if preparingMedia == identity { return }
                 if prepareOutgoingFrame(for: identity) { return }
-            } else if !changesMedia, preparingMedia != nil { cancelSnapshotPreparation() }
+            } else if !changesMedia, preparingMedia != nil {
+                cancelSnapshotPreparation()
+                resumeOutgoingFade()
+            }
             self.pendingConfiguration = nil
             preparedMedia = nil
             let wasPresented = appliedLayout != nil
@@ -413,6 +419,8 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             let input = visibleMediaSnapshot()
             cancelSnapshotPreparation()
             guard !input.layers.isEmpty else { clearOutgoing(); return false }
+            freezeOutgoingFade()
+            storedVideoSurface?.holdCurrentFrameForTransition()
             let ticket = snapshotRevision
             preparingMedia = identity
             let started = CACurrentMediaTime()
@@ -441,7 +449,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 outgoingReflection.display(frame.buffer)
             } else { clearOutgoing() }
             applyPendingConfiguration()
-            if outgoingBuffer != nil { fadeOutgoing(duration: duration, ticket: snapshotRevision) }
+            if outgoingBuffer != nil { fadeOutgoing(duration: duration) }
         }
 
         func visibleMediaSnapshot() -> LyricsArtworkSnapshot {
@@ -465,23 +473,50 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         }
 
         private func clearOutgoing() {
+            outgoingRevision &+= 1
+            outgoingDeadline = nil; frozenOutgoing = nil
             outgoingSurface.layer.removeAnimation(forKey: "lyricsOutgoingOpacity")
             outgoingReflectionPlane.layer.removeAnimation(forKey: "lyricsOutgoingOpacity")
             outgoingSurface.image = nil; outgoingBuffer = nil
             outgoingReflection.clear(); outgoingFrameCount = 0
         }
 
-        private func fadeOutgoing(duration: CFTimeInterval, ticket: Int) {
+        private func freezeOutgoingFade() {
+            guard outgoingBuffer != nil, frozenOutgoing == nil else { return }
+            outgoingRevision &+= 1
+            let video = outgoingSurface.layer.presentation()?.opacity ?? outgoingSurface.layer.opacity
+            let reflection = outgoingReflectionPlane.layer.presentation()?.opacity ?? outgoingReflectionPlane.layer.opacity
+            frozenOutgoing = (video, reflection)
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            outgoingSurface.layer.removeAnimation(forKey: "lyricsOutgoingOpacity")
+            outgoingReflectionPlane.layer.removeAnimation(forKey: "lyricsOutgoingOpacity")
+            outgoingSurface.layer.opacity = video
+            outgoingReflectionPlane.layer.opacity = reflection
+            CATransaction.commit()
+        }
+
+        private func resumeOutgoingFade() {
+            guard let frozen = frozenOutgoing else { return }
+            let duration = max(0, (outgoingDeadline ?? 0) - CACurrentMediaTime())
+            if duration == 0 { clearOutgoing() }
+            else { fadeOutgoing(duration: duration, from: frozen) }
+        }
+
+        private func fadeOutgoing(duration: CFTimeInterval, from: (video: Float, reflection: Float)? = nil) {
+            outgoingRevision &+= 1
+            let ticket = outgoingRevision
+            frozenOutgoing = nil; outgoingDeadline = CACurrentMediaTime() + duration
             // A separate opacity animation leaves the stable views' current
             // geometry animation untouched, including resize reversals.
             CATransaction.begin(); CATransaction.setDisableActions(true)
             CATransaction.setCompletionBlock { [weak self] in
                 Task { @MainActor [weak self] in
-                    guard let self, self.snapshotRevision == ticket else { return }
+                    guard let self, self.outgoingRevision == ticket else { return }
                     self.clearOutgoing()
                 }
             }
-            for (layer, opacity) in [(outgoingSurface.layer, Float(1)), (outgoingReflectionPlane.layer, reflectionSurface.layer.opacity)] {
+            for (layer, opacity) in [(outgoingSurface.layer, from?.video ?? Float(1)),
+                (outgoingReflectionPlane.layer, from?.reflection ?? reflectionSurface.layer.opacity)] {
                 layer.removeAnimation(forKey: "lyricsOutgoingOpacity")
                 layer.opacity = 0
                 let animation = CABasicAnimation(keyPath: "opacity")
@@ -592,8 +627,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         func stop() {
             layoutRevision &+= 1
             cancelSnapshotPreparation()
-            outgoingSurface.image = nil; outgoingBuffer = nil
-            outgoingReflection.clear(); outgoingFrameCount = 0; configuredURL = nil
+            clearOutgoing(); configuredURL = nil
             frames.recordLifecycle("停止视图（\(window == nil ? "未挂载" : "已挂载")，\(Int(bounds.width))×\(Int(bounds.height)) pt）", presentation: presentation)
             pendingConfiguration = nil
             waitingForAttachment = false

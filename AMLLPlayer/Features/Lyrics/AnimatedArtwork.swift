@@ -289,6 +289,10 @@ struct AnimatedArtwork: UIViewRepresentable {
             }
         }
 
+        /// A page transition may retain this silent frame for at most 200ms.
+        /// Normal configure restores the requested rate without replacing items.
+        func holdCurrentFrameForTransition() { player.pause() }
+
         func stop() {
             generation = UUID()
             watchdog = ArtworkPlaybackWatchdog()

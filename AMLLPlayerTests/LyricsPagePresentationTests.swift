@@ -199,6 +199,26 @@ final class LyricsPagePresentationTests: XCTestCase {
         }
         let pixel = try rgb(XCTUnwrap(presented.cgImage?.cropping(to: CGRect(x: 50, y: 50, width: 1, height: 1))))
         XCTAssertGreaterThan(pixel[2], pixel[0] + 100, "A delayed old frame must not reappear over the new blue cover")
+
+        // A->B is fading; C begins preparing; return to the already configured B.
+        // Preparation cancellation must not invalidate the displayed fade's cleanup.
+        surface.decodeSnapshot = { _ in blue }
+        surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0), still: red)
+        for _ in 0 ..< 50 {
+            if surface.outgoingFrameCount == 1 { break }
+            try await Task.sleep(for: .milliseconds(2))
+        }
+        XCTAssertEqual(surface.outgoingFrameCount, 1)
+        let green = try solidFrame(red: 0, green: 1, blue: 0)
+        surface.decodeSnapshot = { _ in
+            try? await Task.sleep(for: .milliseconds(120))
+            return red
+        }
+        surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0), still: green)
+        surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0), still: red)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(surface.outgoingFrameCount, 0, "Canceled preparation cannot orphan the currently displayed fade")
+        XCTAssertTrue(surface.stillSurface.image?.cgImage === red.image)
     }
 
     private func solidFrame(red: CGFloat, green: CGFloat, blue: CGFloat) throws -> ImmersiveStillFrame {

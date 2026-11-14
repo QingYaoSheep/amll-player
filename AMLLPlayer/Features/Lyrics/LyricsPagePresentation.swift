@@ -132,6 +132,7 @@ struct LyricsTrackTransition<Content: View>: View {
             content(item).opacity(outgoing == nil ? 1 : 1 - outgoingOpacity)
             if let outgoing {
                 content(outgoing)
+                    .environment(\.lyricsPageControlsEnabled, false)
                     .opacity(outgoingOpacity)
                     .allowsHitTesting(false).accessibilityHidden(true)
                     .id(revision)

@@ -161,7 +161,7 @@ struct AMLLLyricsPlayer: View {
                     .padding(.horizontal, layout == nil ? max(0, metrics.horizontalInset - 20) : 0)
                 }
                 ZStack(alignment: .topLeading) {
-                    LyricsTrackTransition(item: item) { compactMetadata(item: $0, metrics: metrics) }
+                    compactMetadata(item: item, metrics: metrics)
                         .environment(\.lyricsPageControlsEnabled, layout == nil && (configuration.showMetadata ?? true) && configuration.showLyrics)
                         .opacity(layout == nil && (configuration.showMetadata ?? true) ? 1 : 0)
                         .allowsHitTesting(layout == nil && (configuration.showMetadata ?? true) && configuration.showLyrics)
@@ -213,7 +213,7 @@ struct AMLLLyricsPlayer: View {
                     hideStatic: mountsImmersiveArtwork(item, size: size) && artworkLoader.hasPresentedFrame,
                     recordsFrame: !configuration.showLyrics)
                 .padding(.top, metrics.expandedArtworkTop)
-            LyricsTrackTransition(item: item) { fullMetadata(item: $0) }
+            fullMetadata(item: item)
                 .padding(.top, metrics.expandedMetadataGap)
                 .padding(.horizontal, 8)
             if configuration.showControls {
@@ -316,16 +316,17 @@ struct AMLLLyricsPlayer: View {
         HStack(spacing: 12) {
             artwork(item, side: metrics.compactArtworkSize, radius: 11,
                 recordsFrame: configuration.showLyrics && (configuration.showMetadata ?? true))
+            LyricsTrackTransition(item: item) { displayed in
             VStack(alignment: .leading, spacing: 2) {
                 if configuration.showTitle {
-                    AMLLMetadataText(text: item.title, size: 17, bold: true, enabled: configuration.marquee)
+                    AMLLMetadataText(text: displayed.title, size: 17, bold: true, enabled: configuration.marquee)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showArtist {
-                    AMLLMetadataText(text: item.artistLine, size: 16, enabled: configuration.marquee).opacity(0.72)
+                    AMLLMetadataText(text: displayed.artistLine, size: 16, enabled: configuration.marquee).opacity(0.72)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
-                if configuration.showAlbum, let album = item.albumTitle {
+                if configuration.showAlbum, let album = displayed.albumTitle {
                     AMLLMetadataText(text: album, size: 14, enabled: configuration.marquee).opacity(0.58)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
@@ -335,6 +336,7 @@ struct AMLLLyricsPlayer: View {
                         .foregroundStyle(.white.opacity(0.68))
                         .accessibilityIdentifier("lyricsManualLock")
                 }
+            }
             }
             Spacer(minLength: 8)
             LyricsPageControls {
@@ -353,19 +355,21 @@ struct AMLLLyricsPlayer: View {
 
     private func fullMetadata(item: PlaybackItem) -> some View {
         HStack(spacing: 12) {
+            LyricsTrackTransition(item: item) { displayed in
             VStack(alignment: .leading, spacing: 2) {
                 if configuration.showTitle {
-                    AMLLMetadataText(text: item.title, size: 23, bold: true, enabled: configuration.marquee)
+                    AMLLMetadataText(text: displayed.title, size: 23, bold: true, enabled: configuration.marquee)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
                 if configuration.showArtist {
-                    AMLLMetadataText(text: item.artistLine, size: 20, enabled: configuration.marquee).opacity(0.62)
+                    AMLLMetadataText(text: displayed.artistLine, size: 20, enabled: configuration.marquee).opacity(0.62)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
-                if configuration.showAlbum, let album = item.albumTitle {
+                if configuration.showAlbum, let album = displayed.albumTitle {
                     AMLLMetadataText(text: album, size: 16, enabled: configuration.marquee).opacity(0.5)
                         .blendMode(reduceTransparency ? .normal : .plusLighter)
                 }
+            }
             }
             Spacer(minLength: 8)
             LyricsPageControls {

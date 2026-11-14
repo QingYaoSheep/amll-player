@@ -42,7 +42,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
         ImmersiveArtworkMedia(video: video, frames: frames,
             layout: layout.map { .immersive(cover: $0.cover, viewport: viewport, configuration: configuration,
                 tuning: debug.configuration, presentsFrame: hasVideo && loader.hasPresentedFrame,
-                reduceTransparency: reduceTransparency) } ?? .inline(frame: .zero, visible: false, presentsFrame: false, radius: 0),
+                reduceTransparency: reduceTransparency) } ?? .inline(frame: .zero, visible: false, presentsFrame: false, radius: 0, dimming: 0),
             background: layout.map { _ in AMLLBackground(artworkURL: item.artworkURL, active: active,
                 blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
                 color: configuration.backgroundColor ?? .sourceDefault,

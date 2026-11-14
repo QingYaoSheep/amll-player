@@ -189,6 +189,7 @@ final class AMLLCoreTextLayout {
     let diagnostics: [String]
     let breakOffsets: [Int]
     let font: UIFont
+    let auxiliaryPointSize: CGFloat
     let maskWords: [AMLLWordMask.Word]
     /// Empty slot for the separately parsed romanization TTML row.
     let romanizationSlotY: CGFloat?
@@ -202,6 +203,7 @@ final class AMLLCoreTextLayout {
     init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration,
          romanizationReserve: CGFloat = 0) {
         self.font = font
+        auxiliaryPointSize = max(10, font.pointSize * (configuration.auxiliaryScale ?? 0.5))
         let availableWidth = max(1, width)
         let generated = configuration.romanization && line.precision == .word
             ? (line.generatedRomanization ?? []) : []

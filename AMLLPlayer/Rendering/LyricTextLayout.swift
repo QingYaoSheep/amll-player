@@ -26,6 +26,7 @@ final class LyricTextLayout {
     let size: CGSize
     let fragments: [Fragment]
     let auxiliaryRegions: [LyricsAuxiliaryKind: [CGRect]]
+    let auxiliaryPointSize: CGFloat
     private let manager: NSLayoutManager
     private let storage: NSTextStorage
     private let container: NSTextContainer
@@ -42,6 +43,7 @@ final class LyricTextLayout {
         let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
             for: AMLLLyricsFont.make(pointSize: baseSize, weight: configuration.bold ? .bold : .medium), compatibleWith: traits
         )
+        auxiliaryPointSize = font.pointSize * AMLLMotionMetrics.auxiliaryLineScale
         paragraph.minimumLineHeight = font.pointSize * 1.2
         paragraph.maximumLineHeight = font.pointSize * 1.2
         let attributed = NSMutableAttributedString(string: line.text, attributes: [
@@ -140,6 +142,11 @@ final class LyricTextLayout {
 
 @MainActor
 final class LyricRowView: UIView {
+    private let presentationContent = CALayer()
+    private let baseBody = CALayer(), highlightBody = CALayer()
+    private var auxiliaryPlanes: [LyricsAuxiliaryKind: [CALayer]] = [:]
+    private var auxiliaryDistance: CGFloat = 0
+    private var auxiliarySlotOffsets: [LyricsAuxiliaryKind: CGFloat] = [:]
     private var auxiliaryRegions: [LyricsAuxiliaryKind: [CGRect]] = [:]
     private var auxiliaryRevision = -1
     private var auxiliaryMaskUsesBlur = false
@@ -171,7 +178,10 @@ final class LyricRowView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        layer.addSublayer(base); layer.addSublayer(auxiliaryNear); layer.addSublayer(auxiliaryFar); layer.addSublayer(highlight)
+        layer.addSublayer(presentationContent)
+        presentationContent.addSublayer(base); presentationContent.addSublayer(auxiliaryNear)
+        presentationContent.addSublayer(auxiliaryFar); presentationContent.addSublayer(highlight)
+        base.addSublayer(baseBody); highlight.addSublayer(highlightBody)
         isAccessibilityElement = true
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
     }
@@ -186,6 +196,11 @@ final class LyricRowView: UIView {
         self.line = line; self.onSeek = onSeek
         auxiliaryBlur.reset()
         auxiliaryRegions = layout.auxiliaryRegions; auxiliaryRevision = -1
+        auxiliaryDistance = layout.auxiliaryPointSize
+        auxiliaryBlur.motionDistance = auxiliaryDistance
+        presentationContent.frame = CGRect(origin: .zero, size: layout.size)
+        presentationContent.setAffineTransform(.identity)
+        auxiliaryPlanes.values.flatMap { $0 }.forEach { $0.removeFromSuperlayer() }; auxiliaryPlanes.removeAll()
         self.auxiliaryFade = auxiliaryFade
         auxiliaryBlurEnabled = blur
         if let blurStarter { auxiliaryBlur.showStarter(blurStarter, origin: .zero) }
@@ -203,8 +218,16 @@ final class LyricRowView: UIView {
                 far: UIImage(cgImage: far, scale: scale, orientation: .up)),
                 source: .raster(sharp, scale: scale, regions: auxiliaryRegions), size: layout.size, fade: blur ? auxiliaryFade : nil)
         }
-        base.frame = CGRect(origin: .zero, size: layout.size); base.contents = softNear
-        highlight.frame = base.frame; highlight.contents = sharp; highlight.opacity = 0
+        base.frame = CGRect(origin: .zero, size: layout.size); baseBody.frame = base.bounds; baseBody.contents = softNear
+        highlight.frame = base.frame; highlightBody.frame = highlight.bounds; highlightBody.contents = sharp; highlight.opacity = 0
+        for (kind, regions) in auxiliaryRegions {
+            auxiliaryPlanes[kind] = [base, highlight].map { parent in
+                let plane = CALayer(); plane.frame = parent.bounds; plane.contents = sharp; plane.contentsScale = scale
+                plane.mask = LyricsAuxiliaryMotion.mask(bounds: parent.bounds, regions: regions)
+                plane.name = "auxiliarySharp." + String(describing: kind)
+                parent.addSublayer(plane); return plane
+            }
+        }
         for fragment in layout.fragments {
             let piece = CALayer(), mask = CAGradientLayer()
             piece.contents = sharp
@@ -215,7 +238,7 @@ final class LyricRowView: UIView {
             mask.startPoint = CGPoint(x: fragment.rtl ? 1 : 0, y: 0.5)
             mask.endPoint = CGPoint(x: fragment.rtl ? 0 : 1, y: 0.5)
             mask.colors = [UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor, UIColor.clear.cgColor]
-            piece.mask = mask; layer.addSublayer(piece)
+            piece.mask = mask; presentationContent.addSublayer(piece)
             pieces.append((piece, mask, fragment))
         }
         wasActive = nil
@@ -235,15 +258,50 @@ final class LyricRowView: UIView {
     func updateAuxiliaryVisibility(_ fade: LyricsAuxiliaryFade) {
         auxiliaryFade = fade
         if auxiliaryBlurEnabled { auxiliaryBlur.update(fade) }
+        for (kind, planes) in auxiliaryPlanes { for plane in planes {
+            fade.applyGeometry(to: plane, kind: kind, distance: auxiliaryDistance, offset: auxiliarySlotOffsets[kind] ?? 0)
+            fade.applyVisibility(to: plane, kind: kind)
+        } }
         let changed = auxiliaryRevision != fade.revision
         guard changed || auxiliaryMaskUsesBlur != isUsingBlur else { return }
         auxiliaryRevision = fade.revision
         auxiliaryMaskUsesBlur = isUsingBlur
-        base.mask = isUsingBlur && auxiliaryBlur.isSeparated ? nil : fade.mask(bounds: base.bounds, regions: auxiliaryRegions)
-        highlight.mask = fade.mask(bounds: highlight.bounds, regions: auxiliaryRegions)
+        let combinedBlur = isUsingBlur && !auxiliaryBlur.isSeparated
+        let regions = auxiliaryRegions.values.flatMap { $0 }
+        baseBody.mask = combinedBlur ? nil : LyricsAuxiliaryMotion.mask(bounds: base.bounds, regions: regions, excluding: true)
+        highlightBody.mask = LyricsAuxiliaryMotion.mask(bounds: highlight.bounds, regions: regions, excluding: true)
+        for planes in auxiliaryPlanes.values {
+            planes[0].isHidden = combinedBlur
+        }
     }
 
     func captureAuxiliaryBlur() -> LyricsAuxiliaryBlurStarter? { auxiliaryBlur.snapshot(origin: .zero) }
+    var baseAuxiliarySlots: [LyricsAuxiliaryKind: CGFloat] { auxiliaryRegions.compactMapValues { $0.map(\.minY).min() } }
+    var presentedAuxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
+        var result = baseAuxiliarySlots
+        for (kind, offset) in auxiliarySlotOffsets { result[kind, default: 0] += offset }
+        return result
+    }
+    var renderedAuxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
+        var result: [LyricsAuxiliaryKind: CGFloat] = [:]
+        for (kind, planes) in auxiliaryPlanes {
+            if let plane = planes.first, let y = baseAuxiliarySlots[kind] {
+                result[kind] = plane.convert(CGPoint(x: 0, y: y), to: presentationContent).y
+            }
+        }
+        return result
+    }
+    func setAuxiliarySlotOffsets(_ offsets: [LyricsAuxiliaryKind: CGFloat]) { auxiliarySlotOffsets = offsets; auxiliaryBlur.slotOffsets = offsets }
+
+    func mainPosition(in target: CALayer) -> CGFloat {
+        if let source = presentationContent.presentation(), let target = target.presentation() { return source.convert(.zero, to: target).y }
+        return presentationContent.convert(.zero, to: target).y
+    }
+    func modelMainPosition(in target: CALayer) -> CGFloat { presentationContent.convert(.zero, to: target).y }
+    func setPresentationOffset(_ offset: CGFloat) {
+        let transform = CGAffineTransform(translationX: 0, y: offset)
+        if presentationContent.affineTransform() != transform { presentationContent.setAffineTransform(transform) }
+    }
 
     func update(time: Double, active: Bool, configuration: LyricsRenderConfiguration, policy: RenderQualityPolicy,
                 reduceMotion: Bool, delta: TimeInterval = 1.0 / 60.0, blurLevel: Double = 0)
@@ -255,9 +313,9 @@ final class LyricRowView: UIView {
         let separated = isUsingBlur && auxiliaryBlur.isSeparated
         let waiting = isUsingBlur && auxiliaryBlur.isPreparing && !auxiliaryBlur.isSeparated
         if !isUsingBlur || waiting {
-            base.contents = sharp
+            baseBody.contents = sharp
         } else {
-            base.contents = blurLevel >= 3.5 ? softFar : softNear
+            baseBody.contents = blurLevel >= 3.5 ? softFar : softNear
         }
         let lineOpacity = line.isBackground ? AMLLMotionMetrics.backgroundLineOpacity : 1
         let alpha = Float((active ? 0.4 : 0.2) * lineOpacity)

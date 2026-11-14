@@ -18,6 +18,7 @@ on:
       - 'AMLLPlayer/Features/Lyrics/ImmersiveArtworkMedia.swift'
       - 'AMLLPlayerTests/LyricsPagePresentationTests.swift'
       - 'AMLLPlayer/Rendering/LyricsAuxiliaryFade.swift'
+      - 'AMLLPlayer/Rendering/LyricsAuxiliaryMotion.swift'
       - 'AMLLPlayer/Rendering/LyricsAuxiliaryBlur.swift'
       - 'AMLLPlayer/Rendering/AMLLNativeLyricsView.swift'
       - 'AMLLPlayer/Rendering/AMLLCoreTextLayout.swift'
@@ -26,6 +27,8 @@ on:
       - 'AMLLPlayer/Rendering/LyricsRenderView.swift'
       - 'AMLLPlayer/Rendering/LyricsRenderConfiguration.swift'
       - 'AMLLPlayerTests/LyricsAuxiliaryFadeTests.swift'
+      - 'AMLLPlayerTests/LyricsAuxiliaryMotionTests.swift'
+      - 'AMLLPlayerTests/Fixtures/auxiliary-video-motion.json'
       - 'AMLLPlayerTests/Fixtures/blossom-family2*'
       - 'AMLLPlayer/Rendering/LyricsBlossomScaleWait.swift'
       - 'AMLLPlayerTests/LyricsBlossomRunLayoutTests.swift'
@@ -75,6 +78,7 @@ jobs:
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
           -only-testing:AMLLPlayerTests/LyricsAuxiliaryFadeTests
+          -only-testing:AMLLPlayerTests/LyricsAuxiliaryMotionTests
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testPhoneMetadataTravelsWithTheCoverInsteadOfOnlyCrossfading
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRetainedHiddenCanvasResumesAtTheLatestConfirmedAudioTime

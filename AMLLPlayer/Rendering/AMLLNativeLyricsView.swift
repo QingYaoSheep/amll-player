@@ -91,6 +91,11 @@ final class AMLLNativeCanvas: UIView {
         var romanization: AMLLCoreTextLayout?
         var romanizationCue: RomanizationTTMLTrack.Cue?
         var alignedRomanization: Bool
+        var auxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
+            var result = original.auxiliaryRegions.compactMapValues { rects in rects.map(\.minY).min().map { $0 - original.mainOrigin.y } }
+            if romanization != nil, let y = original.romanizationSlotY { result[.romanization] = y - original.mainOrigin.y }
+            return result
+        }
     }
     private var layouts: [Int: RowLayouts] = [:]
     private var romanizationCues: [Int: RomanizationTTMLTrack.Cue] = [:]
@@ -98,11 +103,17 @@ final class AMLLNativeCanvas: UIView {
     private var rowViews: [Int: AMLLCompositeRow] = [:]
     private var auxiliaryBlurStarters: [Int: LyricsAuxiliaryBlurStarter] = [:]
     private var auxiliaryLayoutPreparation: UUID?
+    private let auxiliaryReflow = LyricsAuxiliaryReflow()
+    private let auxiliarySlotReflow = LyricsAuxiliaryReflow()
+    private var targetMainOrigins: [Int: CGPoint] = [:]
+    private var targetAuxiliarySlots: [Int: [LyricsAuxiliaryKind: CGFloat]] = [:]
     #if DEBUG
         var auxiliaryNormalPreparationDelay = 0.0
         var auxiliaryVisibilitySnapshot: (translation: Double, waiting: Bool) {
             (auxiliaryFade.value(.translation), auxiliaryFade.isWaiting(.translation))
         }
+        var auxiliaryRowMainPositions: [Int: CGFloat] { rowViews.mapValues { $0.modelMainPosition(in: layer) } }
+        var auxiliaryRowSlots: [Int: [LyricsAuxiliaryKind: CGFloat]] { rowViews.mapValues(\.renderedAuxiliarySlots) }
     #endif
     private var retainedRows: [Int: AMLLCompositeRow] = [:]
     private var retainedOrder: [Int] = []
@@ -244,9 +255,18 @@ final class AMLLNativeCanvas: UIView {
                    active: Bool, reduceMotion: Bool, reduceTransparency: Bool = false, canSeek: Bool = true)
     {
         let documentChanged = documentVersion.map { sourceVersion != $0 } ?? (source != document)
+        let changedAuxiliary: Set<LyricsAuxiliaryKind> = Set(LyricsAuxiliaryKind.allCases.filter {
+            $0 == .translation ? self.configuration.translation != configuration.translation : self.configuration.romanization != configuration.romanization
+        })
+        if documentChanged || self.input.seekRevision != input.seekRevision { auxiliaryReflow.reset(); auxiliarySlotReflow.reset() }
+        else if !changedAuxiliary.isEmpty {
+            auxiliaryReflow.capture(rowViews.mapValues { $0.mainPosition(in: layer) }, kinds: changedAuxiliary)
+            let slots = rowViews.flatMap { index, row in row.presentedAuxiliarySlots.map { (LyricsAuxiliaryMotion.slotKey(row: index, kind: $0.key), $0.value) } }
+            auxiliarySlotReflow.capture(Dictionary(uniqueKeysWithValues: slots), kinds: changedAuxiliary)
+        }
         let oldLayoutSettings = Self.layoutSettings(auxiliaryFade.layoutConfiguration(self.configuration))
         if documentChanged { auxiliaryFade.reset(configuration) }
-        else { auxiliaryFade.update(configuration, animated: active && window != nil) }
+        else { auxiliaryFade.update(configuration, animated: active && window != nil, reduceMotion: reduceMotion) }
         if documentChanged || self.configuration.obsceneWordMask != configuration.obsceneWordMask {
             hdrTime = nil
             source = document
@@ -271,9 +291,9 @@ final class AMLLNativeCanvas: UIView {
         if self.configuration.lyricBlurLevel != configuration.lyricBlurLevel {
             blurLevelChangedAt = CACurrentMediaTime()
         }
-        if oldLayoutSettings != Self.layoutSettings(auxiliaryFade.layoutConfiguration(configuration)) {
-            if auxiliaryLayoutPreparation == nil {
-                auxiliaryLayoutPreparation = auxiliaryFade.beginPreparation(Set(LyricsAuxiliaryKind.allCases))
+        if oldLayoutSettings != Self.layoutSettings(auxiliaryFade.layoutConfiguration(configuration)) || !changedAuxiliary.isEmpty {
+            if auxiliaryLayoutPreparation == nil, !changedAuxiliary.isEmpty {
+                auxiliaryLayoutPreparation = auxiliaryFade.beginPreparation(changedAuxiliary)
             }
             dirty = true; needsFrame = true
         }
@@ -318,6 +338,8 @@ final class AMLLNativeCanvas: UIView {
         if dirty || lastLayoutKey != layoutKey {
             let auxiliaryChanged = lastLayoutKey?.settings.translation != layoutKey.settings.translation
                 || lastLayoutKey?.settings.romanization != layoutKey.settings.romanization
+                || lastLayoutKey?.targetTranslation != layoutKey.targetTranslation
+                || lastLayoutKey?.targetRomanization != layoutKey.targetRomanization
             replacedAuxiliaryRows = engine != nil && auxiliaryChanged
             auxiliaryBlurStarters = engine != nil && auxiliaryChanged
                 ? rowViews.compactMapValues { $0.captureAuxiliaryBlur() } : [:]
@@ -332,7 +354,16 @@ final class AMLLNativeCanvas: UIView {
         prewarmGeneration &+= 1
             preparedRows.removeAll(); preparedOrder.removeAll(); preparingRows.removeAll()
             lastVisibleCenter = nil
-            heights = display.lines.indices.map { makeLayout($0).original.size.height }
+            targetMainOrigins.removeAll()
+            targetAuxiliarySlots.removeAll()
+            let retained = auxiliaryFade.layoutConfiguration(configuration)
+            let targetDiffers = retained.translation != configuration.translation || retained.romanization != configuration.romanization
+            heights = display.lines.indices.map { index in
+                let target = makeLayout(index, configurationOverride: targetDiffers ? configuration : nil)
+                targetMainOrigins[index] = target.original.mainOrigin
+                targetAuxiliarySlots[index] = target.auxiliarySlots
+                return target.original.size.height
+            }
             let environment = renderEnvironment()
             if engine == nil {
                 engine = AMLLFrameEngine(document: display, environment: environment, heights: heights)
@@ -363,6 +394,8 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private struct LayoutKey: Equatable {
+        var targetTranslation: Bool
+        var targetRomanization: Bool
         var documentVersion: Int?
         var viewport: CGSize
         var displayScale: CGFloat
@@ -375,7 +408,8 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private func currentLayoutKey() -> LayoutKey {
-        .init(documentVersion: sourceVersion, viewport: bounds.size,
+        .init(targetTranslation: configuration.translation, targetRomanization: configuration.romanization,
+              documentVersion: sourceVersion, viewport: bounds.size,
               displayScale: window?.screen.scale ?? 1,
               pointSize: resolvedPointSize, inset: inset,
               boldText: traitCollection.legibilityWeight == .bold,
@@ -460,8 +494,8 @@ final class AMLLNativeCanvas: UIView {
         return metrics.scaledValue(for: configuration.resolvedFontSize(width: bounds.width, height: bounds.height), compatibleWith: traitCollection)
     }
 
-    private func makeLayout(_ index: Int) -> RowLayouts {
-        if let cached = layouts[index] {
+    private func makeLayout(_ index: Int, configurationOverride: LyricsRenderConfiguration? = nil) -> RowLayouts {
+        if configurationOverride == nil, let cached = layouts[index] {
             return cached
         }
         layoutBuildCount += 1
@@ -472,7 +506,7 @@ final class AMLLNativeCanvas: UIView {
             }
         }
         let line = display!.lines[index]
-        let configuration = auxiliaryFade.layoutConfiguration(self.configuration)
+        let configuration = configurationOverride ?? auxiliaryFade.layoutConfiguration(self.configuration)
         let baseSize = resolvedPointSize
         let size = max(10, baseSize * (line.isBackground ? 0.7 : 1))
         // `size` is already Dynamic Type adjusted by `resolvedPointSize`.
@@ -490,7 +524,7 @@ final class AMLLNativeCanvas: UIView {
             if aligned.hasGeneratedRomanizationLayout {
                 let result = RowLayouts(original: aligned, romanization: nil,
                                         romanizationCue: cue, alignedRomanization: true)
-                layouts[index] = result
+                if configurationOverride == nil { layouts[index] = result }
                 return result
             }
         }
@@ -506,7 +540,7 @@ final class AMLLNativeCanvas: UIView {
                                           romanizationReserve: romanLayout?.size.height ?? 0)
         let result = RowLayouts(original: original, romanization: romanLayout,
                                 romanizationCue: cue, alignedRomanization: false)
-        layouts[index] = result
+        if configurationOverride == nil { layouts[index] = result }
         return result
     }
 
@@ -636,6 +670,19 @@ final class AMLLNativeCanvas: UIView {
             if view.bounds != rowBounds { view.bounds = rowBounds }
             if view.layer.position != rowPosition { view.layer.position = rowPosition }
             if view.transform != rowTransform { view.transform = rowTransform }
+            let baselineOffset = (targetMainOrigins[row.lineIndex]?.y ?? view.mainOrigin.y) - view.mainOrigin.y
+            view.setPresentationOffset(baselineOffset)
+            auxiliaryReflow.install(index: row.lineIndex, target: view.modelMainPosition(in: layer),
+                scale: CGFloat(row.scale), enabled: !reduceMotion)
+            view.setPresentationOffset(baselineOffset + auxiliaryReflow.offset(index: row.lineIndex, fade: auxiliaryFade))
+            var slotOffsets: [LyricsAuxiliaryKind: CGFloat] = [:]
+            for (kind, actual) in view.baseAuxiliarySlots {
+                let target = targetAuxiliarySlots[row.lineIndex]?[kind] ?? actual
+                let key = LyricsAuxiliaryMotion.slotKey(row: row.lineIndex, kind: kind)
+                auxiliarySlotReflow.install(index: key, target: target, scale: 1, enabled: !reduceMotion)
+                slotOffsets[kind] = target - actual + auxiliarySlotReflow.offset(index: key, fade: auxiliaryFade)
+            }
+            view.setAuxiliarySlotOffsets(slotOffsets)
             view.setCanSeek(canSeek)
             view.setPressFeedbackEnabled(usesApple164Appearance && canSeek && !reduceMotion)
             let gain = hdr.brightness(for: row)
@@ -652,6 +699,8 @@ final class AMLLNativeCanvas: UIView {
             #endif
         }
         auxiliaryBlurStarters.removeAll()
+        auxiliaryReflow.finishFrame(visible: indexes)
+        auxiliarySlotReflow.finishFrame(visible: Set(indexes.flatMap { index in LyricsAuxiliaryKind.allCases.map { LyricsAuxiliaryMotion.slotKey(row: index, kind: $0) } }))
         if let token = auxiliaryLayoutPreparation {
             auxiliaryLayoutPreparation = nil
             auxiliaryFade.finishPreparation(token)
@@ -895,6 +944,8 @@ final class AMLLNativeCanvas: UIView {
     }
 
     func stop() {
+        auxiliaryReflow.reset()
+        auxiliarySlotReflow.reset()
         auxiliaryFade.update(configuration, animated: false)
         auxiliaryFade.cancel(); auxiliaryLayoutPreparation = nil
         if link != nil { playbackReanchorRequired = true }
@@ -985,7 +1036,8 @@ final class AMLLNativeCanvas: UIView {
         let sample = playbackFrame?()
         if let sample { applyPlaybackFrame(sample) }
         if playbackReanchorRequired { needsFrame = true }
-        if input.progressDraft == nil, !input.playing, !needsFrame, frameState?.settled == true, frameState?.browsing == false {
+        if input.progressDraft == nil, !input.playing, !needsFrame, !auxiliaryFade.isAnimating, !auxiliaryReflow.isAnimating, !auxiliarySlotReflow.isAnimating,
+           frameState?.settled == true, frameState?.browsing == false {
             let wantsEDR = configuration.hdr?.enabled == true && !reduceTransparency
             if !wantsEDR || start - lastHeadroomCheck < 0.25 {
                 lastTick = link.timestamp
@@ -1039,7 +1091,10 @@ final class AMLLNativeCanvas: UIView {
 /// Only their geometry is grouped for AMLL's focus/scroll layout.
 @MainActor
 private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
-    private var auxiliaryRevision = -1
+    private let presentationContent = UIView()
+    private let pronunciationVisibility = UIView()
+    private let baseSlots: [LyricsAuxiliaryKind: CGFloat]
+    private var slotOffsets: [LyricsAuxiliaryKind: CGFloat] = [:]
     private let original: AMLLNativeRow
     private let romanization: AMLLNativeRow?
     private let alignedRomanization: AMLLRomanizationOverlay?
@@ -1083,6 +1138,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     init(line: LyricLine, layouts: AMLLNativeCanvas.RowLayouts, scale: CGFloat,
          prepared: AMLLPreparedCompositeImages? = nil, initialBlurMaximum: Double? = nil,
          auxiliaryFade: LyricsAuxiliaryFade? = nil, awaitsBlurSource: Bool = false, blurStarter: LyricsAuxiliaryBlurStarter? = nil) {
+        baseSlots = layouts.auxiliarySlots
         original = AMLLNativeRow(line: line, layout: layouts.original, scale: scale,
                                  hideRomanization: layouts.alignedRomanization, prepared: prepared?.original,
                                  initialBlurMaximum: initialBlurMaximum, auxiliaryFade: auxiliaryFade,
@@ -1100,16 +1156,20 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
         }
         super.init(frame: CGRect(origin: .zero, size: layouts.original.size))
         isOpaque = false
+        presentationContent.frame = bounds; presentationContent.isOpaque = false
+        addSubview(presentationContent)
+        pronunciationVisibility.frame = bounds; pronunciationVisibility.isOpaque = false
         original.frame = bounds
-        addSubview(original)
+        presentationContent.addSubview(original)
+        presentationContent.addSubview(pronunciationVisibility)
         if let alignedRomanization {
             alignedRomanization.frame = bounds
-            addSubview(alignedRomanization)
+            pronunciationVisibility.addSubview(alignedRomanization)
         }
         if let romanization, let layout = layouts.romanization {
             romanization.frame = CGRect(x: 0, y: layouts.original.romanizationSlotY ?? 0,
                                         width: layout.size.width, height: layout.size.height)
-            addSubview(romanization)
+            pronunciationVisibility.addSubview(romanization)
         }
     }
 
@@ -1194,12 +1254,39 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
 
     func updateAuxiliaryVisibility(_ fade: LyricsAuxiliaryFade) {
         original.updateAuxiliaryVisibility(fade)
-        guard auxiliaryRevision != fade.revision else { return }
-        auxiliaryRevision = fade.revision
-        for view in [romanization as UIView?, alignedRomanization as UIView?].compactMap({ $0 }) {
-            view.layer.mask = fade.fullPlaneMask(bounds: view.bounds, kind: .romanization)
-        }
+        fade.applyGeometry(to: pronunciationVisibility.layer, kind: .romanization, distance: original.auxiliaryDistance, offset: slotOffsets[.romanization] ?? 0)
+        fade.applyVisibility(to: pronunciationVisibility.layer, kind: .romanization)
     }
+
+    func mainPosition(in canvas: CALayer) -> CGFloat {
+        if let source = original.layer.presentation(), let target = canvas.presentation() {
+            return source.convert(original.mainOrigin, to: target).y
+        }
+        return original.layer.convert(original.mainOrigin, to: canvas).y
+    }
+
+    func modelMainPosition(in canvas: CALayer) -> CGFloat { original.layer.convert(original.mainOrigin, to: canvas).y }
+
+    func setPresentationOffset(_ offset: CGFloat) {
+        let transform = CGAffineTransform(translationX: 0, y: offset)
+        if presentationContent.transform != transform { presentationContent.transform = transform }
+    }
+
+    var mainOrigin: CGPoint { original.mainOrigin }
+    var baseAuxiliarySlots: [LyricsAuxiliaryKind: CGFloat] { baseSlots }
+    var presentedAuxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
+        var result = baseSlots
+        for (kind, offset) in slotOffsets { result[kind, default: 0] += offset }
+        return result
+    }
+    var renderedAuxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
+        var result = original.renderedAuxiliarySlots
+        if romanization != nil || alignedRomanization != nil, let y = baseSlots[.romanization] {
+            result[.romanization] = pronunciationVisibility.layer.convert(CGPoint(x: 0, y: y + original.mainOrigin.y), to: original.layer).y - original.mainOrigin.y
+        }
+        return result
+    }
+    func setAuxiliarySlotOffsets(_ offsets: [LyricsAuxiliaryKind: CGFloat]) { slotOffsets = offsets; original.setAuxiliarySlotOffsets(offsets) }
 
     func releaseAuxiliarySourceWait() { original.releaseAuxiliarySourceWait() }
 
@@ -1275,8 +1362,8 @@ private final class AMLLNativeRow: UIView {
     private let base = CALayer()
     private let ruby = CALayer()
     private let auxiliary = CALayer()
-    private var auxiliaryRevision = -1
-    private var auxiliaryBlurFrames = (CGRect.null, CGRect.null)
+    private var auxiliaryPlanes: [LyricsAuxiliaryKind: CALayer] = [:]
+    private var auxiliarySlotOffsets: [LyricsAuxiliaryKind: CGFloat] = [:]
     private weak var auxiliaryFade: LyricsAuxiliaryFade?
     private lazy var auxiliaryBlur: LyricsAuxiliaryBlurPresentation = {
         let presentation = LyricsAuxiliaryBlurPresentation(near: nearBlur, far: farBlur)
@@ -1396,14 +1483,20 @@ private final class AMLLNativeRow: UIView {
             rubyAdvances[key, default: 0] += fragment.rect.width
         }
         ruby.isHidden = !rubyPieces.isEmpty
-        auxiliary.contents = sharpAuxiliaryImage.cgImage
         auxiliary.contentsScale = scale; auxiliary.frame = bounds; layer.addSublayer(auxiliary)
+        for (kind, regions) in textLayout.auxiliaryRegions {
+            let plane = CALayer(); plane.frame = bounds; plane.contents = sharpAuxiliaryImage.cgImage; plane.contentsScale = scale
+            plane.mask = LyricsAuxiliaryMotion.mask(bounds: bounds, regions: regions)
+            plane.name = "auxiliarySharp." + String(describing: kind)
+            auxiliary.addSublayer(plane); auxiliaryPlanes[kind] = plane
+        }
         // Blur the entire composed text, including annotations, before any
         // glyph cropping. Never feed blurred pixels through word masks.
         for blurLayer in [nearBlur, farBlur] {
             blurLayer.opacity = 0
             layer.addSublayer(blurLayer)
         }
+        auxiliaryBlur.motionDistance = textLayout.auxiliaryPointSize
         if let blurStarter { auxiliaryBlur.showStarter(blurStarter, origin: textLayout.mainOrigin) }
         if awaitsBlurSource {
             auxiliaryBlur.waitForSource(.coreText(textLayout.rasterSnapshot(), hideRomanization: hideRomanization), fade: auxiliaryFade)
@@ -1465,20 +1558,32 @@ private final class AMLLNativeRow: UIView {
     func updateAuxiliaryVisibility(_ fade: LyricsAuxiliaryFade) {
         auxiliaryFade = fade
         auxiliaryBlur.update(fade)
-        guard auxiliaryRevision != fade.revision || auxiliaryBlurFrames.0 != nearBlur.frame || auxiliaryBlurFrames.1 != farBlur.frame else { return }
-        auxiliaryRevision = fade.revision; auxiliaryBlurFrames = (nearBlur.frame, farBlur.frame)
-        let regions = textLayout.auxiliaryRegions
-        for target in [auxiliary, ruby] {
-            target.mask = fade.mask(bounds: target.bounds, regions: regions, origin: target.frame.origin)
+        for (kind, plane) in auxiliaryPlanes {
+            fade.applyGeometry(to: plane, kind: kind, distance: auxiliaryDistance, offset: auxiliarySlotOffsets[kind] ?? 0)
+            fade.applyVisibility(to: plane, kind: kind)
         }
         for entry in rubyPieces {
             if let visibility = entry.visibility {
-                visibility.mask = fade.fullPlaneMask(bounds: visibility.bounds, kind: .romanization)
+                fade.applyGeometry(to: visibility, kind: .romanization, distance: auxiliaryDistance, offset: auxiliarySlotOffsets[.romanization] ?? 0)
+                fade.applyVisibility(to: visibility, kind: .romanization)
             }
         }
     }
 
     func captureAuxiliaryBlur() -> LyricsAuxiliaryBlurStarter? { auxiliaryBlur.snapshot(origin: textLayout.mainOrigin) }
+
+    var mainOrigin: CGPoint { textLayout.mainOrigin }
+    var auxiliaryDistance: CGFloat { textLayout.auxiliaryPointSize }
+    var renderedAuxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
+        var result: [LyricsAuxiliaryKind: CGFloat] = [:]
+        for (kind, plane) in auxiliaryPlanes {
+            if let y = textLayout.auxiliaryRegions[kind]?.map(\.minY).min() {
+                result[kind] = plane.convert(CGPoint(x: 0, y: y), to: layer).y - textLayout.mainOrigin.y
+            }
+        }
+        return result
+    }
+    func setAuxiliarySlotOffsets(_ offsets: [LyricsAuxiliaryKind: CGFloat]) { auxiliarySlotOffsets = offsets; auxiliaryBlur.slotOffsets = offsets }
 
     func releaseAuxiliarySourceWait() { auxiliaryBlur.releaseSourceWait() }
 

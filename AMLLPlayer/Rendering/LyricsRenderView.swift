@@ -48,6 +48,14 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     private var configuration = LyricsRenderConfiguration()
     private var builtAuxiliary: (Bool, Bool)?
     private var auxiliaryLayoutPreparation: UUID?
+    private let auxiliaryReflow = LyricsAuxiliaryReflow()
+    private let auxiliarySlotReflow = LyricsAuxiliaryReflow()
+    private var targetAuxiliarySlots: [Int: [LyricsAuxiliaryKind: CGFloat]] = [:]
+    #if DEBUG
+        var auxiliaryVisibilitySnapshot: (translation: Double, waiting: Bool) { (auxiliaryFade.value(.translation), auxiliaryFade.isWaiting(.translation)) }
+        var auxiliaryRowMainPositions: [Int: CGFloat] { rows.mapValues { $0.modelMainPosition(in: layer) } }
+        var auxiliaryRowSlots: [Int: [LyricsAuxiliaryKind: CGFloat]] { rows.mapValues(\.renderedAuxiliarySlots) }
+    #endif
     private lazy var auxiliaryFade: LyricsAuxiliaryFade = {
         let fade = LyricsAuxiliaryFade()
         fade.didFinish = { [weak self, weak fade] in
@@ -126,9 +134,18 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     func update(document: LyricsDocument, configuration: LyricsRenderConfiguration, offset: Double, duration: Double,
                 playing: Bool, active: Bool, canSeek: Bool, reduceMotion: Bool, resumeToken: Int)
     {
+        let changedAuxiliary: Set<LyricsAuxiliaryKind> = Set(LyricsAuxiliaryKind.allCases.filter {
+            $0 == .translation ? self.configuration.translation != configuration.translation : self.configuration.romanization != configuration.romanization
+        })
+        if self.document != document { auxiliaryReflow.reset(); auxiliarySlotReflow.reset() }
+        else if !changedAuxiliary.isEmpty {
+            auxiliaryReflow.capture(rows.mapValues { $0.mainPosition(in: layer) }, kinds: changedAuxiliary)
+            let slots = rows.flatMap { index, row in row.presentedAuxiliarySlots.map { (LyricsAuxiliaryMotion.slotKey(row: index, kind: $0.key), $0.value) } }
+            auxiliarySlotReflow.capture(Dictionary(uniqueKeysWithValues: slots), kinds: changedAuxiliary)
+        }
         let previousLayout = auxiliaryFade.layoutConfiguration(self.configuration)
         if self.document != document { auxiliaryFade.reset(configuration) }
-        else { auxiliaryFade.update(configuration, animated: active && window != nil) }
+        else { auxiliaryFade.update(configuration, animated: active && window != nil, reduceMotion: reduceMotion) }
         if self.document != document {
             self.document = document; timeline = LyricsTimeline(lines: document.lines)
             builtAuxiliary = (configuration.translation, configuration.romanization)
@@ -138,9 +155,9 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             DispatchQueue.main.async { [weak self] in self?.browsing(false) }
         }
         preserveNextResize = preserveNextResize || (self.configuration.immersiveLyrics == true) != (configuration.immersiveLyrics == true)
-        if previousLayout != auxiliaryFade.layoutConfiguration(configuration) || self.reduceMotion != reduceMotion {
-            if auxiliaryLayoutPreparation == nil {
-                auxiliaryLayoutPreparation = auxiliaryFade.beginPreparation(Set(LyricsAuxiliaryKind.allCases))
+        if previousLayout != auxiliaryFade.layoutConfiguration(configuration) || self.reduceMotion != reduceMotion || !changedAuxiliary.isEmpty {
+            if auxiliaryLayoutPreparation == nil, !changedAuxiliary.isEmpty {
+                auxiliaryLayoutPreparation = auxiliaryFade.beginPreparation(changedAuxiliary)
             }
             needsRebuild = true
         }
@@ -183,11 +200,16 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             }
             preserveNextResize = false
             var y = bounds.height * configuration.anchor
+            targetAuxiliarySlots.removeAll()
             for index in timeline.lines.indices {
                 let layout = makeLayout(index)
                 let inset = lineInset(background: timeline.lines[index].isBackground)
-                frames.append(CGRect(x: inset, y: y, width: bounds.width - inset * 2, height: layout.size.height))
-                y += layout.size.height + (timeline.lines[index].isBackground ? 14 : 28)
+                let target = effective.translation != configuration.translation || effective.romanization != configuration.romanization
+                    ? LyricTextLayout(line: timeline.lines[index], width: bounds.width - inset * 2, configuration: configuration, traits: traitCollection)
+                    : layout
+                targetAuxiliarySlots[index] = target.auxiliaryRegions.compactMapValues { $0.map(\.minY).min() }
+                frames.append(CGRect(x: inset, y: y, width: bounds.width - inset * 2, height: target.size.height))
+                y += target.size.height + (timeline.lines[index].isBackground ? 14 : 28)
             }
             scroll.contentSize = CGSize(width: bounds.width, height: y + bounds.height * (1 - configuration.anchor))
         }
@@ -226,6 +248,8 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     }
 
     func stop() {
+        auxiliaryReflow.reset()
+        auxiliarySlotReflow.reset()
         displayLink?.invalidate(); displayLink = nil; proxy = nil; previousTick = 0
     }
 
@@ -280,7 +304,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         var settled = true
         if let focus = state.focus, frames.indices.contains(focus), follow.following, !scroll.isDragging, !scroll.isDecelerating {
             let target = min(max(0, scroll.contentSize.height - bounds.height), max(0, frames[focus].minY - bounds.height * configuration.anchor))
-            let value = follow.step(target: target, dt: dt, immediate: reduceMotion || jumped)
+            let value = follow.step(target: target, dt: dt, immediate: reduceMotion || jumped || auxiliaryReflow.hasPending)
             scroll.contentOffset.y = value
             settled = follow.isSettled(at: target)
             if settled, (motion.mode == .returning || motion.mode == .seeking) {
@@ -295,8 +319,21 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             let blur = lineBlur(index: index, state: state, active: active)
             row.update(time: state.time, active: active, configuration: configuration, policy: policy,
                        reduceMotion: reduceMotion, delta: dt, blurLevel: blur)
+            row.setPresentationOffset(0)
+            auxiliaryReflow.install(index: index, target: row.modelMainPosition(in: layer), scale: row.transform.a, enabled: !reduceMotion)
+            row.setPresentationOffset(auxiliaryReflow.offset(index: index, fade: auxiliaryFade))
+            var slotOffsets: [LyricsAuxiliaryKind: CGFloat] = [:]
+            for (kind, actual) in row.baseAuxiliarySlots {
+                let target = targetAuxiliarySlots[index]?[kind] ?? actual
+                let key = LyricsAuxiliaryMotion.slotKey(row: index, kind: kind)
+                auxiliarySlotReflow.install(index: key, target: target, scale: 1, enabled: !reduceMotion)
+                slotOffsets[kind] = target - actual + auxiliarySlotReflow.offset(index: key, fade: auxiliaryFade)
+            }
+            row.setAuxiliarySlotOffsets(slotOffsets)
             row.updateAuxiliaryVisibility(auxiliaryFade)
         }
+        auxiliaryReflow.finishFrame(visible: Set(rows.keys))
+        auxiliarySlotReflow.finishFrame(visible: Set(rows.keys.flatMap { index in LyricsAuxiliaryKind.allCases.map { LyricsAuxiliaryMotion.slotKey(row: index, kind: $0) } }))
         CATransaction.commit()
         dots.isHidden = true
         if follow.following, let interlude = state.interlude,
@@ -319,7 +356,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
                 .compactMap(\.self).joined(separator: ", ")
             // Do not post announcements on every word or steal VoiceOver focus while the user browses.
         }
-        if !playing, settled, motion.mode != .browsing {
+        if !playing, settled, motion.mode != .browsing, !auxiliaryFade.isAnimating, !auxiliaryReflow.isAnimating, !auxiliarySlotReflow.isAnimating {
             displayLink?.isPaused = true; previousTick = 0
         }
     }

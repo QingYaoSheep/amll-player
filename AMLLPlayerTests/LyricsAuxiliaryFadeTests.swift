@@ -14,12 +14,12 @@ import XCTest
         let middle = fade.value(.translation, now: 10.07)
         XCTAssertGreaterThan(middle, 0); XCTAssertLessThan(middle, 1)
         XCTAssertEqual(fade.value(.romanization, now: 10.07), 1)
-        XCTAssertTrue(fade.layoutConfiguration(config, now: 10.19).translation)
-        XCTAssertFalse(fade.layoutConfiguration(config, now: 10.21).translation)
+        XCTAssertTrue(fade.layoutConfiguration(config, now: 10.15).translation)
+        XCTAssertFalse(fade.layoutConfiguration(config, now: 10.17).translation)
         config.translation = true
         fade.update(config, animated: true, now: 10.07)
         XCTAssertEqual(fade.value(.translation, now: 10.07), middle, accuracy: 0.000001)
-        XCTAssertEqual(fade.value(.translation, now: 10.3), 1)
+        XCTAssertEqual(fade.value(.translation, now: 10.5), 1)
     }
 
     func testInterleavedTogglesDoNotRestartTheOtherKindsDeadline() {
@@ -75,7 +75,6 @@ import XCTest
         let near = CALayer(), far = CALayer(); near.opacity = 0
         view.layer.addSublayer(near); view.layer.addSublayer(far)
         let presentation = LyricsAuxiliaryBlurPresentation(near: near, far: far)
-        view.layer.speed = 0
         let fade = LyricsAuxiliaryFade()
         var config = LyricsRenderConfiguration(); config.translation = true; fade.reset(config)
         presentation.install(before, source: .raster(source, scale: 1, regions: regions), size: view.bounds.size, fade: fade)
@@ -93,49 +92,42 @@ import XCTest
         for _ in 0 ..< 200 where presentation.isPreparing { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(presentation.isPreparing)
         fade.cancel()
-        view.layer.timeOffset = 0.055
-        try await Task.sleep(for: .milliseconds(55))
+        let visibleStart = fade.start(.translation)
+        presentation.update(fade, now: visibleStart + 0.055)
+        try await Task.sleep(for: .milliseconds(30))
         let middle = try pixels(view)
         XCTAssertEqual(middle.0, initial.0, accuracy: 3, "The common main-glyph blur must not dim during the texture dissolve")
         XCTAssertGreaterThan(initial.1, middle.1)
         XCTAssertGreaterThan(middle.1, 0, "The prepared plane must still render an intermediate fade, even after preparation exceeded 200ms")
-        view.layer.timeOffset = 0.3
+        presentation.update(fade, now: visibleStart + 0.3)
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertLessThan(try pixels(view).1, 2, "No auxiliary halo may survive outside the old typographic box")
     }
 
-    func testRealMaskFadesAuxiliaryPixelsWithoutFadingTheMainTextPlane() async throws {
+    func testRealAnnotationPlaneFadesPixelsWithoutFadingTheMainTextPlane() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.keyWindow
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
         window.rootViewController = UIViewController(); window.makeKeyAndVisible()
         let view = UIView(frame: CGRect(x: 0, y: 0, width: 80, height: 100))
-        view.backgroundColor = .white; window.rootViewController?.view.backgroundColor = .black
+        window.rootViewController?.view.backgroundColor = .black
         window.rootViewController?.view.addSubview(view)
+        let body = CALayer(); body.frame = CGRect(x: 0, y: 0, width: 80, height: 40); body.backgroundColor = UIColor.white.cgColor
+        let annotation = CALayer(); annotation.frame = CGRect(x: 0, y: 60, width: 80, height: 40); annotation.backgroundColor = UIColor.white.cgColor
+        view.layer.addSublayer(body); view.layer.addSublayer(annotation)
         let fade = LyricsAuxiliaryFade()
         defer { fade.cancel(); window.isHidden = true; previous?.makeKey() }
         var config = LyricsRenderConfiguration(); config.translation = true
         fade.reset(config)
-        config.translation = false; fade.update(config, animated: true)
-        view.layer.mask = fade.mask(bounds: view.bounds, regions: [.translation: [CGRect(x: 0, y: 60, width: 80, height: 40)]])
+        config.translation = false; fade.update(config, animated: true, now: 10)
         fade.cancel()
-        func setMaskTime(_ time: Double) {
-            for shape in view.layer.mask?.sublayers ?? [] {
-                guard let animation = shape.animation(forKey: "auxiliaryVisibility") else { continue }
-                // Pause the animation itself. Pausing its parent before the
-                // first commit lets CA choose that paused time as beginTime.
-                animation.speed = 0; animation.timeOffset = time
-                animation.isRemovedOnCompletion = false; animation.fillMode = .both
-                shape.add(animation, forKey: "auxiliaryVisibility")
-            }
-        }
-        setMaskTime(0.055)
-        try await Task.sleep(for: .milliseconds(55))
+        fade.applyVisibility(to: annotation, kind: .translation, now: 10.055)
+        try await Task.sleep(for: .milliseconds(30))
         let first = try pixels(view)
         XCTAssertGreaterThan(first.0, 250, "Body pixels remain opaque")
         XCTAssertGreaterThan(first.1, 0); XCTAssertLessThan(first.1, 250, "The outgoing annotation has an intermediate alpha")
-        setMaskTime(0.3)
+        fade.applyVisibility(to: annotation, kind: .translation, now: 10.3)
         try await Task.sleep(for: .milliseconds(30))
         let last = try pixels(view)
         XCTAssertGreaterThan(last.0, 250); XCTAssertLessThan(last.1, 2)
@@ -176,9 +168,9 @@ import XCTest
                 if let layer = far.sublayers?.first(where: { $0.name == "auxiliaryBlur.translation" }), let shown = layer.presentation() {
                     alphas.append(shown.opacity)
                     if !interleaved, shown.opacity > 0, shown.opacity < 0.99 {
-                        let duration = layer.animation(forKey: "auxiliaryVisibility")?.duration
+                        let deadline = fade.deadline(.translation)
                         config.romanization = false; fade.update(config, animated: true); presentation.update(fade)
-                        XCTAssertEqual(layer.animation(forKey: "auxiliaryVisibility")?.duration, duration,
+                        XCTAssertEqual(fade.deadline(.translation), deadline,
                             "Changing romanization must not restart the translation plane")
                         interleaved = true
                     }
@@ -259,7 +251,7 @@ import XCTest
         config.translation = false; config.romanization = false
         canvas.configure(document: document, configuration: config, input: input, active: true, reduceMotion: false)
         try await Task.sleep(for: .milliseconds(60))
-        XCTAssertEqual(canvas.layoutBuildCount, builds, "Outgoing text must not be removed before its fade")
+        XCTAssertGreaterThan(canvas.layoutBuildCount, builds, "Target row spacing is committed at toggle time; outgoing pixels remain in their retained layout")
         for _ in 0 ..< 200 where canvas.layoutBuildCount == builds {
             try await Task.sleep(for: .milliseconds(10)); canvas.layoutIfNeeded(); canvas.advanceFrame(delta: 0)
         }

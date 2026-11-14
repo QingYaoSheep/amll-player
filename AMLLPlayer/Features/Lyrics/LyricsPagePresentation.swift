@@ -128,8 +128,8 @@ struct LyricsTrackTransition<Content: View>: View {
     @State private var revision = 0
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            content(item).opacity(outgoing == nil ? 1 : 1 - outgoingOpacity)
+        content(item).opacity(outgoing == nil ? 1 : 1 - outgoingOpacity)
+        .overlay(alignment: .leading) {
             if let outgoing {
                 content(outgoing)
                     .environment(\.lyricsPageControlsEnabled, false)

@@ -257,9 +257,10 @@ import XCTest
         let fade = LyricsAuxiliaryFade(); defer { fade.cancel() }
         var config = LyricsRenderConfiguration(); config.translation = true; config.romanization = true
         fade.reset(config)
-        config.translation = false; fade.update(config, animated: true)
-        let first = fade.beginPreparation([.translation])
-        let second = fade.beginPreparation([.translation])
+        let start = CACurrentMediaTime()
+        config.translation = false; fade.update(config, animated: true, now: start)
+        let first = fade.beginPreparation([.translation], now: start)
+        let second = fade.beginPreparation([.translation], now: start)
         try await Task.sleep(for: .milliseconds(260))
         XCTAssertEqual(fade.value(.translation), 1, "Preparation cannot spend the 200ms visible fade")
         XCTAssertTrue(fade.layoutConfiguration(config).translation)

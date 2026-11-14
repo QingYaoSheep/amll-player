@@ -21,6 +21,15 @@ enum LyricsAuxiliaryKind: CaseIterable, Hashable, Sendable { case translation, r
 
     func update(_ configuration: LyricsRenderConfiguration, animated: Bool, now: Double = CACurrentMediaTime()) {
         let targets: [LyricsAuxiliaryKind: Bool] = [.translation: configuration.translation, .romanization: configuration.romanization]
+        if initialized, !animated, changes.values.contains(where: { $0.from != $0.to && now < $0.start + Self.duration }) {
+            completion?.cancel()
+            for kind in LyricsAuxiliaryKind.allCases {
+                let target = targets[kind] == true ? 1.0 : 0.0
+                changes[kind] = Change(from: target, to: target, start: now - Self.duration)
+            }
+            revision &+= 1
+            return
+        }
         guard !initialized || targets.contains(where: { changes[$0.key]?.to != ($0.value ? 1 : 0) }) else { return }
         completion?.cancel()
         let animate = initialized && animated
@@ -81,7 +90,7 @@ enum LyricsAuxiliaryKind: CaseIterable, Hashable, Sendable { case translation, r
     func fullPlaneMask(bounds: CGRect, kind: LyricsAuxiliaryKind) -> CALayer? {
         // The separate pronunciation plane includes padded blur pixels and
         // a small word lift outside its typographic bounds.
-        let padding: CGFloat = 37
+        let padding = CGFloat(LyricsAnimationBlur.maximum(10) * 3 + 1)
         let extent = CGRect(x: 0, y: 0, width: bounds.width + padding * 2, height: bounds.height + padding * 2)
         let result = mask(bounds: extent, regions: [kind: [extent]])
         result?.position = CGPoint(x: bounds.midX, y: bounds.midY)

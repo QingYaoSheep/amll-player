@@ -35,6 +35,18 @@ import XCTest
         XCTAssertFalse(fade.layoutConfiguration(config, now: 10.31).romanization)
     }
 
+    func testHidingDuringAFadeCompletesEveryAuxiliarySlotWithoutAnOrphanedTimer() {
+        let fade = LyricsAuxiliaryFade(); defer { fade.cancel() }
+        var config = LyricsRenderConfiguration(); config.translation = true; config.romanization = true
+        fade.reset(config)
+        config.translation = false; fade.update(config, animated: true, now: 10)
+        config.romanization = false; fade.update(config, animated: false, now: 10.05)
+        XCTAssertFalse(fade.layoutConfiguration(config, now: 10.05).translation)
+        XCTAssertFalse(fade.layoutConfiguration(config, now: 10.05).romanization)
+        XCTAssertEqual(fade.value(.translation, now: 10.05), 0)
+        XCTAssertEqual(fade.value(.romanization, now: 10.05), 0)
+    }
+
     func testHighBlurRemovesAuxiliaryHaloBeforeFilteringAndPreservesMainPixels() async throws {
         let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = false
         func image(auxiliary: Bool) throws -> CGImage {

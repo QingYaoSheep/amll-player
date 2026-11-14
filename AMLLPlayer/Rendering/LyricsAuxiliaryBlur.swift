@@ -115,7 +115,24 @@ actor LyricsAuxiliaryBlurDecoder {
     var isPreparing: Bool { task != nil }
 
     init(near: CALayer, far: CALayer) { self.near = near; self.far = far }
-    deinit { task?.cancel() }
+    deinit {
+        task?.cancel()
+        let heldFade = fade, heldToken = preparationToken
+        Task { @MainActor in heldFade?.finishPreparation(heldToken) }
+    }
+
+    /// New native rows receive their regular blur asynchronously. Register
+    /// before that first raster job, not only before the later split job.
+    func waitForSource(_ source: LyricsAuxiliaryBlurSource, fade: LyricsAuxiliaryFade?) {
+        self.fade = fade; sourceKinds = source.kinds
+        preparationToken = fade?.beginPreparation(sourceKinds)
+    }
+
+    func releaseSourceWait() {
+        guard normal == nil else { return }
+        let token = preparationToken; preparationToken = nil
+        fade?.finishPreparation(token)
+    }
 
     func snapshot(origin: CGPoint) -> LyricsAuxiliaryBlurStarter? {
         guard let body = parts?.body ?? normal else { return nil }
@@ -163,9 +180,11 @@ actor LyricsAuxiliaryBlurDecoder {
             initialAlphas = Dictionary(uniqueKeysWithValues: source.kinds.map { ($0, normalPublished ? 1 : fade.value($0)) })
         }
         task?.cancel(); generation &+= 1
-        fade?.finishPreparation(preparationToken); preparationToken = nil
+        let previousToken = preparationToken
+        preparationToken = nil
         if let fade, !source.kinds.isEmpty, fade.isAnimating || !source.kinds.isDisjoint(with: fade.hiddenKinds) { prepare() }
         else { restore(animated: true) }
+        fade?.finishPreparation(previousToken)
     }
 
     func update(_ fade: LyricsAuxiliaryFade) {

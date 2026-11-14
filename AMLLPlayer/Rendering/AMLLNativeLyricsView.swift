@@ -98,6 +98,12 @@ final class AMLLNativeCanvas: UIView {
     private var rowViews: [Int: AMLLCompositeRow] = [:]
     private var auxiliaryBlurStarters: [Int: LyricsAuxiliaryBlurStarter] = [:]
     private var auxiliaryLayoutPreparation: UUID?
+    #if DEBUG
+        var auxiliaryNormalPreparationDelay = 0.0
+        var auxiliaryVisibilitySnapshot: (translation: Double, waiting: Bool) {
+            (auxiliaryFade.value(.translation), auxiliaryFade.isWaiting(.translation))
+        }
+    #endif
     private var retainedRows: [Int: AMLLCompositeRow] = [:]
     private var retainedOrder: [Int] = []
     private var preparedRows: [Int: AMLLPreparedCompositeImages] = [:]
@@ -575,6 +581,7 @@ final class AMLLNativeCanvas: UIView {
         let indexes = Set(visible.map(\.lineIndex))
         for index in Array(rowViews.keys) where !indexes.contains(index) {
             if let view = rowViews.removeValue(forKey: index) {
+                view.releaseAuxiliarySourceWait()
                 view.removeFromSuperview()
                 retainedRows[index] = view
                 retainedOrder.append(index)
@@ -605,6 +612,7 @@ final class AMLLNativeCanvas: UIView {
                 view = AMLLCompositeRow(line: display.lines[row.lineIndex], layouts: layout,
                                         scale: window?.screen.scale ?? 2, prepared: prepared,
                                         initialBlurMaximum: initialBlurMaximum, auxiliaryFade: auxiliaryFade,
+                                        awaitsBlurSource: requestsBlurImages && row.blur > 0,
                                         blurStarter: auxiliaryBlurStarters.removeValue(forKey: row.lineIndex))
                 if performanceRecordingEnabled {
                     pendingRasterMilliseconds += (CACurrentMediaTime() - rasterStarted) * 1_000
@@ -634,6 +642,7 @@ final class AMLLNativeCanvas: UIView {
             view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
                                gain: gain, lyricTime: state.lyricTime, runStore: engine!.runStore,
                                row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
+            if !requestsBlurImages || row.blur == 0 { view.releaseAuxiliarySourceWait() }
             view.updateAuxiliaryVisibility(auxiliaryFade)
             if view.needsHDRRetry { needsFrame = true }
             #if DEBUG
@@ -701,7 +710,10 @@ final class AMLLNativeCanvas: UIView {
         let original = layout.original.rasterSnapshot()
         let romanization = layout.romanization?.rasterSnapshot()
         let aligned = layout.alignedRomanization
-        let delay = max(0, 0.09 - (CACurrentMediaTime() - blurLevelChangedAt))
+        var delay = max(0, 0.09 - (CACurrentMediaTime() - blurLevelChangedAt))
+        #if DEBUG
+            delay += auxiliaryNormalPreparationDelay
+        #endif
         blurRefreshInFlight = true
         Task { @MainActor [weak self] in
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
@@ -883,6 +895,8 @@ final class AMLLNativeCanvas: UIView {
     }
 
     func stop() {
+        auxiliaryFade.update(configuration, animated: false)
+        auxiliaryFade.cancel(); auxiliaryLayoutPreparation = nil
         if link != nil { playbackReanchorRequired = true }
         link?.invalidate(); link = nil; linkTarget = nil; lastTick = 0
         #if DEBUG
@@ -1068,10 +1082,11 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
 
     init(line: LyricLine, layouts: AMLLNativeCanvas.RowLayouts, scale: CGFloat,
          prepared: AMLLPreparedCompositeImages? = nil, initialBlurMaximum: Double? = nil,
-         auxiliaryFade: LyricsAuxiliaryFade? = nil, blurStarter: LyricsAuxiliaryBlurStarter? = nil) {
+         auxiliaryFade: LyricsAuxiliaryFade? = nil, awaitsBlurSource: Bool = false, blurStarter: LyricsAuxiliaryBlurStarter? = nil) {
         original = AMLLNativeRow(line: line, layout: layouts.original, scale: scale,
                                  hideRomanization: layouts.alignedRomanization, prepared: prepared?.original,
-                                 initialBlurMaximum: initialBlurMaximum, auxiliaryFade: auxiliaryFade, blurStarter: blurStarter)
+                                 initialBlurMaximum: initialBlurMaximum, auxiliaryFade: auxiliaryFade,
+                                 awaitsBlurSource: awaitsBlurSource, blurStarter: blurStarter)
         romanizationCue = layouts.romanizationCue?.line
         alignedRomanization = layouts.alignedRomanization && layouts.romanizationCue != nil
             ? AMLLRomanizationOverlay(layout: layouts.original, cue: layouts.romanizationCue!.line,
@@ -1185,6 +1200,8 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
             view.layer.mask = fade.fullPlaneMask(bounds: view.bounds, kind: .romanization)
         }
     }
+
+    func releaseAuxiliarySourceWait() { original.releaseAuxiliarySourceWait() }
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, lyricTime: Double, runStore: LyricsBlossomRunStore,
                        row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool)
@@ -1301,7 +1318,7 @@ private final class AMLLNativeRow: UIView {
 
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat,
          hideRomanization: Bool = false, prepared: AMLLPreparedRowImages? = nil, initialBlurMaximum: Double? = nil,
-         auxiliaryFade: LyricsAuxiliaryFade? = nil, blurStarter: LyricsAuxiliaryBlurStarter? = nil) {
+         auxiliaryFade: LyricsAuxiliaryFade? = nil, awaitsBlurSource: Bool = false, blurStarter: LyricsAuxiliaryBlurStarter? = nil) {
         self.line = line; textLayout = layout
         self.auxiliaryFade = auxiliaryFade
         hidesInlineRomanization = hideRomanization
@@ -1388,6 +1405,9 @@ private final class AMLLNativeRow: UIView {
             layer.addSublayer(blurLayer)
         }
         if let blurStarter { auxiliaryBlur.showStarter(blurStarter, origin: textLayout.mainOrigin) }
+        if awaitsBlurSource {
+            auxiliaryBlur.waitForSource(.coreText(textLayout.rasterSnapshot(), hideRomanization: hideRomanization), fade: auxiliaryFade)
+        }
         if let blur = images.blur { installBlur(blur) }
         var consumed: [Int: Double] = [:]
         for fragment in layout.fragments where fragment.rect.width > 0 {
@@ -1459,6 +1479,8 @@ private final class AMLLNativeRow: UIView {
     }
 
     func captureAuxiliaryBlur() -> LyricsAuxiliaryBlurStarter? { auxiliaryBlur.snapshot(origin: textLayout.mainOrigin) }
+
+    func releaseAuxiliarySourceWait() { auxiliaryBlur.releaseSourceWait() }
 
     required init?(coder _: NSCoder) {
         nil

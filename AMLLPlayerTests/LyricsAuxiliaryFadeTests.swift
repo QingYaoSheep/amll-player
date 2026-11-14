@@ -75,6 +75,7 @@ import XCTest
         let near = CALayer(), far = CALayer(); near.opacity = 0
         view.layer.addSublayer(near); view.layer.addSublayer(far)
         let presentation = LyricsAuxiliaryBlurPresentation(near: near, far: far)
+        view.layer.speed = 0
         let fade = LyricsAuxiliaryFade()
         var config = LyricsRenderConfiguration(); config.translation = true; fade.reset(config)
         presentation.install(before, source: .raster(source, scale: 1, regions: regions), size: view.bounds.size, fade: fade)
@@ -91,12 +92,15 @@ import XCTest
         XCTAssertTrue(fade.layoutConfiguration(config).translation)
         for _ in 0 ..< 200 where presentation.isPreparing { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(presentation.isPreparing)
+        fade.cancel()
+        view.layer.timeOffset = 0.055
         try await Task.sleep(for: .milliseconds(55))
         let middle = try pixels(view)
         XCTAssertEqual(middle.0, initial.0, accuracy: 3, "The common main-glyph blur must not dim during the texture dissolve")
         XCTAssertGreaterThan(initial.1, middle.1)
         XCTAssertGreaterThan(middle.1, 0, "The prepared plane must still render an intermediate fade, even after preparation exceeded 200ms")
-        try await Task.sleep(for: .milliseconds(220))
+        view.layer.timeOffset = 0.3
+        try await Task.sleep(for: .milliseconds(30))
         XCTAssertLessThan(try pixels(view).1, 2, "No auxiliary halo may survive outside the old typographic box")
     }
 
@@ -114,12 +118,16 @@ import XCTest
         var config = LyricsRenderConfiguration(); config.translation = true
         fade.reset(config)
         config.translation = false; fade.update(config, animated: true)
+        view.layer.speed = 0
         view.layer.mask = fade.mask(bounds: view.bounds, regions: [.translation: [CGRect(x: 0, y: 60, width: 80, height: 40)]])
+        fade.cancel()
+        view.layer.timeOffset = 0.055
         try await Task.sleep(for: .milliseconds(55))
         let first = try pixels(view)
         XCTAssertGreaterThan(first.0, 250, "Body pixels remain opaque")
         XCTAssertGreaterThan(first.1, 0); XCTAssertLessThan(first.1, 250, "The outgoing annotation has an intermediate alpha")
-        try await Task.sleep(for: .milliseconds(220))
+        view.layer.timeOffset = 0.3
+        try await Task.sleep(for: .milliseconds(30))
         let last = try pixels(view)
         XCTAssertGreaterThan(last.0, 250); XCTAssertLessThan(last.1, 2)
     }
@@ -272,6 +280,40 @@ import XCTest
         XCTAssertEqual(fade.value(.romanization), 1)
         try await Task.sleep(for: .milliseconds(180))
         XCTAssertFalse(fade.layoutConfiguration(config).translation)
+    }
+
+    func testNativeIncomingFadeWaitsForTheFirstRegularBlurRaster() async throws {
+        var lines = (0 ..< 3).map { index in
+            LyricLine(id: "native-ready-\(index)", text: "Main line \(index)", start: Double(index * 5), end: Double(index * 5 + 4))
+        }
+        for index in lines.indices { lines[index].translation = "Translation \(index)" }
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "native-ready", title: "Ready", artists: []),
+            lines: lines, language: "en", selectionReason: "Slow native regular raster")
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.frame); window.addSubview(canvas); window.isHidden = false
+        defer { canvas.stop(); window.isHidden = true }
+        canvas.position = { 1 }
+        var config = LyricsRenderConfiguration(); config.translation = false
+        let input = AMLLPlayerInput(position: 1, playing: false)
+        canvas.configure(document: document, configuration: config, input: input, active: true, reduceMotion: false)
+        canvas.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(350))
+        canvas.auxiliaryNormalPreparationDelay = 0.35
+        config.translation = true
+        canvas.configure(document: document, configuration: config, input: input, active: true, reduceMotion: false)
+        canvas.layoutIfNeeded()
+        XCTAssertFalse(canvas.subviews.isEmpty, "Replacement rows must be installed before layout returns")
+        try await Task.sleep(for: .milliseconds(220))
+        XCTAssertTrue(canvas.auxiliaryVisibilitySnapshot.waiting)
+        XCTAssertEqual(canvas.auxiliaryVisibilitySnapshot.translation, 0, accuracy: 0.01)
+        for _ in 0 ..< 500 where canvas.auxiliaryVisibilitySnapshot.waiting {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(canvas.auxiliaryVisibilitySnapshot.waiting, "Source readiness must not leave an infinite hold")
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertGreaterThan(canvas.auxiliaryVisibilitySnapshot.translation, 0)
+        XCTAssertLessThan(canvas.auxiliaryVisibilitySnapshot.translation, 1)
+        XCTAssertEqual(canvas.frameState?.lyricTime, 1)
     }
 
     private func pixels(_ view: UIView) throws -> (Double, Double) {

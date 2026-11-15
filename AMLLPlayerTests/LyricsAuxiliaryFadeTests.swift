@@ -226,7 +226,10 @@ import XCTest
         let held = try pixels(view)
         XCTAssertEqual(held.0, before.0, accuracy: 2, "Keep the previous main blur while the new body texture is prepared")
         XCTAssertLessThan(held.1, 2, "The incoming annotation must not appear before preparation")
-        try await Task.sleep(for: .milliseconds(250))
+        for _ in 0 ..< 200 where replacement.isPreparing { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(replacement.isPreparing)
+        replacement.update(fade, now: fade.start(.translation) + 0.2)
+        try await Task.sleep(for: .milliseconds(30))
         let final = try pixels(view)
         XCTAssertEqual(final.0, before.0, accuracy: 3)
         XCTAssertGreaterThan(final.1, held.1)

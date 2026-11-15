@@ -194,7 +194,6 @@ actor LyricsAuxiliaryBlurDecoder {
         lastFadeRevision = fade.revision
         self.fade = fade
         if parts != nil {
-            applyVisibility(fade)
             if !fade.isAnimating, sourceKinds.isDisjoint(with: fade.hiddenKinds) { restore(animated: false) }
         } else if task == nil, !sourceKinds.isEmpty,
                   fade.isAnimating || !sourceKinds.isDisjoint(with: fade.hiddenKinds) { prepare() }

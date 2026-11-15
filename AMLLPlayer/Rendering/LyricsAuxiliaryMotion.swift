@@ -20,11 +20,23 @@ import UIKit
     static func sample(from: Double, velocity: Double = 0, to: Double, elapsed: Double) -> (position: Double, velocity: Double) {
         guard elapsed > 0 else { return (from, velocity) }
         guard elapsed < settlingDuration else { return (to, 0) }
-        var spring = AMLLSourceSpring(from)
-        spring.updateParameters(parameters.sourceParameters)
-        spring.resume(position: from, velocity: velocity, target: to)
-        spring.update(elapsed)
-        return (spring.position, spring.velocity)
+        // Presentation uses the same physical coefficients without inheriting
+        // the lyric source solver's signed arrival/derivative stopping rules.
+        let damping = parameters.damping / (2 * parameters.mass)
+        let omegaSquared = parameters.stiffness / parameters.mass
+        let displacement = from - to
+        let frequency = sqrt(max(0, omegaSquared - damping * damping))
+        let decay = exp(-damping * elapsed)
+        if frequency > 0.000001 {
+            let sine = sin(frequency * elapsed), cosine = cos(frequency * elapsed)
+            let coefficient = (velocity + damping * displacement) / frequency
+            let wave = displacement * cosine + coefficient * sine
+            let derivative = -displacement * frequency * sine + coefficient * frequency * cosine
+            return (to + decay * wave, decay * (derivative - damping * wave))
+        }
+        let coefficient = velocity + damping * displacement
+        let wave = displacement + coefficient * elapsed
+        return (to + decay * wave, decay * (coefficient - damping * wave))
     }
 
     static func duration(target: Double) -> Double { target > 0 ? enteringDuration : exitingDuration }

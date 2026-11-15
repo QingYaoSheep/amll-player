@@ -42,8 +42,11 @@ final class LyricsRenderViewTests: XCTestCase {
         row.configure(line: line, layout: layout, scale: 2, configuration: .init(), blur: false, canSeek: false) {}
         // Find the masked glyph, independently of presentation containers.
         // Body/annotation split masks are shapes rather than word gradients.
+        // Preserve the original final-glyph check: the first glyph can already
+        // be completely filled at the backward-seek time of this fixture.
+        let finalFragment = try XCTUnwrap(layout.fragments.last)
         @MainActor func wordPiece(in layer: CALayer) -> CALayer? {
-            if layer.mask is CAGradientLayer { return layer }
+            if layer.mask is CAGradientLayer, layer.frame == finalFragment.rect { return layer }
             return (layer.sublayers ?? []).lazy.compactMap { wordPiece(in: $0) }.first
         }
         let piece = try XCTUnwrap(wordPiece(in: row.layer))

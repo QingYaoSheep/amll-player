@@ -200,6 +200,56 @@ final class AMLLCoreTextLayout {
     let sourceAtoms: [AMLLWordSegmentation.Atom]
     private let rows: [Row]
 
+    private struct VisualLine {
+        var sourceRange: NSRange
+        var drawingRange: NSRange
+        var preservesEmptyLine: Bool
+    }
+
+    /// Balanced offsets still partition the original text. Only drawing drops
+    /// collapsible whitespace carried over a soft break, like a DOM text node
+    /// after <br>. Hard-line indentation and nonbreaking spaces remain authored.
+    private static func visualLines(in text: String, breaks: [Int]) -> [VisualLine] {
+        let source = text as NSString
+        guard source.length > 0 else { return [] }
+        func collapsible(_ index: Int) -> Bool {
+            let value = source.character(at: index)
+            return value == 0x20 || value == 0x09
+        }
+        var paragraphs: [(start: Int, end: Int, sourceEnd: Int)] = []
+        var start = 0, cursor = 0
+        while cursor < source.length {
+            let value = source.character(at: cursor)
+            if value == 0x0A || value == 0x0D || value == 0x2028 || value == 0x2029 {
+                let length = value == 0x0D && cursor + 1 < source.length && source.character(at: cursor + 1) == 0x0A ? 2 : 1
+                paragraphs.append((start, cursor, cursor + length))
+                cursor += length; start = cursor
+            } else { cursor += 1 }
+        }
+        paragraphs.append((start, source.length, source.length))
+        return paragraphs.flatMap { paragraph -> [VisualLine] in
+            var firstContent = paragraph.start
+            while firstContent < paragraph.end && collapsible(firstContent) { firstContent += 1 }
+            // A soft break within an authored indent must not detach that
+            // indent from the first text of its hard line.
+            let limits = [paragraph.start] + breaks.filter { $0 > firstContent && $0 < paragraph.end } + [paragraph.end]
+            return (0 ..< limits.count - 1).map { index in
+                let lower = limits[index], upper = limits[index + 1]
+                var visibleStart = lower, visibleEnd = upper
+                if lower != paragraph.start {
+                    while visibleStart < visibleEnd && collapsible(visibleStart) { visibleStart += 1 }
+                }
+                if upper != paragraph.end {
+                    while visibleEnd > visibleStart && collapsible(visibleEnd - 1) { visibleEnd -= 1 }
+                }
+                let sourceEnd = upper == paragraph.end ? paragraph.sourceEnd : upper
+                return VisualLine(sourceRange: NSRange(location: lower, length: sourceEnd - lower),
+                    drawingRange: NSRange(location: visibleStart, length: visibleEnd - visibleStart),
+                    preservesEmptyLine: paragraph.start == paragraph.end)
+            }
+        }
+    }
+
     init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration,
          romanizationReserve: CGFloat = 0) {
         self.font = font
@@ -340,8 +390,8 @@ final class AMLLCoreTextLayout {
             }
         }
         let usesAnnotationContainers = line.precision == .word && (hasWordRomanization || timedWords.contains { !rubyText($0).isEmpty })
-        func containerWidth(_ word: LyricWord, at index: Int) -> Double {
-            let main = measure(word.text, font)
+        func containerWidth(_ word: LyricWord, at index: Int, displayedText: String? = nil) -> Double {
+            let main = measure(displayedText ?? word.text, font)
             let ruby = measure(rubyText(word), rubyFont)
             let roman = hasWordRomanization && !validGenerated ? measure(word.romanWord ?? "", romanFont) + romanFont.pointSize * 0.3 : 0
             return max(main, max(ruby, roman)) + generatedExtras[index]
@@ -380,7 +430,7 @@ final class AMLLCoreTextLayout {
             offsets.append(offsets[offsets.count - 1] + text.utf16.count)
         }
         breakOffsets = breaks.map { offsets[$0] }
-        let rowLimits = [0] + breakOffsets + [attributed.length]
+        let visualLines = Self.visualLines(in: text, breaks: breakOffsets)
         let typesetter = CTTypesetterCreateWithAttributedString(attributed)
         var rows: [Row] = []
         var fragments: [WordFragment] = []
@@ -403,9 +453,12 @@ final class AMLLCoreTextLayout {
         let rubyHeight = timedWords.contains { !$0.rubySegments.isEmpty || !($0.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
             ? rubyFont.pointSize * 1.5
             : 0
-        for index in 0 ..< rowLimits.count - 1 {
-            let range = NSRange(location: rowLimits[index], length: rowLimits[index + 1] - rowLimits[index])
-            guard range.length > 0 else { continue }
+        for visualLine in visualLines {
+            let range = visualLine.drawingRange
+            guard range.length > 0 else {
+                if visualLine.preservesEmptyLine { y += rubyHeight + mainHeight + romanHeight }
+                continue
+            }
             let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: range.location, length: range.length))
             if usesAnnotationContainers {
                 // Source inline-flex words shape independently. Use the whole
@@ -417,21 +470,27 @@ final class AMLLCoreTextLayout {
                 for (wordIndex, word) in timedWords.enumerated() {
                     let wordRange = NSRange(location: cursor, length: word.text.utf16.count)
                     cursor += wordRange.length
-                    guard NSIntersectionRange(range, wordRange).length > 0 else { continue }
+                    let displayedRange = NSIntersectionRange(range, wordRange)
+                    guard displayedRange.length > 0 else { continue }
                     let positions = referenceRuns.compactMap { run -> Double? in
                         let overlap = NSIntersectionRange(wordRange, run.range)
                         guard overlap.length > 0 else { return nil }
                         return min(run.offset(at: overlap.location, in: ctLine), run.offset(at: NSMaxRange(overlap), in: ctLine))
                     }
-                    atoms.append((wordIndex, wordRange, positions.min() ?? 0))
+                    atoms.append((wordIndex, displayedRange, positions.min() ?? 0))
                 }
                 atoms.sort { $0.visualX == $1.visualX ? $0.index < $1.index : $0.visualX < $1.visualX }
-                let total = atoms.reduce(0.0) { $0 + containerWidth(timedWords[$1.index], at: $1.index) }
+                let displayedText = text as NSString
+                let total = atoms.reduce(0.0) {
+                    $0 + containerWidth(timedWords[$1.index], at: $1.index,
+                        displayedText: displayedText.substring(with: $1.range))
+                }
                 var atomX = line.isDuet || line.isRTL ? availableWidth - total : 0
                 for atom in atoms {
                     let word = timedWords[atom.index]
-                    let width = containerWidth(word, at: atom.index)
-                    let shaped = CTLineCreateWithAttributedString(NSAttributedString(string: word.text, attributes: attributes))
+                    let visibleText = displayedText.substring(with: atom.range)
+                    let width = containerWidth(word, at: atom.index, displayedText: visibleText)
+                    let shaped = CTLineCreateWithAttributedString(NSAttributedString(string: visibleText, attributes: attributes))
                     let mainWidth = CTLineGetTypographicBounds(shaped, nil, nil, nil)
                     // Only wordBody inside wordWithRuby centers its children.
                     // Plain romanWord containers inherit text-align: start.
@@ -447,11 +506,15 @@ final class AMLLCoreTextLayout {
                                                rtl: run.rtl, wordIndex: atom.index))
                     }
                     var localOffset = 0
+                    let sourceStart = sourceRanges[atom.index].location
                     for (characterIndex, character) in word.text.enumerated() {
                         let value = String(character)
-                        let localRange = NSRange(location: localOffset, length: value.utf16.count)
-                        localOffset += localRange.length
+                        let originalRange = NSRange(location: sourceStart + localOffset, length: value.utf16.count)
+                        localOffset += originalRange.length
                         guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                        let displayedRange = NSIntersectionRange(originalRange, atom.range)
+                        guard displayedRange.length > 0 else { continue }
+                        let localRange = NSRange(location: displayedRange.location - atom.range.location, length: displayedRange.length)
                         for run in runs {
                             let overlap = NSIntersectionRange(localRange, run.range)
                             guard overlap.length > 0 else { continue }
@@ -683,16 +746,25 @@ final class AMLLCoreTextLayout {
             let value = NSAttributedString(string: auxiliary.text, attributes: [.font: auxiliaryFont, .foregroundColor: UIColor.white.withAlphaComponent(0.3)])
             let typesetter = CTTypesetterCreateWithAttributedString(value)
             var cursor = 0
+            var suggestedBreaks: [Int] = []
             while cursor < value.length {
                 let count = max(1, CTTypesetterSuggestLineBreak(typesetter, cursor, availableWidth))
-                let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: cursor, length: count))
+                cursor += count
+                if cursor < value.length { suggestedBreaks.append(cursor) }
+            }
+            for visualLine in Self.visualLines(in: auxiliary.text, breaks: suggestedBreaks) {
+                let range = visualLine.drawingRange
+                guard range.length > 0 else {
+                    if visualLine.preservesEmptyLine { y += auxiliaryFont.pointSize * 1.5 }
+                    continue
+                }
+                let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: range.location, length: range.length))
                 let rowWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
                 rows.append(.init(line: ctLine, origin: CGPoint(x: line.isDuet || line.isRTL ? availableWidth - rowWidth : 0,
                                                                 y: y + auxiliaryFont.ascender), auxiliary: true,
                                   auxiliaryKind: auxiliary.kind,
                                   auxiliaryRect: CGRect(x: 0, y: y, width: availableWidth, height: auxiliaryFont.pointSize * 1.5)))
                 y += auxiliaryFont.pointSize * 1.5
-                cursor += count
             }
         }
         if romanizationReserve > 0 && !configuration.romanizationFirst {

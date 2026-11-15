@@ -294,8 +294,14 @@ import XCTest
         let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "native-ready", title: "Ready", artists: []),
             lines: lines, language: "en", selectionReason: "Slow native regular raster")
         let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
-        let window = UIWindow(frame: canvas.frame); window.addSubview(canvas); window.isHidden = false
-        defer { canvas.stop(); window.isHidden = true }
+        // This test consumes real display frames to schedule the regular
+        // raster. A detached legacy window does not own an active scene.
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene); window.frame = canvas.frame
+        window.rootViewController = UIViewController(); window.makeKeyAndVisible()
+        window.rootViewController?.view.addSubview(canvas)
+        defer { canvas.stop(); window.isHidden = true; previous?.makeKey() }
         canvas.position = { 1 }
         var config = LyricsRenderConfiguration(); config.translation = false
         let input = AMLLPlayerInput(position: 1, playing: false)

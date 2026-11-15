@@ -430,7 +430,7 @@ import XCTest
         XCTAssertTrue(samples.contains { $0 > startY + 2 && $0 < endY - 2 },
             "Metadata must have visible intermediate positions, not stationary opacity changes: \(samples)")
         model.renderPreferences.configuration.showLyrics = true
-        try await Task.sleep(for: .milliseconds(500))
+        try await wait("metadata returned with the cover") { abs(presentedY() - startY) <= 1 }
         XCTAssertEqual(presentedY(), startY, accuracy: 1)
         XCTAssertTrue(findCanvas(host.view) === canvas)
         XCTAssertEqual(model.lyricsSeekRevision, revision)

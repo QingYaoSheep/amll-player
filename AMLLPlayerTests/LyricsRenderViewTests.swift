@@ -40,7 +40,13 @@ final class LyricsRenderViewTests: XCTestCase {
         let layout = LyricTextLayout(line: line, width: 300, configuration: .init(), traits: UITraitCollection())
         let row = LyricRowView(frame: CGRect(origin: .zero, size: layout.size))
         row.configure(line: line, layout: layout, scale: 2, configuration: .init(), blur: false, canSeek: false) {}
-        let piece = try XCTUnwrap(row.layer.sublayers?.last)
+        // Find the masked glyph, independently of presentation containers.
+        // Body/annotation split masks are shapes rather than word gradients.
+        @MainActor func wordPiece(in layer: CALayer) -> CALayer? {
+            if layer.mask is CAGradientLayer { return layer }
+            return (layer.sublayers ?? []).lazy.compactMap { wordPiece(in: $0) }.first
+        }
+        let piece = try XCTUnwrap(wordPiece(in: row.layer))
         row.update(time: 6, active: true, configuration: .init(), policy: .resolve(maximumFPS: 60, reduceMotion: true), reduceMotion: true)
         XCTAssertNil(piece.mask)
         row.update(time: 2, active: true, configuration: .init(), policy: .resolve(maximumFPS: 60, reduceMotion: true), reduceMotion: true)

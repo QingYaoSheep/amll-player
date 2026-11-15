@@ -404,10 +404,15 @@ final class AMLLVisualActivityTests: XCTestCase {
         canvas.advanceFrame(delta: 0)
         position = 1.39
         canvas.advanceFrame(delta: 1.29)
-        let view = try XCTUnwrap(canvas.subviews.first { row in
-            row.subviews.contains { $0.accessibilityIdentifier == "lyricRow.0" }
-        })
-        let text = try XCTUnwrap(view.subviews.first { $0.accessibilityIdentifier == "lyricRow.0" })
+        // Auxiliary reflow has a presentation-only container between the
+        // engine row and its text. Inspect the actual lyric descendant while
+        // retaining the engine row for its position/scale assertions.
+        @MainActor func lyricText(in view: UIView) -> UIView? {
+            if view.accessibilityIdentifier == "lyricRow.0" { return view }
+            return view.subviews.lazy.compactMap { lyricText(in: $0) }.first
+        }
+        let view = try XCTUnwrap(canvas.subviews.first { lyricText(in: $0) != nil })
+        let text = try XCTUnwrap(lyricText(in: view))
         let heldPosition = view.layer.position
         XCTAssertEqual(view.transform.a, 1, accuracy: 0.000_001)
         let heldAlpha = text.alpha

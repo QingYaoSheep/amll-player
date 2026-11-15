@@ -201,7 +201,6 @@ final class AMLLCoreTextLayout {
     private let rows: [Row]
 
     private struct VisualLine {
-        var sourceRange: NSRange
         var drawingRange: NSRange
         var preservesEmptyLine: Bool
     }
@@ -216,17 +215,17 @@ final class AMLLCoreTextLayout {
             let value = source.character(at: index)
             return value == 0x20 || value == 0x09
         }
-        var paragraphs: [(start: Int, end: Int, sourceEnd: Int)] = []
+        var paragraphs: [(start: Int, end: Int)] = []
         var start = 0, cursor = 0
         while cursor < source.length {
             let value = source.character(at: cursor)
             if value == 0x0A || value == 0x0D || value == 0x2028 || value == 0x2029 {
                 let length = value == 0x0D && cursor + 1 < source.length && source.character(at: cursor + 1) == 0x0A ? 2 : 1
-                paragraphs.append((start, cursor, cursor + length))
+                paragraphs.append((start, cursor))
                 cursor += length; start = cursor
             } else { cursor += 1 }
         }
-        paragraphs.append((start, source.length, source.length))
+        paragraphs.append((start, source.length))
         return paragraphs.flatMap { paragraph -> [VisualLine] in
             var firstContent = paragraph.start
             while firstContent < paragraph.end && collapsible(firstContent) { firstContent += 1 }
@@ -242,9 +241,7 @@ final class AMLLCoreTextLayout {
                 if upper != paragraph.end {
                     while visibleEnd > visibleStart && collapsible(visibleEnd - 1) { visibleEnd -= 1 }
                 }
-                let sourceEnd = upper == paragraph.end ? paragraph.sourceEnd : upper
-                return VisualLine(sourceRange: NSRange(location: lower, length: sourceEnd - lower),
-                    drawingRange: NSRange(location: visibleStart, length: visibleEnd - visibleStart),
+                return VisualLine(drawingRange: NSRange(location: visibleStart, length: visibleEnd - visibleStart),
                     preservesEmptyLine: paragraph.start == paragraph.end)
             }
         }

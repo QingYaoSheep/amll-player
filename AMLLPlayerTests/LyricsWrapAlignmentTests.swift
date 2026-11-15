@@ -164,6 +164,75 @@ import XCTest
         }
     }
 
+    func testOnlySoftBoundarySpacesAndTabsCollapse() {
+        for separator in [" ", "   ", "\t", " \t "] {
+            let wrapped = layout("I wake up," + separator + "the world is my buffet", width: 338)
+            XCTAssertGreaterThan(rows(wrapped).count, 1)
+            for row in rows(wrapped) {
+                XCTAssertEqual(row.map(\.rect.minX).min() ?? .nan, 0, accuracy: 0.01)
+            }
+        }
+    }
+
+    func testProductionCanvasKeepsContinuationInkAlignedAcrossModesAndAuxiliaryChanges() async throws {
+        let text = "I might call you, I might call you"
+        let line = LyricLine(id: "wrap", text: text, start: 0, end: 30,
+            words: words(text, spacing: .separate), translation: "Translation", romanization: "Pronunciation", precision: .word)
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "wrap", title: "Wrap", artists: []),
+            lines: [line], language: "en", selectionReason: "Alignment regression")
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let canvas = AMLLNativeCanvas(frame: window.bounds)
+        canvas.traitOverrides.preferredContentSizeCategory = .large
+        window.addSubview(canvas)
+        defer { canvas.stop(); canvas.removeFromSuperview() }
+        var position = 1.0
+        var seekRevision = 0
+        canvas.position = { position }
+        func lyric(in view: UIView) -> UIView? {
+            if view.accessibilityIdentifier == "lyricRow.wrap" { return view }
+            return view.subviews.lazy.compactMap { lyric(in: $0) }.first
+        }
+        for immersive in [false, true] {
+            canvas.frame.size.height = immersive ? 360 : 874
+            var configuration = LyricsRenderConfiguration()
+            configuration.immersiveLyrics = immersive
+            configuration.anchor = immersive ? 0.18 : 0.28
+            configuration.translation = false; configuration.romanization = false
+            configuration.emphasizeWords = false; configuration.enableScale = false
+            configuration.blurInactive = false; configuration.hdr = .init(enabled: false)
+            for auxiliary in [false, true, false] {
+                configuration.translation = auxiliary; configuration.romanization = auxiliary
+                canvas.configure(document: document, configuration: configuration,
+                    input: .init(position: position, playing: false, seekRevision: seekRevision), active: false, reduceMotion: false)
+                canvas.advanceFrame(delta: 0)
+                for _ in 0..<50 where lyric(in: canvas) == nil {
+                    try await Task.sleep(for: .milliseconds(20)); canvas.advanceFrame(delta: 1 / 120)
+                }
+                let body = try XCTUnwrap(lyric(in: canvas))
+                let font = AMLLLyricsFont.make(pointSize: 32, weight: .bold)
+                let rowHeight = max(font.lineHeight, font.pointSize * 1.2)
+                let format = UIGraphicsImageRendererFormat(); format.scale = 3
+                let image = UIGraphicsImageRenderer(size: body.bounds.size, format: format).image {
+                    body.layer.render(in: $0.cgContext)
+                }
+                let first = try firstInkColumn(image, row: CGRect(x: 0, y: 0, width: body.bounds.width, height: rowHeight))
+                let second = try firstInkColumn(image, row: CGRect(x: 0, y: rowHeight, width: body.bounds.width, height: rowHeight))
+                XCTAssertLessThanOrEqual(abs(first - second), 1, "Both visual rows start with the same I glyph")
+                XCTAssertEqual(canvas.frameState?.lyricTime ?? -1, position, accuracy: 0.001)
+                canvas.handleInteraction(.beginBrowsing); canvas.handleInteraction(.browseBy(20))
+                canvas.advanceFrame(delta: 1 / 120)
+                canvas.handleInteraction(.resumeFollowing)
+                position = position == 1 ? 2 : 1
+                seekRevision += 1
+                canvas.configure(document: document, configuration: configuration,
+                    input: .init(position: position, playing: false, seekRevision: seekRevision, seekPosition: position),
+                    active: false, reduceMotion: false)
+                canvas.advanceFrame(delta: 1 / 120)
+                XCTAssertEqual(canvas.frameState?.lyricTime ?? -1, position, accuracy: 0.001)
+            }
+        }
+    }
+
     func testRubyContainersTrimSoftSpacesWithoutLosingTheirCenteringOrTiming() throws {
         let wrapped = layout("A, B", width: 90, size: 22) { line, _ in
             line.words = [.init(text: "A,", start: 1, end: 2, ruby: "annotation"),

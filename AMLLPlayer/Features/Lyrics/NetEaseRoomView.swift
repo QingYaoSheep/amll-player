@@ -85,6 +85,18 @@ struct NetEaseRoomView: View {
             if room.kind == .group, room.chatID != nil {
                 NavigationLink("房间聊天") { NetEaseRoomChat(playback: playback, room: room) }
             }
+            if room.kind == .duet {
+                if let peer = playback.duetChatPeer {
+                    NavigationLink {
+                        NetEaseRoomChat(playback: playback, room: room, peer: peer)
+                    } label: {
+                        Label("与好友聊天", systemImage: "bubble.left.and.bubble.right")
+                    }.accessibilityIdentifier("netEaseDuetChat")
+                } else {
+                    Label("好友加入后可聊天", systemImage: "bubble.left.and.bubble.right")
+                        .foregroundStyle(.secondary)
+                }
+            }
             Button("离开房间", role: .destructive) { run { try await playback.leaveRoom() } }
                 .accessibilityIdentifier("netEaseRoomLeave")
         }
@@ -232,14 +244,25 @@ private struct NetEaseRoomInvitations: View {
 private struct NetEaseRoomChat: View {
     let playback: NetEasePlayback
     let room: NetEaseListeningRoom
+    var peer: NetEaseRoomMember? = nil
     @State private var messages: [NetEaseRoomMessage] = []
     @State private var text = ""
     @State private var error: String?
+    @State private var readError: String?
     @State private var sending = false
+    @State private var reading = false
+
+    private var active: Bool {
+        guard let current = playback.listeningRoom, current.id == room.id, current.kind == room.kind else { return false }
+        return peer.map { playback.duetChatPeer?.id == $0.id } ?? true
+    }
+    private var textLimit: Int { peer == nil ? 100 : 500 }
 
     var body: some View {
         List {
-            if let error { Text(verbatim: error).foregroundStyle(.secondary) }
+            if peer != nil { Text("网易云私信").font(.caption).foregroundStyle(.secondary) }
+            if !active { Text("房间成员已变更。").foregroundStyle(.secondary) }
+            if let error = error ?? readError { Text(verbatim: error).foregroundStyle(.secondary) }
             ForEach(messages) { message in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(message.sender).font(.caption).foregroundStyle(.secondary)
@@ -247,38 +270,47 @@ private struct NetEaseRoomChat: View {
                 }
             }
         }
-        .navigationTitle("房间聊天")
+        .navigationTitle(peer.map { "与\($0.name)聊天" } ?? "房间聊天")
         .safeAreaInset(edge: .bottom) {
             HStack {
                 TextField("消息", text: $text, axis: .vertical).textFieldStyle(.roundedBorder)
                 Button("发送") { Task { await send() } }
-                    .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.utf16.count > 100)
+                    .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.utf16.count > textLimit)
             }
             .padding()
             .background(.regularMaterial)
-            .disabled(playback.listeningRoom?.id != room.id)
+            .disabled(!active)
         }
         .refreshable { await refresh() }
         .task {
-            while !Task.isCancelled, playback.listeningRoom?.id == room.id {
+            while !Task.isCancelled, active {
                 if !sending { await refresh() }
                 try? await Task.sleep(for: .seconds(5))
             }
         }
+        .onChange(of: active) { if !active { messages.removeAll() } }
     }
 
     private func refresh() async {
-        do { messages = try await playback.roomAPI.messages(room) }
-        catch is CancellationError {} catch { self.error = error.localizedDescription }
+        guard active, !reading, let current = playback.listeningRoom else { return }
+        reading = true
+        defer { reading = false }
+        do {
+            let updated = if let peer { try await playback.roomAPI.duetMessages(current, peer: peer) }
+                          else { try await playback.roomAPI.messages(current) }
+            if active { messages = updated; readError = nil }
+        }
+        catch is CancellationError {} catch { if active { readError = error.localizedDescription } }
     }
 
     private func send() async {
-        guard !sending, playback.listeningRoom?.id == room.id else { return }
+        guard !sending, active, let current = playback.listeningRoom else { return }
         sending = true
         defer { sending = false }
         let draft = text
         do {
-            try await playback.roomAPI.sendMessage(room, text: draft)
+            if let peer { try await playback.roomAPI.sendDuetMessage(current, peer: peer, text: draft) }
+            else { try await playback.roomAPI.sendMessage(current, text: draft) }
             if text == draft { text = "" }
             error = nil
             await refresh()

@@ -67,10 +67,41 @@ import XCTest
         XCTAssertFalse(playback.latestSnapshot?.isPlaying ?? true)
         XCTAssertNil(defaults.string(forKey: "netease.room.v1.1"))
     }
+
+    func testDuetChatReadsBothDirectionsAndSendsOnlyToTheRoomFriend() async throws {
+        let api = RoomFixtureAPI()
+        api.duetJoined = true
+        let session = NetEaseSession(api: api, store: SeekFixtureStore())
+        try await session.importCookie("MUSIC_U=fixture")
+        let service = NetEaseRoomAPI(session: session)
+        let current = try await service.current(.duet)
+        let room = try XCTUnwrap(current)
+        let peer = try XCTUnwrap(room.chattingPeer(viewer: "1"))
+        let messages = try await service.duetMessages(room, peer: peer)
+        XCTAssertEqual(messages.map(\.sender), ["好友", "我"])
+        XCTAssertEqual(messages.map(\.text), ["一起听吧", "好"])
+        try await service.sendDuetMessage(room, peer: peer, text: "下一首")
+        XCTAssertEqual(api.sentPrivateText as? [String: String],
+                       ["msg": "下一首", "userIds": "[2]", "type": "text"])
+
+        api.duetJoined = false
+        do {
+            try await service.sendDuetMessage(room, peer: peer, text: "迟到消息")
+            XCTFail("Messages require the original room to be active")
+        } catch { XCTAssertTrue(error is NetEaseRoomError) }
+        XCTAssertEqual(api.sentPrivateText?["msg"] as? String, "下一首")
+    }
 }
 
 @MainActor private final class RoomFixtureAPI: NetEaseRequesting {
     var joinParameters: [String: Any]?
+    var sentPrivateText: [String: Any]?
+    var duetJoined = false
+    private let duet: [String: Any] = [
+        "roomId": "duet-example", "roomUsers": [
+            ["userId": 1, "nickname": "我"], ["userId": 2, "nickname": "好友"],
+        ],
+    ]
     private var groupJoined = false
     private var group: [String: Any] {
         ["multiLtRoomSnapshot": ["roomId": "group-example",
@@ -85,9 +116,9 @@ import XCTest
         switch path {
         case "/w/nuser/account/get":
             return .init(object: ["profile": ["userId": 1, "nickname": "Fixture"]], cookie: nil)
-        case "/listen/together/status/get": data = ["inRoom": false]
+        case "/listen/together/status/get": data = duetJoined ? ["inRoom": true, "roomInfo": duet] : ["inRoom": false]
         case "/listen/together/heartbeat": data = [:]
-        case "/listen/together/room/check": data = ["roomInfo": ["roomId": "duet-example"]]
+        case "/listen/together/room/check": data = ["roomInfo": duet]
         case "/listen/together/sync/playlist/get":
             data = ["playlist": ["displayList": ["result": ["42", "43"]]],
                     "playCommand": ["targetSongId": "42", "playStatus": "PLAY", "progress": 5000, "serverSeq": 3]]
@@ -100,6 +131,15 @@ import XCTest
         case "/listen/together/multi/match/heartbeat": data = group
         case "/listen/together/multi/match/exit":
             groupJoined = false
+            data = [:]
+        case "/msg/private/history":
+            data = ["msgs": [
+                ["id": 1, "fromUser": ["userId": 2], "toUser": ["userId": 1], "time": 100, "msg": #"{"msg":"一起听吧"}"#],
+                ["id": 2, "fromUser": ["userId": 1], "toUser": ["userId": 2], "time": 200, "msg": #"{"msg":"好"}"#],
+                ["id": 3, "fromUser": ["userId": 2], "toUser": ["userId": 3], "time": 300, "msg": "他人的消息"],
+            ]]
+        case "/msg/private/send":
+            sentPrivateText = parameters
             data = [:]
         default: throw NetEaseError.invalidResponse
         }

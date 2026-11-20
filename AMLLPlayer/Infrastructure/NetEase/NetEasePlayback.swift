@@ -789,6 +789,11 @@ extension NetEasePlayback {
                      song: room.clock?.track.id ?? currentEntry?.item.spotifyID ?? ordinaryBeforeRoom?.entries.first?.item.spotifyID)
     }
 
+    var duetChatPeer: NetEaseRoomMember? {
+        guard let viewer = session.profile?.id else { return nil }
+        return listeningRoom?.chattingPeer(viewer: viewer)
+    }
+
     func createRoom(_ kind: NetEaseRoomKind) async throws {
         try await withRoomOperation {
             if try await self.recoverRoom() { return }

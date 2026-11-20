@@ -266,6 +266,40 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         XCTAssertEqual(timed.map(\.end), [0.5, 1.5, 4])
         XCTAssertEqual(projected.fragments.map(\.rect), layout.rubyFragments.map(\.rect))
         XCTAssertGreaterThan(projected.characterFragments.count, timed.count)
+
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        defer { canvas.removeFromSuperview() }
+        configuration.blurInactive = false
+        func findRomanization(in view: UIView) -> UIView? {
+            if view.accessibilityIdentifier == "lyricRow.generated-roman-0" { return view }
+            return view.subviews.lazy.compactMap { findRomanization(in: $0) }.first
+        }
+        func gradients(in layer: CALayer) -> [CAGradientLayer] {
+            if layer.isHidden { return [] }
+            if let mask = layer.mask as? CAGradientLayer { return [mask] }
+            return (layer.sublayers ?? []).flatMap { gradients(in: $0) }
+        }
+        var revision = 0
+        for height in [CGFloat(700), 370] {
+            canvas.frame.size.height = height
+            var sampledEdges: [[CGFloat]] = []
+            for time in [0.3, 2.1, 0.3] {
+                revision += 1
+                canvas.position = { time }
+                canvas.configure(document: augmented, configuration: configuration,
+                                 input: .init(position: time, playing: false, seekRevision: revision, seekPosition: time),
+                                 active: false, reduceMotion: false)
+                canvas.advanceFrame(delta: 0)
+                let row = try XCTUnwrap(findRomanization(in: canvas))
+                let masks = gradients(in: row.layer)
+                XCTAssertGreaterThan(masks.count, timed.count, "Use the native character renderer for the generated cue")
+                sampledEdges.append(masks.map { $0.startPoint.x })
+            }
+            XCTAssertNotEqual(sampledEdges[0], sampledEdges[1])
+            XCTAssertEqual(sampledEdges[0], sampledEdges[2])
+        }
     }
 
     func testProviderRomanizationSharesPresetMasksAndMotionWithMatchingBody() throws {

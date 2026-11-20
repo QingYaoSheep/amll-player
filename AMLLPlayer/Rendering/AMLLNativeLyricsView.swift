@@ -1347,7 +1347,15 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
         let end = timing?.upperBound ?? cue.end
         var independent = row
         var clock = AMLLWordAnimationClock()
-        clock.enable(at: max(0, time - cue.start))
+        if !animated || (time >= start && time < end) {
+            clock.enable(at: time - cue.start)
+        } else if time >= end {
+            clock.enable(at: end - cue.start)
+            clock.disable()
+            let matchingRelease = abs(end - bodyEnd) < 0.001 && !row.wordClock.enabled
+            clock.advance(matchingRelease ? max(time - end, row.wordClock.reverseElapsed) : time - end,
+                          playing: false)
+        }
         independent.wordClock = clock
         independent.fillComplete = cue.precision == .word && time >= end
         independent.hdrHold = animated && independent.fillComplete && row.hdrHold

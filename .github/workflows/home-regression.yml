@@ -7,6 +7,9 @@ on:
       - 'AMLLPlayer/Domain/MusicHome.swift'
       - 'AMLLPlayer/Domain/NetEaseRadioState.swift'
       - 'AMLLPlayer/Features/Catalog/MusicHome*.swift'
+      - 'AMLLPlayer/Features/Catalog/NetEaseFriendsView.swift'
+      - 'AMLLPlayer/Features/Catalog/NetEaseConversationView.swift'
+      - 'AMLLPlayer/Features/Catalog/NetEaseSongSharingView.swift'
       - 'AMLLPlayer/Infrastructure/AppleMusic/AppleMusicHomeDecoder.swift'
       - 'AMLLPlayer/Infrastructure/AppleMusic/AppleMusicCatalog.swift'
       - 'AMLLPlayer/Infrastructure/NetEase/NetEasePlayback.swift'
@@ -15,6 +18,7 @@ on:
       - 'AMLLPlayerTests/NetEaseRadio*Tests.swift'
       - 'AMLLPlayerTests/NetEaseListeningRoomTests.swift'
       - 'AMLLPlayer/Infrastructure/NetEase/NetEaseListeningRoom.swift'
+      - 'AMLLPlayer/Infrastructure/NetEase/NetEaseMessaging.swift'
       - 'AMLLPlayerUITests/MusicCatalogDesignUITests.swift'
       - 'AMLLPlayerUITests/AMLLPlayerUITests.swift'
   workflow_dispatch:
@@ -76,7 +80,7 @@ jobs:
             "${UI_TESTS[@]}" \
             -resultBundlePath build/Home-iPhone.xcresult \
             -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
-      - name: Test iPad home and large text
+      - name: Test iPad home, large text and NetEase friends
         if: ${{ !cancelled() }}
         run: |
           xcrun simctl boot "$CI_IPAD_UDID" || true
@@ -86,6 +90,7 @@ jobs:
             -destination "platform=iOS Simulator,id=$CI_IPAD_UDID" \
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testHomePostersAccountMenuAndLongPressActions \
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testAccessibilityTextKeepsDescriptionAndControlsReachable \
+            -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testNetEaseFriendsOpensPrivateConversationAndSharesTheCurrentSong \
             -resultBundlePath build/Home-iPad.xcresult \
             -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Export screenshots

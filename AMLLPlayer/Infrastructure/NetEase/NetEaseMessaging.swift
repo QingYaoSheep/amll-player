@@ -106,7 +106,7 @@ enum NetEaseMessageError: LocalizedError {
         let account = try viewer()
         let root = try await session.call("/msg/private/users", ["offset": offset, "limit": pageSize, "total": "true"])
         _ = try viewer()
-        let response = root["data"] as? [String: Any] ?? root
+        let response = Self.messageContainer(root)
         guard let rows = response["msgs"] as? [[String: Any]] else { throw NetEaseError.invalidResponse }
         let items = rows.compactMap { row -> NetEaseConversation? in
             let from = row["fromUser"] as? [String: Any]
@@ -130,7 +130,7 @@ enum NetEaseMessageError: LocalizedError {
             "userId": peer.id, "time": before, "limit": pageSize, "total": "true",
         ])
         _ = try recipient(peer)
-        let response = root["data"] as? [String: Any] ?? root
+        let response = Self.messageContainer(root)
         guard let rows = response["msgs"] as? [[String: Any]] else { throw NetEaseError.invalidResponse }
         var seen = Set<String>()
         let items = rows.compactMap { row -> NetEaseDirectMessage? in
@@ -214,6 +214,11 @@ enum NetEaseMessageError: LocalizedError {
     }
 
     private static func integer(_ value: Any?) -> Int64? { Int64(NetEaseDecoder.id(value)) }
+
+    private static func messageContainer(_ root: [String: Any]) -> [String: Any] {
+        if root["msgs"] is [[String: Any]] { return root }
+        return root["data"] as? [String: Any] ?? root
+    }
 
     private static func object(_ raw: Any?) -> [String: Any]? {
         if let fields = raw as? [String: Any] { return fields }

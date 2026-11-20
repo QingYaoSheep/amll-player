@@ -38,6 +38,7 @@ struct NetEaseFriendsButton: View {
             }
             .id(session.currentState.contextID)
             .tint(MusicProductStyle.accent)
+            .presentationSizing(.page)
         }
         .task(id: "\(session.currentState.contextID):\(phase):\(showing)") {
             guard phase == .active, !showing, session.currentState.connected else { return }
@@ -177,6 +178,7 @@ private struct NetEaseFriendsView: View {
     @State private var contactSelection: NetEaseRoomMember?
     @State private var next: Int64?
     @State private var loading = false
+    @State private var showProgress = false
     @State private var loaded = false
     @State private var failure: String?
 
@@ -260,8 +262,8 @@ private struct NetEaseFriendsView: View {
                 .listRowSeparator(.hidden)
             }
             if let failure { Text(failure).font(.footnote).foregroundStyle(.secondary) }
-            if loading { ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden) }
-            if !loading, next != nil || failure != nil {
+            if showProgress { ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden) }
+            if !showProgress, next != nil || failure != nil {
                 Button(failure == nil ? "载入更多私信" : "重试") {
                     Task { await load(more: next != nil) }
                 }
@@ -305,7 +307,11 @@ private struct NetEaseFriendsView: View {
         let offset = more ? next ?? 0 : 0
         // Quiet refreshes keep the visible list and its previously loaded pages.
         loading = true
-        defer { loading = false }
+        showProgress = !quietly
+        defer {
+            loading = false
+            showProgress = false
+        }
         do {
             let page = try await NetEaseMessaging(session: model.netEaseSession).conversations(offset: offset)
             try Task.checkCancellation()

@@ -71,8 +71,8 @@ struct NetEaseConversationView: View {
                     composer
                 }
             }
-            .task(id: "\(phase):\(available):\(actions.showingRoom)") {
-                guard phase == .active, available, !actions.showingRoom else { return }
+            .task(id: "\(phase):\(available):\(actions.showingRoom):\(pickingSong):\(songDetail != nil)") {
+                guard phase == .active, available, !actions.showingRoom, !pickingSong, songDetail == nil else { return }
                 while !Task.isCancelled {
                     await refresh()
                     do { try await Task.sleep(for: .seconds(5)) } catch { return }
@@ -133,7 +133,7 @@ struct NetEaseConversationView: View {
                 }
                 ForEach(receipts) { receipt in
                     bubble(receipt.content, outgoing: true)
-                        .transition(reduceMotion ? .opacity : .offset(y: 7).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .offset(x: 0, y: 7).combined(with: .opacity))
                 }
             }
             .scrollTargetLayout()
@@ -220,18 +220,16 @@ struct NetEaseConversationView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let sendError {
-                Text(sendError).font(.footnote).foregroundStyle(.secondary)
+            if let errorMessage = sendError {
+                Text(errorMessage).font(.footnote).foregroundStyle(.secondary)
                 if unconfirmed != nil {
                     Button("检查发送结果", systemImage: "arrow.clockwise") { Task { await verifyPending() } }
                         .font(.footnote.weight(.semibold)).frame(minHeight: 44)
                         .disabled(sending || !available)
                     Button("结束确认") {
+                        if let unconfirmed { clearSentDraft(unconfirmed) }
                         unconfirmed = nil
                         sendError = nil
-                        // This is a fresh draft. The ambiguous submission is never auto-resubmitted.
-                        draft = ""
-                        song = nil
                     }
                     .font(.footnote).frame(minHeight: 44)
                 }

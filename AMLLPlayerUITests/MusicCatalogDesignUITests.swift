@@ -28,6 +28,12 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertTrue(send.isEnabled)
         send.tap()
         XCTAssertTrue(app.buttons["播放歌曲"].firstMatch.waitForExistence(timeout: 8))
+        let draft = app.descendants(matching: .any)["netEaseMessageDraft"].firstMatch
+        XCTAssertTrue(draft.exists)
+        draft.tap()
+        draft.typeText("Hello from AMLL")
+        send.tap()
+        XCTAssertTrue(app.staticTexts["Hello from AMLL"].firstMatch.waitForExistence(timeout: 6))
         capture(app, "NetEase-private-conversation-song-card")
     }
 

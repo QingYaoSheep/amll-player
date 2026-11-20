@@ -486,7 +486,7 @@ struct AMLLLyricsPlayer: View {
         let mediaLayout: ImmersiveArtworkMedia.Layout = immersive
             ? .immersive(cover: cover, viewport: size, configuration: configuration,
                 tuning: artworkDebug.configuration, presentsFrame: canKeepVideo && artworkLoader.hasPresentedFrame,
-                reduceTransparency: reduceTransparency)
+                reduceTransparency: reduceTransparency, excludesStatusBarBlur: layout != nil)
             : .inline(frame: inlineFrame,
                 visible: showsInlineCover && (currentStillFrame != nil || showsInlineVideo),
                 presentsFrame: showsInlineVideo && artworkLoader.hasPresentedFrame,

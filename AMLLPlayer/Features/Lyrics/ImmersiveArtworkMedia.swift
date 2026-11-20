@@ -27,6 +27,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         var blurProfile: ImmersiveBackgroundBlurProfile? = nil
         var videoCornerRadius: CGFloat = 0
         var fitsArtwork = true
+        var excludesStatusBarBlur = false
 
         static func inline(frame: CGRect, visible: Bool, presentsFrame: Bool, radius: CGFloat, dimming: Double = 0.16) -> Self {
             var tuning = ImmersiveArtworkDebugConfiguration()
@@ -44,7 +45,8 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         /// Lyrics and controls live above this native backdrop, never in its blur.
         static func immersive(cover: CGRect, viewport: CGSize, configuration: LyricsRenderConfiguration,
                               tuning: ImmersiveArtworkDebugConfiguration, presentsFrame: Bool,
-                              reduceTransparency: Bool, cornerRadius: CGFloat = 0, opacity: Double = 1) -> Self {
+                              reduceTransparency: Bool, cornerRadius: CGFloat = 0, opacity: Double = 1,
+                              excludesStatusBarBlur: Bool = false) -> Self {
             let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(cover), source: cover.size)
             let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: viewport,
                 adjustment: tuning[.transition])
@@ -58,7 +60,8 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 background: tuning[.background].frame(CGRect(origin: .zero, size: viewport)),
                 dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: viewport)),
                 backgroundDimming: configuration.backgroundDimming ?? 0.16,
-                cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: profile)
+                cornerRadius: cornerRadius, pageOpacity: opacity, blurProfile: profile,
+                excludesStatusBarBlur: excludesStatusBarBlur)
         }
     }
 
@@ -118,6 +121,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         private var previousLayout: Layout?
         private var appliedLayout: Layout?
         private var appliedBounds: CGRect?
+        private var appliedStatusBarBottom: CGFloat = 0
         private var blurProfile: ImmersiveBackgroundBlurProfile?
         private var rejectedConfiguration = false
         private struct PendingConfiguration {
@@ -304,6 +308,11 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             if let previousLayout { applyLayout(previousLayout) }
         }
 
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            setNeedsLayout()
+        }
+
         /// Excludes the mask-operation marker, which has no painted surface of its own.
         func plane(for layer: ImmersiveArtworkLayer) -> UIView? {
             switch layer {
@@ -318,9 +327,15 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
 
         private func applyLayout(_ layout: Layout, animated: Bool = false, alphaOnly: Bool = false) {
             guard frames.ownsPresentation(presentation) else { return }
-            guard appliedLayout != layout || appliedBounds != bounds else { return }
+            let statusBarBottom: CGFloat
+            if layout.excludesStatusBarBlur, let window {
+                let top = CGPoint(x: window.bounds.minX, y: window.bounds.minY + window.safeAreaInsets.top)
+                statusBarBottom = max(0, safeAreaInsets.top, convert(top, from: window).y)
+            } else { statusBarBottom = 0 }
+            guard appliedLayout != layout || appliedBounds != bounds || appliedStatusBarBottom != statusBarBottom else { return }
             appliedLayout = layout
             appliedBounds = bounds
+            appliedStatusBarBottom = statusBarBottom
             CATransaction.begin(); CATransaction.setDisableActions(!animated)
             func place(_ view: UIView, _ frame: CGRect) {
                 if alphaOnly { UIView.performWithoutAnimation { view.frame = frame } }
@@ -388,7 +403,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             transitionSurface.configure(amount: tuning.validatedBlur / 80,
                 mask: ImmersiveArtworkVisibility.blurMask(profile: profile,
                     topFeatherLength: CGFloat(tuning.validatedTopFeatherLength),
-                    opacity: tuning[.transition].opacity * layout.pageOpacity))
+                    opacity: tuning[.transition].opacity * layout.pageOpacity, clearThroughY: statusBarBottom))
             let actualFeather = profile.effectiveTopFeatherLength(CGFloat(tuning.validatedTopFeatherLength))
             frames.blurLayoutDiagnostic = "模糊 Y=\(Int(profile.frame.minY))–\(Int(profile.frame.maxY)) pt；半径：\(tuning.validatedBlur) pt；显示：\(transitionSurface.isHidden ? "关闭" : "开启")；混合比例：\(tuning[.transition].opacity)；顶部羽化：\(tuning.validatedTopFeatherLength) pt（实际 \(actualFeather) pt）"
             CATransaction.commit()
@@ -638,6 +653,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             previousLayout = nil
             appliedLayout = nil
             appliedBounds = nil
+            appliedStatusBarBottom = 0
             storedVideoSurface?.stop()
             storedVideoSurface?.removeFromSuperview()
             storedVideoSurface = nil
@@ -669,7 +685,28 @@ enum ImmersiveArtworkVisibility {
     /// A reusable display mask, outside the video/blur color pipeline. It is
     /// rebuilt only with layout/tuning, never captured back into the blur input.
     static func blurMask(profile: ImmersiveBackgroundBlurProfile, topFeatherLength: CGFloat,
-                         opacity: Double = 1) -> UIView? {
+                         opacity: Double = 1, clearThroughY: CGFloat = 0) -> UIView? {
+        let feather = featherMask(profile: profile, topFeatherLength: topFeatherLength, opacity: opacity)
+        let frame = profile.frame
+        let cutoff = min(frame.height, clearThroughY - frame.minY)
+        guard clearThroughY > 0, cutoff > 0, frame.width > 0 else { return feather }
+        // Clip only the display mask so the transition's strength and feather
+        // below the status bar still use the original video junction.
+        let mask = UIView(frame: CGRect(origin: .zero, size: frame.size))
+        let visible = UIView(frame: CGRect(x: 0, y: cutoff, width: frame.width, height: frame.height - cutoff))
+        visible.clipsToBounds = true
+        if let feather {
+            feather.frame.origin.y = -cutoff
+            visible.addSubview(feather)
+        } else {
+            visible.backgroundColor = .white
+        }
+        mask.addSubview(visible)
+        return mask
+    }
+
+    private static func featherMask(profile: ImmersiveBackgroundBlurProfile, topFeatherLength: CGFloat,
+                                    opacity: Double) -> UIView? {
         let opacity = opacity.isFinite ? min(1, max(0, opacity)) : 1
         let length = profile.effectiveTopFeatherLength(topFeatherLength)
         guard length > 0, profile.frame.width > 0, profile.frame.height > 0 else {

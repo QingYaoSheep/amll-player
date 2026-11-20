@@ -84,6 +84,7 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsAuxiliaryFadeTests
           -only-testing:AMLLPlayerTests/LyricsAuxiliaryMotionTests
           -only-testing:AMLLPlayerTests/LyricsWrapAlignmentTests
+          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testImmersiveLyricStatusBarMaskPreservesTheOriginalFeatherBelowIt
           -only-testing:AMLLPlayerTests/LyricsRomanizationEngineTests
           -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests/testLatePronunciationCatchUpContinuesAfterBodyLeavesSelection
           -only-testing:AMLLPlayerTests/AMLLVisualActivityTests/testRealCanvasStartsShrinkingAndFadingWithItsFirstUpwardFrame

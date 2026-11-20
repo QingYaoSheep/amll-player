@@ -10,6 +10,41 @@ import XCTest
 
 @MainActor
 final class ImmersiveArtworkMediaTests: XCTestCase {
+    func testImmersiveLyricStatusBarMaskPreservesTheOriginalFeatherBelowIt() {
+        func alpha(_ view: UIView, at y: CGFloat) -> Int {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = false
+            let pixel = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).image { renderer in
+                renderer.cgContext.translateBy(x: -view.bounds.midX, y: -y)
+                view.layer.render(in: renderer.cgContext)
+            }
+            var bytes = [UInt8](repeating: 0, count: 4)
+            return bytes.withUnsafeMutableBytes { buffer in
+                guard let image = pixel.cgImage,
+                      let context = CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                          bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return -1 }
+                context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                return Int(buffer[3])
+            }
+        }
+        let transition = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 20, width: 100, height: 300), fullStrengthY: 180)
+        for profile in [transition, transition.backgroundOnly(viewportHeight: 320)] {
+            let original = ImmersiveArtworkVisibility.blurMask(profile: profile, topFeatherLength: 66, opacity: 0.9)
+            let protected = ImmersiveArtworkVisibility.blurMask(profile: profile, topFeatherLength: 66,
+                                                               opacity: 0.9, clearThroughY: 62)
+            guard let original, let protected else { XCTFail("The test requires the visible blur masks"); return }
+            let upper = 50 - profile.frame.minY
+            XCTAssertGreaterThan(alpha(original, at: upper), 0)
+            XCTAssertEqual(alpha(protected, at: upper), 0)
+            for y in [CGFloat(65), 85, 200] {
+                let local = y - profile.frame.minY
+                XCTAssertEqual(alpha(protected, at: local), alpha(original, at: local), accuracy: 1)
+            }
+        }
+    }
+
     func testPageCompositingPreservesActualVideoReflectionAndLiveBlurAtRest() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
         let window = try playbackWindow()

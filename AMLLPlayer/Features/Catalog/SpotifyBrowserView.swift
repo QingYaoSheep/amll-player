@@ -69,6 +69,11 @@ struct MusicBrowserView: View {
                 }
                 .toolbar {
                     if home {
+                        if model.selectedMusicService == .netease {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                NetEaseFriendsButton(model: model)
+                            }
+                        }
                         ToolbarItem(placement: .topBarTrailing) {
                             MusicHomeAccountMenu(model: model, profile: model.catalog.profile) {
                                 showingDevices = true

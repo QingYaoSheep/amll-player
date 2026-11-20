@@ -121,7 +121,7 @@ struct NetEaseQueueView: View {
     @State private var failure: String?
     var body: some View {
         if model.netEasePlayback.isListeningTogether {
-            NetEaseRoomView(playback: model.netEasePlayback)
+            NetEaseRoomView(model: model)
         } else {
           NavigationStack {
             List {

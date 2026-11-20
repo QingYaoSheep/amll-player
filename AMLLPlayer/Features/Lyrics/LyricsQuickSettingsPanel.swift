@@ -142,7 +142,7 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
             if model.selectedMusicService == .netease { NetEaseQueueView(model: model) }
             else { AppleMusicQueueView(model: model) }
         case .listeningRoom:
-            NetEaseRoomView(playback: model.netEasePlayback)
+            NetEaseRoomView(model: model)
         case .lyricsSearch:
             LyricsSearchView(coordinator: model.lyrics)
         case .appearance:

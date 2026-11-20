@@ -157,7 +157,35 @@
         private final class NetEaseFixtureAPI: NetEaseRequesting {
             static let song: [String: Any] = ["id": 42, "name": "Fixture Song", "dt": 120000, "ar": [["id": 1, "name": "Fixture Artist"]]]
             private var radioBatch = 0
+            private var privateMessages: [[String: Any]] = []
             func send(_ path: String, _ parameters: [String: Any], cookie _: String?) async throws -> NetEaseResponse {
+                if ProcessInfo.processInfo.arguments.contains("--netease-friends-ui-testing") {
+                    let friend = ["userId": 2, "nickname": "Fixture Friend"] as [String: Any]
+                    let viewer = ["userId": 1, "nickname": "Fixture"] as [String: Any]
+                    if path == "/msg/private/users" {
+                        return .init(object: ["msgs": [
+                            ["fromUser": friend, "toUser": viewer, "lastMsg": #"{"msg":"你好"}"#, "newMsgCount": 1],
+                        ], "more": false])
+                    }
+                    if path == "/user/getfollows/1" {
+                        return .init(object: ["follow": [friend], "more": false])
+                    }
+                    if path == "/msg/private/history" {
+                        return .init(object: ["msgs": [["id": 1, "fromUser": friend, "toUser": viewer,
+                            "time": 100, "msg": #"{"msg":"你好"}"#]] + privateMessages, "more": false])
+                    }
+                    if path == "/msg/private/send" {
+                        let body: [String: Any]
+                        if parameters["type"] as? String == "song", let id = parameters["id"] as? String {
+                            body = ["song": ["id": id]]
+                        } else {
+                            body = ["msg": parameters["msg"] as? String ?? ""]
+                        }
+                        privateMessages.append(["id": privateMessages.count + 2, "fromUser": viewer, "toUser": friend,
+                            "time": Int64(Date().timeIntervalSince1970 * 1_000), "msg": body])
+                        return .init(object: ["code": 200])
+                    }
+                }
                 if ProcessInfo.processInfo.arguments.contains("--home-fm-ui-testing") {
                     if path == "/v1/radio/get" {
                         radioBatch += 1

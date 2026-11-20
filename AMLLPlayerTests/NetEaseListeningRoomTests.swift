@@ -91,17 +91,106 @@ import XCTest
         } catch { XCTAssertTrue(error is NetEaseRoomError) }
         XCTAssertEqual(api.sentPrivateText?["msg"] as? String, "下一首")
     }
+
+    func testPrivateMessagesAndMusicSharesWorkWithoutARoom() async throws {
+        let api = RoomFixtureAPI()
+        let session = NetEaseSession(api: api, store: SeekFixtureStore())
+        try await session.importCookie("MUSIC_U=fixture")
+        let messaging = NetEaseMessaging(session: session)
+        let page = try await messaging.conversations(offset: 0)
+        let conversation = try XCTUnwrap(page.items.first)
+        XCTAssertEqual(conversation.peer.id, "2")
+        XCTAssertEqual(conversation.peer.avatar?.scheme, "https")
+        XCTAssertEqual(conversation.preview, "分享了歌曲")
+        XCTAssertEqual(conversation.unread, 2)
+        XCTAssertEqual(page.next, 1)
+        let peer = conversation.peer
+        let history = try await messaging.history(with: peer)
+        XCTAssertEqual(history.items.map(\.content), [.text("一起听吧"), .text("好")])
+        XCTAssertEqual(history.next, 100)
+        let older = try await messaging.history(with: peer, before: 100)
+        XCTAssertEqual(older.items.map(\.content), [.song("42"), .song("43")])
+        XCTAssertNil(older.next)
+
+        try await messaging.sendSong("42", to: peer)
+        XCTAssertEqual(api.privateWrites.last?["type"] as? String, "song")
+        XCTAssertEqual(api.privateWrites.last?["id"] as? String, "42")
+
+        api.sendSongError = NetEaseError.request(415)
+        try await messaging.sendSong("43", to: peer)
+        XCTAssertEqual(api.privateWrites.suffix(2).compactMap { $0["type"] as? String }, ["song", "text"])
+        XCTAssertEqual(api.privateWrites.last?["msg"] as? String, "https://music.163.com/song?id=43")
+
+        api.sendSongError = URLError(.timedOut)
+        let count = api.privateWrites.count
+        do {
+            try await messaging.sendSong("44", to: peer)
+            XCTFail("An ambiguous write must not fall back")
+        } catch {
+            XCTAssertTrue(NetEaseMessageError.mayHaveDelivered(error))
+            XCTAssertEqual(api.privateWrites.count, count + 1)
+        }
+        XCTAssertNil(NetEaseMessaging.songLink("https://music.163.com.evil/song?id=42"))
+
+        session.disconnect()
+        do {
+            try await messaging.sendText("过期会话", to: peer)
+            XCTFail("A retired account context cannot send messages")
+        } catch is CancellationError {
+            XCTAssertEqual(api.privateWrites.count, count + 1)
+        }
+    }
+
+    func testFriendInviteWaitsForRoomSwitchConsentAndReusesAnEmptyDuetAfterFailure() async throws {
+        let api = RoomFixtureAPI()
+        let session = NetEaseSession(api: api, store: SeekFixtureStore())
+        try await session.importCookie("MUSIC_U=fixture")
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "FriendRoom-" + UUID().uuidString))
+        let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: defaults)
+        playback.start()
+        defer { playback.stop() }
+
+        let peer = try XCTUnwrap(NetEaseRoomMember(["userId": 2, "nickname": "好友"]))
+        try await playback.joinRoom(.init(kind: .group, room: "group-example", inviter: "2", song: nil), replacing: false)
+        guard case let .needsConfirmation(previous) = try await playback.listenWithFriend(peer) else {
+            return XCTFail("Other rooms require explicit confirmation")
+        }
+        XCTAssertEqual(previous.kind, .group)
+        XCTAssertEqual(playback.listeningRoom?.id, previous.id)
+        XCTAssertTrue(api.privateWrites.isEmpty)
+
+        api.sendInviteError = NetEaseError.rateLimited
+        do {
+            _ = try await playback.listenWithFriend(peer, replacing: previous)
+            XCTFail("An invitation failure preserves the room and surfaces an error")
+        } catch {
+            XCTAssertEqual(error as? NetEaseError, .rateLimited)
+        }
+        XCTAssertEqual(playback.listeningRoom?.kind, .duet)
+        XCTAssertEqual(api.duetCreations, 1)
+        api.sendInviteError = nil
+        guard case .sent(let invite) = try await playback.listenWithFriend(peer) else {
+            return XCTFail("An empty duet can be reused")
+        }
+        XCTAssertEqual(api.duetCreations, 1)
+        XCTAssertEqual(invite.room, playback.listeningRoom?.id)
+        XCTAssertEqual(api.privateWrites.last?["userIds"] as? String, "[2]")
+    }
 }
 
 @MainActor private final class RoomFixtureAPI: NetEaseRequesting {
     var joinParameters: [String: Any]?
     var sentPrivateText: [String: Any]?
+    var privateWrites: [[String: Any]] = []
+    var sendSongError: Error?
+    var sendInviteError: NetEaseError?
     var duetJoined = false
-    private let duet: [String: Any] = [
-        "roomId": "duet-example", "roomUsers": [
-            ["userId": 1, "nickname": "我"], ["userId": 2, "nickname": "好友"],
-        ],
-    ]
+    var duetCreations = 0
+    private var duet: [String: Any] {
+        let viewer = ["userId": 1, "nickname": "我"] as [String: Any]
+        let peer = ["userId": 2, "nickname": "好友"] as [String: Any]
+        return ["roomId": "duet-example", "hostUid": 1, "roomUsers": duetCreations == 0 ? [viewer, peer] : [viewer]]
+    }
     private var groupJoined = false
     private var group: [String: Any] {
         ["multiLtRoomSnapshot": ["roomId": "group-example",
@@ -117,6 +206,10 @@ import XCTest
         case "/w/nuser/account/get":
             return .init(object: ["profile": ["userId": 1, "nickname": "Fixture"]], cookie: nil)
         case "/listen/together/status/get": data = duetJoined ? ["inRoom": true, "roomInfo": duet] : ["inRoom": false]
+        case "/listen/together/room/create":
+            duetCreations += 1
+            duetJoined = true
+            data = ["roomInfo": duet]
         case "/listen/together/heartbeat": data = [:]
         case "/listen/together/room/check": data = ["roomInfo": duet]
         case "/listen/together/sync/playlist/get":
@@ -133,12 +226,29 @@ import XCTest
             groupJoined = false
             data = [:]
         case "/msg/private/history":
-            data = ["msgs": [
-                ["id": 1, "fromUser": ["userId": 2], "toUser": ["userId": 1], "time": 100, "msg": #"{"msg":"一起听吧"}"#],
-                ["id": 2, "fromUser": ["userId": 1], "toUser": ["userId": 2], "time": 200, "msg": #"{"msg":"好"}"#],
-                ["id": 3, "fromUser": ["userId": 2], "toUser": ["userId": 3], "time": 300, "msg": "他人的消息"],
+            if parameters["time"] as? Int64 == 100 {
+                data = ["more": false, "msgs": [
+                    ["id": 4, "fromUserId": 1, "toUserId": 2, "time": 35, "msg": #"{"song":{"id":42}}"#],
+                    ["id": 5, "fromUserId": 2, "toUserId": 1, "time": 50, "msg": "https://music.163.com/#/song?id=43"],
+                ]]
+            } else {
+                data = ["more": true, "msgs": [
+                    ["id": 1, "fromUser": ["userId": 2], "toUser": ["userId": 1], "time": 100, "msg": #"{"msg":"一起听吧"}"#],
+                    ["id": 2, "fromUser": ["userId": 1], "toUser": ["userId": 2], "time": 200, "msg": #"{"msg":"好"}"#],
+                    ["id": 3, "fromUser": ["userId": 2], "toUser": ["userId": 3], "time": 300, "msg": "他人的消息"],
+                ]]
+            }
+        case "/msg/private/users":
+            data = ["more": true, "msgs": [
+                ["fromUser": ["userId": 2, "nickname": "好友", "avatarUrl": "http://p1.music.126.net/image"],
+                 "toUser": ["userId": 1], "lastMsg": #"{"song":{"id":42}}"#, "lastMsgTime": 200, "newMsgCount": 2],
             ]]
         case "/msg/private/send":
+            privateWrites.append(parameters)
+            if parameters["type"] as? String == "song", let sendSongError { throw sendSongError }
+            if (parameters["msg"] as? String)?.hasPrefix("邀请你一起听歌") == true, let sendInviteError {
+                throw sendInviteError
+            }
             sentPrivateText = parameters
             data = [:]
         default: throw NetEaseError.invalidResponse

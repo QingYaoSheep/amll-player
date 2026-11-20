@@ -3,6 +3,34 @@ import XCTest
 final class MusicCatalogDesignUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor func testNetEaseFriendsOpensPrivateConversationAndSharesTheCurrentSong() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--catalog-ui-testing", "--netease-friends-ui-testing", "--skip-welcome-ui-testing",
+            "--quick-settings-service", "netease", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        let friends = app.buttons["netEaseFriends"]
+        XCTAssertTrue(friends.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Fixture Song"].waitForExistence(timeout: 8))
+        friends.tap()
+        let conversation = app.buttons["netEaseConversation:2"]
+        XCTAssertTrue(conversation.waitForExistence(timeout: 8))
+        capture(app, "NetEase-recent-conversations")
+        conversation.tap()
+        XCTAssertTrue(app.staticTexts["你好"].firstMatch.waitForExistence(timeout: 8))
+        let share = app.buttons["netEaseShareSong"]
+        XCTAssertTrue(share.exists)
+        share.tap()
+        let current = app.buttons["netEasePickSong:42"]
+        XCTAssertTrue(current.waitForExistence(timeout: 5))
+        current.tap()
+        let send = app.buttons["netEaseSendMessage"]
+        XCTAssertTrue(send.waitForExistence(timeout: 3))
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        XCTAssertTrue(app.buttons["播放歌曲"].firstMatch.waitForExistence(timeout: 8))
+        capture(app, "NetEase-private-conversation-song-card")
+    }
+
     @MainActor func testHomePostersAccountMenuAndLongPressActions() {
         let app = launch()
         let card = app.descendants(matching: .any)["homeCard:track:song0"].firstMatch

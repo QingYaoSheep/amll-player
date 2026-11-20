@@ -797,25 +797,63 @@ extension NetEasePlayback {
     func createRoom(_ kind: NetEaseRoomKind) async throws {
         try await withRoomOperation {
             if try await self.recoverRoom() { return }
-            let track = self.currentEntry?.item.spotifyID
-            if kind == .group {
-                guard let track else { throw NetEaseRoomError.selectSong }
-                _ = try await self.catalog.audio(track, quality: self.quality)
-            }
-            try self.checkRoomContext()
-            var room = try await self.roomAPI.create(kind, track: track)
-            try self.checkRoomContext()
-            room.isHost = true
-            self.enterRoom(room)
-            if kind == .duet, let track {
-                let queue = self.ordinaryBeforeRoom?.entries.map(\.item.spotifyID) ?? []
-                let ids = queue.contains(track) ? Array(queue.prefix(300)) : [track]
-                try await self.roomAPI.replaceDuetQueue(room, ids: ids.contains(track) ? ids : [track],
-                                                        version: self.nextRoomSequence())
-                try await self.sendDuetCommand(room, "GOTO", song: track, playing: true, position: 0)
-            }
+            try await self.startNewRoom(kind)
         }
         await synchronizeRoom()
+    }
+
+    private func startNewRoom(_ kind: NetEaseRoomKind) async throws {
+        let track = currentEntry?.item.spotifyID
+        if kind == .group {
+            guard let track else { throw NetEaseRoomError.selectSong }
+            _ = try await catalog.audio(track, quality: quality)
+        }
+        try checkRoomContext()
+        var room = try await roomAPI.create(kind, track: track)
+        try checkRoomContext()
+        room.isHost = true
+        enterRoom(room)
+        if kind == .duet, let track {
+            let queue = ordinaryBeforeRoom?.entries.map(\.item.spotifyID) ?? []
+            let ids = queue.contains(track) ? Array(queue.prefix(300)) : [track]
+            try await roomAPI.replaceDuetQueue(room, ids: ids.contains(track) ? ids : [track],
+                                               version: nextRoomSequence())
+            try await sendDuetCommand(room, "GOTO", song: track, playing: true, position: 0)
+        }
+    }
+
+    enum FriendRoomAction {
+        case openRoom, sent(NetEaseRoomInvite), needsConfirmation(NetEaseListeningRoom), deliveryUnknown(NetEaseRoomInvite)
+    }
+
+    func listenWithFriend(_ peer: NetEaseRoomMember, replacing expected: NetEaseListeningRoom? = nil) async throws -> FriendRoomAction {
+        let result: FriendRoomAction = try await withRoomOperation {
+            guard let viewer = session.profile?.id, NetEaseRoomInvite.numericID(peer.id) != nil, peer.id != viewer else {
+                throw NetEaseMessageError.invalidRecipient
+            }
+            if listeningRoom == nil { _ = try await recoverRoom() }
+            if let room = listeningRoom {
+                if room.chattingPeer(viewer: viewer)?.id == peer.id { return .openRoom }
+                let isEmptyDuet = room.kind == .duet && room.isHost && room.members.allSatisfy { $0.id == viewer }
+                if !isEmptyDuet {
+                    guard expected?.id == room.id, expected?.kind == room.kind else { return .needsConfirmation(room) }
+                    try await roomAPI.leave(room)
+                    try checkRoomContext()
+                    restoreOrdinaryPlayback(forgetRoom: true)
+                }
+            }
+            if listeningRoom == nil { try await startNewRoom(.duet) }
+            guard let invite = roomShareLink else { throw NetEaseRoomError.roomChanged }
+            try checkRoomContext()
+            do {
+                try await roomAPI.sendInvite(invite, to: peer)
+            } catch where NetEaseMessageError.mayHaveDelivered(error) {
+                return .deliveryUnknown(invite)
+            }
+            return .sent(invite)
+        }
+        await synchronizeRoom()
+        return result
     }
 
     func joinRoom(_ invite: NetEaseRoomInvite, replacing: Bool) async throws {

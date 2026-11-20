@@ -1,12 +1,19 @@
 import SwiftUI
 
 struct NetEaseRoomView: View {
-    let playback: NetEasePlayback
+    let model: AppModel
+    private var playback: NetEasePlayback { model.netEasePlayback }
     @Environment(\.dismiss) private var dismiss
     @State private var pastedLink = ""
     @State private var pendingInvite: NetEaseRoomInvite?
     @State private var confirmingSwitch = false
     @State private var error: String?
+    @State private var chatActions: NetEaseFriendRoomActions
+
+    init(model: AppModel) {
+        self.model = model
+        _chatActions = State(initialValue: NetEaseFriendRoomActions(playback: model.netEasePlayback, session: model.netEaseSession))
+    }
 
     var body: some View {
         NavigationStack {
@@ -88,7 +95,8 @@ struct NetEaseRoomView: View {
             if room.kind == .duet {
                 if let peer = playback.duetChatPeer {
                     NavigationLink {
-                        NetEaseRoomChat(playback: playback, room: room, peer: peer)
+                        NetEaseConversationView(model: model, peer: peer, actions: chatActions, duetRoomID: room.id)
+                            .id("\(model.netEaseSession.currentState.contextID):\(room.id):\(peer.id)")
                     } label: {
                         Label("与好友聊天", systemImage: "bubble.left.and.bubble.right")
                     }.accessibilityIdentifier("netEaseDuetChat")
@@ -244,7 +252,6 @@ private struct NetEaseRoomInvitations: View {
 private struct NetEaseRoomChat: View {
     let playback: NetEasePlayback
     let room: NetEaseListeningRoom
-    var peer: NetEaseRoomMember? = nil
     @State private var messages: [NetEaseRoomMessage] = []
     @State private var text = ""
     @State private var error: String?
@@ -253,14 +260,11 @@ private struct NetEaseRoomChat: View {
     @State private var reading = false
 
     private var active: Bool {
-        guard let current = playback.listeningRoom, current.id == room.id, current.kind == room.kind else { return false }
-        return peer.map { playback.duetChatPeer?.id == $0.id } ?? true
+        playback.listeningRoom?.id == room.id && playback.listeningRoom?.kind == room.kind
     }
-    private var textLimit: Int { peer == nil ? 100 : 500 }
 
     var body: some View {
         List {
-            if peer != nil { Text("网易云私信").font(.caption).foregroundStyle(.secondary) }
             if !active { Text("房间成员已变更。").foregroundStyle(.secondary) }
             if let error = error ?? readError { Text(verbatim: error).foregroundStyle(.secondary) }
             ForEach(messages) { message in
@@ -270,12 +274,12 @@ private struct NetEaseRoomChat: View {
                 }
             }
         }
-        .navigationTitle(peer.map { "与\($0.name)聊天" } ?? "房间聊天")
+        .navigationTitle("房间聊天")
         .safeAreaInset(edge: .bottom) {
             HStack {
                 TextField("消息", text: $text, axis: .vertical).textFieldStyle(.roundedBorder)
                 Button("发送") { Task { await send() } }
-                    .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.utf16.count > textLimit)
+                    .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.utf16.count > 100)
             }
             .padding()
             .background(.regularMaterial)
@@ -296,8 +300,7 @@ private struct NetEaseRoomChat: View {
         reading = true
         defer { reading = false }
         do {
-            let updated = if let peer { try await playback.roomAPI.duetMessages(current, peer: peer) }
-                          else { try await playback.roomAPI.messages(current) }
+            let updated = try await playback.roomAPI.messages(current)
             if active { messages = updated; readError = nil }
         }
         catch is CancellationError {} catch { if active { readError = error.localizedDescription } }
@@ -309,8 +312,7 @@ private struct NetEaseRoomChat: View {
         defer { sending = false }
         let draft = text
         do {
-            if let peer { try await playback.roomAPI.sendDuetMessage(current, peer: peer, text: draft) }
-            else { try await playback.roomAPI.sendMessage(current, text: draft) }
+            try await playback.roomAPI.sendMessage(current, text: draft)
             if text == draft { text = "" }
             error = nil
             await refresh()

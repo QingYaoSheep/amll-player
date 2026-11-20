@@ -94,14 +94,22 @@ struct NetEaseRoomInvite: Identifiable, Equatable {
     }
 }
 
-struct NetEaseRoomMember: Identifiable, Equatable {
+struct NetEaseRoomMember: Identifiable, Hashable {
     var id: String
     var name: String
+    var avatar: URL?
 
     init?(_ object: [String: Any]) {
         guard let id = NetEaseRoomInvite.numericID(object["uid"] ?? object["userId"]) else { return nil }
         self.id = id
         name = object["nickname"] as? String ?? "听友"
+        if let address = object["avatarUrl"] as? String, var url = URLComponents(string: address),
+           let host = url.host, host.hasSuffix(".music.126.net"),
+           url.user == nil, url.password == nil, url.port == nil,
+           url.scheme == "https" || url.scheme == "http" {
+            url.scheme = "https"
+            avatar = url.url
+        }
     }
 }
 
@@ -288,25 +296,12 @@ enum NetEaseRoomError: LocalizedError {
 
     func contacts(offset: Int) async throws -> [NetEaseRoomMember] {
         try ensureContext()
-        guard let id = session.profile?.id, NetEaseRoomInvite.numericID(id) != nil else { throw NetEaseError.expired }
-        let root = try await session.call("/user/getfollows/" + id, ["offset": offset, "limit": 30, "order": true])
-        guard let list = root["follow"] as? [[String: Any]] else { throw NetEaseError.invalidResponse }
-        return list.compactMap(NetEaseRoomMember.init)
+        return try await NetEaseMessaging(session: session).contacts(offset: Int64(offset)).items
     }
 
     func inbox(offset: Int) async throws -> [NetEaseRoomMember] {
         try ensureContext()
-        let data = try await session.call("/msg/private/users", ["offset": offset, "limit": 30, "total": "true"])
-        guard let messages = data["msgs"] as? [[String: Any]] else { throw NetEaseError.invalidResponse }
-        let viewer = session.profile?.id
-        return messages.compactMap { row in
-            let sender = row["fromUser"] as? [String: Any]
-            let recipient = row["toUser"] as? [String: Any]
-            let peer = NetEaseRoomInvite.numericID(sender?["userId"]) == viewer ? recipient : sender
-            guard let member = NetEaseRoomMember(peer ?? row["user"] as? [String: Any] ?? [:]),
-                  member.id != viewer else { return nil }
-            return member
-        }
+        return try await NetEaseMessaging(session: session).conversations(offset: Int64(offset)).items.map(\.peer)
     }
 
     func invites(from peer: NetEaseRoomMember, before: Int64 = 0) async throws -> [NetEaseRoomInvite] {
@@ -334,7 +329,8 @@ enum NetEaseRoomError: LocalizedError {
     func sendInvite(_ invite: NetEaseRoomInvite, to peer: NetEaseRoomMember) async throws {
         guard peer.id != session.profile?.id else { throw NetEaseRoomError.invalidInvite }
         guard try await current(invite.kind)?.id == invite.room else { throw NetEaseRoomError.roomChanged }
-        try await sendPrivateText("邀请你一起听歌\n" + invite.url.absoluteString, to: peer.id)
+        try ensureContext()
+        try await NetEaseMessaging(session: session).sendText("邀请你一起听歌\n" + invite.url.absoluteString, to: peer)
     }
 
     func duetMessages(_ room: NetEaseListeningRoom, peer: NetEaseRoomMember) async throws -> [NetEaseRoomMessage] {
@@ -342,31 +338,29 @@ enum NetEaseRoomError: LocalizedError {
         guard let viewer = session.profile?.id, room.chattingPeer(viewer: viewer)?.id == peer.id else {
             throw NetEaseRoomError.roomChanged
         }
-        let root = try await session.call("/msg/private/history", ["userId": peer.id, "time": 0, "limit": 30, "total": "true"])
-        guard let rows = (root["msgs"] ?? (root["data"] as? [String: Any])?["msgs"]) as? [[String: Any]] else {
-            throw NetEaseError.invalidResponse
-        }
-        var seen = Set<String>()
-        return rows.compactMap { row in
-            let from = row["fromUser"] as? [String: Any]
-            let to = row["toUser"] as? [String: Any]
-            guard let sender = NetEaseRoomInvite.numericID(from?["userId"]),
-                  let recipient = NetEaseRoomInvite.numericID(to?["userId"]),
-                  (sender == viewer && recipient == peer.id) || (sender == peer.id && recipient == viewer),
-                  let time = Self.integer(row["time"]), time > 0, let raw = row["msg"] else { return nil }
-            let payload = Self.object(raw)
-            let text = if let payload { (payload["msg"] ?? payload["text"]) as? String } else { raw as? String }
-            guard let text, !text.isEmpty else { return nil }
-            let id = NetEaseRoomInvite.numericID(row["id"]) ?? "\(sender):\(time):\(text)"
-            guard seen.insert(id).inserted else { return nil }
-            return .init(id: id, sender: sender == viewer ? "我" : peer.name, text: String(text.prefix(1000)), time: time)
+        return try await NetEaseMessaging(session: session).history(with: peer).items.compactMap { message in
+            guard message.content != .unsupported else { return nil }
+            let text: String
+            switch message.content {
+            case .invitation(let invite): text = "邀请你一起听歌\n" + invite.url.absoluteString
+            case .song(let id): text = "https://music.163.com/song?id=" + id
+            default: text = message.preview
+            }
+            return .init(id: message.id, sender: message.outgoing ? "我" : peer.name,
+                         text: String(text.prefix(1000)), time: message.time)
         }.sorted { $0.time < $1.time }
     }
 
     func sendDuetMessage(_ room: NetEaseListeningRoom, peer: NetEaseRoomMember, text: String) async throws {
-        try ensureContext()
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (1...500).contains(text.utf16.count), let viewer = session.profile?.id,
+        guard (1...500).contains(text.utf16.count) else { throw NetEaseMessageError.invalidText }
+        try await checkDuetChat(room, peer: peer)
+        try await NetEaseMessaging(session: session).sendText(text, to: peer)
+    }
+
+    func checkDuetChat(_ room: NetEaseListeningRoom, peer: NetEaseRoomMember) async throws {
+        try ensureContext()
+        guard let viewer = session.profile?.id,
               room.chattingPeer(viewer: viewer)?.id == peer.id,
               let latest = try await current(.duet), latest.id == room.id else {
             throw NetEaseRoomError.roomChanged
@@ -378,14 +372,7 @@ enum NetEaseRoomError: LocalizedError {
         guard checkedRoom.id == room.id, checkedRoom.chattingPeer(viewer: viewer)?.id == peer.id else {
             throw NetEaseRoomError.roomChanged
         }
-        try await sendPrivateText(text, to: peer.id)
-    }
-
-    private func sendPrivateText(_ text: String, to peer: String) async throws {
         try ensureContext()
-        _ = try await session.call("/msg/private/send", [
-            "type": "text", "msg": text, "userIds": "[\(peer)]",
-        ], roomTransport: true)
     }
 
     func messages(_ room: NetEaseListeningRoom) async throws -> [NetEaseRoomMessage] {

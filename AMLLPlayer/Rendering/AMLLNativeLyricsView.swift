@@ -1121,6 +1121,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     private let romanizationCue: LyricLine?
     private let pronunciationTiming: ClosedRange<Double>?
     private let bodyEnd: Double
+    private lazy var seekTap = UITapGestureRecognizer(target: self, action: #selector(seekFromTouch))
     private var pressFeedback: UILongPressGestureRecognizer?
     private var pressOrigin: CGPoint?
     private var pendingBlur: (AMLLPreparedBlurImages, AMLLPreparedBlurImages?, AMLLPreparedBlurImages?)?
@@ -1187,6 +1188,9 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
         }
         super.init(frame: CGRect(origin: .zero, size: layouts.original.size))
         isOpaque = false
+        // During auxiliary reflow the visibility view can be the hit target
+        // even between glyphs. The whole row has one seek destination.
+        addGestureRecognizer(seekTap)
         presentationContent.frame = bounds; presentationContent.isOpaque = false
         addSubview(presentationContent)
         pronunciationVisibility.frame = bounds; pronunciationVisibility.isOpaque = false
@@ -1206,6 +1210,8 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     }
 
     required init?(coder _: NSCoder) { nil }
+
+    @objc private func seekFromTouch() { onSeek?() }
 
     func setPressFeedbackEnabled(_ enabled: Bool) {
         if enabled, pressFeedback == nil {
@@ -1279,6 +1285,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     }
 
     func setCanSeek(_ value: Bool) {
+        if seekTap.isEnabled != value { seekTap.isEnabled = value }
         original.setCanSeek(value)
         romanization?.setCanSeek(value)
         alignedRomanization?.setCanSeek(value)
@@ -1606,7 +1613,6 @@ private final class AMLLNativeRow: UIView {
         accessibilityLabel = layoutLineAccessibilityText()
         accessibilityTraits = .button
         accessibilityIdentifier = "lyricRow." + line.id
-        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
     }
 
     func updateAuxiliaryVisibility(_ fade: LyricsAuxiliaryFade) {
@@ -1679,10 +1685,6 @@ private final class AMLLNativeRow: UIView {
     }
 
     private var accessibilityConfiguration = LyricsRenderConfiguration()
-
-    @objc private func tap() {
-        onSeek?()
-    }
 
     @objc private func seekFromAccessibility() -> Bool {
         guard onSeek != nil else { return false }

@@ -353,6 +353,59 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         }
     }
 
+    func testBodyAndPronunciationHitTheSameSeekGestureWithEitherLayout() throws {
+        let line = LyricLine(id: "body", text: "hold", start: 0, end: 5,
+            words: [.init(text: "hold", start: 0, end: 5, romanWord: "hold")], precision: .word)
+        let separate = LyricLine(id: "separate", text: "ho ld", start: 0, end: 5,
+            words: [.init(text: "ho ", start: 0, end: 2), .init(text: "ld", start: 2, end: 5)], precision: .word)
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        defer { canvas.removeFromSuperview() }
+        var calls: [String] = []
+        canvas.onInteraction = { if case let .seek(lineID) = $0 { calls.append(lineID) } }
+        canvas.position = { 1 }
+        var configuration = LyricsRenderConfiguration()
+        configuration.selectAnimationStyle(.appleMusic164)
+        configuration.romanization = true
+        func find(in view: UIView, id: String) -> UIView? {
+            if view.accessibilityIdentifier == id { return view }
+            return view.subviews.lazy.compactMap { find(in: $0, id: id) }.first
+        }
+        func taps(from hit: UIView?) -> [UITapGestureRecognizer] {
+            guard let hit, hit !== canvas else { return [] }
+            let tapsHere = (hit.gestureRecognizers ?? []).compactMap { $0 as? UITapGestureRecognizer }.filter(\.isEnabled)
+            return tapsHere + taps(from: hit.superview)
+        }
+        for immersive in [false, true] {
+            canvas.frame.size.height = immersive ? 370 : 700
+            configuration.immersiveLyrics = immersive
+            for projected in [false, true] {
+                var source = document([line])
+                if !projected {
+                    source.romanizationTTMLTrack = .init(ttml: "", cues: [.init(sourceLineIndex: 0, line: separate, tokens: [])])
+                }
+                canvas.configure(document: source, configuration: configuration,
+                                 input: .init(position: 1, playing: false), active: false, reduceMotion: false)
+                canvas.advanceFrame(delta: 0)
+                let body = try XCTUnwrap(find(in: canvas, id: "lyricRow.body"))
+                let pronunciation = try XCTUnwrap(find(in: canvas, id: projected ? "lyricRow.body.romanization" : "lyricRow.separate"))
+                let bodyPoint = body.convert(CGPoint(x: 12, y: 12), to: canvas)
+                let pronunciationPoint = projected
+                    ? pronunciation.convert(CGPoint(x: 12, y: 46), to: canvas)
+                    : pronunciation.convert(CGPoint(x: 12, y: 8), to: canvas)
+                let bodyTap = taps(from: canvas.hitTest(bodyPoint, with: nil))
+                let pronunciationTap = taps(from: canvas.hitTest(pronunciationPoint, with: nil))
+                XCTAssertEqual(bodyTap.count, 1)
+                XCTAssertEqual(pronunciationTap.count, 1)
+                XCTAssertTrue(bodyTap.first === pronunciationTap.first)
+                XCTAssertTrue(body.accessibilityActivate())
+                XCTAssertTrue(pronunciation.accessibilityActivate())
+            }
+        }
+        XCTAssertEqual(calls, Array(repeating: "body", count: 8))
+    }
+
     func testOverrideImportFailurePreservesCurrentValue() async throws {
         let engine = LyricsRomanizationEngine()
         let original = try await engine.exportOverrides()

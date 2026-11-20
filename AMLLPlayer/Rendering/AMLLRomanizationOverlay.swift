@@ -40,7 +40,6 @@ final class AMLLRomanizationOverlay: UIView {
         isAccessibilityElement = true
         accessibilityLabel = cue.text
         accessibilityIdentifier = "lyricRow." + cue.id
-        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap)))
 
         let image = images.sharp
         let fragments = layout.rubyFragments.filter { $0.kind == .romanization && $0.rect.width > 0 }
@@ -134,5 +133,4 @@ final class AMLLRomanizationOverlay: UIView {
         CATransaction.commit()
     }
 
-    @objc private func tap() { onSeek?() }
 }

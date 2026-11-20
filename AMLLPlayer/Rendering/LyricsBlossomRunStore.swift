@@ -3,6 +3,12 @@ import Foundation
 /// Engine-owned cursor state survives UIView eviction. All entries advance once
 /// per display frame, including temporarily offscreen rows and auxiliary TTML.
 final class LyricsBlossomRunStore {
+    enum Role {
+        case body
+        case independent
+        case pronunciation(bodyEnd: Double)
+    }
+
     struct Frame {
         var time: Double
         var delta: Double
@@ -19,17 +25,19 @@ final class LyricsBlossomRunStore {
         var layout: LyricsBlossomRunLayout
         var cursors: [LyricsBlossomRunSweep.Cursor]
         var row: Int
-        var allowsCatchUp: Bool
+        var role: Role
         var sample: LyricsBlossomRunLayout.Sample
     }
     private var entries: [String: Entry] = [:]
     private var frame: Frame?
     private var retargetingRows: Set<Int> = []
     private var deferredCatchUp: [Int: (time: Double, elapsed: Double)] = [:]
+    private var pronunciationEvents: [Int: Double] = [:]
     private(set) var dispatchCount = 0
     private(set) var armCount = 0
     private(set) var reconstructionCount = 0
     var count: Int { entries.count }
+    var draftTime: Double? { frame?.draftTime }
     var active: Bool { entries.values.contains { $0.cursors.contains { $0.active } } }
     var diagnostic: String {
         entries.keys.sorted().prefix(3).compactMap { key -> String? in
@@ -45,6 +53,7 @@ final class LyricsBlossomRunStore {
         frame = nil
         retargetingRows.removeAll()
         deferredCatchUp.removeAll()
+        pronunciationEvents.removeAll()
         dispatchCount = 0
         armCount = 0
     }
@@ -58,8 +67,10 @@ final class LyricsBlossomRunStore {
         if rebuild {
             retargetingRows = next.selectedRows
             deferredCatchUp.removeAll()
+            pronunciationEvents.removeAll()
         } else if next.draftTime != nil {
             deferredCatchUp.removeAll()
+            pronunciationEvents.removeAll()
         } else if next.playing {
             for row in Array(deferredCatchUp.keys) {
                 if let elapsed = deferredCatchUp[row]?.elapsed {
@@ -84,13 +95,15 @@ final class LyricsBlossomRunStore {
             } else if frame.draftTime != nil {
                 entry.cursors[index].step(now: Float(effective), delta: Float(frame.delta), segments: segments, force: true)
             } else if frame.playing {
-                // Auxiliary text keeps its own clock. Only body rows take
-                // their retargeting state from the selection's enter/leave events.
+                let retarget: Bool
+                if case .body = entry.role { retarget = retargetingRows.contains(entry.row) }
+                else { retarget = true }
                 entry.cursors[index].stepRow(now: Float(frame.time), delta: Float(frame.delta), segments: segments,
-                    flag40: frame.family == 3, flag41: !entry.allowsCatchUp || retargetingRows.contains(entry.row), force: false)
+                    flag40: frame.family == 3, flag41: retarget, force: false)
             }
         }
         if rebuild { reconstructionCount += 1 }
+        if frame.playing, frame.draftTime == nil { armPronunciation(&entry, now: frame.time) }
         entry.sample = entry.layout.sample(cursors: entry.cursors)
     }
 
@@ -101,10 +114,16 @@ final class LyricsBlossomRunStore {
         guard let frame, frame.playing, frame.draftTime == nil, !catchUp.isEmpty else { return }
         dispatchCount += catchUp.count
         var missing = catchUp
+        for row in catchUp where pronunciationEvents[row] == nil { pronunciationEvents[row] = frame.time }
         for key in Array(entries.keys) {
-            guard var entry = entries[key], entry.allowsCatchUp, catchUp.contains(entry.row) else { continue }
-            missing.remove(entry.row)
-            arm(&entry)
+            guard var entry = entries[key], catchUp.contains(entry.row) else { continue }
+            if case .body = entry.role {
+                missing.remove(entry.row)
+                arm(&entry)
+            } else {
+                armPronunciation(&entry, now: frame.time)
+                entry.sample = entry.layout.sample(cursors: entry.cursors)
+            }
             entries[key] = entry
         }
         for row in missing where deferredCatchUp[row] == nil {
@@ -119,15 +138,32 @@ final class LyricsBlossomRunStore {
         }
         entry.sample = entry.layout.sample(cursors: entry.cursors)
     }
-    func sample(key: String, row: Int, layout: LyricsBlossomRunLayout, allowsCatchUp: Bool = true) -> LyricsBlossomRunLayout.Sample {
+
+    private func armPronunciation(_ entry: inout Entry, now: Double) {
+        guard case let .pronunciation(bodyEnd) = entry.role, let dispatched = pronunciationEvents[entry.row],
+              let pronunciationEnd = entry.layout.records.compactMap({ $0.last?.end }).max() else { return }
+        // Preserve the selector's lead relative to the body. If the
+        // pronunciation ends later, wait for its own tail even after the
+        // body leaves the selected set.
+        let eligibility = dispatched + max(0, Double(pronunciationEnd) - bodyEnd)
+        guard now >= eligibility, now <= max(dispatched, Double(pronunciationEnd)) + 0.25 else { return }
+        for index in entry.cursors.indices {
+            let segments = entry.layout.records[index]
+            guard let first = segments.first, now >= Double(first.start), !entry.cursors[index].suppressed else { continue }
+            entry.cursors[index].catchUp(segments: segments)
+            armCount += 1
+        }
+    }
+
+    func sample(key: String, row: Int, layout: LyricsBlossomRunLayout, role: Role = .body) -> LyricsBlossomRunLayout.Sample {
         if var entry = entries[key], entry.layout.identity == layout.identity || entry.layout.equivalent(to: layout) {
-            entry.layout = layout; entry.allowsCatchUp = allowsCatchUp; entries[key] = entry
+            entry.layout = layout; entry.role = role; entries[key] = entry
             return entry.sample
         }
-        var entry = Entry(layout: layout, cursors: layout.records.map { _ in .init() }, row: row, allowsCatchUp: allowsCatchUp,
+        var entry = Entry(layout: layout, cursors: layout.records.map { _ in .init() }, row: row, role: role,
                           sample: layout.sample(time: frame?.time ?? 0))
         update(&entry, rebuild: true)
-        if allowsCatchUp, let event = deferredCatchUp.removeValue(forKey: row), let frame {
+        if case .body = role, let event = deferredCatchUp.removeValue(forKey: row), let frame {
             let time = Float(event.time + (frame.family == 3 ? 0.1 : 0))
             for index in entry.cursors.indices {
                 entry.cursors[index].reconstruct(now: time, segments: layout.records[index])

@@ -244,6 +244,81 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         XCTAssertNil(line.generatedRomanization)
     }
 
+    func testGeneratedKoreanUsesProjectedTTMLGeometryAndTime() async throws {
+        let line = LyricLine(id: "roman", text: "부를래", start: 0, end: 4,
+            words: [.init(text: "부", start: 0, end: 0.5), .init(text: "를", start: 0.5, end: 1.5),
+                    .init(text: "래", start: 1.5, end: 4)], precision: .word)
+        let source = document([line], language: "ko")
+        let generated = await LyricsRomanizationEngine.shared.generate(document: source)
+        let augmented = generated.applying(to: source)
+        let cue = try XCTUnwrap(augmented.romanizationTTMLTrack?.cues.first)
+        var placement = line
+        placement.generatedRomanization = cue.tokens
+        var configuration = LyricsRenderConfiguration()
+        configuration.romanization = true
+        configuration.selectAnimationStyle(.appleMusic164)
+        let layout = AMLLCoreTextLayout(line: placement, width: 320, font: .systemFont(ofSize: 32),
+                                        configuration: configuration)
+        let (roman, projected) = try XCTUnwrap(layout.timedRomanization(for: line, cue: cue.line))
+        let timed = roman.words.filter { $0.end > $0.start }
+        XCTAssertEqual(timed.map(\.text), ["bu", "reul", "rae"])
+        XCTAssertEqual(timed.map(\.start), [0, 0.5, 1.5])
+        XCTAssertEqual(timed.map(\.end), [0.5, 1.5, 4])
+        XCTAssertEqual(projected.fragments.map(\.rect), layout.rubyFragments.map(\.rect))
+        XCTAssertGreaterThan(projected.characterFragments.count, timed.count)
+    }
+
+    func testProviderRomanizationSharesPresetMasksAndMotionWithMatchingBody() throws {
+        let line = LyricLine(id: "match", text: "go", start: 0, end: 4,
+            words: [.init(text: "go", start: 0, end: 4, romanWord: "go", romanStart: 0, romanEnd: 4)],
+            precision: .word)
+        let source = document([line])
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let window = UIWindow(frame: canvas.bounds)
+        window.addSubview(canvas)
+        defer { canvas.removeFromSuperview() }
+        canvas.position = { 2 }
+        var configuration = LyricsRenderConfiguration()
+        configuration.selectAnimationStyle(.appleMusic164)
+        configuration.romanization = true
+        configuration.auxiliaryScale = 1
+        configuration.blurInactive = false
+        func find(in view: UIView, identifier: String) -> UIView? {
+            if view.accessibilityIdentifier == identifier { return view }
+            return view.subviews.lazy.compactMap { find(in: $0, identifier: identifier) }.first
+        }
+        func glyphs(in layer: CALayer) -> [CALayer] {
+            if layer.isHidden { return [] }
+            if layer.mask is CAGradientLayer { return [layer] }
+            return (layer.sublayers ?? []).flatMap { glyphs(in: $0) }
+        }
+
+        for (index, preset) in LyricsBlossomAnimationOptions.Preset.allCases.enumerated() {
+            var options = LyricsBlossomAnimationOptions()
+            options.apply(preset == .custom ? .appleMusic27 : preset)
+            if preset == .custom { options.emphasis = 0; options.scale = 1 }
+            configuration.appleMusicAnimation = options
+            canvas.configure(document: source, configuration: configuration,
+                             input: .init(position: 2, playing: false, seekRevision: index),
+                             active: false, reduceMotion: false)
+            canvas.advanceFrame(delta: 0)
+            let main = try XCTUnwrap(find(in: canvas, identifier: "lyricRow.match"))
+            let roman = try XCTUnwrap(find(in: canvas, identifier: "lyricRow.match.romanization"))
+            let mainGlyphs = glyphs(in: main.layer)
+            let romanGlyphs = glyphs(in: roman.layer)
+            XCTAssertEqual(mainGlyphs.count, 2)
+            XCTAssertEqual(romanGlyphs.count, mainGlyphs.count)
+            XCTAssertTrue(romanGlyphs.contains { $0.affineTransform() != .identity })
+            for (body, pronunciation) in zip(mainGlyphs, romanGlyphs) {
+                let bodyMask = try XCTUnwrap(body.mask as? CAGradientLayer)
+                let romanMask = try XCTUnwrap(pronunciation.mask as? CAGradientLayer)
+                XCTAssertEqual(bodyMask.startPoint.x, romanMask.startPoint.x, accuracy: 0.0001)
+                XCTAssertEqual(bodyMask.endPoint.x, romanMask.endPoint.x, accuracy: 0.0001)
+                XCTAssertEqual(body.affineTransform(), pronunciation.affineTransform())
+            }
+        }
+    }
+
     func testOverrideImportFailurePreservesCurrentValue() async throws {
         let engine = LyricsRomanizationEngine()
         let original = try await engine.exportOverrides()

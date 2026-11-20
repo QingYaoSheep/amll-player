@@ -91,6 +91,10 @@ final class AMLLNativeCanvas: UIView {
         var romanization: AMLLCoreTextLayout?
         var romanizationCue: RomanizationTTMLTrack.Cue?
         var alignedRomanization: Bool
+        var projectedRomanizationLine: LyricLine? = nil
+        var romanizationLine: LyricLine? { projectedRomanizationLine ?? romanizationCue?.line }
+        var hidesInlineRomanization: Bool { alignedRomanization || projectedRomanizationLine != nil }
+        var usesLegacyOverlay: Bool { alignedRomanization && projectedRomanizationLine == nil }
         @MainActor var auxiliarySlots: [LyricsAuxiliaryKind: CGFloat] {
             var result = original.auxiliaryRegions.compactMapValues { rects in rects.map(\.minY).min().map { $0 - original.mainOrigin.y } }
             if romanization != nil, let y = original.romanizationSlotY { result[.romanization] = y - original.mainOrigin.y }
@@ -391,6 +395,7 @@ final class AMLLNativeCanvas: UIView {
         var horizontalPadding: Double?
         var paragraphSpacing: Double?
         var auxiliaryScale: Double?
+        var animatedRomanization: Bool
     }
 
     private struct LayoutKey: Equatable {
@@ -423,7 +428,8 @@ final class AMLLNativeCanvas: UIView {
               romanizationFirst: value.romanizationFirst, fontSize: value.fontSize,
               sizePreset: value.sizePreset, bold: value.bold, tracking: value.tracking,
               horizontalPadding: value.horizontalPadding,
-              paragraphSpacing: value.paragraphSpacing, auxiliaryScale: value.auxiliaryScale)
+              paragraphSpacing: value.paragraphSpacing, auxiliaryScale: value.auxiliaryScale,
+              animatedRomanization: value.romanization && value.animationStyle == .appleMusic164)
     }
 
     private func updateViewportFade() {
@@ -515,6 +521,7 @@ final class AMLLNativeCanvas: UIView {
         let font = AMLLLyricsFont.make(pointSize: size, weight: configuration.bold || traitCollection.legibilityWeight == .bold ? .bold : .regular)
         let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
         let cue = configuration.romanization ? romanizationCues[index] : nil
+        let animateRomanization = configuration.animationStyle == .appleMusic164
         if let cue, !cue.tokens.isEmpty, line.precision == .word {
             var placement = line
             placement.generatedRomanization = cue.tokens
@@ -522,10 +529,14 @@ final class AMLLNativeCanvas: UIView {
             let aligned = AMLLCoreTextLayout(line: placement, width: width, font: font,
                                              configuration: configuration)
             if aligned.hasGeneratedRomanizationLayout {
-                let result = RowLayouts(original: aligned, romanization: nil,
-                                        romanizationCue: cue, alignedRomanization: true)
-                if configurationOverride == nil { layouts[index] = result }
-                return result
+                let projected = animateRomanization ? aligned.timedRomanization(for: line, cue: cue.line) : nil
+                if projected != nil || !animateRomanization || cue.line.precision == .line {
+                    let result = RowLayouts(original: aligned, romanization: projected?.1,
+                                            romanizationCue: cue, alignedRomanization: true,
+                                            projectedRomanizationLine: projected?.0)
+                    if configurationOverride == nil { layouts[index] = result }
+                    return result
+                }
             }
         }
         var romanConfiguration = configuration
@@ -534,12 +545,14 @@ final class AMLLNativeCanvas: UIView {
         romanConfiguration.paragraphSpacing = 0
         let romanFont = font.withSize(max(10, size * (configuration.auxiliaryScale ?? 0.5)))
         let romanLayout = cue.map {
-            AMLLCoreTextLayout(line: $0.line, width: width, font: romanFont, configuration: romanConfiguration)
+            AMLLCoreTextLayout(line: $0.line, width: width, font: romanFont, configuration: romanConfiguration,
+                               preservesWordTiming: animateRomanization)
         }
         let original = AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration,
                                           romanizationReserve: romanLayout?.size.height ?? 0)
-        let result = RowLayouts(original: original, romanization: romanLayout,
-                                romanizationCue: cue, alignedRomanization: false)
+        let projected = animateRomanization && cue == nil ? original.timedRomanization(for: line, cue: nil) : nil
+        let result = RowLayouts(original: original, romanization: romanLayout ?? projected?.1,
+                                romanizationCue: cue, alignedRomanization: false, projectedRomanizationLine: projected?.0)
         if configurationOverride == nil { layouts[index] = result }
         return result
     }
@@ -690,8 +703,9 @@ final class AMLLNativeCanvas: UIView {
             view.setCanSeek(canSeek)
             view.setPressFeedbackEnabled(usesApple164Appearance && canSeek && !reduceMotion)
             let gain = hdr.brightness(for: row)
-            view.updateVisuals(renderer: gain > 1 ? hdrRenderer : nil,
-                               gain: gain, lyricTime: state.lyricTime, runStore: engine!.runStore,
+            view.updateVisuals(renderer: brightness > 1 ? hdrRenderer : nil,
+                               gain: gain, hdrBrightness: brightness, hdrTime: actualTime,
+                               lyricTime: state.lyricTime, runStore: engine!.runStore,
                                row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
             if !requestsBlurImages || row.blur == 0 { view.releaseAuxiliarySourceWait() }
             view.updateAuxiliaryVisibility(auxiliaryFade)
@@ -762,7 +776,8 @@ final class AMLLNativeCanvas: UIView {
         let scale = window?.screen.scale ?? 2
         let original = layout.original.rasterSnapshot()
         let romanization = layout.romanization?.rasterSnapshot()
-        let aligned = layout.alignedRomanization
+        let hidesInline = layout.hidesInlineRomanization
+        let legacyOverlay = layout.usesLegacyOverlay
         var delay = max(0, 0.09 - (CACurrentMediaTime() - blurLevelChangedAt))
         #if DEBUG
             delay += auxiliaryNormalPreparationDelay
@@ -779,9 +794,9 @@ final class AMLLNativeCanvas: UIView {
                   lyricBlurMaximum == maximum else { return }
             let images = await Task.detached(priority: .utility) {
                 (
-                    AMLLPreparedBlurImages(snapshot: original, scale: scale, maximum: maximum, hideRomanization: aligned),
+                    AMLLPreparedBlurImages(snapshot: original, scale: scale, maximum: maximum, hideRomanization: hidesInline),
                     romanization.map { AMLLPreparedBlurImages(snapshot: $0, scale: scale, maximum: maximum) },
-                    aligned ? AMLLPreparedBlurImages(snapshot: original, scale: scale, maximum: maximum, overlay: true) : nil
+                    legacyOverlay ? AMLLPreparedBlurImages(snapshot: original, scale: scale, maximum: maximum, overlay: true) : nil
                 )
             }.value
             guard active, window != nil, requestsBlurImages, prewarmGeneration == generation,
@@ -835,14 +850,15 @@ final class AMLLNativeCanvas: UIView {
             let scale = window?.screen.scale ?? 2
             let original = layout.original.rasterSnapshot()
             let romanization = layout.romanization?.rasterSnapshot()
-            let aligned = layout.alignedRomanization
+            let hidesInline = layout.hidesInlineRomanization
+            let legacyOverlay = layout.usesLegacyOverlay
             let maximum = requestsBlurImages ? lyricBlurMaximum : nil
             Task.detached(priority: .utility) { [weak self] in
                 let images = AMLLPreparedCompositeImages(
                     original: AMLLPreparedRowImages(snapshot: original, scale: scale,
-                                                    hideRomanization: aligned, blurMaximum: maximum),
+                                                    hideRomanization: hidesInline, blurMaximum: maximum),
                     romanization: romanization.map { AMLLPreparedRowImages(snapshot: $0, scale: scale, blurMaximum: maximum) },
-                    overlay: aligned ? AMLLPreparedOverlayImages(snapshot: original, scale: scale, blurMaximum: maximum) : nil
+                    overlay: legacyOverlay ? AMLLPreparedOverlayImages(snapshot: original, scale: scale, blurMaximum: maximum) : nil
                 )
                 await MainActor.run {
                     guard let self, self.prewarmGeneration == generation else { return }
@@ -1103,6 +1119,8 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     private let romanization: AMLLNativeRow?
     private let alignedRomanization: AMLLRomanizationOverlay?
     private let romanizationCue: LyricLine?
+    private let pronunciationTiming: ClosedRange<Double>?
+    private let bodyEnd: Double
     private var pressFeedback: UILongPressGestureRecognizer?
     private var pressOrigin: CGPoint?
     private var pendingBlur: (AMLLPreparedBlurImages, AMLLPreparedBlurImages?, AMLLPreparedBlurImages?)?
@@ -1125,7 +1143,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
             + (pendingBlur.map { $0.0.estimatedBytes + ($0.1?.estimatedBytes ?? 0) + ($0.2?.estimatedBytes ?? 0) } ?? 0)
     }
 
-    var needsHDRRetry: Bool { original.needsHDRRetry }
+    var needsHDRRetry: Bool { original.needsHDRRetry || romanization?.needsHDRRetry == true }
     var blurMaximum: Double? { original.requestedBlurMaximum }
     func captureAuxiliaryBlur() -> LyricsAuxiliaryBlurStarter? { original.captureAuxiliaryBlur() }
 
@@ -1143,17 +1161,26 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
          prepared: AMLLPreparedCompositeImages? = nil, initialBlurMaximum: Double? = nil,
          auxiliaryFade: LyricsAuxiliaryFade? = nil, awaitsBlurSource: Bool = false, blurStarter: LyricsAuxiliaryBlurStarter? = nil) {
         baseSlots = layouts.auxiliarySlots
+        bodyEnd = line.end
+        let timedWords = layouts.romanizationLine?.words.filter {
+            $0.start.isFinite && $0.end.isFinite && $0.end > $0.start
+                && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        } ?? []
+        if let start = timedWords.map(\.start).min(), let end = timedWords.map(\.end).max() {
+            pronunciationTiming = start...end
+        } else { pronunciationTiming = nil }
         original = AMLLNativeRow(line: line, layout: layouts.original, scale: scale,
-                                 hideRomanization: layouts.alignedRomanization, prepared: prepared?.original,
+                                 hideRomanization: layouts.hidesInlineRomanization, prepared: prepared?.original,
                                  initialBlurMaximum: initialBlurMaximum, auxiliaryFade: auxiliaryFade,
                                  awaitsBlurSource: awaitsBlurSource, blurStarter: blurStarter)
-        romanizationCue = layouts.romanizationCue?.line
-        alignedRomanization = layouts.alignedRomanization && layouts.romanizationCue != nil
+        romanizationCue = layouts.romanizationLine
+        alignedRomanization = layouts.usesLegacyOverlay && layouts.romanizationCue != nil
             ? AMLLRomanizationOverlay(layout: layouts.original, cue: layouts.romanizationCue!.line,
                                       scale: scale, prepared: prepared?.overlay, initialBlurMaximum: initialBlurMaximum)
             : nil
-        if let cue = layouts.romanizationCue, let layout = layouts.romanization {
-            romanization = AMLLNativeRow(line: cue.line, layout: layout, scale: scale,
+        if let cue = layouts.romanizationLine, let layout = layouts.romanization {
+            romanization = AMLLNativeRow(line: cue, layout: layout, scale: scale,
+                                          isRomanization: layout.pronunciationEmphasisChunks != nil,
                                           prepared: prepared?.romanization, initialBlurMaximum: initialBlurMaximum)
         } else {
             romanization = nil
@@ -1174,6 +1201,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
             romanization.frame = CGRect(x: 0, y: layouts.original.romanizationSlotY ?? 0,
                                         width: layout.size.width, height: layout.size.height)
             pronunciationVisibility.addSubview(romanization)
+            if layouts.romanizationCue == nil { romanization.isAccessibilityElement = false }
         }
     }
 
@@ -1294,7 +1322,8 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
 
     func releaseAuxiliarySourceWait() { original.releaseAuxiliarySourceWait() }
 
-    func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, lyricTime: Double, runStore: LyricsBlossomRunStore,
+    func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, hdrBrightness: Double, hdrTime: Double,
+                       lyricTime: Double, runStore: LyricsBlossomRunStore,
                        row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool)
     {
         if let (blur, romanBlur, overlayBlur) = pendingBlur {
@@ -1307,27 +1336,34 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
                 if let overlayBlur { alignedRomanization?.installBlur(overlayBlur) }
             }
         }
-        original.updateVisuals(renderer: renderer, gain: gain, row: row,
+        original.updateVisuals(renderer: gain > 1 ? renderer : nil, gain: gain, row: row,
                                configuration: configuration, motionEnabled: motionEnabled, lyricTime: lyricTime, runStore: runStore, runKey: "main:\(row.lineIndex)")
         alignedRomanization?.update(row: row, lyricTime: lyricTime, configuration: configuration)
         guard let cue = romanizationCue, let romanization else { return }
+        let timing = configuration.animationStyle == .appleMusic164 && cue.precision == .word ? pronunciationTiming : nil
+        let animated = timing != nil
+        let time = animated ? runStore.draftTime ?? lyricTime : lyricTime
+        let start = timing?.lowerBound ?? cue.start
+        let end = timing?.upperBound ?? cue.end
         var independent = row
         var clock = AMLLWordAnimationClock()
-        clock.enable(at: max(0, lyricTime - cue.start))
+        clock.enable(at: max(0, time - cue.start))
         independent.wordClock = clock
-        independent.fillComplete = cue.precision == .word && lyricTime >= cue.end
-        independent.hdrHold = false
-        independent.active = lyricTime >= cue.start && lyricTime < cue.end
+        independent.fillComplete = cue.precision == .word && time >= end
+        independent.hdrHold = animated && independent.fillComplete && row.hdrHold
+        independent.active = time >= start && time < end
         if cue.precision == .line, !independent.active {
             independent.opacity *= row.darkAlpha
         }
         var auxiliaryConfiguration = configuration
         auxiliaryConfiguration.romanization = false
         auxiliaryConfiguration.translation = false
-        // The pronunciation has its own TTML masks. Original-word emphasis
-        // and HDR must not be applied to this independent SDR text row.
-        romanization.updateVisuals(renderer: nil, gain: 1, row: independent,
-                                   configuration: auxiliaryConfiguration, motionEnabled: false, lyricTime: lyricTime, runStore: runStore, runKey: "roman:\(row.lineIndex)", runCatchUp: false)
+        let hdrActive = animated && ((hdrTime >= start && hdrTime < end) || independent.hdrHold)
+        let romanGain = hdrActive ? 1 + (hdrBrightness - 1) * (row.retirement?.hdrWeight ?? 1) : 1
+        romanization.updateVisuals(renderer: romanGain > 1 ? renderer : nil, gain: romanGain, row: independent,
+                                   configuration: auxiliaryConfiguration, motionEnabled: animated && motionEnabled,
+                                   lyricTime: time, runStore: runStore, runKey: "roman:\(row.lineIndex)",
+                                   runRole: animated ? .pronunciation(bodyEnd: bodyEnd) : .independent)
     }
 
 }
@@ -1412,7 +1448,8 @@ private final class AMLLNativeRow: UIView {
     var onSeek: (() -> Void)?
 
     init(line: LyricLine, layout: AMLLCoreTextLayout, scale: CGFloat,
-         hideRomanization: Bool = false, prepared: AMLLPreparedRowImages? = nil, initialBlurMaximum: Double? = nil,
+         hideRomanization: Bool = false, isRomanization: Bool = false,
+         prepared: AMLLPreparedRowImages? = nil, initialBlurMaximum: Double? = nil,
          auxiliaryFade: LyricsAuxiliaryFade? = nil, awaitsBlurSource: Bool = false, blurStarter: LyricsAuxiliaryBlurStarter? = nil) {
         self.line = line; textLayout = layout
         self.auxiliaryFade = auxiliaryFade
@@ -1428,16 +1465,17 @@ private final class AMLLNativeRow: UIView {
             previousY = fragment.rect.minY; previousRTL = fragment.rtl
             // Native RTL source-to-visual association needs a separate shaped
             // distance mapping; retain the established mask until available.
-            guard !fragment.rtl, layout.sourceAtoms.indices.contains(fragment.wordIndex) else { continue }
+            guard (isRomanization || !fragment.rtl), layout.sourceAtoms.indices.contains(fragment.wordIndex) else { continue }
             let owner = layout.sourceAtoms[fragment.wordIndex].sourceWordIndex
             guard line.words.indices.contains(owner) else { continue }
             let source = line.words[owner]
             groupForRange[fragment.range] = group
             pieces.append(.init(range: fragment.range, width: fragment.rect.width,
-                start: source.start, end: source.end, group: group, source: owner, origin: fragment.rect.minX))
+                start: source.start, end: source.end, group: group, source: owner,
+                origin: fragment.rtl ? -fragment.rect.maxX : fragment.rect.minX))
         }
-        let spans = layout.fragments.map { ($0.range, $0.rect.minX) }
-            + layout.characterFragments.map { ($0.range, $0.rect.minX) }
+        let spans = layout.fragments.map { ($0.range, $0.rtl ? -$0.rect.maxX : $0.rect.minX) }
+            + layout.characterFragments.map { ($0.range, $0.rtl ? -$0.rect.maxX : $0.rect.minX) }
         let placements: [LyricsBlossomRunLayout.Placement] = spans.compactMap { range, x in
             guard let parent = sortedFragments.first(where: {
                 $0.range.location <= range.location && NSMaxRange(range) <= NSMaxRange($0.range)
@@ -1528,7 +1566,7 @@ private final class AMLLNativeRow: UIView {
         // `wordIndex` addresses the display document's segmented timing atoms,
         // which may be more numerous than the provider's original words.
         let emphasis = AMLLSourceWordAnimation.chunkEmphasis(words: line.words, lineStart: line.start,
-                                                             isBackground: line.isBackground)
+                                                             isBackground: line.isBackground, shapedChunks: layout.pronunciationEmphasisChunks)
         var characterConsumed: [Int: Double] = [:]
         var characterWordIndexes = Set<Int>()
         for fragment in layout.characterFragments where fragment.rect.width > 0 {
@@ -1668,7 +1706,8 @@ private final class AMLLNativeRow: UIView {
     }
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row,
-                       configuration originalConfiguration: LyricsRenderConfiguration, motionEnabled: Bool, lyricTime: Double, runStore: LyricsBlossomRunStore, runKey: String, runCatchUp: Bool = true)
+                       configuration originalConfiguration: LyricsRenderConfiguration, motionEnabled: Bool, lyricTime: Double,
+                       runStore: LyricsBlossomRunStore, runKey: String, runRole: LyricsBlossomRunStore.Role = .body)
     {
         var configuration = originalConfiguration
         if configuration.animationStyle == .appleMusic164 {
@@ -1689,7 +1728,7 @@ private final class AMLLNativeRow: UIView {
             visual.wordClock = settled
         }
         let runSample: LyricsBlossomRunLayout.Sample? = configuration.animationStyle == .appleMusic164 && line.precision == .word
-            ? runStore.sample(key: runKey, row: row.lineIndex, layout: blossomLayout, allowsCatchUp: runCatchUp) : nil
+            ? runStore.sample(key: runKey, row: row.lineIndex, layout: blossomLayout, role: runRole) : nil
         let nextSample = configuration.usesCalibratedApple164Appearance
             ? runSample.map(blossomLayout.withCalibratedFeather) : runSample
         let runChanged = nextSample != blossomSample

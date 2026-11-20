@@ -2,6 +2,37 @@
 import XCTest
 
 final class LyricsBlossomMechanismTests: XCTestCase {
+    func testLatePronunciationCatchUpContinuesAfterBodyLeavesSelection() {
+        for family in [0, 2, 3] {
+            let store = LyricsBlossomRunStore()
+            func layout(end: Double) -> LyricsBlossomRunLayout {
+                .init(text: "tail", pieces: [
+                    .init(range: NSRange(location: 0, length: 4), width: 80, start: 1, end: end)
+                ], pixelsPerPoint: 2)
+            }
+            let body = layout(end: 2), late = layout(end: 3)
+            store.beginFrame(.init(time: 1.75, delta: 0, playing: true, revision: 0, family: family, selectedRows: [0]))
+            _ = store.sample(key: "main:0", row: 0, layout: body)
+            _ = store.sample(key: "matching:0", row: 0, layout: body, role: .pronunciation(bodyEnd: 2))
+            store.applySelection(entered: [], left: [], catchUp: [0])
+            _ = store.sample(key: "late:0", row: 0, layout: late, role: .pronunciation(bodyEnd: 2))
+            XCTAssertEqual(store.cursorStates(key: "main:0"), store.cursorStates(key: "matching:0"))
+            XCTAssertEqual(store.cursorStates(key: "late:0").first?.suppressed, false)
+            store.applySelection(entered: [1], left: [0], catchUp: [])
+            store.beginFrame(.init(time: 2.75, delta: 1, playing: true, revision: 0, family: family))
+            XCTAssertEqual(store.cursorStates(key: "late:0").first?.duration, 0.25)
+            XCTAssertEqual(store.cursorStates(key: "late:0").first?.suppressed, true)
+            let before = store.cursorStates(key: "late:0").first?.value ?? 0
+            store.beginFrame(.init(time: 2.8, delta: 0.05, playing: true, revision: 0, family: family))
+            XCTAssertGreaterThan(store.cursorStates(key: "late:0").first?.value ?? 0, before)
+            let posed = store.cursorStates(key: "late:0")
+            store.beginFrame(.init(time: 2.8, delta: 0.1, playing: false, revision: 0, family: family))
+            XCTAssertEqual(store.cursorStates(key: "late:0"), posed)
+            store.beginFrame(.init(time: 1.5, delta: 0, playing: false, revision: 1, family: family))
+            XCTAssertEqual(store.cursorStates(key: "late:0").first?.suppressed, false)
+            XCTAssertLessThan(store.cursorStates(key: "late:0").first?.value ?? 0, before)
+        }
+    }
     func testDefaultSelectorCanDispatchCatchUpBeforeChangingSelection() {
         let records: [LyricsBlossomSelectionSchedule.Record] = [
             .init(index: 0, start: 0, end: 8, lastWordEnd: 8),
@@ -327,11 +358,11 @@ final class LyricsBlossomMechanismTests: XCTestCase {
         let store = LyricsBlossomRunStore(), model = layout()
         store.beginFrame(.init(time: 0.5, delta: 0, playing: true, revision: 0, family: 0))
         _ = store.sample(key: "main:0", row: 0, layout: model)
-        _ = store.sample(key: "roman:0", row: 0, layout: model, allowsCatchUp: false)
+        _ = store.sample(key: "roman:0", row: 0, layout: model, role: .independent)
         store.beginFrame(.init(time: 0.6, delta: 0.1, playing: true, revision: 0, family: 0, catchUpRows: [0]))
         store.beginFrame(.init(time: 0.85, delta: 0.25, playing: true, revision: 0, family: 0))
         let body = store.sample(key: "main:0", row: 0, layout: model)
-        let roman = store.sample(key: "roman:0", row: 0, layout: model, allowsCatchUp: false)
+        let roman = store.sample(key: "roman:0", row: 0, layout: model, role: .independent)
         XCTAssertGreaterThan(body.starts[0], roman.starts[0])
     }
 

@@ -64,10 +64,10 @@ enum AMLLSourceWordAnimation {
     /// then distributes it to each timed atom's character elements. Ordinary
     /// float and fill masks remain timed per atom, including ruby containers.
     static func chunkEmphasis(words: [LyricWord], lineStart: Double,
-                              isBackground: Bool) -> [[Int: CharacterAnimation]]
+                              isBackground: Bool, shapedChunks: [[LyricWord]]? = nil) -> [[Int: CharacterAnimation]]
     {
         var result: [[Int: CharacterAnimation]] = []
-        for chunk in AMLLWordSegmentation.chunks(words) {
+        for chunk in shapedChunks ?? AMLLWordSegmentation.chunks(words) {
             let text = chunk.map(\.text).joined()
             let start = chunk.map(\.start).min() ?? lineStart
             let end = chunk.map(\.end).max() ?? start

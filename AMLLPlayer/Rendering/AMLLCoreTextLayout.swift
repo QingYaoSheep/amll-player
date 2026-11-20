@@ -198,7 +198,127 @@ final class AMLLCoreTextLayout {
     /// Original annotation data stays on the source word; no inferred ruby
     /// character correspondence is introduced by segmentation.
     let sourceAtoms: [AMLLWordSegmentation.Atom]
+    private(set) var pronunciationEmphasisChunks: [[LyricWord]]?
     private let rows: [Row]
+    private struct RomanizationShape {
+        var row: Row
+        var text: String
+        var rect: CGRect
+        var segments: [RubyFragment]
+    }
+    private var romanizationShapes: [RomanizationShape] = []
+
+    /// Use the already shaped annotation glyphs as a timed row. Source indices
+    /// here address the pronunciation text, not the body or its ruby ranges.
+    func timedRomanization(for body: LyricLine, cue: LyricLine?) -> (LyricLine, AMLLCoreTextLayout)? {
+        guard !romanizationShapes.isEmpty, cue == nil || cue?.precision == .word else { return nil }
+        var words: [LyricWord] = []
+        var pieces: [WordFragment] = []
+        var characters: [CharacterFragment] = []
+        var rasterRows: [Row] = []
+        var atoms: [AMLLWordSegmentation.Atom] = []
+        var mask: [AMLLWordMask.Word] = []
+        var offset = 0
+        var matchedCueWords = Set<Int>()
+        for shape in romanizationShapes {
+            let ns = shape.text as NSString
+            var raster = shape.row
+            raster.ruby = false
+            raster.romanization = false
+            var hasTiming = false
+            let segments = Dictionary(grouping: shape.segments, by: \.segmentIndex)
+            for index in segments.keys.sorted() {
+                guard let first = segments[index]?.first, let parts = segments[index] else { continue }
+                let lower = parts.map(\.range.location).min() ?? 0
+                let upper = parts.map { NSMaxRange($0.range) }.max() ?? lower
+                let range = NSRange(location: lower, length: upper - lower)
+                let text = ns.substring(with: range)
+                let word: LyricWord
+                if let cue {
+                    guard let ordinal = first.ttmlWordIndex, cue.words.indices.contains(ordinal),
+                          cue.words[ordinal].text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            == text.trimmingCharacters(in: .whitespacesAndNewlines),
+                          matchedCueWords.insert(ordinal).inserted else { return nil }
+                    word = .init(text: text, start: cue.words[ordinal].start, end: cue.words[ordinal].end)
+                } else if let start = first.start, let end = first.end {
+                    word = .init(text: text, start: start, end: end)
+                } else { continue }
+                guard word.start.isFinite, word.end.isFinite, word.end > word.start else {
+                    if cue != nil { return nil }
+                    continue
+                }
+                if !words.isEmpty {
+                    let space = LyricWord(text: " ", start: word.start, end: word.start)
+                    atoms.append(.init(word: space, sourceWordIndex: words.count, sourceRange: NSRange(location: 0, length: 1)))
+                    words.append(space)
+                    mask.append(.init(start: space.start, end: space.end, width: 0))
+                    offset += 1
+                }
+                let wordIndex = words.count
+                words.append(word)
+                atoms.append(.init(word: word, sourceWordIndex: wordIndex,
+                                   sourceRange: NSRange(location: 0, length: range.length)))
+                mask.append(.init(start: word.start, end: word.end, width: parts.reduce(0) { $0 + $1.rect.width }))
+                let runs = Self.visualRuns(in: raster.line)
+                for part in parts where part.rect.width > 0 {
+                    pieces.append(.init(rect: part.rect, word: word,
+                                        range: NSRange(location: offset + part.range.location - lower, length: part.range.length),
+                                        rtl: part.rtl, wordIndex: wordIndex))
+                }
+                var cursor = lower
+                for (characterIndex, character) in text.enumerated() {
+                    let value = String(character)
+                    let characterRange = NSRange(location: cursor, length: value.utf16.count)
+                    cursor += characterRange.length
+                    for part in parts {
+                        let overlap = NSIntersectionRange(characterRange, part.range)
+                        guard overlap.length > 0,
+                              let run = runs.first(where: { NSIntersectionRange($0.range, overlap) == overlap }) else { continue }
+                        let start = run.offset(at: overlap.location, in: raster.line)
+                        let end = run.offset(at: NSMaxRange(overlap), in: raster.line)
+                        guard abs(end - start) > 0 else { continue }
+                        characters.append(.init(
+                            rect: CGRect(x: raster.origin.x + min(start, end), y: part.rect.minY,
+                                         width: abs(end - start), height: part.rect.height),
+                            range: NSRange(location: offset + overlap.location - lower, length: overlap.length),
+                            rtl: part.rtl, wordIndex: wordIndex, characterIndex: characterIndex, word: word))
+                    }
+                }
+                offset += range.length
+                hasTiming = true
+            }
+            if !hasTiming {
+                raster.auxiliary = true
+                raster.auxiliaryKind = .romanization
+                raster.auxiliaryRect = shape.rect
+            }
+            rasterRows.append(raster)
+        }
+        guard !pieces.isEmpty, let start = pieces.map(\.word.start).min(), let end = pieces.map(\.word.end).max() else { return nil }
+        if let cue, cue.words.indices.contains(where: {
+            let word = cue.words[$0]
+            return word.end > word.start && !word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !matchedCueWords.contains($0)
+        }) { return nil }
+        var line = cue ?? .init(id: body.id + ".romanization", text: "", start: start, end: end)
+        line.text = words.map(\.text).joined()
+        line.words = words
+        line.start = start; line.end = end
+        line.precision = .word
+        line.isBackground = body.isBackground
+        let layout = AMLLCoreTextLayout(size: size, font: font.withSize(auxiliaryPointSize), rows: rasterRows,
+                                       fragments: pieces, characters: characters, atoms: atoms, mask: mask)
+        return (line, layout)
+    }
+
+    private init(size: CGSize, font: UIFont, rows: [Row], fragments: [WordFragment],
+                 characters: [CharacterFragment], atoms: [AMLLWordSegmentation.Atom], mask: [AMLLWordMask.Word]) {
+        self.size = size; self.font = font; self.rows = rows; self.fragments = fragments
+        characterFragments = characters; sourceAtoms = atoms; maskWords = mask
+        auxiliaryPointSize = font.pointSize; rubyFragments = []; diagnostics = []; breakOffsets = []
+        romanizationSlotY = nil; hasGeneratedRomanizationLayout = false
+        pronunciationEmphasisChunks = atoms.map { [$0.word] }
+    }
 
     private struct VisualLine {
         var drawingRange: NSRange
@@ -248,7 +368,7 @@ final class AMLLCoreTextLayout {
     }
 
     init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration,
-         romanizationReserve: CGFloat = 0) {
+         romanizationReserve: CGFloat = 0, preservesWordTiming: Bool = false) {
         self.font = font
         auxiliaryPointSize = max(10, font.pointSize * (configuration.auxiliaryScale ?? 0.5))
         let availableWidth = max(1, width)
@@ -265,7 +385,17 @@ final class AMLLCoreTextLayout {
                        sourceRange: NSRange(location: 0, length: word.text.utf16.count))]
             }
         } else if line.precision == .word {
-            AMLLWordSegmentation.mappedChunks(line.words)
+            AMLLWordSegmentation.mappedChunks(line.words).map { chunk in
+                guard preservesWordTiming else { return chunk }
+                return chunk.map { atom in
+                    guard !atom.word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return atom }
+                    let source = line.words[atom.sourceWordIndex]
+                    var preserved = atom
+                    preserved.word.start = source.start
+                    preserved.word.end = source.end
+                    return preserved
+                }
+            }
         } else { [] }
         // A provider may time a whole phrase while the dictionary identifies
         // several lexical words. Split only the visual atom at safe Unicode
@@ -300,6 +430,7 @@ final class AMLLCoreTextLayout {
         }
         let atoms = mappedChunks.flatMap(\.self)
         sourceAtoms = atoms
+        if preservesWordTiming { pronunciationEmphasisChunks = mappedChunks.map { $0.map(\.word) } }
         var sourceRanges: [NSRange] = []
         var sourceCursor = 0
         for atom in atoms {
@@ -433,6 +564,7 @@ final class AMLLCoreTextLayout {
         var fragments: [WordFragment] = []
         var characterFragments: [CharacterFragment] = []
         var rubyFragments: [RubyFragment] = []
+        var romanizationShapes: [RomanizationShape] = []
         // The original CSS uses 1.2em. The native compact secondary voice
         // uses 0.4em per the requested spacing; this is the entire inter-voice
         // gap, without an additional inset from the group layout.
@@ -582,6 +714,7 @@ final class AMLLCoreTextLayout {
             if validGenerated {
                 var ttmlOrdinal = 0
                 for token in generated {
+                    let firstRuby = rubyFragments.count
                     let indexes = sourceRanges.indices.filter {
                         sourceRanges[$0].location >= token.utf16Start &&
                             NSMaxRange(sourceRanges[$0]) <= token.utf16End
@@ -647,6 +780,11 @@ final class AMLLCoreTextLayout {
                         }
                         ttmlOrdinal += 1
                     }
+                    if configuration.animationStyle == .appleMusic164, let row = rows.last {
+                        romanizationShapes.append(.init(row: row, text: token.romanized,
+                            rect: CGRect(x: x, y: top + min(0, leading), width: width, height: romanFont.lineHeight),
+                            segments: Array(rubyFragments[firstRuby...])))
+                    }
                 }
             } else { for (wordIndex, word) in timedWords.enumerated() {
                 guard let text = word.romanWord, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -670,6 +808,7 @@ final class AMLLCoreTextLayout {
                 let leading = (romanHeight - romanFont.lineHeight) / 2
                 rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: top + leading + romanFont.ascender),
                                   ruby: true, romanization: true))
+                let firstRuby = rubyFragments.count
                 for run in Self.visualRuns(in: ctLine) {
                     rubyFragments.append(.init(
                         // Preserve ink extending beyond CSS's compact line box.
@@ -678,6 +817,11 @@ final class AMLLCoreTextLayout {
                         range: run.range, wordIndex: wordIndex, segmentIndex: 0,
                         start: word.romanStart ?? word.start, end: word.romanEnd ?? word.end, rtl: run.rtl, kind: .romanization
                     ))
+                }
+                if configuration.animationStyle == .appleMusic164, let row = rows.last {
+                    romanizationShapes.append(.init(row: row, text: text,
+                        rect: CGRect(x: x, y: top + min(0, leading), width: width, height: romanFont.lineHeight),
+                        segments: Array(rubyFragments[firstRuby...])))
                 }
             } }
         }
@@ -773,6 +917,7 @@ final class AMLLCoreTextLayout {
             y += backgroundPadding
         }
         self.rows = rows
+        self.romanizationShapes = romanizationShapes
         romanizationSlotY = separateRomanizationY
         self.fragments = fragments
         self.characterFragments = characterFragments

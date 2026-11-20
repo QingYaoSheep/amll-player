@@ -29,6 +29,7 @@ on:
       - 'AMLLPlayerTests/LyricsAuxiliaryFadeTests.swift'
       - 'AMLLPlayerTests/LyricsAuxiliaryMotionTests.swift'
       - 'AMLLPlayerTests/LyricsWrapAlignmentTests.swift'
+      - 'AMLLPlayerTests/LyricsRomanizationEngineTests.swift'
       - 'AMLLPlayerTests/AMLLVisualActivityTests.swift'
       - 'AMLLPlayerTests/LyricsRenderViewTests.swift'
       - 'AMLLPlayerTests/Fixtures/auxiliary-video-motion.json'
@@ -83,6 +84,8 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsAuxiliaryFadeTests
           -only-testing:AMLLPlayerTests/LyricsAuxiliaryMotionTests
           -only-testing:AMLLPlayerTests/LyricsWrapAlignmentTests
+          -only-testing:AMLLPlayerTests/LyricsRomanizationEngineTests
+          -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests/testLatePronunciationCatchUpContinuesAfterBodyLeavesSelection
           -only-testing:AMLLPlayerTests/AMLLVisualActivityTests/testRealCanvasStartsShrinkingAndFadingWithItsFirstUpwardFrame
           -only-testing:AMLLPlayerTests/LyricsRenderViewTests/testCompletedWordHasFullMaskAndBackwardSeekRestoresGradient
           -only-testing:AMLLPlayerTests/LyricsSeekPageTests/testRapidPresentationModesKeepDocumentClockAndTheSingleProductionCanvas

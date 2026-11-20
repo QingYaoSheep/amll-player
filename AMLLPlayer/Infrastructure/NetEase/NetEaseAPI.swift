@@ -25,6 +25,14 @@ struct NetEaseResponse {
 }
 @MainActor protocol NetEaseRequesting: AnyObject {
     func send(_ path: String, _ parameters: [String: Any], cookie: String?) async throws -> NetEaseResponse
+    func sendRoom(_ path: String, _ parameters: [String: Any], cookie: String?) async throws -> NetEaseResponse
+    func roomCheckToken() async throws -> String
+}
+extension NetEaseRequesting {
+    func sendRoom(_ path: String, _ parameters: [String: Any], cookie: String?) async throws -> NetEaseResponse {
+        try await send(path, parameters, cookie: cookie)
+    }
+    func roomCheckToken() async throws -> String { throw NetEaseRoomError.verificationUnavailable }
 }
 private final class NetEaseRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -40,7 +48,22 @@ private final class NetEaseRedirectPolicy: NSObject, URLSessionTaskDelegate, @un
         session = URLSession(configuration: config, delegate: NetEaseRedirectPolicy(), delegateQueue: nil)
     }
     func send(_ path: String, _ parameters: [String: Any] = [:], cookie: String? = nil) async throws -> NetEaseResponse {
-        let request = try Self.request(path, parameters, cookie: cookie)
+        try await execute(Self.request(path, parameters, cookie: cookie))
+    }
+    func sendRoom(_ path: String, _ parameters: [String: Any], cookie: String?) async throws -> NetEaseResponse {
+        try await execute(Self.roomRequest(path, parameters, cookie: cookie))
+    }
+    func roomCheckToken() async throws -> String {
+        let url = URL(string: "https://ac.dun.163yun.com/v3/b?pn=YD00000558929251")!
+        let (data, response) = try await session.data(for: URLRequest(url: url, timeoutInterval: 10))
+        guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 8192,
+              let body = String(data: data, encoding: .utf8),
+              let match = body.firstMatch(of: /null\(\[200,\d+,"([A-Za-z0-9+\/_=-]+)"\]\)/) else {
+            throw NetEaseRoomError.verificationUnavailable
+        }
+        return String(match.1)
+    }
+    private func execute(_ request: URLRequest) async throws -> NetEaseResponse {
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, data.count <= 16 * 1024 * 1024 else { throw NetEaseError.invalidResponse }
@@ -59,6 +82,28 @@ private final class NetEaseRedirectPolicy: NSObject, URLSessionTaskDelegate, @un
         let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: request.url!)
         let auth = cookies.filter { NetEaseCookie.allowed.contains($0.name) }.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
         return .init(object: root, cookie: auth.isEmpty ? nil : auth)
+    }
+    static func roomRequest(_ path: String, _ parameters: [String: Any], cookie: String?) throws -> URLRequest {
+        guard path.hasPrefix("/"), !path.contains(".."),
+              path.utf8.allSatisfy({ $0 == 47 || $0 == 95 || (48...57).contains($0) || (97...122).contains($0) }),
+              let url = URL(string: "https://interfacepc.music.163.com/eapi" + path),
+              let cookie, NetEaseCookie.validHeaderValue(cookie) else { throw NetEaseError.invalidResponse }
+        var header = NetEaseCookie.values(cookie)
+        header["os"] = "android"
+        header["appver"] = "9.3.30"
+        header["requestId"] = String(Int64(Date().timeIntervalSince1970 * 1000)) + String(Int.random(in: 1000...9999))
+        var object = parameters
+        object["header"] = header
+        object["e_r"] = false
+        let params = try NetEaseCrypto.encryptRoom("/api" + path, object)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://music.163.com/", forHTTPHeaderField: "Referer")
+        request.setValue(header.sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($0.value)" }.joined(separator: "; "),
+                         forHTTPHeaderField: "Cookie")
+        request.httpBody = Data("params=\(params)".utf8)
+        return request
     }
     static func request(_ path: String, _ parameters: [String: Any], cookie: String?, secret: String? = nil) throws -> URLRequest {
         guard path.hasPrefix("/"), !path.contains(".."), !path.contains("?"), !path.contains("#"),
@@ -117,7 +162,17 @@ enum NetEaseCrypto {
         guard let encrypted = SecKeyCreateEncryptedData(key, .rsaEncryptionRaw, padded as CFData, nil) as Data? else { throw NetEaseError.invalidResponse }
         return ["params": params, "encSecKey": encrypted.map { String(format: "%02x", $0) }.joined()]
     }
-    private static func aes(_ input: Data, key: String) throws -> Data {
+    static func encryptRoom(_ uri: String, _ object: [String: Any]) throws -> String {
+        let json = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+        guard let text = String(data: json, encoding: .utf8) else { throw NetEaseError.invalidResponse }
+        let material = Data("nobody\(uri)use\(text)md5forencrypt".utf8)
+        var hash = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
+        _ = material.withUnsafeBytes { CC_MD5($0.baseAddress, CC_LONG(material.count), &hash) }
+        let checksum = hash.map { String(format: "%02x", $0) }.joined()
+        let body = Data("\(uri)-36cd479b6b5-\(text)-36cd479b6b5-\(checksum)".utf8)
+        return try aes(body, key: "e82ckenh8dichen8", ecb: true).map { String(format: "%02X", $0) }.joined()
+    }
+    private static func aes(_ input: Data, key: String, ecb: Bool = false) throws -> Data {
         let keyData = Data(key.utf8), iv = Data("0102030405060708".utf8)
         var output = Data(count: input.count + kCCBlockSizeAES128)
         let capacity = output.count; var size = 0
@@ -125,7 +180,8 @@ enum NetEaseCrypto {
             input.withUnsafeBytes { src in
                 keyData.withUnsafeBytes { k in
                     iv.withUnsafeBytes { v in
-                        CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding),
+                        CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES),
+                                CCOptions(kCCOptionPKCS7Padding | (ecb ? kCCOptionECBMode : 0)),
                                 k.baseAddress, keyData.count, v.baseAddress, src.baseAddress, input.count,
                                 dst.baseAddress, capacity, &size)
                     }

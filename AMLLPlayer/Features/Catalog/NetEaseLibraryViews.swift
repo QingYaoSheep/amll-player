@@ -120,7 +120,10 @@ struct NetEaseQueueView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var failure: String?
     var body: some View {
-        NavigationStack {
+        if model.netEasePlayback.isListeningTogether {
+            NetEaseRoomView(playback: model.netEasePlayback)
+        } else {
+          NavigationStack {
             List {
                 if model.netEasePlayback.isPersonalFM {
                     Section("私人 FM") {
@@ -156,6 +159,7 @@ struct NetEaseQueueView: View {
                 .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                     Button("好", role: .cancel) { failure = nil }
                 } message: { Text(failure ?? "") }
+          }
         }
     }
 }

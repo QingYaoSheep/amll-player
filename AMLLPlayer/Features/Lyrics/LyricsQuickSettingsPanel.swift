@@ -8,7 +8,7 @@ import UIKit
 final class LyricsQuickSettingsPresentation {
     static let motionAnimation = Animation.spring(response: 0.32, dampingFraction: 0.9)
     enum Destination: String, Identifiable {
-        case devices, queue, lyricsSearch, appearance, lyricsSources
+        case devices, queue, listeningRoom, lyricsSearch, appearance, lyricsSources
         var id: String { rawValue }
     }
 
@@ -141,6 +141,8 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
         case .queue:
             if model.selectedMusicService == .netease { NetEaseQueueView(model: model) }
             else { AppleMusicQueueView(model: model) }
+        case .listeningRoom:
+            NetEaseRoomView(playback: model.netEasePlayback)
         case .lyricsSearch:
             LyricsSearchView(coordinator: model.lyrics)
         case .appearance:
@@ -376,13 +378,18 @@ struct LyricsQuickSettingsPanel: View {
     private var playback: some View {
         section("quickSettings.playback") {
             route(model.selectedMusicService == .spotify ? "player.devices" : "AirPlay", symbol: "airplayaudio", to: .devices)
+            if model.selectedMusicService == .netease {
+                route(model.netEasePlayback.isListeningTogether ? "一起听房间" : "与好友一起听",
+                      symbol: "person.2", to: .listeningRoom)
+                    .accessibilityIdentifier("quickSettingsNetEaseListeningRoom")
+            }
             if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
                 route("quickSettings.queue", symbol: "list.bullet", to: .queue)
                 iconToggleRow("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle", value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                     Task { await model.setShuffle(enabled) }
-                })).disabled(model.isPerformingAction || (model.selectedMusicService == .netease && model.netEasePlayback.isPersonalFM))
+                })).disabled(model.isPerformingAction || (model.selectedMusicService == .netease && !model.netEasePlayback.canEditPersonalQueue))
                 QuickSettingsRepeatMenu(owner: ObjectIdentifier(model), service: model.selectedMusicService,
-                                          mode: snapshot.repeatMode, busy: model.isPerformingAction || (model.selectedMusicService == .netease && model.netEasePlayback.isPersonalFM)) { mode in
+                                          mode: snapshot.repeatMode, busy: model.isPerformingAction || (model.selectedMusicService == .netease && !model.netEasePlayback.canEditPersonalQueue)) { mode in
                     Task { await model.setRepeat(mode) }
                 }.equatable()
                 if model.selectedMusicService == .netease, model.netEasePlayback.isPersonalFM {

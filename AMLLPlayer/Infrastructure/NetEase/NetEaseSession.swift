@@ -58,19 +58,29 @@ struct NetEaseProfile: Equatable {
         generation = UUID(); cancelQR(); cookie = nil; profile = nil
         try? store.remove(); currentState = .init(); publish()
     }
-    func call(_ path: String, _ parameters: [String: Any] = [:], authenticated: Bool = true) async throws -> [String: Any] {
+    func call(_ path: String, _ parameters: [String: Any] = [:], authenticated: Bool = true,
+              roomTransport: Bool = false) async throws -> [String: Any] {
         if authenticated, !currentState.connected { throw NetEaseError.expired }
-        let epoch = generation
+        let epoch = generation, context = currentState.contextID
         do {
-            let r = try await api.send(path, parameters, cookie: cookie)
+            let r = if roomTransport { try await api.sendRoom(path, parameters, cookie: cookie) }
+                    else { try await api.send(path, parameters, cookie: cookie) }
             try Task.checkCancellation()
-            guard epoch == generation else { throw CancellationError() }
+            guard epoch == generation, context == currentState.contextID else { throw CancellationError() }
             return r.object
         } catch {
-            guard epoch == generation else { throw CancellationError() }
+            guard epoch == generation, context == currentState.contextID else { throw CancellationError() }
             if error as? NetEaseError == .expired, authenticated { disconnect() }
             throw error
         }
+    }
+    func roomCheckToken() async throws -> String {
+        guard currentState.connected else { throw NetEaseError.expired }
+        let context = currentState.contextID
+        let token = try await api.roomCheckToken()
+        try Task.checkCancellation()
+        guard context == currentState.contextID, currentState.connected else { throw CancellationError() }
+        return token
     }
     func beginQR() async {
         cancelQR(); generation = UUID(); let epoch = generation

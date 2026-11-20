@@ -302,7 +302,7 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         }
     }
 
-    func testProviderRomanizationSharesPresetMasksAndMotionWithMatchingBody() throws {
+    func testProviderRomanizationSharesPresetMaskAndEmphasisWithoutLifting() throws {
         let line = LyricLine(id: "match", text: "go", start: 0, end: 4,
             words: [.init(text: "go", start: 0, end: 4, romanWord: "go", romanStart: 0, romanEnd: 4)],
             precision: .word)
@@ -342,15 +342,42 @@ final class LyricsRomanizationEngineTests: XCTestCase {
             let romanGlyphs = glyphs(in: roman.layer)
             XCTAssertEqual(mainGlyphs.count, 2)
             XCTAssertEqual(romanGlyphs.count, mainGlyphs.count)
-            XCTAssertTrue(romanGlyphs.contains { $0.affineTransform() != .identity })
+            XCTAssertTrue(mainGlyphs.contains { $0.affineTransform().ty != 0 })
             for (body, pronunciation) in zip(mainGlyphs, romanGlyphs) {
                 let bodyMask = try XCTUnwrap(body.mask as? CAGradientLayer)
                 let romanMask = try XCTUnwrap(pronunciation.mask as? CAGradientLayer)
                 XCTAssertEqual(bodyMask.startPoint.x, romanMask.startPoint.x, accuracy: 0.0001)
                 XCTAssertEqual(bodyMask.endPoint.x, romanMask.endPoint.x, accuracy: 0.0001)
-                XCTAssertEqual(body.affineTransform(), pronunciation.affineTransform())
+                var emphasisOnly = body.affineTransform()
+                emphasisOnly.ty = 0
+                XCTAssertEqual(emphasisOnly, pronunciation.affineTransform())
+                XCTAssertEqual(body.shadowRadius, pronunciation.shadowRadius)
+                XCTAssertEqual(body.shadowOpacity, pronunciation.shadowOpacity)
             }
         }
+    }
+
+    func testWrappedPronunciationAddsGapBeforeTheNextBodyLine() throws {
+        let line = LyricLine(id: "wrapped", text: "hello hello", start: 0, end: 4,
+            words: [.init(text: "hello", start: 0, end: 2, romanWord: "he"),
+                    .init(text: " ", start: 2, end: 2),
+                    .init(text: "hello", start: 2, end: 4, romanWord: "he")], precision: .word)
+        let font = UIFont.systemFont(ofSize: 32)
+        var configuration = LyricsRenderConfiguration()
+        configuration.romanization = false
+        let plain = AMLLCoreTextLayout(line: line, width: 95, font: font, configuration: configuration)
+        configuration.romanization = true
+        let annotated = AMLLCoreTextLayout(line: line, width: 95, font: font, configuration: configuration)
+        let plainRows = Array(Set(plain.characterFragments.map(\.rect.minY))).sorted()
+        let annotatedRows = Array(Set(annotated.characterFragments.map(\.rect.minY))).sorted()
+        XCTAssertEqual(plainRows.count, 2)
+        XCTAssertEqual(annotatedRows.count, 2)
+        let first = try XCTUnwrap(annotatedRows.first)
+        let second = try XCTUnwrap(annotatedRows.last)
+        let normalStep = try XCTUnwrap(plainRows.last) - (try XCTUnwrap(plainRows.first))
+        XCTAssertEqual(first, plainRows.first)
+        XCTAssertEqual(second - first, normalStep + 16 + 6.4, accuracy: 0.001)
+        XCTAssertEqual(annotated.size.height - plain.size.height, 32 + 6.4, accuracy: 0.001)
     }
 
     func testBodyAndPronunciationHitTheSameSeekGestureWithEitherLayout() throws {

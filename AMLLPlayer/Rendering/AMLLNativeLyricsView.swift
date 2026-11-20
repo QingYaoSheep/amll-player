@@ -1181,7 +1181,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
             : nil
         if let cue = layouts.romanizationLine, let layout = layouts.romanization {
             romanization = AMLLNativeRow(line: cue, layout: layout, scale: scale,
-                                          isRomanization: layout.pronunciationEmphasisChunks != nil,
+                                          isRomanization: true,
                                           prepared: prepared?.romanization, initialBlurMaximum: initialBlurMaximum)
         } else {
             romanization = nil
@@ -1435,6 +1435,7 @@ private final class AMLLNativeRow: UIView {
         return presentation
     }()
     private let hidesInlineRomanization: Bool
+    private let isRomanization: Bool
     private var words: [WordPiece] = []
     private var characters: [CharacterPiece] = []
     private var rubyPieces: [RubyPiece] = []
@@ -1469,6 +1470,7 @@ private final class AMLLNativeRow: UIView {
         self.line = line; textLayout = layout
         self.auxiliaryFade = auxiliaryFade
         hidesInlineRomanization = hideRomanization
+        self.isRomanization = isRomanization
         let sortedFragments = layout.fragments.sorted { $0.range.location < $1.range.location }
         var group = -1
         var previousY: CGFloat?
@@ -1859,16 +1861,15 @@ private final class AMLLNativeRow: UIView {
         for entry in rubyPieces {
             entry.layer.opacity = sharpWeight * annotationWeight
             let fragment = entry.fragment
-            if textLayout.sourceAtoms.indices.contains(fragment.wordIndex) {
+            if fragment.kind == .ruby, textLayout.sourceAtoms.indices.contains(fragment.wordIndex) {
                 let word = textLayout.sourceAtoms[fragment.wordIndex].word
                 let start = fragment.motionStart ?? word.start
                 let end = fragment.motionEnd ?? word.end
                 let elapsed = row.wordClock.floatElapsed(wordStart: start - line.start, duration: end - start)
                 let offset = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: end - start,
                                                                isBackground: line.isBackground)
-                let staticKoreanRoman = fragment.kind == .romanization && line.generatedRomanizationLanguage == "ko"
                 entry.layer.setAffineTransform(CGAffineTransform(translationX: 0,
-                    y: motionEnabled && !staticKoreanRoman ? offset * liftUnit : 0))
+                    y: motionEnabled ? offset * liftUnit : 0))
             }
             guard let start = fragment.start, let end = fragment.end,
                   start.isFinite, end.isFinite, end > start
@@ -1903,11 +1904,14 @@ private final class AMLLNativeRow: UIView {
         }
         for entry in words {
             guard !entry.layer.isHidden else { continue }
-            let elapsed = row.wordClock.floatElapsed(wordStart: entry.fragment.word.start - line.start,
-                                                     duration: entry.fragment.word.end - entry.fragment.word.start)
-            let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: entry.fragment.word.end - entry.fragment.word.start,
-                                                          isBackground: line.isBackground)
-            entry.layer.setAffineTransform(CGAffineTransform(translationX: 0, y: motionEnabled ? float * liftUnit : 0))
+            let word = entry.fragment.word
+            var lift = 0.0
+            if motionEnabled && !isRomanization {
+                let duration = word.end - word.start
+                let elapsed = row.wordClock.floatElapsed(wordStart: word.start - line.start, duration: duration)
+                lift = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground) * liftUnit
+            }
+            entry.layer.setAffineTransform(CGAffineTransform(translationX: 0, y: lift))
             let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
                 maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
             let width = max(1, entry.fragment.rect.width)
@@ -1925,12 +1929,6 @@ private final class AMLLNativeRow: UIView {
         }
         for entry in characters {
             let word = entry.fragment.word
-            let duration = max(0.001, entry.fragment.range.length > 0
-                ? word.end - word.start : 0.001)
-            let elapsed = row.wordClock.floatElapsed(
-                wordStart: word.start - line.start,
-                duration: duration
-            )
             let presentation = motionEnabled && configuration.emphasizeWords
                 ? entry.animation?.sample(lineTime: row.wordClock.time)
                 : nil
@@ -1939,11 +1937,17 @@ private final class AMLLNativeRow: UIView {
                     lineTime: row.wordClock.time, wordEnd: word.end - line.start,
                     reverseElapsed: row.wordClock.enabled ? 0 : row.wordClock.reverseElapsed)
                 : 1
-            let float = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground)
             let scale = 1 + ((presentation?.scale ?? 1) - 1) * emphasisWeight * (calibrated ? 0.14 / 0.12 : 1)
             let x = (presentation?.offsetX ?? 0) * emphasisWeight * textLayout.font.pointSize
-            let y = (presentation?.offsetY ?? 0) * emphasisWeight * textLayout.font.pointSize
-                + (motionEnabled ? float * liftUnit : 0)
+            var y = 0.0
+            if !isRomanization {
+                y = (presentation?.offsetY ?? 0) * emphasisWeight * textLayout.font.pointSize
+                if motionEnabled {
+                    let duration = max(0.001, entry.fragment.range.length > 0 ? word.end - word.start : 0.001)
+                    let elapsed = row.wordClock.floatElapsed(wordStart: word.start - line.start, duration: duration)
+                    y += AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground) * liftUnit
+                }
+            }
             entry.layer.setAffineTransform(CGAffineTransform(translationX: x, y: y).scaledBy(x: scale, y: scale))
             entry.layer.shadowColor = UIColor.white.cgColor
             entry.layer.shadowRadius = CGFloat((presentation?.glowRadius ?? 0) * emphasisWeight) * textLayout.font.pointSize

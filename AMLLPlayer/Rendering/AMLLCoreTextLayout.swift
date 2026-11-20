@@ -582,12 +582,18 @@ final class AMLLCoreTextLayout {
         let rubyHeight = timedWords.contains { !$0.rubySegments.isEmpty || !($0.ruby?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
             ? rubyFont.pointSize * 1.5
             : 0
-        for visualLine in visualLines {
+        let lastBodyLine = visualLines.lastIndex { $0.drawingRange.length > 0 }
+        for (visualIndex, visualLine) in visualLines.enumerated() {
             let range = visualLine.drawingRange
             guard range.length > 0 else {
                 if visualLine.preservesEmptyLine { y += rubyHeight + mainHeight + romanHeight }
                 continue
             }
+            // A wrapped body line starts below the previous pronunciation's
+            // descent. Keep the final annotation-to-next-cue spacing intact.
+            let nextBodyGap = hasWordRomanization && visualIndex < (lastBodyLine ?? visualIndex)
+                ? font.pointSize * 0.2 : 0
+            let rowHeight = rubyHeight + mainHeight + romanHeight + nextBodyGap
             let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: range.location, length: range.length))
             if usesAnnotationContainers {
                 // Source inline-flex words shape independently. Use the whole
@@ -655,7 +661,7 @@ final class AMLLCoreTextLayout {
                         }
                     }
                 }
-                y += rubyHeight + mainHeight + romanHeight
+                y += rowHeight
                 continue
             }
             let rowWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
@@ -708,7 +714,7 @@ final class AMLLCoreTextLayout {
                     }
                 }
             }
-            y += rubyHeight + mainHeight + romanHeight
+            y += rowHeight
         }
         if hasWordRomanization {
             if validGenerated {

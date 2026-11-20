@@ -226,6 +226,7 @@ struct FullscreenLyricsPlayer: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
+            .modifier(ImmersiveLyricsScrollEdge(active: configuration.showLyrics && layout != nil))
         }
     }
 

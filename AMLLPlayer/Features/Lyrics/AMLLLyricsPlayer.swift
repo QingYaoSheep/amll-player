@@ -197,6 +197,7 @@ struct AMLLLyricsPlayer: View {
         // scroll clip can isolate its additive/EDR layers from the backdrop.
         .scrollClipDisabled()
         .scrollIndicators(.hidden)
+        .modifier(ImmersiveLyricsScrollEdge(active: configuration.showLyrics && layout != nil))
         .onPreferenceChange(ImmersiveInformationHeightKey.self) { height in
             if height > 0, abs(immersiveInformationHeight - height) > 0.5 { immersiveInformationHeight = height }
         }

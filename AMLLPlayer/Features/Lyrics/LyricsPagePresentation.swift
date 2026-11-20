@@ -3,6 +3,18 @@ import SwiftUI
 import CoreImage
 import QuartzCore
 
+struct ImmersiveLyricsScrollEdge: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectHidden(active, for: .top)
+        } else {
+            content
+        }
+    }
+}
+
 /// Presentation state only. Never owns a document, song clock or seek request.
 @MainActor @Observable
 final class LyricsPagePresentationCoordinator {

@@ -357,6 +357,14 @@ import XCTest
         await model.seek(to: 8.75)
         let canvas = try await waitForCanvas(host.view)
         let document = model.lyrics.documentRevision, seek = model.lyricsSeekRevision, audioItem = player.currentItem
+        func enclosingScrollView() -> UIScrollView? {
+            var parent = canvas.superview
+            while let view = parent {
+                if let scroll = view as? UIScrollView { return scroll }
+                parent = view.superview
+            }
+            return nil
+        }
         for (shown, immersive) in [(true, true), (false, true), (true, false), (true, true), (true, false)] {
             model.renderPreferences.configuration.showLyrics = shown
             model.renderPreferences.configuration.immersiveLyrics = immersive
@@ -368,6 +376,12 @@ import XCTest
             XCTAssertEqual(model.lyricsSeekRevision, seek)
             XCTAssertTrue(player.currentItem === audioItem)
             XCTAssertEqual(player.currentTime().seconds, 8.75, accuracy: 0.1)
+            if #available(iOS 26.0, *), shown, UIDevice.current.userInterfaceIdiom == .phone {
+                try await wait("top scroll edge follows the immersive lyric mode") {
+                    host.view.layoutIfNeeded()
+                    return enclosingScrollView()?.topEdgeEffect.isHidden == immersive
+                }
+            }
         }
     }
 

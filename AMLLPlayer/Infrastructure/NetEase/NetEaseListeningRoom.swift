@@ -28,13 +28,28 @@ struct NetEaseRoomInvite: Identifiable, Equatable {
     }
 
     static func parse(_ input: String) -> Self? {
-        for token in input.prefix(4096).split(whereSeparator: \.isWhitespace) {
-            var candidate = token.trimmingCharacters(in: CharacterSet(charactersIn: "<>【】「」()。，"))
-            for _ in 0..<3 {
-                if let invite = decode(candidate) { return invite }
-                guard let decoded = candidate.removingPercentEncoding, decoded != candidate else { break }
-                candidate = decoded
+        let bounded = String(input.prefix(8192))
+        let pattern = /(?:https?:\/\/|orpheus:\/\/)[^\s<>"“”\]】）)，。]+/
+        let urls = bounded.matches(of: pattern).prefix(10).map { String($0.output) }
+        for raw in [bounded] + urls {
+            if let invite = parseTarget(raw, depth: 0) { return invite }
+        }
+        return nil
+    }
+
+    private static func parseTarget(_ input: String, depth: Int) -> Self? {
+        guard depth < 4 else { return nil }
+        let candidate = input.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "<>【】「」()。，")))
+            .replacingOccurrences(of: "&amp;", with: "&")
+        if let invite = decode(candidate) { return invite }
+        if let wrapper = URLComponents(string: candidate),
+           wrapper.scheme == "orpheus", wrapper.user == nil, wrapper.password == nil, wrapper.port == nil {
+            for query in (wrapper.queryItems ?? []).prefix(8) where ["url1", "url2", "url"].contains(query.name) {
+                if let value = query.value, let invite = parseTarget(value, depth: depth + 1) { return invite }
             }
+        }
+        if !candidate.contains("://"), let decoded = candidate.removingPercentEncoding, decoded != candidate {
+            return parseTarget(decoded, depth: depth + 1)
         }
         return nil
     }
@@ -57,9 +72,11 @@ struct NetEaseRoomInvite: Identifiable, Equatable {
             let matches = fields.filter { $0.name == name }
             return matches.count == 1 ? matches.first?.value : nil
         }
-        guard value("isFLT") != "true",
+        let followFlags = fields.filter { $0.name == "isFLT" }
+        let inviterName = kind == .duet || url.scheme == "orpheus" ? "inviterId" : "inviterUid"
+        guard followFlags.isEmpty || (followFlags.count == 1 && followFlags[0].value == "false"),
               let room = value("roomId"), validRoom(room),
-              let inviter = value(kind == .duet ? "inviterId" : "inviterUid"), numericID(inviter) != nil else { return nil }
+              let inviter = value(inviterName), numericID(inviter) != nil else { return nil }
         return .init(kind: kind, room: room, inviter: inviter, song: numericID(value("songId")))
     }
 
@@ -215,6 +232,7 @@ enum NetEaseRoomError: LocalizedError {
         ])
         let data = try await call("/sync/playlist/get", ["roomId": room.id])
         let status = try await call("/room/check", ["roomId": room.id])
+        if status["inRoom"] as? Bool == false { throw NetEaseRoomError.ended }
         var next = try decode(status, kind: .duet) ?? room
         guard next.id == room.id else { throw NetEaseRoomError.ended }
         let playlist = data["playlist"] as? [String: Any]
@@ -224,7 +242,7 @@ enum NetEaseRoomError: LocalizedError {
         }
         if let command = data["playCommand"] as? [String: Any],
            let id = NetEaseRoomInvite.numericID(command["targetSongId"]) ?? NetEaseRoomInvite.numericID(command["formerSongId"]),
-           let state = command["playStatus"] as? String,
+           let state = command["playStatus"] as? String, state == "PLAY" || state == "PAUSE",
            let progress = Self.number(command["progress"]) {
             let sequence = Self.integer(command["serverSeq"])
             let old = room.clock
@@ -232,7 +250,7 @@ enum NetEaseRoomError: LocalizedError {
                 old?.position == progress / 1000 && old?.version == sequence
             next.clock = .init(track: .init(id: id, businessID: nil), position: progress / 1000,
                                playing: state == "PLAY", version: sequence,
-                               sampledAt: same ? old!.sampledAt : ProcessInfo.processInfo.systemUptime)
+                               sampledAt: (same ? old?.sampledAt : nil) ?? ProcessInfo.processInfo.systemUptime)
         } else { next.clock = room.clock }
         return next
     }
@@ -274,7 +292,15 @@ enum NetEaseRoomError: LocalizedError {
         try ensureContext()
         let data = try await session.call("/msg/private/users", ["offset": offset, "limit": 30, "total": "true"])
         guard let messages = data["msgs"] as? [[String: Any]] else { throw NetEaseError.invalidResponse }
-        return messages.compactMap { NetEaseRoomMember($0["fromUser"] as? [String: Any] ?? $0["user"] as? [String: Any] ?? [:]) }
+        let viewer = session.profile?.id
+        return messages.compactMap { row in
+            let sender = row["fromUser"] as? [String: Any]
+            let recipient = row["toUser"] as? [String: Any]
+            let peer = NetEaseRoomInvite.numericID(sender?["userId"]) == viewer ? recipient : sender
+            guard let member = NetEaseRoomMember(peer ?? row["user"] as? [String: Any] ?? [:]),
+                  member.id != viewer else { return nil }
+            return member
+        }
     }
 
     func invites(from peer: NetEaseRoomMember, before: Int64 = 0) async throws -> [NetEaseRoomInvite] {
@@ -285,10 +311,11 @@ enum NetEaseRoomError: LocalizedError {
         var seen = Set<String>()
         return messages.compactMap { row in
             let sender = row["fromUser"] as? [String: Any]
-            guard NetEaseRoomInvite.numericID(sender?["userId"] ?? row["fromUserId"]) == peer.id,
-                  let message = Self.object(row["msg"]) else { return nil }
-            let card = message["generalMsg"] as? [String: Any]
-            let textFields = [message["msg"], message["text"], card?["nativeUrl"], card?["webUrl"], card?["url"]]
+            guard NetEaseRoomInvite.numericID(sender?["userId"] ?? row["fromUserId"]) == peer.id else { return nil }
+            let message = Self.object(row["msg"]) ?? [:]
+            let card = Self.object(message["generalMsg"])
+            let textFields = [message.isEmpty ? row["msg"] : nil, message["msg"], message["text"],
+                              row["nativeUrl"], card?["nativeUrl"], card?["webUrl"], card?["url"]]
             for case let text as String in textFields {
                 if let invite = NetEaseRoomInvite.parse(text), invite.inviter == peer.id, seen.insert(invite.id).inserted {
                     return invite

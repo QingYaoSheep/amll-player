@@ -45,7 +45,7 @@ struct NetEaseRoomView: View {
                     }
                 }
                 if playback.roomBusy { ProgressView("正在处理房间操作") }
-                if let error = error ?? playback.roomNotice {
+                if let error = error ?? playback.roomNotice ?? (playback.isListeningTogether ? playback.failure : nil) {
                     Section {
                         Text(verbatim: error).foregroundStyle(.secondary)
                         Button("刷新房间") { run { try await playback.refreshListeningRoom() } }

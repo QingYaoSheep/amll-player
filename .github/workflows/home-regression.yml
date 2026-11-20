@@ -13,6 +13,8 @@ on:
       - 'AMLLPlayer/Infrastructure/NetEase/NetEaseCatalog.swift'
       - 'AMLLPlayerTests/MusicHomeTests.swift'
       - 'AMLLPlayerTests/NetEaseRadio*Tests.swift'
+      - 'AMLLPlayerTests/NetEaseListeningRoomTests.swift'
+      - 'AMLLPlayer/Infrastructure/NetEase/NetEaseListeningRoom.swift'
       - 'AMLLPlayerUITests/MusicCatalogDesignUITests.swift'
       - 'AMLLPlayerUITests/AMLLPlayerUITests.swift'
   workflow_dispatch:
@@ -69,6 +71,7 @@ jobs:
             -only-testing:AMLLPlayerTests/MusicHomeTests \
             -only-testing:AMLLPlayerTests/NetEaseRadioStateTests \
             -only-testing:AMLLPlayerTests/NetEaseRadioPlaybackTests \
+            -only-testing:AMLLPlayerTests/NetEaseListeningRoomTests \
             -only-testing:AMLLPlayerTests/NetEaseSeekTests \
             "${UI_TESTS[@]}" \
             -resultBundlePath build/Home-iPhone.xcresult \

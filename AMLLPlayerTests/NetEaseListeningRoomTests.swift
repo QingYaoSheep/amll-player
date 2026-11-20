@@ -11,6 +11,10 @@ import XCTest
         XCTAssertNil(NetEaseRoomInvite.parse("https://st.music.163.com.example/listen-together/share/?roomId=a&inviterId=1"))
         XCTAssertNil(NetEaseRoomInvite.parse("https://st.music.163.com/listen-together/share/?roomId=a&roomId=b&inviterId=1"))
         XCTAssertNil(NetEaseRoomInvite.parse("https://st.music.163.com/listen-together/multishare/index.html?roomId=a&inviterUid=1&isFLT=true"))
+        let native = "orpheus://nm/multiListenTogether/joinRoom?roomId=test&inviterId=9"
+        var wrapper = URLComponents(string: "orpheus://nm/commonMessage")!
+        wrapper.queryItems = [.init(name: "url1", value: native)]
+        XCTAssertEqual(NetEaseRoomInvite.parse(wrapper.url!.absoluteString)?.inviter, "9")
     }
 
     func testEAPIRequestUsesReferenceCipherAndTrustedHost() throws {

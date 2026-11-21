@@ -61,7 +61,7 @@ final class NetEaseRoomActivity {
     @ObservationIgnored private var localAdds: [String: [TimeInterval]] = [:]
     @ObservationIgnored private var pendingBanners: [NetEaseRoomEvent] = []
     @ObservationIgnored private var phase: DeliveryPhase = .foreground
-    @ObservationIgnored private var messageSilenceUntil = Date.distantPast
+    @ObservationIgnored private var resumedAt = Date.distantPast
     private static let settingsKey = "netease.room.systemAlerts"
 
     enum DeliveryPhase { case foreground, inactive, background }
@@ -77,7 +77,7 @@ final class NetEaseRoomActivity {
         guard phase != self.phase else { return }
         if phase == .foreground {
             // A resumed request can return a backlog from the suspended interval.
-            messageSilenceUntil = Date().addingTimeInterval(2)
+            resumedAt = Date()
         } else {
             banner = nil
             pendingBanners.removeAll()
@@ -231,7 +231,9 @@ final class NetEaseRoomActivity {
         let text = incoming.count == 1 ? "\(last.sender) 发来消息" : "收到 \(incoming.count) 条新消息"
         let age = receivedAt.timeIntervalSince1970 - Double(last.time) / 1_000
         let reading = visibleChats.values.contains(destination)
-        let present = phase == .background || (!reading && age < 30 && receivedAt >= messageSilenceUntil)
+        let freshAfterResume = receivedAt.timeIntervalSince(resumedAt) >= 2 ||
+            Double(last.time) >= resumedAt.timeIntervalSince1970 * 1_000
+        let present = phase == .background || (!reading && age < 30 && freshAfterResume)
         publish(.init(text: text, symbol: "bubble.left.and.bubble.right", destination: destination,
                       preview: last.text), present: present)
     }

@@ -35,12 +35,14 @@ import UserNotifications
     }
 
     fileprivate weak var anchor: UIView?
+    private weak var mainWindow: UIWindow?
     private var window: BannerWindow?
     private var routeTask: Task<Void, Never>?
 
     fileprivate func attach(to anchor: UIView, model: AppModel) {
-        guard let scene = anchor.window?.windowScene else { return }
+        guard let mainWindow = anchor.window, let scene = mainWindow.windowScene else { return }
         self.anchor = anchor
+        self.mainWindow = mainWindow
         guard window?.windowScene !== scene else { return }
         let window = BannerWindow(windowScene: scene)
         let banner = NetEaseRoomBanner(activity: model.netEasePlayback.roomActivity) { [weak window] frame in
@@ -58,6 +60,7 @@ import UserNotifications
     fileprivate func detach(from anchor: UIView) {
         guard self.anchor === anchor else { return }
         self.anchor = nil
+        mainWindow = nil
         window?.isHidden = true
         window = nil
         routeTask?.cancel()
@@ -77,7 +80,7 @@ import UserNotifications
 
     private func present(_ destination: NetEaseRoomDestination, model: AppModel) -> Bool {
         guard UIApplication.shared.applicationState == .active,
-              let root = anchor?.window?.rootViewController else { return false }
+              mainWindow?.isKeyWindow == true, let root = mainWindow?.rootViewController else { return false }
         if let account = model.netEaseSession.profile?.id, account != destination.account { return true }
         guard model.selectedMusicService == .netease,
               model.netEaseSession.profile?.id == destination.account,
@@ -109,7 +112,6 @@ struct NetEaseRoomOverlayAnchor: UIViewRepresentable {
         override func didMoveToWindow() {
             super.didMoveToWindow()
             if window != nil, let model { overlay?.attach(to: self, model: model) }
-            else { overlay?.detach(from: self) }
         }
     }
 
@@ -122,6 +124,10 @@ struct NetEaseRoomOverlayAnchor: UIViewRepresentable {
     }
 
     func updateUIView(_ view: Anchor, context: Context) {}
+
+    static func dismantleUIView(_ view: Anchor, coordinator: ()) {
+        view.overlay?.detach(from: view)
+    }
 }
 
 private struct NetEaseRoomBanner: View {
@@ -160,7 +166,7 @@ private struct NetEaseRoomBanner: View {
                 .buttonStyle(MusicContentButtonStyle())
                 .frame(maxWidth: 520)
                 .accessibilityIdentifier("netEaseRoomBanner")
-                .accessibilityHint(event.destination?.chat == true ? "打开聊天" : "打开房间详情")
+                .accessibilityHint(event.destination.map { $0.chat ? "打开聊天" : "打开房间详情" } ?? "关闭通知")
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameChanged($0) }
                 .transition(reduceMotion ? .opacity : .offset(y: -8).combined(with: .opacity))
                 .task(id: event.id) {

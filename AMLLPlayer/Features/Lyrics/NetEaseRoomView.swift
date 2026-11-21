@@ -119,6 +119,7 @@ struct NetEaseRoomView: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("关闭", systemImage: "xmark") { duetConversation = nil }
+                                .accessibilityIdentifier("netEaseDuetChatClose")
                         }
                     }
             }

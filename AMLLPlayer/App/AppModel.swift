@@ -326,10 +326,10 @@ final class AppModel {
     func togglePlayPause() async {
         if pendingLyricsSeek != nil, selectedMusicService == .netease {
             seekActionID = nil; pendingLyricsSeek = nil; frozenSeekPosition = nil; isPerformingAction = false
-            await perform { try await netEasePlayback.pause() }
+            await perform(feedback: .selection) { try await netEasePlayback.pause() }
             return
         }
-        await perform {
+        await perform(feedback: .selection) {
             if playbackSnapshot?.isPlaying == true {
                 try await currentPlayback.pause()
             } else {
@@ -339,11 +339,11 @@ final class AppModel {
     }
 
     func skipNext() async {
-        await perform { try await currentPlayback.skipNext() }
+        await perform(feedback: .selection) { try await currentPlayback.skipNext() }
     }
 
     func skipPrevious() async {
-        await perform { try await currentPlayback.skipPrevious() }
+        await perform(feedback: .selection) { try await currentPlayback.skipPrevious() }
     }
 
     func seek(to position: TimeInterval, entry: PlaybackSeekEntry = .unspecified, trackURI: String? = nil,
@@ -482,6 +482,7 @@ final class AppModel {
 
     func selectMusicService(_ service: MusicServiceID) {
         guard service != selectedMusicService else { return }
+        AppHaptics.shared.play(.selection)
         sourceGeneration = UUID()
         currentPlayback.enterBackground()
         if selectedMusicService == .netease { netEasePlayback.deselect() }
@@ -530,15 +531,26 @@ final class AppModel {
     }
 
     func setShuffle(_ enabled: Bool) async {
-        await perform { try await currentPlayback.setShuffle(enabled) }
+        await perform(feedback: playbackSnapshot?.shuffleEnabled != enabled ? .selection : nil) {
+            try await currentPlayback.setShuffle(enabled)
+        }
     }
 
     func setRepeat(_ mode: MusicRepeatMode) async {
-        await perform { try await currentPlayback.setRepeat(mode) }
+        await perform(feedback: playbackSnapshot?.repeatMode != mode ? .selection : nil) {
+            try await currentPlayback.setRepeat(mode)
+        }
     }
 
     func enqueue(_ item: MusicCatalogItem, next: Bool) async {
-        await perform { try await currentPlayback.enqueue(item, next: next) }
+        await perform {
+            let roomHandlesFeedback = selectedMusicService == .netease && netEasePlayback.isListeningTogether
+            let epoch = sourceGeneration
+            try await currentPlayback.enqueue(item, next: next)
+            if !roomHandlesFeedback, !Task.isCancelled, epoch == sourceGeneration {
+                AppHaptics.shared.play(.success)
+            }
+        }
     }
 
     func mutateAppleLibrary(_ action: @MainActor (any MusicLibraryMutating) async throws -> Void) async throws {
@@ -550,6 +562,7 @@ final class AppModel {
         }
         try Task.checkCancellation()
         guard epoch == sourceGeneration else { throw CancellationError() }
+        AppHaptics.shared.play(.success)
         // Force all private pages to reload from the service; never guess favorites.
         await appleStore.refreshContent()
     }
@@ -568,6 +581,7 @@ final class AppModel {
         let context = netEaseSession.currentState.contextID
         try await action(netEaseLibrary)
         guard epoch == sourceGeneration, context == netEaseSession.currentState.contextID else { throw CancellationError() }
+        if !Task.isCancelled { AppHaptics.shared.play(.success) }
         netEaseCatalog.invalidate()
         await netEaseStore.refreshContent()
     }
@@ -708,13 +722,14 @@ final class AppModel {
         }
     }
 
-    private func perform(_ operation: () async throws -> Void) async {
+    private func perform(feedback: AppHaptics.Event? = nil, _ operation: () async throws -> Void) async {
         guard !isPerformingAction else {
             return
         }
         isPerformingAction = true
         defer { isPerformingAction = false }
         let epoch = sourceGeneration
+        if let feedback { AppHaptics.shared.play(feedback) }
 
         do {
             try await operation()

@@ -255,7 +255,7 @@ struct ImmersiveArtworkDebugPanel: View {
                 }
                 ForEach(ImmersiveArtworkLayer.allCases) { layer in
                     Section(layer.title) {
-                        if layer != .reflection { Toggle("显示此层", isOn: binding(layer, \.enabled)) }
+                        if layer != .reflection { Toggle("显示此层", isOn: binding(layer, \.enabled).hapticSelection()) }
                         slider("水平位置", value: binding(layer, \.x), range: -1200 ... 1200, step: 1, unit: "pt")
                         slider(layer == .transition ? "上沿偏移" : "纵向位置", value: binding(layer, \.y), range: -1200 ... 1200, step: 1, unit: "pt")
                         slider("宽度", value: binding(layer, \.width), range: 0.1 ... 2, step: 0.01, unit: "×")

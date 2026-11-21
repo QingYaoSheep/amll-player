@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @AppStorage(AppHaptics.preferenceKey) private var hapticsEnabled = true
     @State private var exportingSettings = false
     @State private var showingSettingsExporter = false
     @State private var settingsDocument: AppSettingsDocument?
@@ -25,6 +26,12 @@ struct SettingsView: View {
                 NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
                     SettingsItem(title: "歌词来源与匹配", subtitle: "来源顺序、匹配与时间偏移", symbol: "quote.bubble", color: .indigo)
                 }
+                Toggle(isOn: $hapticsEnabled.hapticSelection()) {
+                    SettingsItem(title: String(localized: "settings.haptics"),
+                                 subtitle: String(localized: "settings.hapticsHelp"),
+                                 symbol: "hand.tap", color: .teal)
+                }
+                .accessibilityIdentifier("appHapticsEnabled")
             }
             Section {
                 NavigationLink { MusicStorageView(model: model) } label: {
@@ -40,7 +47,7 @@ struct SettingsView: View {
             } header: {
                 Text("存储")
             } footer: {
-                Text("导出包含外观、播放偏好、歌词匹配与偏移、读音纠错和封面层级调校。")
+                Text("导出包含外观、播放偏好、触感反馈、歌词匹配与偏移、读音纠错和封面层级调校。")
             }
             Section("支持") {
                 NavigationLink { MusicHelpView(model: model) } label: {

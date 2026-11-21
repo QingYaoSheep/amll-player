@@ -27,10 +27,13 @@ import XCTest
         artwork.configuration[.reflection].enabled = false
         let overrides = ["ja": ["言葉": "ことば"]]
 
-        let snapshot = try AppSettingsExport(model: model, artwork: artwork, pronunciationOverrides: overrides)
+        defaults.set(false, forKey: AppHaptics.preferenceKey)
+        let snapshot = try AppSettingsExport(model: model, artwork: artwork, pronunciationOverrides: overrides,
+                                             haptics: AppHaptics(defaults: defaults))
         let data = try snapshot.encoded()
         let decoded = try JSONDecoder().decode(AppSettingsExport.self, from: data)
         XCTAssertEqual(decoded.version, 1)
+        XCTAssertEqual(decoded.hapticsEnabled, false)
         XCTAssertEqual(decoded.music.source, .netease)
         XCTAssertEqual(decoded.music.netEaseQuality, model.netEasePlayback.quality)
         XCTAssertEqual(decoded.lyrics.globalDelay, 0.65)
@@ -42,5 +45,9 @@ import XCTest
         XCTAssertEqual(decoded.trackLyrics["netease:123"], .init(candidate: candidate, offset: -1.2))
         XCTAssertEqual(decoded.pronunciationOverrides, overrides)
         XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("fixture-token"))
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "hapticsEnabled")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+        XCTAssertNil(try JSONDecoder().decode(AppSettingsExport.self, from: legacyData).hapticsEnabled)
     }
 }

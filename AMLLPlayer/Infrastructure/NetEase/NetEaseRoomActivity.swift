@@ -40,6 +40,7 @@ struct NetEaseRoomEvent: Identifiable {
     let symbol: String
     let destination: NetEaseRoomDestination?
     var preview: String?
+    var feedback: AppHaptics.Event = .roomActivity
 }
 
 @MainActor @Observable
@@ -55,6 +56,7 @@ final class NetEaseRoomActivity {
     var systemAlertsEnabled: Bool { wantsSystemAlerts && Self.allowsAlerts(systemStatus) }
 
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let haptics: AppHaptics
     @ObservationIgnored private var room: NetEaseRoomDestination?
     @ObservationIgnored private var previousRoster: [NetEaseRoomMember]?
     @ObservationIgnored private var previousQueue: [NetEaseRoomTrack]?
@@ -69,8 +71,9 @@ final class NetEaseRoomActivity {
 
     enum DeliveryPhase { case foreground, inactive, background }
 
-    init(defaults: UserDefaults) {
+    init(defaults: UserDefaults, haptics: AppHaptics = .shared) {
         self.defaults = defaults
+        self.haptics = haptics
         wantsSystemAlerts = defaults.bool(forKey: Self.settingsKey)
     }
 
@@ -192,7 +195,8 @@ final class NetEaseRoomActivity {
         guard let room else { return }
         if !alreadyQueued { localAdds[item.spotifyID, default: []].append(now + 120) }
         let text = alreadyQueued ? "《\(item.name)》已在房间队列中" : "你添加了《\(item.name)》"
-        publish(.init(text: text, symbol: "checkmark.circle", destination: room),
+        publish(.init(text: text, symbol: "checkmark.circle", destination: room,
+                      feedback: alreadyQueued ? .selection : .success),
                 system: false)
     }
 
@@ -203,7 +207,7 @@ final class NetEaseRoomActivity {
 
     func status(_ text: String, symbol: String) {
         guard let room else { return }
-        publish(.init(text: text, symbol: symbol, destination: room), system: false)
+        publish(.init(text: text, symbol: symbol, destination: room, feedback: .success), system: false)
     }
 
     func setChatVisible(_ destination: NetEaseRoomDestination?, token: UUID) {
@@ -269,7 +273,12 @@ final class NetEaseRoomActivity {
     }
 
     func advanceBanner() {
-        banner = pendingBanners.isEmpty ? nil : pendingBanners.removeFirst()
+        showBanner(pendingBanners.isEmpty ? nil : pendingBanners.removeFirst())
+    }
+
+    private func showBanner(_ event: NetEaseRoomEvent?) {
+        banner = event
+        if let event { haptics.play(event.feedback) }
     }
 
     private func publish(_ event: NetEaseRoomEvent, system: Bool = true, present: Bool = true) {
@@ -280,7 +289,7 @@ final class NetEaseRoomActivity {
         if events.count > 30 { events.removeLast() }
         guard present else { return }
         if phase == .foreground {
-            if banner == nil { banner = event }
+            if banner == nil { showBanner(event) }
             else {
                 pendingBanners.append(event)
                 if pendingBanners.count > 4 { pendingBanners.removeFirst() }

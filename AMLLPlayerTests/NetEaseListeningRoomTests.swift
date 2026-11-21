@@ -3,7 +3,10 @@ import XCTest
 
 @MainActor final class NetEaseListeningRoomTests: XCTestCase {
     func testActivityBaselinesRosterAndQueueAndIgnoresOwnEcho() throws {
-        let activity = NetEaseRoomActivity(defaults: try activityDefaults())
+        let defaults = try activityDefaults()
+        var feedback: [AppHaptics.Event] = []
+        let haptics = AppHaptics(defaults: defaults, isActive: { true }, emit: { feedback.append($0) })
+        let activity = NetEaseRoomActivity(defaults: defaults, haptics: haptics)
         let viewer = try XCTUnwrap(NetEaseRoomMember(["uid": 1, "nickname": "我"]))
         let friend = try XCTUnwrap(NetEaseRoomMember(["uid": 2, "nickname": "好友"]))
         var room = NetEaseListeningRoom(kind: .group, id: "room", members: [viewer])
@@ -33,9 +36,22 @@ import XCTest
         activity.observeQueue(room, now: 12, names: [:])
         XCTAssertEqual(activity.events.map(\.text),
                        ["好友 添加了《另一首歌》", "好友 加入了房间", "你添加了《\(track.name)》"])
+        XCTAssertEqual(feedback, [.success])
+        activity.advanceBanner()
+        XCTAssertEqual(activity.banner?.text, "好友 加入了房间")
+        XCTAssertEqual(feedback, [.success, .roomActivity])
+        defaults.set(false, forKey: AppHaptics.preferenceKey)
+        activity.advanceBanner()
+        XCTAssertEqual(activity.banner?.text, "好友 添加了《另一首歌》")
+        XCTAssertEqual(feedback, [.success, .roomActivity])
         room.members.removeLast()
         activity.observeRoster(room, now: 15)
         XCTAssertEqual(activity.events.first?.text, "好友 离开了房间")
+        activity.setPhase(.background)
+        defaults.set(true, forKey: AppHaptics.preferenceKey)
+        room.members.append(friend)
+        activity.observeRoster(room, now: 20)
+        XCTAssertEqual(feedback, [.success, .roomActivity])
     }
 
     func testDuetDurationPersistsPerAccountAndExcludesUnconfirmedGaps() throws {

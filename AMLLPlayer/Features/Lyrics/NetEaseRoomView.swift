@@ -224,7 +224,7 @@ struct NetEaseRoomView: View {
                         changingNotifications = false
                     }
                 }
-            )).disabled(changingNotifications)
+            ).hapticSelection()).disabled(changingNotifications)
             if activity.systemStatus == .denied,
                let settings = URL(string: UIApplication.openSettingsURLString) {
                 Button("在系统设置中开启通知") { openURL(settings) }

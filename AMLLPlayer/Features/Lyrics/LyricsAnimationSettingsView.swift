@@ -77,19 +77,19 @@ struct LyricsAnimationSettingsView: View {
                 }
             }
             Section("动画选项") {
-                Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive)
+                Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive.hapticSelection())
                 LabeledContent("歌词模糊程度", value: "\(Int(blurLevel.wrappedValue)) 级")
                 Slider(value: blurLevel, in: 1 ... 10, step: 1)
                     .disabled(!preferences.configuration.blurInactive)
                     .accessibilityLabel("歌词模糊程度")
                     .accessibilityValue("\(Int(blurLevel.wrappedValue)) 级")
                     .accessibilityIdentifier("lyricBlurLevel")
-                Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords)
-                Toggle("render.spring", isOn: $preferences.configuration.enableSpring)
-                Toggle("render.scale", isOn: $preferences.configuration.enableScale)
+                Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords.hapticSelection())
+                Toggle("render.spring", isOn: $preferences.configuration.enableSpring.hapticSelection())
+                Toggle("render.scale", isOn: $preferences.configuration.enableScale.hapticSelection())
                     .accessibilityIdentifier("animationStyleScale")
-                Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines)
-                Toggle("render.marquee", isOn: $preferences.configuration.marquee)
+                Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines.hapticSelection())
+                Toggle("render.marquee", isOn: $preferences.configuration.marquee.hapticSelection())
                 if preferences.configuration.animationStyle != .appleMusic164 {
                     LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
                     Slider(value: $preferences.configuration.gradientWidth, in: 0 ... 1, step: 0.05)

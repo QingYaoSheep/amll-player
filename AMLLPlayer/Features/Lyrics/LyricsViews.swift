@@ -270,7 +270,7 @@ struct LyricsSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("lyrics.enabled", isOn: $draft.enabled)
+                Toggle("lyrics.enabled", isOn: $draft.enabled.hapticSelection())
                 NavigationLink("lyrics.apple.settings") {
                     AppleLyricsSettingsView(coordinator: coordinator)
                         .toolbar(.visible, for: .navigationBar)
@@ -281,7 +281,7 @@ struct LyricsSettingsView: View {
                     .onMove { from, to in draft.priority.move(fromOffsets: from, toOffset: to) }
             } header: { Text("lyrics.priority") } footer: { Text("lyrics.priority.help") }
             Section {
-                Toggle("lyrics.cache.enabled", isOn: $draft.cacheEnabled)
+                Toggle("lyrics.cache.enabled", isOn: $draft.cacheEnabled.hapticSelection())
                 Stepper(value: $draft.refreshDays, in: 0 ... 3650) { LabeledContent("lyrics.cache.days", value: "\(draft.refreshDays)") }
                 Button("lyrics.cache.clear", role: .destructive) { confirm = .cache }
                 Button("lyrics.matches.reset", role: .destructive) { confirm = .matches }

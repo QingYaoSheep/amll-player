@@ -363,8 +363,12 @@ struct LyricsQuickSettingsPanel: View {
         }
     }
 
-    private func appearanceButton(_ title: LocalizedStringKey, symbol: String, id: String, value: Binding<Bool>) -> some View {
-        Button { value.wrappedValue.toggle() } label: {
+    private func appearanceButton(_ title: LocalizedStringKey, symbol: String, id: String, value: Binding<Bool>,
+                                  playsHaptic: Bool = true) -> some View {
+        Button {
+            let control = playsHaptic ? value.hapticSelection() : value
+            control.wrappedValue.toggle()
+        } label: {
             QuickSettingsControlLabel(title: title, symbol: symbol,
                 indicator: value.wrappedValue ? "checkmark.circle.fill" : "circle", selected: value.wrappedValue)
         }
@@ -435,7 +439,7 @@ struct LyricsQuickSettingsPanel: View {
                     route("quickSettings.queue", symbol: "list.bullet", to: .queue)
                     appearanceButton("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle", value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                         Task { await model.setShuffle(enabled) }
-                    })).disabled(busy)
+                    }), playsHaptic: false).disabled(busy)
                     QuickSettingsRepeatMenu(owner: ObjectIdentifier(model), service: model.selectedMusicService,
                                             mode: snapshot.repeatMode, busy: busy) { mode in
                         Task { await model.setRepeat(mode) }

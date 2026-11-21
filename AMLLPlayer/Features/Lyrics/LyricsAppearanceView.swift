@@ -66,7 +66,10 @@ struct LyricsAppearanceView: View {
                 Text("render.sample").font(.system(size: preferences.configuration.resolvedFontSize(width: 320, height: 600), weight: preferences.configuration.bold ? .bold : .regular))
                     .tracking(preferences.configuration.tracking).frame(minHeight: 70)
                 Text("appearance.previewHelp").font(.caption).foregroundStyle(.secondary)
-                Toggle("appearance.autoSize", isOn: Binding(get: { preferences.configuration.sizePreset != nil }, set: { preferences.configuration.sizePreset = $0 ? .medium : nil }))
+                Toggle("appearance.autoSize", isOn: Binding(
+                    get: { preferences.configuration.sizePreset != nil },
+                    set: { preferences.configuration.sizePreset = $0 ? .medium : nil }
+                ).hapticSelection())
                 if preferences.configuration.sizePreset == nil {
                     Picker("render.fontSize", selection: Binding(
                         get: { preferences.configuration.fontSize },
@@ -91,9 +94,9 @@ struct LyricsAppearanceView: View {
                         }
                     }
                 }
-                Toggle("render.bold", isOn: $preferences.configuration.bold)
-                Toggle("render.translation", isOn: $preferences.configuration.translation)
-                Toggle("render.romanization", isOn: $preferences.configuration.romanization)
+                Toggle("render.bold", isOn: $preferences.configuration.bold.hapticSelection())
+                Toggle("render.translation", isOn: $preferences.configuration.translation.hapticSelection())
+                Toggle("render.romanization", isOn: $preferences.configuration.romanization.hapticSelection())
                 NavigationLink("日语／韩语自动音译") {
                     RomanizationSettingsView(coordinator: coordinator)
                         .toolbar(.visible, for: .navigationBar)
@@ -101,7 +104,7 @@ struct LyricsAppearanceView: View {
                 DisclosureGroup("appearance.textDetails") {
                     LabeledContent("render.tracking", value: String(format: "%.1f", preferences.configuration.tracking))
                     Slider(value: $preferences.configuration.tracking, in: -1 ... 3, step: 0.25).accessibilityLabel(Text("render.tracking"))
-                    Toggle("render.romanizationFirst", isOn: $preferences.configuration.romanizationFirst)
+                    Toggle("render.romanizationFirst", isOn: $preferences.configuration.romanizationFirst.hapticSelection())
                     if preferences.profile == .amll {
                         adjustment("appearance.padding", key: \.horizontalPadding, fallback: 20, range: 12 ... 60, step: 2)
                         adjustment("appearance.spacing", key: \.paragraphSpacing, fallback: 0, range: 0 ... 60, step: 2)
@@ -110,19 +113,22 @@ struct LyricsAppearanceView: View {
                 }
             }
             Section("render.motion") {
-                Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive)
-                Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords)
-                Toggle("render.spring", isOn: $preferences.configuration.enableSpring)
-                Toggle("render.scale", isOn: $preferences.configuration.enableScale)
+                Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive.hapticSelection())
+                Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords.hapticSelection())
+                Toggle("render.spring", isOn: $preferences.configuration.enableSpring.hapticSelection())
+                Toggle("render.scale", isOn: $preferences.configuration.enableScale.hapticSelection())
                 NavigationLink("精细动画调整") {
                     LyricsAnimationSettingsView(preferences: preferences)
                         .toolbar(.visible, for: .navigationBar)
                 }.accessibilityIdentifier("lyricsAnimationSettings")
             }
             Section("render.layout") {
-                Toggle("render.showLyrics", isOn: $preferences.configuration.showLyrics)
+                Toggle("render.showLyrics", isOn: $preferences.configuration.showLyrics.hapticSelection())
                 if preferences.profile == .amll {
-                    Toggle("appearance.metadata", isOn: Binding(get: { preferences.configuration.showMetadata ?? true }, set: { preferences.configuration.showMetadata = $0 }))
+                    Toggle("appearance.metadata", isOn: Binding(
+                        get: { preferences.configuration.showMetadata ?? true },
+                        set: { preferences.configuration.showMetadata = $0 }
+                    ).hapticSelection())
                     adjustment("appearance.corner", key: \.artworkCornerRadius, fallback: 12, range: 0 ... 40, step: 2)
                 }
                 DisclosureGroup("appearance.pageDetails") {
@@ -133,11 +139,11 @@ struct LyricsAppearanceView: View {
                             }
                         }
                     }
-                    Toggle("render.showTitle", isOn: $preferences.configuration.showTitle)
-                    Toggle("render.showArtist", isOn: $preferences.configuration.showArtist)
-                    Toggle("render.showAlbum", isOn: $preferences.configuration.showAlbum)
-                    Toggle("render.showControls", isOn: $preferences.configuration.showControls)
-                    Toggle("render.volume", isOn: $preferences.configuration.showVolume)
+                    Toggle("render.showTitle", isOn: $preferences.configuration.showTitle.hapticSelection())
+                    Toggle("render.showArtist", isOn: $preferences.configuration.showArtist.hapticSelection())
+                    Toggle("render.showAlbum", isOn: $preferences.configuration.showAlbum.hapticSelection())
+                    Toggle("render.showControls", isOn: $preferences.configuration.showControls.hapticSelection())
+                    Toggle("render.volume", isOn: $preferences.configuration.showVolume.hapticSelection())
                     if preferences.profile == .custom {
                         Picker("render.credits", selection: $preferences.configuration.credits) {
                             ForEach(LyricsRenderConfiguration.Credits.allCases, id: \.self) { mode in
@@ -209,7 +215,7 @@ struct LyricsAppearanceView: View {
                     Toggle("当前句 HDR 高光", isOn: Binding(
                         get: { preferences.configuration.hdr?.enabled ?? false },
                         set: { preferences.configuration.hdr = .init(enabled: $0) }
-                    ))
+                    ).hapticSelection())
                     LyricsHDRStatusView().frame(minHeight: 44)
                     Text("仅当前句已唱部分使用扩展亮度，上限为 SDR 白的 2 倍。关闭 HDR 后仍保留文字混色；不会提高系统亮度。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -222,7 +228,7 @@ struct LyricsAppearanceView: View {
                             settings.enabled = value
                             preferences.configuration.animatedArtwork = settings
                         }
-                    ))
+                    ).hapticSelection())
                     Toggle("允许蜂窝网络加载", isOn: Binding(
                         get: { preferences.configuration.animatedArtwork?.allowCellular ?? false },
                         set: { value in
@@ -230,7 +236,7 @@ struct LyricsAppearanceView: View {
                             settings.allowCellular = value
                             preferences.configuration.animatedArtwork = settings
                         }
-                    ))
+                    ).hapticSelection())
                     Picker("封面布局", selection: Binding(
                         get: { preferences.configuration.animatedArtwork?.presentation ?? .square },
                         set: { value in

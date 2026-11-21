@@ -137,7 +137,7 @@ struct AppleMusicPlaylistEditor: View {
                 TextField("名称", text: $name)
                 TextField("说明", text: $description, axis: .vertical)
                 if playlist != nil {
-                    Toggle("编辑歌曲顺序和条目", isOn: $editEntries)
+                    Toggle("编辑歌曲顺序和条目", isOn: $editEntries.hapticSelection())
                         .disabled(busy)
                     if editEntries {
                         ForEach(entryState.entries) { row in Text(row.item.name) }

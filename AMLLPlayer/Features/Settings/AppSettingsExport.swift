@@ -18,6 +18,7 @@ struct AppSettingsExport: Codable {
     }
 
     let version: Int
+    let hapticsEnabled: Bool?
     let music: Music
     let lyrics: LyricsSettings
     let appearance: Appearance
@@ -28,11 +29,12 @@ struct AppSettingsExport: Codable {
 
     @MainActor
     init(model: AppModel, artwork: ImmersiveArtworkDebugStore,
-         pronunciationOverrides: [String: [String: String]]) throws {
+         pronunciationOverrides: [String: [String: String]], haptics: AppHaptics = .shared) throws {
         let configuration = model.renderPreferences.configuration.validated()
         let playback = model.netEasePlayback
         let modes = playback.savedPlaybackModes
         version = 1
+        hapticsEnabled = haptics.isEnabled
         music = Music(source: model.selectedMusicService,
                       spotifyClientID: model.environment.configuration.spotifyClientID.flatMap(SpotifyClientIDStore.normalized),
                       netEaseQuality: playback.quality, netEaseShuffle: modes.shuffle, netEaseRepeat: modes.repeatMode,

@@ -8,6 +8,8 @@
     "quickSettings.diagnosticCopied" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Diagnostics copied"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"诊断已复制"}}}},
     "quickSettings.immersiveLyrics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Immersive lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"沉浸式歌词"}}}},
     "quickSettings.title" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Quick Settings"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"快捷设置"}}}},
+    "settings.haptics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Haptic Feedback"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"触感反馈"}}}},
+    "settings.hapticsHelp" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Vibrate for controls, completed actions and listening room activity"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"操作控件、任务完成和一起听动态时轻震"}}}},
     "quickSettings.closeHint" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Close quick settings"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"关闭快捷设置"}}}},
     "quickSettings.appearance" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text and background"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"字号与背景"}}}},
     "quickSettings.playback" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Playback"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"播放操作"}}}},

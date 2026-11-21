@@ -120,6 +120,8 @@ struct NetEaseQueueView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.lyricsQuickSettingsNavigation) private var quickSettingsNavigation
     @State private var failure: String?
+    @State private var editMode: EditMode = .inactive
+
     var body: some View {
         if model.netEasePlayback.isListeningTogether {
             NetEaseRoomView(model: model)
@@ -140,27 +142,25 @@ struct NetEaseQueueView: View {
                 }
                 if let failure = model.netEasePlayback.failure { Text(failure).foregroundStyle(.secondary) }
                 if !model.netEasePlayback.actualQuality.isEmpty { Text("实际音质：\(model.netEasePlayback.actualQuality)") }
-                if let current = model.netEasePlayback.currentEntry {
-                    Section("正在播放") {
-                        queueRow(current)
+                let entries = model.netEasePlayback.displayedEntries
+                if editMode.isEditing {
+                    Section("播放顺序") { queueRows(entries[...], canMove: true) }
+                } else if let index = entries.firstIndex(where: { $0.id == model.netEasePlayback.queue.currentID }) {
+                    Section("正在播放") { queueRows(entries[index ... index]) }
+                    Section("接下来播放") {
+                        let upcoming = entries[(index + 1)...]
+                        if upcoming.isEmpty { Text("暂无待播歌曲").foregroundStyle(.secondary) }
+                        else { queueRows(upcoming) }
                     }
+                    if index > entries.startIndex {
+                        Section("之前的歌曲") { queueRows(entries[..<index]) }
+                    }
+                } else {
+                    Section("播放顺序") { queueRows(entries[...]) }
                 }
-                Section {
-                    ForEach(model.netEasePlayback.displayedEntries) { entry in
-                        Button {
-                            Task { do { try await model.netEasePlayback.selectEntry(entry.id) } catch { failure = error.localizedDescription } }
-                        } label: {
-                            queueRow(entry)
-                        }
-                    }
-                    .onDelete { model.netEasePlayback.removeDisplayed(at: $0) }
-                    .onMove { model.netEasePlayback.move(from: $0, to: $1) }
-                    .deleteDisabled(model.netEasePlayback.isPersonalFM)
-                    .moveDisabled(model.netEasePlayback.isPersonalFM)
-                } header: {
-                    Text("播放顺序")
-                } footer: {
-                    if !model.netEasePlayback.isPersonalFM { Text("移除正在播放的条目会暂停；其余条目可自由排序。") }
+                if !model.netEasePlayback.isPersonalFM {
+                    Text("移除正在播放的条目会暂停；其余条目可自由排序。")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
             }
                 .navigationTitle("网易云播放队列")
@@ -169,11 +169,37 @@ struct NetEaseQueueView: View {
                     if !model.netEasePlayback.isPersonalFM { EditButton() }
                     if quickSettingsNavigation == nil { Button("完成") { dismiss() } }
                 }
+                .environment(\.editMode, $editMode)
+                .onChange(of: model.netEasePlayback.isPersonalFM) { editMode = .inactive }
                 .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                     Button("好", role: .cancel) { failure = nil }
                 } message: { Text(failure ?? "") }
           }
         }
+    }
+
+    private func queueRows(_ entries: ArraySlice<NetEaseQueueEntry>, canMove: Bool = false) -> some View {
+        let playback = model.netEasePlayback
+        return ForEach(entries) { entry in
+            Button {
+                Task {
+                    do { try await playback.selectEntry(entry.id) } catch { failure = error.localizedDescription }
+                }
+            } label: {
+                queueRow(entry)
+            }
+        }
+        .onDelete { offsets in
+            let removed = Set(offsets.compactMap { offset in
+                let index = entries.startIndex + offset
+                return entries.indices.contains(index) ? entries[index].id : nil
+            })
+            let displayed = playback.displayedEntries
+            playback.removeDisplayed(at: IndexSet(displayed.indices.filter { removed.contains(displayed[$0].id) }))
+        }
+        .onMove { from, to in playback.move(from: from, to: to) }
+        .deleteDisabled(playback.isPersonalFM)
+        .moveDisabled(!canMove || playback.isPersonalFM)
     }
 
     private func queueRow(_ entry: NetEaseQueueEntry) -> some View {

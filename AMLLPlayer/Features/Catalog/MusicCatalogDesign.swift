@@ -46,6 +46,7 @@ struct MusicFilterPill: View {
     let title: String
     var symbol: String? = nil
     let selected: Bool
+    var selectionNamespace: Namespace.ID? = nil
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
@@ -57,12 +58,21 @@ struct MusicFilterPill: View {
             .font(.subheadline.weight(.semibold))
             .padding(.horizontal, 16).frame(minHeight: 44)
             .foregroundStyle(selected ? .white : .primary)
-            .background(selected ? MusicProductStyle.filledAccent : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+            .background {
+                if selected {
+                    if let selectionNamespace, !reduceMotion {
+                        Capsule().fill(MusicProductStyle.filledAccent)
+                            .matchedGeometryEffect(id: "selectedCategory", in: selectionNamespace)
+                    } else {
+                        Capsule().fill(MusicProductStyle.filledAccent)
+                    }
+                }
+            }
+            .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(MusicContentButtonStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .animation(reduceMotion ? nil : MusicProductMotion.change, value: selected)
     }
 }
 
@@ -99,14 +109,18 @@ struct MusicCatalogGrid: View {
     @Bindable var model: AppModel
     let rows: [MusicCatalogRow]
     var onSelect: (() -> Void)? = nil
+    var libraryShelf = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var width: CGFloat = 320
     var body: some View {
-        let count = MusicCatalogLayout.columns(in: width, largeText: typeSize.isAccessibilitySize)
+        let adaptiveCount = MusicCatalogLayout.columns(in: width, largeText: typeSize.isAccessibilitySize)
+        let count = libraryShelf && !typeSize.isAccessibilitySize ? max(2, adaptiveCount) : adaptiveCount
         let edge = max(1, (width - CGFloat(count - 1) * 12) / CGFloat(count))
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: count),
                   alignment: .leading, spacing: 24) {
-            ForEach(rows) { row in MusicCatalogCard(model: model, row: row, width: edge, onSelect: onSelect) }
+            ForEach(rows) { row in
+                MusicCatalogCard(model: model, row: row, width: edge, onSelect: onSelect, libraryShelf: libraryShelf)
+            }
         }
         .scrollTargetLayout()
         .frame(maxWidth: .infinity)

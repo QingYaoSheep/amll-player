@@ -24,8 +24,9 @@ struct MusicHomeFMCard: View {
                     .font(.subheadline)
                 Label(model.netEasePlayback.isPersonalFM ? "继续收听" : "开始收听", systemImage: "play.fill").font(.headline)
             }.foregroundStyle(.white).padding(20).frame(width: width, alignment: .leading)
-                .frame(minHeight: width * 4 / 3)
-                .background(LinearGradient(colors: [.red, .pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 16))
+                .frame(minHeight: MusicHomeLayout.featuredHeight(for: width))
+                .background(LinearGradient(colors: [MusicProductStyle.filledAccent, .purple, .black],
+                    startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 23, style: .continuous))
         }.buttonStyle(MusicContentButtonStyle()).disabled(model.netEasePlayback.isStartingRadio)
             .accessibilityIdentifier("homePersonalFM")
             .contextMenu {

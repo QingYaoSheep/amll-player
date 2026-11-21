@@ -79,13 +79,17 @@ struct CatalogHomeView: View {
                 }
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(cards.prefix(1), id: \.0.id) { row, category in
+                            MusicHomeCard(model: model, row: row, width: width, category: category)
+                        }
                         if fm { MusicHomeFMCard(model: model, width: width, openPlayer: openPlayer) }
-                        ForEach(cards, id: \.0.id) { row, category in
+                        ForEach(cards.dropFirst(), id: \.0.id) { row, category in
                             MusicHomeCard(model: model, row: row, width: width, category: category)
                         }
                     }.scrollTargetLayout()
                 }.contentMargins(.horizontal, 20, for: .scrollContent)
                     .scrollTargetBehavior(.viewAligned).scrollIndicators(.hidden)
+                    .accessibilityIdentifier("musicHomeFeatured")
             }
         }
     }
@@ -151,7 +155,6 @@ struct MusicHomeCard: View {
     @State private var failure: String?
     @State private var login = false
     @State private var choosing: MusicCatalogItem?
-    private var featured: Bool { category != nil }
     var body: some View {
         Group {
             if row.item.kind == .track || row.item.kind == .station {
@@ -184,16 +187,8 @@ struct MusicHomeCard: View {
     }
     private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if featured {
-                ZStack(alignment: .bottomLeading) {
-                    MusicHomePoster(url: row.item.artworkURL, width: width)
-                    LinearGradient(colors: [.clear, .black.opacity(0.78)], startPoint: .center, endPoint: .bottom)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(category ?? "").font(.caption)
-                        Text(row.item.name).font(.headline)
-                        Text(row.item.subtitle).font(.subheadline)
-                    }.foregroundStyle(.white).padding(16)
-                }.frame(width: width).frame(minHeight: width * 4 / 3).clipShape(RoundedRectangle(cornerRadius: 16))
+            if let category {
+                MusicHomePoster(item: row.item, category: category, width: width)
             } else {
                 CatalogArtwork(url: row.item.artworkURL, size: width, isArtist: row.item.kind == .artist)
                     .clipShape(RoundedRectangle(cornerRadius: row.item.kind == .artist ? width / 2 : 8))
@@ -211,22 +206,85 @@ struct MusicHomeCard: View {
 }
 
 private struct MusicHomePoster: View {
-    let url: URL?
+    let item: MusicCatalogItem
+    let category: String
     let width: CGFloat
     @Environment(\.displayScale) private var scale
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var image: UIImage?
+    @State private var tint: Color?
+    @State private var loadedURL: URL?
+
     var body: some View {
-        ZStack {
-            Color(uiColor: .secondarySystemBackground)
-            if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else { Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary) }
-        }.frame(width: width, height: width * 4 / 3).clipped().accessibilityHidden(true)
-            .task(id: "\(url?.absoluteString ?? ""):\(width):\(scale)") {
-                image = nil
-                guard let url else { return }
-                let value = await CatalogImageCache.shared.image(url, pixels: Int(width * 4 / 3 * scale))
-                if !Task.isCancelled { image = value }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(category).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.88))
+            Text(item.name).font(.largeTitle.weight(.bold))
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 3)
+            if !item.subtitle.isEmpty {
+                Text(item.subtitle).font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
             }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .foregroundStyle(.white)
+        .padding(22)
+        .frame(width: width, alignment: .leading)
+        .frame(minHeight: MusicHomeLayout.featuredHeight(for: width), alignment: .bottomLeading)
+        .background {
+            GeometryReader { geometry in
+                let artworkColor = loadedURL == item.artworkURL ? tint ?? MusicProductStyle.filledAccent : MusicProductStyle.filledAccent
+                ZStack {
+                    LinearGradient(colors: [artworkColor, .black], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    if loadedURL == item.artworkURL, let image {
+                        Image(uiImage: image).resizable().scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                            .transition(.opacity)
+                    } else {
+                        Image(systemName: item.kind?.symbol ?? "music.note")
+                            .font(.system(size: 76, weight: .light))
+                            .foregroundStyle(.white.opacity(0.36))
+                            .frame(maxHeight: .infinity, alignment: .top)
+                            .padding(.top, 48)
+                    }
+                    LinearGradient(stops: [
+                        .init(color: .clear, location: 0.28),
+                        .init(color: artworkColor.opacity(0.45), location: 0.58),
+                        .init(color: .black.opacity(0.90), location: 0.80),
+                        .init(color: .black.opacity(0.97), location: 1)
+                    ], startPoint: .top, endPoint: .bottom)
+                }
+            }
+            .accessibilityHidden(true)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .task(id: "\(item.artworkURL?.absoluteString ?? ""):\(Int(width * scale))") {
+            guard let url = item.artworkURL else { image = nil; tint = nil; loadedURL = nil; return }
+            let pixels = Int(max(width, MusicHomeLayout.featuredHeight(for: width)) * scale)
+            let artwork = await CatalogImageCache.shared.image(url, pixels: pixels)
+            guard !Task.isCancelled else { return }
+            let sampledColor = artwork?.cgImage.flatMap { Self.averageColor(of: $0) }
+            withAnimation(MusicProductMotion.change) {
+                loadedURL = url
+                image = artwork
+                tint = sampledColor
+            }
+        }
+    }
+
+    private static func averageColor(of image: CGImage) -> Color? {
+        var bytes = [UInt8](repeating: 0, count: 4)
+        return bytes.withUnsafeMutableBytes { buffer in
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                                          bytesPerRow: 4, space: space,
+                                          bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            guard buffer[3] > 0 else { return nil }
+            return Color(red: Double(buffer[0]) / 255, green: Double(buffer[1]) / 255, blue: Double(buffer[2]) / 255)
+        }
     }
 }
 

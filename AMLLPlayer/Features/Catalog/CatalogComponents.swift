@@ -23,6 +23,7 @@ struct CatalogArtwork: View {
             RoundedRectangle(cornerRadius: 8).fill(.quaternary)
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
+                    .transition(.opacity)
             } else {
                 Image(systemName: isArtist ? "person.crop.circle.fill" : "music.note").foregroundStyle(.secondary)
             }
@@ -230,6 +231,8 @@ struct CatalogRowView: View {
     var onSelect: (() -> Void)? = nil
     var parentPlaylist: MusicCatalogItem?
     var showsPosition = false
+    var compact = false
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showingLogin = false
     @State private var netEasePlaylistItem: MusicCatalogItem?
     @State private var playlistItem: MusicCatalogItem?
@@ -292,15 +295,15 @@ struct CatalogRowView: View {
                 Text(position + 1, format: .number).font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary).frame(minWidth: 24)
             }
-            CatalogArtwork(url: row.item.artworkURL)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(row.item.name).font(.body.weight(.medium)).lineLimit(2)
+            CatalogArtwork(url: row.item.artworkURL, size: compact ? 44 : 52, isArtist: row.item.kind == .artist)
+            VStack(alignment: .leading, spacing: compact ? 2 : 4) {
+                Text(row.item.name).font(.body.weight(.medium)).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 if !row.item.subtitle.isEmpty {
-                    Text(row.item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(row.item.subtitle).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                 }
-                if let track = row.item.track, track.durationMS > 0 {
-                    Text(String(format: "%d:%02d", track.durationMS / 60000, track.durationMS / 1000 % 60))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                if !compact || typeSize.isAccessibilitySize {
+                    duration
                 }
                 if row.item.availability == .unsupported {
                     Text("catalog.unsupported").font(.caption).foregroundStyle(.secondary)
@@ -309,10 +312,20 @@ struct CatalogRowView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if compact && !typeSize.isAccessibilitySize {
+                duration.fixedSize()
+            }
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var duration: some View {
+        if let track = row.item.track, track.durationMS > 0 {
+            Text(String(format: "%d:%02d", track.durationMS / 60000, track.durationMS / 1000 % 60))
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
     }
 }
 

@@ -114,6 +114,7 @@ struct MusicCatalogCard: View {
     let row: MusicCatalogRow
     let width: CGFloat
     var onSelect: (() -> Void)? = nil
+    var libraryShelf = false
     @State private var failure: String?
     @State private var showingLogin = false
     var body: some View {
@@ -154,9 +155,11 @@ struct MusicCatalogCard: View {
     private var label: some View {
         VStack(alignment: .leading, spacing: 8) {
             CatalogArtwork(url: row.item.artworkURL, size: width, isArtist: row.item.kind == .artist)
+                .shadow(color: .black.opacity(libraryShelf ? 0.12 : 0), radius: 6, y: 3)
             Text(row.item.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
-            if !row.item.subtitle.isEmpty {
-                Text(row.item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            let subtitle = libraryShelf ? row.item.playlist?.ownerName ?? row.item.subtitle : row.item.subtitle
+            if !subtitle.isEmpty {
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
         }
     }

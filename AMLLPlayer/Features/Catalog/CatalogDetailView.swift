@@ -34,9 +34,11 @@ private struct CatalogDetailContent: View {
                     if !detail.highlights.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("热门歌曲").font(.title2.bold()).accessibilityAddTraits(.isHeader)
-                            ForEach(detail.highlights) { row in
-                                CatalogRowView(model: model, row: row, tapToPlay: true)
-                                Divider()
+                            VStack(spacing: 0) {
+                                ForEach(detail.highlights) { row in
+                                    CatalogRowView(model: model, row: row, tapToPlay: true, compact: true)
+                                    Divider()
+                                }
                             }
                         }
                     }
@@ -225,10 +227,13 @@ private struct CatalogDetailChildren: View {
             if parent.kind == .artist {
                 MusicCatalogGrid(model: model, rows: state.rows)
             } else {
-                ForEach(state.rows) { row in
-                    CatalogRowView(model: model, row: row, contextURI: query.preservesPositions ? parent.uri : nil,
-                        tapToPlay: true, parentPlaylist: parent.service == .netease ? parent : nil, showsPosition: true)
-                    Divider()
+                LazyVStack(spacing: 0) {
+                    ForEach(state.rows) { row in
+                        CatalogRowView(model: model, row: row, contextURI: query.preservesPositions ? parent.uri : nil,
+                            tapToPlay: true, parentPlaylist: parent.service == .netease ? parent : nil,
+                            showsPosition: true, compact: true)
+                        Divider()
+                    }
                 }
             }
             if state.error == .forbidden || state.error == .unavailable {

@@ -55,9 +55,12 @@ import os
         XCTAssertEqual(page.replay?.year, "2024")
         XCTAssertEqual(page.replay?.sections.first?.items.first?.item.name, "Album")
     }
-    func testHomeSizingMatchesReferenceAndRemainsBoundedOnIPad() {
+    func testFeaturedPosterLeavesANextCardPreviewAndRemainsBoundedOnIPad() {
         XCTAssertEqual(MusicHomeLayout.coverWidth(in: 402, largeText: false), 150.22, accuracy: 0.1)
-        XCTAssertEqual(MusicHomeLayout.featuredWidth(in: 402, largeText: false), 232, accuracy: 0.1)
+        XCTAssertEqual(MusicHomeLayout.featuredWidth(in: 402, largeText: false), 336, accuracy: 0.1)
+        XCTAssertEqual(MusicHomeLayout.featuredWidth(in: 320, largeText: true), 264, accuracy: 0.1)
+        XCTAssertEqual(MusicHomeLayout.featuredWidth(in: 1366, largeText: false), 520, accuracy: 0.1)
+        XCTAssertEqual(MusicHomeLayout.featuredHeight(for: 520), 560, accuracy: 0.1)
         XCTAssertLessThanOrEqual(MusicHomeLayout.coverWidth(in: 1366, largeText: false), 200)
     }
     func testRecommendationWithoutEmbeddedContentsInvalidatesFeaturedWhenLoaded() async {

@@ -3,6 +3,17 @@ import Foundation
 enum MusicCatalogKind: String, CaseIterable, Hashable, Codable, Sendable {
     case track, album, artist, playlist, station, musicVideo
 
+    var symbol: String {
+        switch self {
+        case .track: "music.note"
+        case .album: "square.stack"
+        case .artist: "person.crop.circle"
+        case .playlist: "music.note.list"
+        case .station: "dot.radiowaves.left.and.right"
+        case .musicVideo: "play.rectangle"
+        }
+    }
+
     var title: String {
         switch self {
         case .track: String(localized: "catalog.tracks")

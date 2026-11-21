@@ -222,6 +222,16 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertTrue(["On", "Off"].contains(button.value as? String ?? ""))
         }
         let translation = app.buttons["quickSettingsTranslation"]
+        let lyrics = app.buttons["toggleLyricsVisibility"]
+        XCTAssertEqual(lyrics.frame.midY, translation.frame.midY, accuracy: 1)
+        XCTAssertLessThan(lyrics.frame.maxX, translation.frame.minX)
+        let handle = app.descendants(matching: .any)["lyricsQuickSettingsHandle"].firstMatch
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            XCTAssertEqual(handle.frame.width, app.frame.width, accuracy: 1)
+            let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
+            XCTAssertLessThanOrEqual(scroll.frame.maxY, app.frame.maxY)
+            XCTAssertLessThan(app.frame.maxY - scroll.frame.maxY, 50, "The panel should sit at the bottom safe area")
+        }
         XCTAssertTrue(translation.exists)
         let previous = translation.value as? String
         translation.tap()

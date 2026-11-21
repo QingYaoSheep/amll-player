@@ -55,6 +55,10 @@ enum MusicHomeLayout {
         return min(200, max(132, (min(1120, width) - 64) / 2.25))
     }
     static func featuredWidth(in width: CGFloat, largeText: Bool) -> CGFloat {
-        min(320, max(200, width * (largeText ? 0.76 : 0.577)))
+        let nextPosterPeek: CGFloat = largeText ? 24 : 34
+        return min(520, max(1, width - 20 - 12 - nextPosterPeek))
+    }
+    static func featuredHeight(for width: CGFloat) -> CGFloat {
+        min(560, width * 1.18)
     }
 }

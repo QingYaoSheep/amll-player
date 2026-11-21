@@ -7,6 +7,11 @@ on:
       - 'AMLLPlayer/Domain/MusicHome.swift'
       - 'AMLLPlayer/Domain/NetEaseRadioState.swift'
       - 'AMLLPlayer/Features/Catalog/MusicHome*.swift'
+      - 'AMLLPlayer/Features/Catalog/CatalogComponents.swift'
+      - 'AMLLPlayer/Features/Catalog/CatalogDetailView.swift'
+      - 'AMLLPlayer/Features/Catalog/MusicCatalogDesign.swift'
+      - 'AMLLPlayer/Features/Catalog/SpotifyBrowserView.swift'
+      - 'AMLLPlayer/Features/Lyrics/LyricsQuickSettingsPanel.swift'
       - 'AMLLPlayer/Features/Catalog/NetEaseFriendsView.swift'
       - 'AMLLPlayer/Features/Catalog/NetEaseConversationView.swift'
       - 'AMLLPlayer/Features/Catalog/NetEaseSongSharingView.swift'
@@ -20,6 +25,7 @@ on:
       - 'AMLLPlayer/Infrastructure/NetEase/NetEaseListeningRoom.swift'
       - 'AMLLPlayer/Infrastructure/NetEase/NetEaseMessaging.swift'
       - 'AMLLPlayerUITests/MusicCatalogDesignUITests.swift'
+      - 'AMLLPlayerUITests/LyricsQuickSettingsUITests.swift'
       - 'AMLLPlayerUITests/AMLLPlayerUITests.swift'
   workflow_dispatch:
     inputs:
@@ -65,6 +71,9 @@ jobs:
             -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testPlayerAndSettingsAreReachable
             -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testWelcomeCanBeSkippedIntoStableNavigation
             -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testProductPagesAndSearchHistory
+            -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testAppearanceChangesPersistThroughTheProductionPanel
+            -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testOutsideAndHandleCloseOnlyThePanelAndRotationKeepsItUsable
+            -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testQuickSettingsRoutesToExistingPagesFromBothLyricsLayouts
           )
           if [[ "$HOME_UI_SCOPE" == fm ]]; then
             UI_TESTS=(-only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testPersonalFMStartsFromHomeAndRestoresOrdinaryQueue)
@@ -94,6 +103,7 @@ jobs:
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testAccessibilityTextKeepsDescriptionAndControlsReachable
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testNetEaseFriendsOpensPrivateConversationAndSharesTheCurrentSong
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testNetEaseLyricsRoomCapsuleOpensDetailsAndFriendChat
+            -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testAppearanceChangesPersistThroughTheProductionPanel
           )
           if [[ "$HOME_UI_SCOPE" == room ]]; then
             UI_TESTS=(-only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testNetEaseLyricsRoomCapsuleOpensDetailsAndFriendChat)

@@ -95,6 +95,7 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
     @Bindable var presentation: LyricsQuickSettingsPresentation
     var artworkStatus: String? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var floatingPanel: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     func body(content: Content) -> some View {
         ZStack {
@@ -115,14 +116,15 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
                                 .onTapGesture { presentation.close(reduceMotion: reduceMotion) }
                                 .accessibilityHidden(true)
                                 .accessibilityIdentifier("lyricsQuickSettingsOutside")
-                            LyricsQuickSettingsPanel(model: model, presentation: presentation, artworkStatus: artworkStatus)
-                                .frame(width: min(UIDevice.current.userInterfaceIdiom == .pad ? 560 : .infinity,
-                                                  max(0, geometry.size.width - 40)))
+                            let insets = geometry.safeAreaInsets
+                            LyricsQuickSettingsPanel(model: model, presentation: presentation, artworkStatus: artworkStatus,
+                                floating: floatingPanel, screenInsets: insets)
+                                .frame(width: floatingPanel ? min(560, max(0, geometry.size.width - 40)) : geometry.size.width)
                                 // GeometryReader needs a concrete proposal. A maxHeight
                                 // alone can collapse to the header's intrinsic height,
                                 // leaving the scroll viewport with zero height.
-                                .frame(height: max(0, geometry.size.height - geometry.safeAreaInsets.top - geometry.safeAreaInsets.bottom) * 0.6)
-                                .padding(.bottom, geometry.safeAreaInsets.bottom + 12)
+                                .frame(height: max(0, geometry.size.height - insets.top - insets.bottom) * 0.6)
+                                .padding(.bottom, floatingPanel ? insets.bottom + 12 : 0)
                                 .transition(reduceMotion ? .opacity : .offset(y: geometry.size.height))
                         }
                     }
@@ -174,6 +176,8 @@ struct LyricsQuickSettingsPanel: View {
     @Bindable var model: AppModel
     let presentation: LyricsQuickSettingsPresentation
     var artworkStatus: String? = nil
+    let floating: Bool
+    let screenInsets: EdgeInsets
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var contentHeight: CGFloat = 0
@@ -186,6 +190,10 @@ struct LyricsQuickSettingsPanel: View {
 
     private var configuration: LyricsRenderConfiguration { model.renderPreferences.configuration }
     private var canManageLyrics: Bool { model.lyrics.track != nil && model.lyrics.settings.enabled }
+    private var surfaceInsets: EdgeInsets {
+        floating ? EdgeInsets() : EdgeInsets(top: 0, leading: screenInsets.leading,
+                                              bottom: screenInsets.bottom, trailing: screenInsets.trailing)
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -215,7 +223,12 @@ struct LyricsQuickSettingsPanel: View {
                                           geometry.size.height - headerHeight)))
             }
             .frame(maxWidth: .infinity)
-            .modifier(QuickSettingsGlassSurface())
+            // Extend the surface while leaving the scroll viewport and its
+            // hit targets inside the safe area.
+            .padding(surfaceInsets)
+            .modifier(QuickSettingsGlassSurface(floating: floating))
+            .padding(EdgeInsets(top: 0, leading: -surfaceInsets.leading,
+                                bottom: -surfaceInsets.bottom, trailing: -surfaceInsets.trailing))
             .modifier(QuickSettingsSDR())
             .offset(y: reduceMotion ? 0 : drag)
             .frame(maxHeight: .infinity, alignment: .bottom)
@@ -277,6 +290,7 @@ struct LyricsQuickSettingsPanel: View {
                 Button { presentation.close(reduceMotion: reduceMotion) } label: {
                     Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 44, height: 44)
                 }
+                .buttonStyle(MusicContentButtonStyle())
                 .accessibilityLabel(Text("common.done"))
                 .accessibilityIdentifier("closeLyricsQuickSettings")
             }
@@ -290,7 +304,7 @@ struct LyricsQuickSettingsPanel: View {
     }
 
     private var appearance: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 12) {
+        controls {
             appearanceButton("render.showLyrics", symbol: "text.quote", id: "toggleLyricsVisibility", value: setting(\.showLyrics))
             appearanceButton("render.translation", symbol: "character.bubble", id: "quickSettingsTranslation", value: setting(\.translation))
             appearanceButton("render.romanization", symbol: "abc", id: "quickSettingsRomanization", value: setting(\.romanization))
@@ -304,44 +318,24 @@ struct LyricsQuickSettingsPanel: View {
     }
 
     private func appearanceButton(_ title: LocalizedStringKey, symbol: String, id: String, value: Binding<Bool>) -> some View {
-        VStack(spacing: 6) {
-            iconToggle(title, symbol: symbol, id: id, value: value)
-            Text(title).font(.caption2.weight(.medium)).lineLimit(2)
-                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                .accessibilityHidden(true)
-        }.frame(maxWidth: .infinity)
-    }
-
-    private func iconToggle(_ title: LocalizedStringKey, symbol: String, id: String, value: Binding<Bool>) -> some View {
         Button { value.wrappedValue.toggle() } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 22, weight: .semibold))
-                .frame(width: 54, height: 54)
-                .foregroundStyle(.white)
-                .background(value.wrappedValue ? MusicProductStyle.accent : Color(uiColor: .systemGray3),
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            QuickSettingsControlLabel(title: title, symbol: symbol,
+                indicator: value.wrappedValue ? "checkmark.circle.fill" : "circle", selected: value.wrappedValue)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MusicContentButtonStyle())
         .accessibilityLabel(Text(title))
         .accessibilityValue(Text(LocalizedStringKey(value.wrappedValue ? "quickSettings.on" : "quickSettings.off")))
         .accessibilityAddTraits(value.wrappedValue ? .isSelected : [])
         .accessibilityIdentifier(id)
     }
 
-    private func iconToggleRow(_ title: LocalizedStringKey, symbol: String, id: String, value: Binding<Bool>) -> some View {
-        HStack {
-            Text(title).fixedSize(horizontal: false, vertical: true).accessibilityHidden(true)
-            Spacer(minLength: 12)
-            iconToggle(title, symbol: symbol, id: id, value: value)
-        }
-    }
-
     private var typography: some View {
         section("quickSettings.appearance") {
-            iconToggleRow("appearance.autoSize", symbol: "textformat.size", id: "quickSettingsAutoSize", value: Binding(get: { configuration.sizePreset != nil }, set: {
-                model.renderPreferences.configuration.sizePreset = $0 ? .medium : nil
-            }))
+            controls {
+                appearanceButton("appearance.autoSize", symbol: "textformat.size", id: "quickSettingsAutoSize", value: Binding(get: { configuration.sizePreset != nil }, set: {
+                    model.renderPreferences.configuration.sizePreset = $0 ? .medium : nil
+                }))
+            }
             if configuration.sizePreset != nil {
                 Picker("render.sizePreset", selection: Binding(get: { configuration.sizePreset ?? .medium }, set: {
                     model.renderPreferences.configuration.sizePreset = $0
@@ -350,7 +344,7 @@ struct LyricsQuickSettingsPanel: View {
                         Text(LocalizedStringKey("render.size." + preset.rawValue)).tag(preset)
                     }
                 }
-                .frame(minHeight: 44).accessibilityIdentifier("quickSettingsSizePreset")
+                .modifier(QuickSettingsValueSurface()).accessibilityIdentifier("quickSettingsSizePreset")
                 .accessibilityValue(Text(LocalizedStringKey("render.size." + (configuration.sizePreset ?? .medium).rawValue)))
             } else {
                 Picker("render.fontSize", selection: Binding(get: { configuration.fontSize }, set: {
@@ -363,7 +357,7 @@ struct LyricsQuickSettingsPanel: View {
                     Text("render.small").tag(26.0); Text("render.medium").tag(32.0)
                     Text("render.large").tag(40.0); Text("render.extraLarge").tag(48.0)
                 }
-                .frame(minHeight: 44).accessibilityIdentifier("quickSettingsFontSize")
+                .modifier(QuickSettingsValueSurface()).accessibilityIdentifier("quickSettingsFontSize")
                 .accessibilityValue(Text(String(format: "%.0f pt", configuration.fontSize)))
             }
             Picker("quickSettings.background", selection: Binding(get: { configuration.backgroundMode ?? .mesh }, set: {
@@ -376,31 +370,34 @@ struct LyricsQuickSettingsPanel: View {
                 Text("纯色").tag(LyricsRenderConfiguration.BackgroundMode.solid)
                 Text("双色渐变").tag(LyricsRenderConfiguration.BackgroundMode.gradient)
             }
-            .frame(minHeight: 44).accessibilityIdentifier("quickSettingsBackground")
+            .modifier(QuickSettingsValueSurface()).accessibilityIdentifier("quickSettingsBackground")
             .accessibilityValue(Text(backgroundTitle))
         }
     }
 
     private var playback: some View {
         section("quickSettings.playback") {
-            route(model.selectedMusicService == .spotify ? "player.devices" : "AirPlay", symbol: "airplayaudio", to: .devices)
-            if model.selectedMusicService == .netease {
-                route(model.netEasePlayback.isListeningTogether ? "一起听房间" : "与好友一起听",
-                      symbol: "person.2", to: .listeningRoom)
-                    .accessibilityIdentifier("quickSettingsNetEaseListeningRoom")
-            }
-            if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
-                route("quickSettings.queue", symbol: "list.bullet", to: .queue)
-                iconToggleRow("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle", value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
-                    Task { await model.setShuffle(enabled) }
-                })).disabled(model.isPerformingAction || (model.selectedMusicService == .netease && !model.netEasePlayback.canEditPersonalQueue))
-                QuickSettingsRepeatMenu(owner: ObjectIdentifier(model), service: model.selectedMusicService,
-                                          mode: snapshot.repeatMode, busy: model.isPerformingAction || (model.selectedMusicService == .netease && !model.netEasePlayback.canEditPersonalQueue)) { mode in
-                    Task { await model.setRepeat(mode) }
-                }.equatable()
-                if model.selectedMusicService == .netease, model.netEasePlayback.isPersonalFM {
-                    Text("私人 FM 自动续播，退出后可使用随机与循环。").font(.caption).foregroundStyle(.secondary)
+            controls {
+                route(model.selectedMusicService == .spotify ? "player.devices" : "AirPlay", symbol: "airplayaudio", to: .devices)
+                if model.selectedMusicService == .netease {
+                    route(model.netEasePlayback.isListeningTogether ? "一起听房间" : "与好友一起听",
+                          symbol: "person.2", to: .listeningRoom)
+                        .accessibilityIdentifier("quickSettingsNetEaseListeningRoom")
                 }
+                if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
+                    let busy = model.isPerformingAction || (model.selectedMusicService == .netease && !model.netEasePlayback.canEditPersonalQueue)
+                    route("quickSettings.queue", symbol: "list.bullet", to: .queue)
+                    appearanceButton("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle", value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
+                        Task { await model.setShuffle(enabled) }
+                    })).disabled(busy)
+                    QuickSettingsRepeatMenu(owner: ObjectIdentifier(model), service: model.selectedMusicService,
+                                            mode: snapshot.repeatMode, busy: busy) { mode in
+                        Task { await model.setRepeat(mode) }
+                    }.equatable()
+                }
+            }
+            if model.selectedMusicService == .netease, model.netEasePlayback.isPersonalFM {
+                Text("私人 FM 自动续播，退出后可使用随机与循环。").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -414,56 +411,63 @@ struct LyricsQuickSettingsPanel: View {
                 .accessibilityLabel(Text("quickSettings.globalDelay"))
                 .accessibilityValue(Text(String(format: "%+.1f s", model.lyrics.globalDelay)))
                 .accessibilityIdentifier("quickSettingsGlobalDelay")
-            HStack(spacing: 12) {
-                Button("−0.1 s") { model.lyrics.setGlobalDelay(model.lyrics.globalDelay - 0.1) }
-                    .accessibilityIdentifier("quickSettingsGlobalDelayMinus")
-                    .frame(minWidth: 70, minHeight: 44)
-                Button("+0.1 s") { model.lyrics.setGlobalDelay(model.lyrics.globalDelay + 0.1) }
-                    .accessibilityIdentifier("quickSettingsGlobalDelayPlus")
-                    .frame(minWidth: 70, minHeight: 44)
-                Button("lyrics.offset.zero") { model.lyrics.setGlobalDelay(0) }
-                    .accessibilityIdentifier("quickSettingsGlobalDelayReset")
-                    .frame(minHeight: 44)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { globalDelayButtons }
+                VStack(alignment: .leading, spacing: 8) { globalDelayButtons }
             }
             Text("quickSettings.globalDelayHelp").font(.caption).foregroundStyle(.secondary)
         }
     }
 
+    @ViewBuilder private var globalDelayButtons: some View {
+        timingButton("−0.1 s", id: "quickSettingsGlobalDelayMinus") { model.lyrics.setGlobalDelay(model.lyrics.globalDelay - 0.1) }
+            .accessibilityLabel(Text("lyrics.offset.minus"))
+        timingButton("+0.1 s", id: "quickSettingsGlobalDelayPlus") { model.lyrics.setGlobalDelay(model.lyrics.globalDelay + 0.1) }
+            .accessibilityLabel(Text("lyrics.offset.plus"))
+        timingButton("lyrics.offset.zero", id: "quickSettingsGlobalDelayReset") { model.lyrics.setGlobalDelay(0) }
+    }
+
     private var lyricActions: some View {
         section("quickSettings.lyrics") {
-            route("lyrics.find", symbol: "magnifyingglass", to: .lyricsSearch)
-            Button("lyrics.refresh", systemImage: "arrow.clockwise") { model.lyrics.reload(force: true) }
-                .frame(minHeight: 44)
-            Button("lyrics.automatic", systemImage: "arrow.uturn.backward") { model.lyrics.restoreAutomatic() }
-                .frame(minHeight: 44)
+            controls {
+                route("lyrics.find", symbol: "magnifyingglass", to: .lyricsSearch)
+                action("lyrics.refresh", symbol: "arrow.clockwise") { model.lyrics.reload(force: true) }
+                action("lyrics.automatic", symbol: "arrow.uturn.backward") { model.lyrics.restoreAutomatic() }
+            }
             LabeledContent("quickSettings.offset", value: String(format: "%+.1f s", model.lyrics.selection.offset))
                 .accessibilityElement(children: .combine)
                 .accessibilityValue(Text(String(format: "%+.1f s", model.lyrics.selection.offset)))
                 .accessibilityIdentifier("quickSettingsOffset")
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { offsetButtons }
-                VStack(alignment: .leading, spacing: 4) { offsetButtons }
+                HStack(spacing: 8) { offsetButtons }
+                VStack(alignment: .leading, spacing: 8) { offsetButtons }
             }
         }.disabled(!canManageLyrics)
     }
 
     @ViewBuilder private var offsetButtons: some View {
-        Button("−0.1 s") { model.lyrics.setOffset(model.lyrics.selection.offset - 0.1) }
-            .accessibilityLabel(Text("lyrics.offset.minus")).accessibilityIdentifier("quickSettingsOffsetMinus")
-            .frame(minWidth: 70, minHeight: 44)
-        Button("+0.1 s") { model.lyrics.setOffset(model.lyrics.selection.offset + 0.1) }
-            .accessibilityLabel(Text("lyrics.offset.plus")).accessibilityIdentifier("quickSettingsOffsetPlus")
-            .frame(minWidth: 70, minHeight: 44)
-        Button("lyrics.offset.zero") { model.lyrics.setOffset(0) }.frame(minHeight: 44)
-            .accessibilityIdentifier("quickSettingsOffsetReset")
+        timingButton("−0.1 s", id: "quickSettingsOffsetMinus") { model.lyrics.setOffset(model.lyrics.selection.offset - 0.1) }
+            .accessibilityLabel(Text("lyrics.offset.minus"))
+        timingButton("+0.1 s", id: "quickSettingsOffsetPlus") { model.lyrics.setOffset(model.lyrics.selection.offset + 0.1) }
+            .accessibilityLabel(Text("lyrics.offset.plus"))
+        timingButton("lyrics.offset.zero", id: "quickSettingsOffsetReset") { model.lyrics.setOffset(0) }
     }
 
     private var more: some View {
         section("quickSettings.more") {
-            iconToggleRow("quickSettings.artworkDebugButton", symbol: "slider.horizontal.3", id: "quickSettingsArtworkDebugButton",
-                value: Binding(get: { artworkDebug.showsButton }, set: { artworkDebug.showsButton = $0 }))
-            route("render.settings", symbol: "slider.horizontal.3", to: .appearance)
-            route("lyrics.settings", symbol: "text.badge.checkmark", to: .lyricsSources)
+            controls {
+                appearanceButton("quickSettings.artworkDebugButton", symbol: "rectangle.on.rectangle", id: "quickSettingsArtworkDebugButton",
+                    value: Binding(get: { artworkDebug.showsButton }, set: { artworkDebug.showsButton = $0 }))
+                route("render.settings", symbol: "slider.horizontal.3", to: .appearance)
+                route("lyrics.settings", symbol: "text.badge.checkmark", to: .lyricsSources)
+                action(LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
+                       symbol: "doc.on.doc") {
+                    UIPasteboard.general.string = LyricsCompositingDiagnostics.text(configuration: configuration,
+                        profile: model.renderPreferences.profile)
+                    compositingDiagnosticCopied = true
+                }
+                .accessibilityIdentifier("quickSettingsCopyCompositingDiagnostics")
+            }
             if let artworkStatus { Text(artworkStatus).font(.footnote).foregroundStyle(.secondary) }
             if let document = model.lyrics.document, let credit = configuration.credits.content(in: document) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -471,14 +475,6 @@ struct LyricsQuickSettingsPanel: View {
                     Text(credit.names.joined(separator: " · "))
                 }.font(.footnote).foregroundStyle(.secondary)
             }
-            Button(LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
-                   systemImage: "doc.on.doc") {
-                UIPasteboard.general.string = LyricsCompositingDiagnostics.text(configuration: configuration,
-                    profile: model.renderPreferences.profile)
-                compositingDiagnosticCopied = true
-            }
-            .frame(minHeight: 44)
-            .accessibilityIdentifier("quickSettingsCopyCompositingDiagnostics")
         }
     }
 
@@ -498,19 +494,39 @@ struct LyricsQuickSettingsPanel: View {
     }
 
     private func route(_ title: LocalizedStringKey, symbol: String, to target: LyricsQuickSettingsPresentation.Destination) -> some View {
-        Button { presentation.close(reduceMotion: reduceMotion, then: target) } label: {
-            HStack { Label(title, systemImage: symbol); Spacer(); Image(systemName: "chevron.right").font(.caption) }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
+        action(title, symbol: symbol, indicator: "chevron.forward") {
+            presentation.close(reduceMotion: reduceMotion, then: target)
         }
         .accessibilityIdentifier("quickSettingsRoute." + target.rawValue)
+    }
+
+    private func action(_ title: LocalizedStringKey, symbol: String, indicator: String? = nil,
+                        perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            QuickSettingsControlLabel(title: title, symbol: symbol, indicator: indicator)
+        }
+        .buttonStyle(MusicContentButtonStyle())
+    }
+
+    private func timingButton(_ title: LocalizedStringKey, id: String, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Text(title).fixedSize(horizontal: true, vertical: false)
+                .modifier(QuickSettingsValueSurface())
+        }
+        .buttonStyle(MusicContentButtonStyle())
+        .accessibilityIdentifier(id)
+    }
+
+    private func controls<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8),
+                                 count: typeSize.isAccessibilitySize ? 1 : 2), spacing: 8, content: content)
     }
 
     private func section<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).accessibilityAddTraits(.isHeader)
             content()
-        }.font(.subheadline).buttonStyle(.plain).tint(.green)
+        }.font(.subheadline).buttonStyle(.plain).tint(MusicProductStyle.accent)
     }
 }
 
@@ -537,14 +553,8 @@ private struct QuickSettingsRepeatMenu: View, Equatable {
                 .accessibilityIdentifier("quickSettingsRepeatOption." + option.rawValue)
             }
         } label: {
-            HStack {
-                Text("quickSettings.repeat")
-                Spacer()
-                Text(mode.title)
-                Image(systemName: "chevron.up.chevron.down").font(.caption)
-            }
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
+            QuickSettingsControlLabel(title: "quickSettings.repeat", symbol: "repeat",
+                detail: mode.title, indicator: "chevron.up.chevron.down", selected: mode != .off)
         }
         .disabled(busy)
         .accessibilityLabel(Text("quickSettings.repeat"))
@@ -553,12 +563,62 @@ private struct QuickSettingsRepeatMenu: View, Equatable {
     }
 }
 
+private struct QuickSettingsControlLabel: View {
+    let title: LocalizedStringKey
+    let symbol: String
+    var detail: String? = nil
+    var indicator: String? = nil
+    var selected = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
+        HStack(spacing: 8) {
+            Image(systemName: symbol).font(.body.weight(.semibold)).frame(width: 22)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if let indicator {
+                Image(systemName: indicator).font(.caption.weight(.semibold))
+                    .foregroundStyle(selected ? MusicProductStyle.accent : .secondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .foregroundStyle(.white)
+        .background(reduceTransparency ? Color(uiColor: .tertiarySystemBackground) : .white.opacity(0.09), in: shape)
+        .background { if selected { shape.fill(MusicProductStyle.filledAccent.opacity(0.24)) } }
+        .overlay { shape.strokeBorder(selected ? MusicProductStyle.accent.opacity(0.7) : .white.opacity(0.08)) }
+        .contentShape(shape)
+    }
+}
+
+private struct QuickSettingsValueSurface: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        content.padding(.horizontal, 12).frame(minHeight: 44)
+            .background(reduceTransparency ? Color(uiColor: .tertiarySystemBackground) : .white.opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .contentShape(Rectangle())
+    }
+}
+
 private struct QuickSettingsGlassSurface: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
-    private let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+    let floating: Bool
 
     func body(content: Content) -> some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: floating ? 28 : 32,
+                                           bottomLeadingRadius: floating ? 28 : 0,
+                                           bottomTrailingRadius: floating ? 28 : 0,
+                                           topTrailingRadius: floating ? 28 : 32)
         Group {
             if reduceTransparency { content.background(Color(uiColor: .secondarySystemBackground), in: shape) }
             else if #available(iOS 26.0, *) { content.glassEffect(.regular, in: shape) }

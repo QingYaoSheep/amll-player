@@ -114,6 +114,8 @@ struct MusicLibraryView: View {
     @Bindable var model: AppModel
     @Bindable var store: MusicCatalogStore
     @State private var selection: MusicLibrarySection = .playlists
+    @Namespace private var categorySelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var sections: [MusicLibrarySection] { MusicHomePresentation.librarySections(supported: store.provider.librarySections) }
     private var current: MusicLibrarySection { sections.contains(selection) ? selection : sections.first ?? .playlists }
     var body: some View {
@@ -125,17 +127,20 @@ struct MusicLibraryView: View {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
                             ForEach(sections, id: \.self) { section in
-                                MusicFilterPill(title: section.title, symbol: section.symbol, selected: current == section) { selection = section }
+                                MusicFilterPill(title: section.title, symbol: section.symbol,
+                                    selected: current == section, selectionNamespace: categorySelection) { selection = section }
                             }
                         }.padding(.horizontal, 20)
-                    }.scrollIndicators(.hidden).padding(.vertical, 8)
+                    }.scrollIndicators(.hidden).padding(.vertical, 10)
+                        .animation(reduceMotion ? nil : MusicProductMotion.change, value: current)
                         .accessibilityIdentifier("catalogLibraryCategories")
-                    CatalogCollectionView(model: model, store: store, section: current, showsTitle: false)
+                    CatalogCollectionView(model: model, store: store, section: current, showsTitle: false, libraryPresentation: true)
                         .id(current)
                 }
             }
         }
-        .navigationTitle("catalog.library")
+        .background(Color(uiColor: .systemBackground))
+        .navigationTitle("catalog.library").navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if model.currentServiceConnected {
@@ -154,6 +159,7 @@ struct CatalogCollectionView: View {
     let store: SpotifyCatalogStore
     let section: SpotifyLibrarySection
     var showsTitle = true
+    var libraryPresentation = false
     @State private var alphabetical = true
 
     private var usesLibrarySort: Bool {
@@ -165,7 +171,8 @@ struct CatalogCollectionView: View {
     }
 
     var body: some View {
-        CatalogPagedList(model: model, store: store, query: query, state: store.page(query))
+        CatalogPagedList(model: model, store: store, query: query, state: store.page(query),
+            compact: libraryPresentation, libraryShelf: libraryPresentation && (section == .playlists || section == .savedAlbums))
             .navigationTitle(showsTitle ? section.title : String(localized: "catalog.library"))
             .safeAreaInset(edge: .top) {
                 if usesLibrarySort {
@@ -181,9 +188,11 @@ struct CatalogPagedList: View {
     let store: SpotifyCatalogStore
     let query: SpotifyCatalogQuery
     @Bindable var state: SpotifyCatalogPageState
+    var compact = false
+    var libraryShelf = false
 
     var body: some View {
-        CatalogRowsScrollView(model: model, state: state, load: load)
+        CatalogRowsScrollView(model: model, state: state, compact: compact, libraryShelf: libraryShelf, load: load)
             .task(id: query) { await load(false, false) }
             .refreshable { await load(false, true) }
     }
@@ -199,6 +208,8 @@ struct CatalogSearchView: View {
     @Bindable var store: MusicCatalogStore
     @State private var displayedRequest: MusicSearchRequest?
     @State private var searchPresented = false
+    @Namespace private var filterSelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var searchPlacement: SearchFieldPlacement {
         return .navigationBarDrawer(displayMode: .always)
     }
@@ -229,17 +240,21 @@ struct CatalogSearchView: View {
                                         onSelect: { store.rememberSearch(request.term) },
                                         seeAll: { kind in store.rememberSearch(request.term); store.searchFilter = kind })
                                 }
-                            }.padding(20).frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
+                            }.padding(.horizontal, 20).padding(.vertical, 12)
+                                .frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
                         }
                         .scrollDismissesKeyboard(.interactively)
-                    } else { MusicSkeleton().padding(20); Spacer() }
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .padding(.top, 16)
+                    }
                 }
             } else {
                 ScrollView { MusicConnectionCard(model: model).padding(20) }
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("catalog.search")
+        .background(Color(uiColor: .systemBackground))
+        .navigationTitle("catalog.search").navigationBarTitleDisplayMode(.large)
         // Keep the input visible on the landing page without relying on search-tab activation.
         .searchable(text: $store.searchText, isPresented: $searchPresented, placement: searchPlacement, prompt: "catalog.searchPrompt")
         .onSubmit(of: .search) { store.rememberSearch(request.term) }
@@ -256,9 +271,12 @@ struct CatalogSearchView: View {
             }
             let current = request
             if displayedRequest != current {
-                store.cancelSearch()
-                displayedRequest = nil
-                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                // Text changes are debounced. Switching category keeps the
+                // keyboard and can immediately reuse the matching result page.
+                if displayedRequest?.term != current.term || displayedRequest?.library != current.library {
+                    store.cancelSearch()
+                    do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                }
             }
             guard !Task.isCancelled else { return }
             displayedRequest = current
@@ -284,18 +302,19 @@ struct CatalogSearchView: View {
                 }
             }.padding(.horizontal, 20)
         }.scrollIndicators(.hidden).padding(.vertical, 8)
+            .animation(reduceMotion ? nil : MusicProductMotion.change, value: store.searchFilter)
     }
     private func filter(_ title: String, kind: MusicCatalogKind?) -> some View {
-        MusicFilterPill(title: title, selected: store.searchFilter == kind) { store.searchFilter = kind }
+        MusicFilterPill(title: title, selected: store.searchFilter == kind, selectionNamespace: filterSelection) { store.searchFilter = kind }
     }
     private var history: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("搜索 " + model.selectedMusicService.title).font(.headline)
+                Text("搜索 " + model.selectedMusicService.title).font(.title3.weight(.semibold))
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
                         ForEach(store.provider.searchKinds.filter { [.track, .album, .artist, .playlist].contains($0) }, id: \.self) { kind in
-                            MusicFilterPill(title: kind.title, selected: store.searchFilter == kind) {
+                            MusicFilterPill(title: kind.title, symbol: kind.symbol, selected: store.searchFilter == kind) {
                                 store.searchFilter = kind
                                 searchPresented = true
                             }
@@ -314,18 +333,26 @@ struct CatalogSearchView: View {
                     ContentUnavailableView("寻找喜欢的音乐", systemImage: "magnifyingglass",
                         description: Text("搜索歌曲、艺人、专辑或歌单。"))
                 }
-                ForEach(store.searchHistory, id: \.self) { term in
-                    HStack {
-                        Button { store.searchText = term; store.rememberSearch(term) } label: {
-                            Label(term, systemImage: "clock").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        }.buttonStyle(.plain)
-                        Button { store.removeSearch(term) } label: {
-                            Image(systemName: "xmark").frame(width: 44, height: 44)
-                        }.accessibilityLabel("删除搜索记录 " + term).foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    ForEach(store.searchHistory, id: \.self) { term in
+                        HStack(spacing: 0) {
+                            Button { store.searchText = term; store.rememberSearch(term) } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "clock").foregroundStyle(.secondary)
+                                        .frame(width: 24).accessibilityHidden(true)
+                                    Text(term).foregroundStyle(.primary)
+                                }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }.buttonStyle(MusicContentButtonStyle())
+                            Button { store.removeSearch(term) } label: {
+                                Image(systemName: "xmark").font(.caption.weight(.semibold)).frame(width: 44, height: 44)
+                            }.buttonStyle(MusicContentButtonStyle())
+                                .accessibilityLabel("删除搜索记录 " + term).foregroundStyle(.secondary)
+                        }
+                        Divider().padding(.leading, 34)
                     }
-                    Divider()
                 }
-            }.padding(20)
+            }.padding(20).frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
         }
     }
 }
@@ -353,15 +380,17 @@ private struct MusicSearchGroup: View {
             if [.artist, .album, .playlist].contains(kind), !state.rows.isEmpty {
                 MusicCatalogGrid(model: model, rows: Array(state.rows.prefix(preview ? 4 : state.rows.count)), onSelect: onSelect)
             } else {
-                ForEach(Array(state.rows.prefix(preview ? 4 : state.rows.count))) { row in
-                    CatalogRowView(model: model, row: row, tapToPlay: true, onSelect: onSelect)
-                    Divider()
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(state.rows.prefix(preview ? 4 : state.rows.count))) { row in
+                        CatalogRowView(model: model, row: row, tapToPlay: true, onSelect: onSelect, compact: true)
+                        Divider()
+                    }
                 }
             }
             if let error = state.error {
                 CatalogErrorView(error: error) { await state.load(query: query, provider: store.provider, force: true) }
             } else if state.isLoading || state.loadedAt == nil {
-                MusicSkeleton()
+                ProgressView().frame(maxWidth: .infinity, minHeight: 44)
             } else if state.rows.isEmpty {
                 Text("没有找到相关" + kind.title + "，试试其他关键词。").font(.subheadline).foregroundStyle(.secondary)
             } else if !preview, state.next != nil {
@@ -376,17 +405,19 @@ private struct MusicSearchGroup: View {
 struct CatalogRowsScrollView: View {
     @Bindable var model: AppModel
     @Bindable var state: MusicCatalogPageState
+    var compact = false
+    var libraryShelf = false
     let load: (Bool, Bool) async -> Void
     var body: some View {
             ScrollView {
                 Group {
-                    if !state.rows.isEmpty, state.rows.allSatisfy({ [.album, .playlist, .artist].contains($0.item.kind) }) {
-                        MusicCatalogGrid(model: model, rows: state.rows)
+                    if libraryShelf || (!state.rows.isEmpty && state.rows.allSatisfy({ [.album, .playlist, .artist].contains($0.item.kind) })) {
+                        MusicCatalogGrid(model: model, rows: state.rows, libraryShelf: libraryShelf)
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(state.rows) { row in
                                 VStack(spacing: 0) {
-                                    CatalogRowView(model: model, row: row, tapToPlay: true)
+                                    CatalogRowView(model: model, row: row, tapToPlay: true, compact: compact)
                                     Divider()
                                 }.id(row.id)
                             }

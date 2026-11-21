@@ -133,6 +133,11 @@ struct LyricsSearchView: View {
                 if let track = coordinator.track {
                     Section { Text(track.query).font(.subheadline) }
                 }
+                if quickSettingsNavigation != nil, !coordinator.searchErrors.isEmpty, coordinator.searching.isEmpty {
+                    Section {
+                        Button("player.tryAgain", systemImage: "arrow.clockwise") { coordinator.search(query) }
+                    }
+                }
                 ForEach(coordinator.settings.priority) { source in
                     Section(source.name) {
                         if coordinator.searching.contains(source) {

@@ -47,6 +47,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                               tuning: ImmersiveArtworkDebugConfiguration, presentsFrame: Bool,
                               reduceTransparency: Bool, cornerRadius: CGFloat = 0, opacity: Double = 1,
                               excludesStatusBarBlur: Bool = false) -> Self {
+            let tuning = tuning.enablingReflection()
             let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(cover), source: cover.size)
             let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: viewport,
                 adjustment: tuning[.transition])
@@ -55,7 +56,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 transition: profile.frame,
                 bottomFade: tuning[.bottomFade].frame(AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: viewport)),
                 tuning: tuning, presentsFrame: presentsFrame,
-                reflectionEnabled: configuration.animatedArtwork?.reflection == true && tuning[.reflection].enabled,
+                reflectionEnabled: true,
                 reduceTransparency: reduceTransparency,
                 background: tuning[.background].frame(CGRect(origin: .zero, size: viewport)),
                 dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: viewport)),

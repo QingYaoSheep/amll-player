@@ -302,6 +302,8 @@ private final class FailingLyricsCache: LyricsCacheProviding {
         throw LyricsError.cache
     }
 
+    func savedSelections() throws -> [String: LyricsSelection] { throw LyricsError.cache }
+
     func saveSelection(_: LyricsSelection, for _: String) throws {
         throw LyricsError.cache
     }

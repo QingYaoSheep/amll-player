@@ -131,7 +131,8 @@ final class ArtworkMediaTests: XCTestCase {
         XCTAssertTrue(value.enabled)
         XCTAssertFalse(value.allowCellular)
         XCTAssertEqual(value.presentation ?? .square, .square)
-        XCTAssertFalse(value.reflection ?? false)
+        let oldOptOut = Data(#"{"enabled":true,"allowCellular":false,"reflection":false}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(AnimatedArtworkConfiguration.self, from: oldOptOut), value)
     }
 
     func testReflectionGeometryAttachesExactlyToVideoBottomAndKeepsHeightLimits() {

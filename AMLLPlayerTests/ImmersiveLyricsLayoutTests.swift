@@ -166,13 +166,17 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         legacy[.video].enabled = false
         legacy[.reflection].y = 250
         legacy[.reflection].opacity = 0.7
+        legacy[.reflection].enabled = false
         legacy.blurRadius = 48
         legacy.topFeatherLength = 36
         legacy.order = Array(ImmersiveArtworkLayer.allCases)
         let layout = ImmersiveArtworkMedia.Layout.immersive(cover: CGRect(x: 0, y: 0, width: 402, height: 536),
             viewport: CGSize(width: 402, height: 874), configuration: .init(), tuning: legacy,
             presentsFrame: true, reduceTransparency: false)
-        XCTAssertEqual(layout.tuning, legacy)
+        var expected = legacy
+        expected[.reflection].enabled = true
+        XCTAssertEqual(layout.tuning, expected)
+        XCTAssertTrue(layout.reflectionEnabled)
         XCTAssertEqual(layout.video.minY, 400, accuracy: 0.001)
         XCTAssertFalse(layout.tuning[.video].enabled)
         XCTAssertEqual(layout.tuning[.reflection].y, 250)

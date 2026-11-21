@@ -5,6 +5,12 @@ import SwiftData
 struct LyricsSelection: Codable, Equatable, Sendable {
     var candidate: LyricCandidate? = nil
     var offset: Double = 0
+
+    func validated() -> Self {
+        var value = self
+        value.offset = offset.isFinite ? max(-10, min(10, offset)) : 0
+        return value
+    }
 }
 
 struct LyricsCacheEntry: Codable, Sendable {
@@ -23,6 +29,7 @@ protocol LyricsCacheProviding {
     func read(track: TrackIdentity, source: LyricsSource, settings: LyricsSettings) throws -> LyricsCacheEntry?
     func save(_ entry: LyricsCacheEntry, settings: LyricsSettings) throws
     func selection(for trackID: String) throws -> LyricsSelection
+    func savedSelections() throws -> [String: LyricsSelection]
     func saveSelection(_ value: LyricsSelection, for trackID: String) throws
     var cachedByteCount: Int64? { get }
     func clearLyrics() throws
@@ -100,9 +107,19 @@ final class SwiftDataLyricsCache: LyricsCacheProviding {
 
     func selection(for trackID: String) throws -> LyricsSelection {
         guard let stored = try context.fetch(FetchDescriptor<StoredLyricsSelection>(predicate: #Predicate { $0.trackID == trackID })).first else { return LyricsSelection() }
-        guard var value = try? JSONDecoder().decode(LyricsSelection.self, from: stored.data) else { throw LyricsError.cache }
-        value.offset = value.offset.isFinite ? max(-10, min(10, value.offset)) : 0
-        return value
+        return try decodeSelection(stored)
+    }
+
+    func savedSelections() throws -> [String: LyricsSelection] {
+        let rows = try context.fetch(FetchDescriptor<StoredLyricsSelection>())
+        return try rows.reduce(into: [:]) { result, stored in
+            result[stored.trackID] = try decodeSelection(stored)
+        }
+    }
+
+    private func decodeSelection(_ stored: StoredLyricsSelection) throws -> LyricsSelection {
+        guard let value = try? JSONDecoder().decode(LyricsSelection.self, from: stored.data) else { throw LyricsError.cache }
+        return value.validated()
     }
 
     func saveSelection(_ value: LyricsSelection, for trackID: String) throws {
@@ -167,6 +184,10 @@ final class MemoryLyricsCache: LyricsCacheProviding {
 
     func selection(for trackID: String) throws -> LyricsSelection {
         selections[trackID] ?? LyricsSelection()
+    }
+
+    func savedSelections() throws -> [String: LyricsSelection] {
+        selections.mapValues { $0.validated() }
     }
 
     func saveSelection(_ value: LyricsSelection, for trackID: String) throws {

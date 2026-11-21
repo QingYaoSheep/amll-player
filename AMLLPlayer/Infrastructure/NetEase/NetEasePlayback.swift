@@ -47,6 +47,10 @@ struct NetEaseQueueState: Codable {
     var quality: NetEaseQuality {
         didSet { defaults.set(quality.rawValue, forKey: "netease.quality.v1") }
     }
+    var savedPlaybackModes: (shuffle: Bool, repeatMode: MusicRepeatMode) {
+        let ordinary = ordinaryBeforeRoom ?? radio?.ordinary ?? queue
+        return (ordinary.shuffle, ordinary.repeatMode)
+    }
     @ObservationIgnored let playbackSnapshots: AsyncStream<PlaybackSnapshot>
     @ObservationIgnored private let continuation: AsyncStream<PlaybackSnapshot>.Continuation
     @ObservationIgnored private let session: NetEaseSession

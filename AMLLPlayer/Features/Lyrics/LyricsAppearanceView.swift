@@ -241,14 +241,6 @@ struct LyricsAppearanceView: View {
                         Text("竖屏沉浸封面").tag(AnimatedArtworkConfiguration.Presentation.immersive)
                     }
                     if preferences.configuration.animatedArtwork?.presentation == .immersive {
-                        Toggle("封面倒影", isOn: Binding(
-                            get: { preferences.configuration.animatedArtwork?.reflection ?? false },
-                            set: { value in
-                                var settings = preferences.configuration.animatedArtwork ?? .init()
-                                settings.reflection = value
-                                preferences.configuration.animatedArtwork = settings
-                            }
-                        ))
                         Text("从同一视频的底部画面生成柔和倒影；不会额外播放一份视频。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }

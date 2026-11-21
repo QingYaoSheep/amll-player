@@ -16,6 +16,10 @@ on:
       - 'AMLLPlayer/Features/Lyrics/AMLLLyricsPlayer.swift'
       - 'AMLLPlayer/Features/Lyrics/FullscreenLyricsPlayer.swift'
       - 'AMLLPlayer/Features/Lyrics/ImmersiveArtworkMedia.swift'
+      - 'AMLLPlayer/Features/Lyrics/ImmersiveArtworkDebug.swift'
+      - 'AMLLPlayer/Features/Settings/AppSettingsExport.swift'
+      - 'AMLLPlayerTests/ImmersiveArtworkDebugStoreTests.swift'
+      - 'AMLLPlayerTests/AppSettingsExportTests.swift'
       - 'AMLLPlayerTests/LyricsPagePresentationTests.swift'
       - 'AMLLPlayer/Rendering/LyricsAuxiliaryFade.swift'
       - 'AMLLPlayer/Rendering/LyricsAuxiliaryMotion.swift'
@@ -81,6 +85,11 @@ jobs:
           -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
+          -only-testing:AMLLPlayerTests/ImmersiveArtworkDebugStoreTests
+          -only-testing:AMLLPlayerTests/ImmersiveArtworkLayersTests
+          -only-testing:AMLLPlayerTests/ImmersiveLyricsLayoutTests
+          -only-testing:AMLLPlayerTests/AppSettingsExportTests
+          -only-testing:AMLLPlayerTests/ArtworkMediaTests/testLegacyConfigurationKeepsSquareLayout
           -only-testing:AMLLPlayerTests/LyricsAuxiliaryFadeTests
           -only-testing:AMLLPlayerTests/LyricsAuxiliaryMotionTests
           -only-testing:AMLLPlayerTests/LyricsWrapAlignmentTests

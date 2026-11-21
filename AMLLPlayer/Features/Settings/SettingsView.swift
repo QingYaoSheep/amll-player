@@ -1,7 +1,13 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @State private var exportingSettings = false
+    @State private var showingSettingsExporter = false
+    @State private var settingsDocument: AppSettingsDocument?
+    @State private var settingsExportError: String?
+
     var body: some View {
         Form {
             Section("音乐") {
@@ -24,6 +30,15 @@ struct SettingsView: View {
                 NavigationLink { MusicStorageView(model: model) } label: {
                     SettingsItem(title: "存储与缓存", subtitle: "管理歌词、封面与音译缓存", symbol: "internaldrive", color: .orange)
                 }
+                Button {
+                    Task { await exportSettings() }
+                } label: {
+                    SettingsItem(title: "导出所有设置", subtitle: "将应用设置保存为 JSON 文件", symbol: "square.and.arrow.up", color: .indigo)
+                }
+                .disabled(exportingSettings)
+                .accessibilityIdentifier("exportAllSettings")
+            } footer: {
+                Text("导出包含外观、播放偏好、歌词匹配与偏移、读音纠错和封面层级调校。")
             }
             Section("支持") {
                 NavigationLink { MusicHelpView(model: model) } label: {
@@ -43,6 +58,36 @@ struct SettingsView: View {
         }
         .navigationTitle("tab.settings")
         .navigationBarTitleDisplayMode(.large)
+        .fileExporter(isPresented: $showingSettingsExporter, document: settingsDocument, contentType: .json,
+                      defaultFilename: "AMLL-设置") { result in
+            if case .failure(let error) = result { settingsExportError = error.localizedDescription }
+        }
+        .onChange(of: showingSettingsExporter) { _, showing in
+            if !showing { settingsDocument = nil }
+        }
+        .alert("无法导出设置", isPresented: Binding(get: { settingsExportError != nil }, set: { showing in
+            if !showing { settingsExportError = nil }
+        })) {
+            Button("好", role: .cancel) { settingsExportError = nil }
+        } message: {
+            Text(settingsExportError ?? "")
+        }
+    }
+
+    private func exportSettings() async {
+        guard !exportingSettings else { return }
+        exportingSettings = true
+        defer { exportingSettings = false }
+        do {
+            let overrides = try await LyricsRomanizationEngine.shared.exportOverrides()
+            let snapshot = try AppSettingsExport(
+                model: model, artwork: .shared,
+                pronunciationOverrides: JSONDecoder().decode([String: [String: String]].self, from: overrides))
+            settingsDocument = AppSettingsDocument(data: try snapshot.encoded())
+            showingSettingsExporter = true
+        } catch {
+            settingsExportError = error.localizedDescription
+        }
     }
 }
 

@@ -56,13 +56,30 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
     /// The approved product preset. The decoder retains legacy fallbacks so
     /// upgrading cannot reinterpret an existing partial calibration.
     static var calibratedDefault: Self {
+        productPreset(blur: 10, feather: 80, dimming: 0.12,
+            bottomFade: .init(enabled: false, y: -224, height: 0.17),
+            reflection: .init(y: -78, height: 0.41000000000000003, opacity: 0.9400000000000001),
+            transition: .init(y: 174, height: 2))
+    }
+
+    fileprivate static var previousProductPreset: Self {
+        productPreset(blur: 12, feather: 66, dimming: 0,
+            bottomFade: .init(enabled: false, y: -119, height: 0.14),
+            reflection: .init(y: -53, height: 0.6),
+            transition: .init(y: 206, height: 2, opacity: 0.99))
+    }
+
+    private static func productPreset(blur: Double, feather: Double, dimming: Double,
+                                      bottomFade: ImmersiveArtworkLayerAdjustment,
+                                      reflection: ImmersiveArtworkLayerAdjustment,
+                                      transition: ImmersiveArtworkLayerAdjustment) -> Self {
         var value = Self()
-        value.blurRadius = 12
-        value.topFeatherLength = 66
-        value[.dimming].opacity = 0
-        value[.bottomFade] = .init(enabled: false, x: 0, y: -119, width: 1, height: 0.14, opacity: 1)
-        value[.reflection] = .init(enabled: true, x: 0, y: -53, width: 1, height: 0.6, opacity: 1)
-        value[.transition] = .init(enabled: true, x: 0, y: 206, width: 1, height: 2, opacity: 0.99)
+        value.blurRadius = blur
+        value.topFeatherLength = feather
+        value[.dimming].opacity = dimming
+        value[.bottomFade] = bottomFade
+        value[.reflection] = reflection
+        value[.transition] = transition
         for layer in ImmersiveArtworkLayer.allCases { value[layer] = value[layer] }
         value.order = [.transition, .reflection, .bottomFade, .video, .dimming, .background]
         return value
@@ -106,6 +123,13 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable {
         return min(80, max(0, value))
     }
 
+    func enablingReflection() -> Self {
+        guard !self[.reflection].enabled else { return self }
+        var value = self
+        value[.reflection].enabled = true
+        return value
+    }
+
     mutating func resetLayer(_ layer: ImmersiveArtworkLayer) {
         self[layer] = Self.calibratedDefault[layer]
         if layer == .transition { topFeatherLength = Self.calibratedDefault.topFeatherLength }
@@ -143,14 +167,17 @@ final class ImmersiveArtworkDebugStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         showsButton = defaults.object(forKey: Self.buttonKey) as? Bool ?? true
-        configuration = defaults.data(forKey: Self.key)
+        let stored = defaults.data(forKey: Self.key)
             .flatMap { try? JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: $0) } ?? .calibratedDefault
+        let enabled = stored.enablingReflection()
+        configuration = enabled == .previousProductPreset ? .calibratedDefault : enabled
+        if configuration != stored, let data = try? JSONEncoder().encode(configuration) {
+            defaults.set(data, forKey: Self.key)
+        }
     }
     func reset() { configuration = .calibratedDefault }
-    func exportedValues(backgroundDimming: Double) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        var complete = configuration
+    func exportConfiguration(backgroundDimming: Double) -> ImmersiveArtworkDebugConfiguration {
+        var complete = configuration.enablingReflection()
         if complete.layers[ImmersiveArtworkLayer.dimming.rawValue] == nil {
             var dimming = complete[.dimming]
             dimming.opacity = backgroundDimming
@@ -158,8 +185,16 @@ final class ImmersiveArtworkDebugStore {
         }
         for layer in ImmersiveArtworkLayer.allCases { complete[layer] = complete[layer] }
         complete.order = complete.orderedLayers
+        complete.blurRadius = complete.validatedBlur
         complete.topFeatherLength = complete.validatedTopFeatherLength
-        return (try? encoder.encode(complete)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        return complete
+    }
+
+    func exportedValues(backgroundDimming: Double) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return (try? encoder.encode(exportConfiguration(backgroundDimming: backgroundDimming)))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 }
 
@@ -194,7 +229,7 @@ struct ImmersiveArtworkDebugPanel: View {
                         Text("视口 \(Int(viewport.width)) × \(Int(viewport.height)) pt；视频底边 \(video.maxY, specifier: "%.1f") pt")
                             .font(.caption).monospacedDigit()
                     }
-                    Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数，模糊层的纵向参数只调整上方渐变。视频在调整后的容器内始终等比完整显示。倒影开关还需开启原有封面倒影设置。底部渐隐的不透明度表示渐隐强度。")
+                    Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数，模糊层的纵向参数只调整上方渐变。视频在调整后的容器内始终等比完整显示。底部渐隐的不透明度表示渐隐强度。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Text("独立模糊层实时处理它下方所有可见内容，底部保持完整模糊，向上减小模糊半径。顶部短距离另做透明羽化：最上沿透明，向下恢复整层混合比例，消除与原画面的硬分界。不叠加材质底色或暗度；羽化长度独立于半径和过渡高度，设为 0 可关闭。纯背景模糊不做顶部羽化。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -220,7 +255,7 @@ struct ImmersiveArtworkDebugPanel: View {
                 }
                 ForEach(ImmersiveArtworkLayer.allCases) { layer in
                     Section(layer.title) {
-                        Toggle("显示此层", isOn: binding(layer, \.enabled))
+                        if layer != .reflection { Toggle("显示此层", isOn: binding(layer, \.enabled)) }
                         slider("水平位置", value: binding(layer, \.x), range: -1200 ... 1200, step: 1, unit: "pt")
                         slider(layer == .transition ? "上沿偏移" : "纵向位置", value: binding(layer, \.y), range: -1200 ... 1200, step: 1, unit: "pt")
                         slider("宽度", value: binding(layer, \.width), range: 0.1 ... 2, step: 0.01, unit: "×")

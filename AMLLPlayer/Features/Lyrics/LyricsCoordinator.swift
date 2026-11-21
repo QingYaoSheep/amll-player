@@ -96,6 +96,8 @@ final class LyricsCoordinator {
         }
     }
 
+    func savedSelections() throws -> [String: LyricsSelection] { try cache.savedSelections() }
+
     func updateSettings(_ value: LyricsSettings) {
         let value = value.validated()
         guard value != settings else { return }

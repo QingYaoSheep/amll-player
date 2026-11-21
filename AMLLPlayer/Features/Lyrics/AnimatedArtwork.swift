@@ -17,7 +17,6 @@ struct AnimatedArtworkConfiguration: Codable, Equatable, Sendable {
     var allowCellular = false
     /// Optional for decoding previously saved configurations without migration loss.
     var presentation: Presentation?
-    var reflection: Bool?
 }
 
 /// The video is silent and uses a mixing audio session so Spotify keeps playing.

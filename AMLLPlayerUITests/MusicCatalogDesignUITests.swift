@@ -124,6 +124,8 @@ final class MusicCatalogDesignUITests: XCTestCase {
         let duplicate = app.buttons.matching(identifier: "catalogPlay-track:repeated")
         reveal(duplicate.firstMatch, app)
         XCTAssertEqual(duplicate.count, 2, "Duplicate playlist entries must retain their independent positions")
+        XCTAssertGreaterThanOrEqual(duplicate.firstMatch.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(duplicate.firstMatch.frame.height, 44)
         let rowStep = duplicate.element(boundBy: 1).frame.minY - duplicate.element(boundBy: 0).frame.minY
         XCTAssertEqual(rowStep, 52, accuracy: 2)
         capture(app, "WWDC-playlist-repeated-entries")

@@ -200,8 +200,10 @@ struct CatalogPlayButton: View {
         } label: {
             if compact {
                 Image(systemName: "play.fill").frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             } else {
                 Label("player.play", systemImage: "play.fill").frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
         }
         .buttonStyle(MusicContentButtonStyle())

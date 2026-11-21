@@ -205,6 +205,7 @@ struct LyricsQuickSettingsPanel: View {
                 ZStack(alignment: .top) {
                     primaryContent(height: max(0, primaryHeight - 44))
                         .opacity(presentation.destination == nil ? 1 : 0)
+                        .accessibilityElement(children: .contain)
                         .accessibilityHidden(presentation.destination != nil)
                         .allowsHitTesting(presentation.destination == nil)
                     if let target = presentation.destination {
@@ -588,40 +589,73 @@ extension EnvironmentValues {
 }
 
 extension View {
-    func lyricsQuickSettingsDestination() -> some View {
-        modifier(LyricsQuickSettingsDestinationChrome())
+    func lyricsQuickSettingsDestination(_ title: LocalizedStringKey, showsEditButton: Bool = false) -> some View {
+        modifier(LyricsQuickSettingsDestinationChrome(title: title, showsEditButton: showsEditButton))
     }
 }
 
 private struct LyricsQuickSettingsDestinationChrome: ViewModifier {
+    let title: LocalizedStringKey
+    let showsEditButton: Bool
     @Environment(\.lyricsQuickSettingsNavigation) private var navigation
+    @AccessibilityFocusState private var titleFocused: Bool
 
     func body(content: Content) -> some View {
         if let navigation {
-            content
-                .scrollContentBackground(.hidden)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .tint(MusicProductStyle.accent)
-                .toolbar {
-                    if let back = navigation.back {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("quickSettings.back", systemImage: "chevron.backward", action: back)
-                                .labelStyle(.iconOnly)
-                                .tint(.primary)
-                                .accessibilityIdentifier("backLyricsQuickSettingsDestination")
-                        }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("common.done", systemImage: "xmark", action: navigation.close)
-                            .labelStyle(.iconOnly)
-                            .tint(.primary)
-                            .accessibilityIdentifier("closeLyricsQuickSettingsDestination")
-                    }
-                }
+            VStack(spacing: 0) {
+                header(navigation)
+                content
+                    .scrollContentBackground(.hidden)
+                    .modifier(ImmersiveLyricsScrollEdge(active: true))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // Keep the title outside the scroll viewport. The panel's glass
+            // supplies the only background, even when the list is scrolled.
+            .toolbar(.hidden, for: .navigationBar)
+            .tint(MusicProductStyle.accent)
         } else {
             content
         }
+    }
+
+    private func header(_ navigation: LyricsQuickSettingsNavigation) -> some View {
+        HStack(spacing: 8) {
+            if let back = navigation.back {
+                control("quickSettings.back", symbol: "chevron.backward", action: back)
+                    .accessibilityIdentifier("backLyricsQuickSettingsDestination")
+            } else {
+                Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
+            }
+            Text(title)
+                .font(.title3.bold())
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("lyricsQuickSettingsDestinationTitle")
+                .accessibilityFocused($titleFocused)
+                .onAppear { titleFocused = true }
+            if showsEditButton {
+                EditButton()
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .buttonStyle(MusicContentButtonStyle())
+            }
+            control("common.done", symbol: "xmark", action: navigation.close)
+                .accessibilityIdentifier("closeLyricsQuickSettingsDestination")
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+    }
+
+    private func control(_ label: LocalizedStringKey, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(MusicContentButtonStyle())
+        .accessibilityLabel(Text(label))
     }
 }
 

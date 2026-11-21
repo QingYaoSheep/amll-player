@@ -96,6 +96,7 @@ struct LyricsAppearanceView: View {
                 Toggle("render.romanization", isOn: $preferences.configuration.romanization)
                 NavigationLink("日语／韩语自动音译") {
                     RomanizationSettingsView(coordinator: coordinator)
+                        .toolbar(.visible, for: .navigationBar)
                 }
                 DisclosureGroup("appearance.textDetails") {
                     LabeledContent("render.tracking", value: String(format: "%.1f", preferences.configuration.tracking))
@@ -115,6 +116,7 @@ struct LyricsAppearanceView: View {
                 Toggle("render.scale", isOn: $preferences.configuration.enableScale)
                 NavigationLink("精细动画调整") {
                     LyricsAnimationSettingsView(preferences: preferences)
+                        .toolbar(.visible, for: .navigationBar)
                 }.accessibilityIdentifier("lyricsAnimationSettings")
             }
             Section("render.layout") {
@@ -253,7 +255,7 @@ struct LyricsAppearanceView: View {
         }
         .navigationTitle("render.settings")
         .navigationBarTitleDisplayMode(.inline)
-        .lyricsQuickSettingsDestination()
+        .lyricsQuickSettingsDestination("render.settings")
         .confirmationDialog("appearance.resetHelp", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("render.reset", role: .destructive) { preferences.restoreAMLLDefaults() }
         }

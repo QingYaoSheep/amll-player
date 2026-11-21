@@ -164,10 +164,12 @@ struct NetEaseQueueView: View {
                 }
             }
                 .navigationTitle("网易云播放队列")
-                .lyricsQuickSettingsDestination()
+                .lyricsQuickSettingsDestination("网易云播放队列", showsEditButton: !model.netEasePlayback.isPersonalFM)
                 .toolbar {
-                    if !model.netEasePlayback.isPersonalFM { EditButton() }
-                    if quickSettingsNavigation == nil { Button("完成") { dismiss() } }
+                    if quickSettingsNavigation == nil {
+                        if !model.netEasePlayback.isPersonalFM { EditButton() }
+                        Button("完成") { dismiss() }
+                    }
                 }
                 .environment(\.editMode, $editMode)
                 .onChange(of: model.netEasePlayback.isPersonalFM) { editMode = .inactive }

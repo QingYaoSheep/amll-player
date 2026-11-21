@@ -31,6 +31,8 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [clockTicks], timeout: 4), .completed)
         capture(app, "NetEase-lyrics-room-capsule")
         capsule.tap()
+        let header = app.staticTexts["lyricsQuickSettingsDestinationTitle"]
+        XCTAssertTrue(header.waitForExistence(timeout: 8), "The room capsule must open the shared glass panel.")
         let chat = app.buttons["netEaseDuetChat"]
         XCTAssertTrue(chat.waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["backLyricsQuickSettingsDestination"].exists)
@@ -46,6 +48,13 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertTrue(song.waitForExistence(timeout: 5))
         song.tap()
         XCTAssertTrue(app.staticTexts["你添加了《Fixture Song》"].firstMatch.waitForExistence(timeout: 8))
+        let headerY = header.frame.minY
+        let roomContent = app.descendants(matching: .any)["netEaseRoomContent"].firstMatch
+        XCTAssertTrue(roomContent.exists)
+        roomContent.swipeUp()
+        XCTAssertEqual(header.frame.minY, headerY, accuracy: 2)
+        XCTAssertFalse(app.navigationBars["与好友一起听"].isHittable)
+        capture(app, "NetEase-room-detail-scrolled")
         app.buttons["closeLyricsQuickSettingsDestination"].tap()
         XCTAssertTrue(capsule.waitForExistence(timeout: 5))
     }

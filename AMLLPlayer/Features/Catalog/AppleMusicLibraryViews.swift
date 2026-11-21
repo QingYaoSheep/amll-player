@@ -244,7 +244,7 @@ struct AppleMusicQueueView: View {
                 Link("打开音乐", destination: URL(string: "music://")!)
             }
             .navigationTitle("系统播放队列")
-            .lyricsQuickSettingsDestination()
+            .lyricsQuickSettingsDestination("系统播放队列")
             .toolbar {
                 if quickSettingsNavigation == nil { Button("common.done") { dismiss() } }
             }

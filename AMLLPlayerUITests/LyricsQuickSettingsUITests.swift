@@ -310,7 +310,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             appearance.tap()
             XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForExistence(timeout: 4))
             XCTAssertLessThan(app.descendants(matching: .any)["lyricsQuickSettingsHandle"].firstMatch.frame.minY, primaryHandleY)
-            XCTAssertFalse(panel(app).exists)
+            XCTAssertFalse(app.buttons["closeLyricsQuickSettings"].isHittable)
             app.buttons["backLyricsQuickSettingsDestination"].tap()
             XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForNonExistence(timeout: 4))
             XCTAssertTrue(panel(app).waitForExistence(timeout: 4))
@@ -322,7 +322,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             search.tap()
             let query = app.textFields["quickSettingsLyricsSearchField"]
             XCTAssertTrue(query.waitForExistence(timeout: 4))
-            XCTAssertFalse(panel(app).exists)
+            XCTAssertFalse(app.buttons["closeLyricsQuickSettings"].isHittable)
             query.tap()
             query.typeText("Fixture")
             XCTAssertEqual(query.value as? String, "Fixture")
@@ -425,9 +425,13 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             reveal(queue, in: app)
             queue.tap()
             let title = service == "netease" ? "网易云播放队列" : "系统播放队列"
-            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 4))
+            let header = app.staticTexts["lyricsQuickSettingsDestinationTitle"]
+            XCTAssertTrue(header.waitForExistence(timeout: 4))
+            XCTAssertEqual(header.label, title)
+            XCTAssertFalse(app.navigationBars[title].isHittable)
             XCTAssertTrue(app.staticTexts["Fixture Song"].exists)
-            XCTAssertFalse(panel(app).exists)
+            XCTAssertFalse(app.buttons["closeLyricsQuickSettings"].isHittable)
+            capture(app, name: "Quick-settings-queue-\(service)")
             app.buttons["closeLyricsQuickSettingsDestination"].tap()
             XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
             app.buttons["lyricsDisplayOptions"].tap()

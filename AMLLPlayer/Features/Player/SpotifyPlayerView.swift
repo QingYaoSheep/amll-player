@@ -382,7 +382,7 @@ struct DevicePickerView: View {
                 }
             }
             .navigationTitle("player.devices")
-            .lyricsQuickSettingsDestination()
+            .lyricsQuickSettingsDestination("player.devices")
             .toolbar {
                 if quickSettingsNavigation == nil {
                     ToolbarItem(placement: .confirmationAction) {

@@ -89,10 +89,11 @@ struct NetEaseRoomView: View {
                     }
                 }
             }
+            .accessibilityIdentifier("netEaseRoomContent")
             .disabled(playback.roomBusy)
             .navigationTitle("与好友一起听")
             .navigationBarTitleDisplayMode(.inline)
-            .lyricsQuickSettingsDestination()
+            .lyricsQuickSettingsDestination("与好友一起听")
             .toolbar {
                 if quickSettingsNavigation == nil {
                     ToolbarItem(placement: .confirmationAction) {
@@ -115,6 +116,7 @@ struct NetEaseRoomView: View {
                 if let room = playback.listeningRoom, room.kind == .group {
                     NetEaseRoomChat(playback: playback, room: room, account: model.netEaseSession.profile?.id)
                         .id(room.id)
+                        .toolbar(.visible, for: .navigationBar)
                 }
             }
             .confirmationDialog("离开当前房间并加入新房间？", isPresented: $confirmingSwitch, titleVisibility: .visible) {
@@ -413,6 +415,7 @@ private struct NetEaseRoomContacts: View {
             if let error { Text(verbatim: error).foregroundStyle(.secondary) }
         }
         .navigationTitle(invite == nil ? "收到的邀请" : "邀请网易云好友")
+        .toolbar(.visible, for: .navigationBar)
         .task { await load() }
         .confirmationDialog("将一起听链接发送给 \(recipient?.name ?? "")？",
                             isPresented: Binding(get: { recipient != nil }, set: { if !$0 { recipient = nil } }),

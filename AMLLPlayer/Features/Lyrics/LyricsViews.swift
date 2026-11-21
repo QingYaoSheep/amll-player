@@ -162,7 +162,7 @@ struct LyricsSearchView: View {
             }
             .navigationTitle("lyrics.find")
             .modifier(LyricsSearchField(query: $query, inline: quickSettingsNavigation != nil))
-            .lyricsQuickSettingsDestination()
+            .lyricsQuickSettingsDestination("lyrics.find")
             .task(id: query) {
                 coordinator.cancelSearch()
                 do { try await Task.sleep(for: .milliseconds(350)); try Task.checkCancellation(); coordinator.search(query) }
@@ -260,7 +260,9 @@ private struct LyricsPreviewView: View {
 
 struct LyricsSettingsView: View {
     @Bindable var coordinator: LyricsCoordinator
+    @Environment(\.lyricsQuickSettingsNavigation) private var quickSettingsNavigation
     @State private var draft = LyricsSettings()
+    @State private var editMode: EditMode = .inactive
     @State private var confirm: DestructiveAction?
     private enum DestructiveAction: String, Identifiable { case cache, matches; var id: String {
         rawValue
@@ -269,7 +271,10 @@ struct LyricsSettingsView: View {
         Form {
             Section {
                 Toggle("lyrics.enabled", isOn: $draft.enabled)
-                NavigationLink("lyrics.apple.settings") { AppleLyricsSettingsView(coordinator: coordinator) }
+                NavigationLink("lyrics.apple.settings") {
+                    AppleLyricsSettingsView(coordinator: coordinator)
+                        .toolbar(.visible, for: .navigationBar)
+                }
             }
             Section {
                 ForEach(draft.priority) { source in Text(source.name) }
@@ -293,8 +298,9 @@ struct LyricsSettingsView: View {
             }
         }
         .navigationTitle("lyrics.settings")
-        .lyricsQuickSettingsDestination()
-        .toolbar { EditButton() }
+        .lyricsQuickSettingsDestination("lyrics.settings", showsEditButton: true)
+        .toolbar { if quickSettingsNavigation == nil { EditButton() } }
+        .environment(\.editMode, $editMode)
         .onAppear { draft = coordinator.settings }
         .onChange(of: draft) { _, value in coordinator.updateSettings(value) }
         .confirmationDialog("lyrics.confirm", isPresented: Binding(get: { confirm != nil }, set: {

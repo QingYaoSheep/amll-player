@@ -28,7 +28,7 @@ struct NetEaseFriendsButton: View {
         .buttonStyle(MusicContentButtonStyle())
         .accessibilityLabel(hasUnread ? "好友，有未读私信" : "好友")
         .accessibilityIdentifier("netEaseFriends")
-        .sheet(isPresented: $showing) {
+        .fullScreenCover(isPresented: $showing) {
             Group {
                 if session.currentState.connected {
                     NetEaseFriendsView(model: model)
@@ -38,7 +38,6 @@ struct NetEaseFriendsButton: View {
             }
             .id(session.currentState.contextID)
             .tint(MusicProductStyle.accent)
-            .presentationSizing(.page)
         }
         .task(id: "\(session.currentState.contextID):\(phase):\(showing)") {
             guard phase == .active, !showing, session.currentState.connected else { return }
@@ -203,7 +202,7 @@ private struct NetEaseFriendsView: View {
             }
         }
         .modifier(NetEaseFriendRoomPresentation(model: model, actions: actions, isActive: !showingContacts))
-        .sheet(isPresented: $showingContacts, onDismiss: selectContact) {
+        .fullScreenCover(isPresented: $showingContacts, onDismiss: selectContact) {
             NetEaseContactsView(session: model.netEaseSession, actions: actions) { contact in
                 contactSelection = contact
                 showingContacts = false
@@ -365,6 +364,7 @@ private struct NetEaseContactsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(MusicContentButtonStyle())
+                        .accessibilityIdentifier("netEaseContact:\(peer.id)")
                         NetEaseListenButton(peer: peer, actions: actions)
                     }
                 }

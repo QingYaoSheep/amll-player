@@ -15,7 +15,13 @@ final class MusicCatalogDesignUITests: XCTestCase {
         let conversation = app.buttons["netEaseConversation:2"]
         XCTAssertTrue(conversation.waitForExistence(timeout: 8))
         capture(app, "NetEase-recent-conversations")
-        conversation.tap()
+        let contacts = app.buttons["netEaseContacts"]
+        XCTAssertTrue(contacts.isHittable)
+        contacts.tap()
+        let friend = app.buttons["netEaseContact:2"]
+        XCTAssertTrue(friend.waitForExistence(timeout: 8))
+        capture(app, "NetEase-contacts")
+        friend.tap()
         XCTAssertTrue(app.staticTexts["你好"].firstMatch.waitForExistence(timeout: 8))
         let share = app.buttons["netEaseShareSong"]
         XCTAssertTrue(share.exists)

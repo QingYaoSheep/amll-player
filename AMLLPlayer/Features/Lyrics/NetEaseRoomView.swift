@@ -1,6 +1,12 @@
 import SwiftUI
 
 struct NetEaseRoomView: View {
+    private struct DuetConversation: Identifiable {
+        let roomID: String
+        let peer: NetEaseRoomMember
+        var id: String { "\(roomID):\(peer.id)" }
+    }
+
     let model: AppModel
     private var playback: NetEasePlayback { model.netEasePlayback }
     @Environment(\.dismiss) private var dismiss
@@ -9,6 +15,7 @@ struct NetEaseRoomView: View {
     @State private var confirmingSwitch = false
     @State private var error: String?
     @State private var chatActions: NetEaseFriendRoomActions
+    @State private var duetConversation: DuetConversation?
 
     init(model: AppModel) {
         self.model = model
@@ -73,6 +80,18 @@ struct NetEaseRoomView: View {
                 }
             }
         }
+        .fullScreenCover(item: $duetConversation) { conversation in
+            NavigationStack {
+                NetEaseConversationView(model: model, peer: conversation.peer, actions: chatActions,
+                                        duetRoomID: conversation.roomID)
+                    .id(model.netEaseSession.currentState.contextID)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭", systemImage: "xmark") { duetConversation = nil }
+                        }
+                    }
+            }
+        }
     }
 
     @ViewBuilder private func activeRoom(_ room: NetEaseListeningRoom) -> some View {
@@ -94,9 +113,8 @@ struct NetEaseRoomView: View {
             }
             if room.kind == .duet {
                 if let peer = playback.duetChatPeer {
-                    NavigationLink {
-                        NetEaseConversationView(model: model, peer: peer, actions: chatActions, duetRoomID: room.id)
-                            .id("\(model.netEaseSession.currentState.contextID):\(room.id):\(peer.id)")
+                    Button {
+                        duetConversation = .init(roomID: room.id, peer: peer)
                     } label: {
                         Label("与好友聊天", systemImage: "bubble.left.and.bubble.right")
                     }.accessibilityIdentifier("netEaseDuetChat")

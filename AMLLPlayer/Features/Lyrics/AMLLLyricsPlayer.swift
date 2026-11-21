@@ -678,18 +678,28 @@ struct AMLLLyricsPlayer: View {
     }
 
     private func dismissalHandle(metrics: AppleMusicLyricsLayoutMetrics) -> some View {
-        Button { dismiss() } label: {
-            Capsule()
-                .fill(.white.opacity(0.48))
-                .frame(width: metrics.handleSize.width, height: metrics.handleSize.height)
-                .frame(maxWidth: .infinity).frame(height: 44)
+        Group {
+            if model.selectedMusicService == .netease, let room = model.netEasePlayback.listeningRoom {
+                NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds) {
+                    quickSettings.openRoom(reduceMotion: reduceMotion)
+                }
+                .accessibilityAction(named: Text("关闭歌词页")) { dismiss() }
+            } else {
+                Button { dismiss() } label: {
+                    Capsule()
+                        .fill(.white.opacity(0.48))
+                        .frame(width: metrics.handleSize.width, height: metrics.handleSize.height)
+                        .frame(maxWidth: .infinity).frame(height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("common.done"))
+                .accessibilityIdentifier("closeLyricsPlayer")
+            }
         }
-        .buttonStyle(.plain)
+        .foregroundStyle(.white)
         .padding(.top, metrics.handleTop - 20)
-        .accessibilityLabel(Text("common.done"))
-        .accessibilityIdentifier("closeLyricsPlayer")
         .contentShape(Rectangle())
-        .gesture(dismissGesture, including: usesSystemZoom ? .none : .all)
+        .simultaneousGesture(dismissGesture, including: usesSystemZoom ? .none : .all)
     }
 
     private var dismissGesture: some Gesture {

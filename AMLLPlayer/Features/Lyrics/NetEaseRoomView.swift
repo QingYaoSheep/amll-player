@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct NetEaseRoomView: View {
     private struct DuetConversation: Identifiable {
@@ -8,17 +9,26 @@ struct NetEaseRoomView: View {
     }
 
     let model: AppModel
+    private let opensChat: Bool
+    private let onClose: (() -> Void)?
     private var playback: NetEasePlayback { model.netEasePlayback }
+    private var activity: NetEaseRoomActivity { playback.roomActivity }
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var pastedLink = ""
     @State private var pendingInvite: NetEaseRoomInvite?
     @State private var confirmingSwitch = false
     @State private var error: String?
     @State private var chatActions: NetEaseFriendRoomActions
     @State private var duetConversation: DuetConversation?
+    @State private var showingGroupChat = false
+    @State private var pickingSong = false
+    @State private var changingNotifications = false
 
-    init(model: AppModel) {
+    init(model: AppModel, opensChat: Bool = false, onClose: (() -> Void)? = nil) {
         self.model = model
+        self.opensChat = opensChat
+        self.onClose = onClose
         _chatActions = State(initialValue: NetEaseFriendRoomActions(playback: model.netEasePlayback, session: model.netEaseSession))
     }
 
@@ -68,16 +78,37 @@ struct NetEaseRoomView: View {
             }
             .navigationTitle("与好友一起听")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        if let onClose { onClose() } else { dismiss() }
+                    }.accessibilityIdentifier("netEaseRoomDone")
+                }
+            }
             .disabled(playback.roomBusy)
             .refreshable { await perform { try await playback.refreshListeningRoom() } }
-            .task { await perform { try await playback.refreshListeningRoom() } }
+            .task {
+                if opensChat, let room = playback.listeningRoom { openChat(room) }
+                await activity.refreshAuthorization()
+                if playback.listeningRoom == nil { await perform { try await playback.refreshListeningRoom() } }
+            }
+            .navigationDestination(isPresented: $showingGroupChat) {
+                if let room = playback.listeningRoom, room.kind == .group {
+                    NetEaseRoomChat(playback: playback, room: room, account: model.netEaseSession.profile?.id)
+                }
+            }
             .confirmationDialog("离开当前房间并加入新房间？", isPresented: $confirmingSwitch, titleVisibility: .visible) {
                 if let pendingInvite {
                     Button("切换房间", role: .destructive) {
                         run { try await playback.joinRoom(pendingInvite, replacing: true); clearInvite() }
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $pickingSong) {
+            NetEaseSongPicker(model: model, title: "添加到房间") { item in
+                pickingSong = false
+                run { try await playback.recommendRoomSong(item) }
             }
         }
         .fullScreenCover(item: $duetConversation) { conversation in
@@ -95,50 +126,142 @@ struct NetEaseRoomView: View {
     }
 
     @ViewBuilder private func activeRoom(_ room: NetEaseListeningRoom) -> some View {
-        Section(room.kind.title) {
-            if let track = playback.currentEntry?.item {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(track.name).font(.headline)
-                    Text(track.subtitle).font(.subheadline).foregroundStyle(.secondary)
+        Section {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label(room.kind.title, systemImage: "headphones")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(MusicProductStyle.accent)
+                    Text(room.members.count < 2 ? "等待好友加入" :
+                        room.members.map(\.name).joined(separator: "、"))
+                        .font(.title2.bold())
+                        .lineLimit(2)
+                        .accessibilityAddTraits(.isHeader)
+                    if room.members.count >= 2 {
+                        NetEaseRoomDurationLabel(seconds: activity.seconds)
+                            .font(.subheadline.weight(.medium))
+                        Text(room.kind == .duet ? "本机记录起" : "本场一起听")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if room.kind == .duet, playback.duetChatPeer != nil {
+                        Label("距离暂不可用", systemImage: "location")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-            } else { Text("等待房间播放").foregroundStyle(.secondary) }
+                if !room.members.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 10) {
+                            ForEach(room.members) { member in
+                                CatalogArtwork(url: member.avatar, size: 44, isArtist: true)
+                                    .accessibilityLabel(Text(member.name))
+                            }
+                        }
+                    }.scrollIndicators(.hidden)
+                }
+            }
+            .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(NetEaseRoomGlass(shape: RoundedRectangle(cornerRadius: 24)))
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+        }
+        Section {
             if let invite = playback.roomShareLink {
-                ShareLink(item: invite.url) { Label("分享邀请", systemImage: "square.and.arrow.up") }
-                NavigationLink("邀请网易云好友") {
+                NavigationLink {
                     NetEaseRoomContacts(playback: playback, invite: invite) { _ in }
+                } label: {
+                    Label("邀请网易云好友", systemImage: "person.badge.plus")
                 }.accessibilityIdentifier("netEaseRoomInviteFriend")
+                ShareLink(item: invite.url) { Label("分享邀请链接", systemImage: "square.and.arrow.up") }
             }
-            if room.kind == .group, room.chatID != nil {
-                NavigationLink("房间聊天") { NetEaseRoomChat(playback: playback, room: room) }
+            Button { openChat(room) } label: {
+                Label(room.kind == .duet ? "与好友聊天" : "房间聊天", systemImage: "bubble.left.and.bubble.right")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }
-            if room.kind == .duet {
-                if let peer = playback.duetChatPeer {
-                    Button {
-                        duetConversation = .init(roomID: room.id, peer: peer)
-                    } label: {
-                        Label("与好友聊天", systemImage: "bubble.left.and.bubble.right")
-                    }.accessibilityIdentifier("netEaseDuetChat")
-                } else {
-                    Label("好友加入后可聊天", systemImage: "bubble.left.and.bubble.right")
-                        .foregroundStyle(.secondary)
-                }
+            .buttonStyle(MusicContentButtonStyle())
+            .disabled(room.kind == .duet ? playback.duetChatPeer == nil : room.chatID == nil)
+            .accessibilityIdentifier(room.kind == .duet ? "netEaseDuetChat" : "netEaseRoomGroupChat")
+            Button { pickingSong = true } label: {
+                Label("添加歌曲", systemImage: "plus.circle.fill")
+                    .foregroundStyle(MusicProductStyle.accent)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }
-            Button("离开房间", role: .destructive) { run { try await playback.leaveRoom() } }
-                .accessibilityIdentifier("netEaseRoomLeave")
+            .buttonStyle(MusicContentButtonStyle())
+            .accessibilityIdentifier("netEaseRoomAddSong")
         }
         if !room.members.isEmpty {
             Section("成员") {
-                ForEach(room.members) { member in Label(member.name, systemImage: "person.crop.circle") }
+                ForEach(room.members) { member in
+                    HStack(spacing: 10) {
+                        CatalogArtwork(url: member.avatar, size: 30, isArtist: true).accessibilityHidden(true)
+                        Text(member.name)
+                        Spacer()
+                        if member.id == model.netEaseSession.profile?.id {
+                            Text("你").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
         }
         Section("房间队列") {
-            if playback.roomQueue.isEmpty { Text("暂无待播歌曲").foregroundStyle(.secondary) }
-            ForEach(Array(playback.roomQueue.enumerated()), id: \.offset) { _, item in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.name)
-                    Text(item.subtitle).font(.caption).foregroundStyle(.secondary)
+            if let track = playback.currentEntry?.item {
+                HStack(spacing: 10) {
+                    CatalogArtwork(url: track.artworkURL, size: 40)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(track.name).font(.headline)
+                        Text(track.subtitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "waveform").foregroundStyle(MusicProductStyle.accent)
+                        .accessibilityLabel("房间当前歌曲")
                 }
             }
+            if playback.roomQueue.isEmpty { Text("暂无待播歌曲").foregroundStyle(.secondary) }
+            ForEach(Array(playback.roomQueue.enumerated()), id: \.offset) { _, item in
+                HStack(spacing: 10) {
+                    CatalogArtwork(url: item.artworkURL, size: 34)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.name)
+                        Text(item.subtitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        if !activity.events.isEmpty {
+            Section("最近房间动态") {
+                ForEach(activity.events.prefix(10)) { event in
+                    Label(event.text, systemImage: event.symbol).font(.subheadline)
+                }
+            }
+        }
+        Section {
+            Toggle("锁屏与后台提醒", systemImage: "bell", isOn: Binding(
+                get: { activity.systemAlertsEnabled },
+                set: { enabled in
+                    changingNotifications = true
+                    Task {
+                        await activity.setSystemAlerts(enabled)
+                        changingNotifications = false
+                    }
+                }
+            )).disabled(changingNotifications)
+            if activity.systemStatus == .denied,
+               let settings = URL(string: UIApplication.openSettingsURLString) {
+                Button("在系统设置中开启通知") { openURL(settings) }
+            }
+        } footer: {
+            Text("App 在后台收到房间动态时发送提醒。")
+        }
+        Section {
+            Button("离开房间", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                run { try await playback.leaveRoom() }
+            }.accessibilityIdentifier("netEaseRoomLeave")
+        }
+    }
+
+    private func openChat(_ room: NetEaseListeningRoom) {
+        if room.kind == .group, room.chatID != nil { showingGroupChat = true }
+        if room.kind == .duet, let peer = playback.duetChatPeer {
+            duetConversation = .init(roomID: room.id, peer: peer)
         }
     }
 
@@ -270,6 +393,9 @@ private struct NetEaseRoomInvitations: View {
 private struct NetEaseRoomChat: View {
     let playback: NetEasePlayback
     let room: NetEaseListeningRoom
+    let account: String?
+    @Environment(\.scenePhase) private var phase
+    @State private var visibilityToken = UUID()
     @State private var messages: [NetEaseRoomMessage] = []
     @State private var text = ""
     @State private var error: String?
@@ -286,10 +412,15 @@ private struct NetEaseRoomChat: View {
             if !active { Text("房间成员已变更。").foregroundStyle(.secondary) }
             if let error = error ?? readError { Text(verbatim: error).foregroundStyle(.secondary) }
             ForEach(messages) { message in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(message.sender).font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 4) {
+                    if !message.outgoing { Text(message.sender).font(.caption).foregroundStyle(.secondary) }
                     Text(verbatim: message.text)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(message.outgoing ? MusicProductStyle.accent.opacity(0.18) :
+                            Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
                 }
+                .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
+                .listRowSeparator(.hidden)
             }
         }
         .navigationTitle("房间聊天")
@@ -304,12 +435,19 @@ private struct NetEaseRoomChat: View {
             .disabled(!active)
         }
         .refreshable { await refresh() }
-        .task {
+        .task(id: phase) {
+            guard phase == .active else { return }
             while !Task.isCancelled, active {
                 if !sending { await refresh() }
                 try? await Task.sleep(for: .seconds(5))
             }
         }
+        .onAppear {
+            if let account {
+                playback.roomActivity.setChatVisible(.init(account: account, room: room, chat: true), token: visibilityToken)
+            }
+        }
+        .onDisappear { playback.roomActivity.setChatVisible(nil, token: visibilityToken) }
         .onChange(of: active) { if !active { messages.removeAll() } }
     }
 

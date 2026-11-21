@@ -37,6 +37,7 @@ struct NetEaseConversationView: View {
     @State private var position = ScrollPosition(idType: String.self)
     @State private var nearBottom = true
     @State private var unseen = false
+    @State private var roomVisibilityToken = UUID()
 
     private var api: NetEaseMessaging { .init(session: model.netEaseSession) }
     private var trimmedDraft: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -47,6 +48,14 @@ struct NetEaseConversationView: View {
     }
     private var canSend: Bool {
         available && !sending && unconfirmed == nil && (song != nil || (1...500).contains(trimmedDraft.utf16.count))
+    }
+    private var visibleRoomChat: NetEaseRoomDestination? {
+        guard available, phase == .active, !pickingSong, songDetail == nil, !actions.showingRoom,
+              let account = model.netEaseSession.profile?.id,
+              let room = model.netEasePlayback.listeningRoom, room.chattingPeer(viewer: account)?.id == peer.id else {
+            return nil
+        }
+        return .init(account: account, room: room, chat: true, peer: peer.id)
     }
 
     var body: some View {
@@ -77,6 +86,12 @@ struct NetEaseConversationView: View {
                     await refresh()
                     do { try await Task.sleep(for: .seconds(5)) } catch { return }
                 }
+            }
+            .onChange(of: visibleRoomChat, initial: true) {
+                model.netEasePlayback.roomActivity.setChatVisible(visibleRoomChat, token: roomVisibilityToken)
+            }
+            .onDisappear {
+                model.netEasePlayback.roomActivity.setChatVisible(nil, token: roomVisibilityToken)
             }
             .sheet(isPresented: $pickingSong) {
                 NetEaseSongPicker(model: model) {

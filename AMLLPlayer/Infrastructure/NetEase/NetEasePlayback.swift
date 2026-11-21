@@ -31,6 +31,7 @@ struct NetEaseQueueState: Codable {
     private(set) var roomQueue: [MusicCatalogItem] = []
     private(set) var roomBusy = false
     private(set) var roomNotice: String?
+    let roomActivity: NetEaseRoomActivity
     var isListeningTogether: Bool { listeningRoom != nil }
     var canEditPersonalQueue: Bool { !isPersonalFM && !isListeningTogether }
     var roomAPI: NetEaseRoomAPI { .init(session: session) }
@@ -39,6 +40,9 @@ struct NetEaseQueueState: Codable {
     @ObservationIgnored private var roomPolling: Task<Void, Never>?
     @ObservationIgnored private var roomSync: Task<Void, Never>?
     @ObservationIgnored private var roomSyncID = UUID()
+    @ObservationIgnored private var roomMessageRead: Task<Void, Never>?
+    @ObservationIgnored private var roomMessageReadID = UUID()
+    @ObservationIgnored private var lastRoomMessageRead = -Double.infinity
     @ObservationIgnored private var roomPausedLocally = false
     @ObservationIgnored private var roomCommandSequence: Int64 = 0
     @ObservationIgnored private var unavailableRoomTrack: NetEaseRoomTrack?
@@ -89,6 +93,7 @@ struct NetEaseQueueState: Codable {
     init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer(),
          makeItem: @escaping (URL) -> AVPlayerItem = { NetEasePlayback.makeAudioItem($0) }, seekTimeout: Double = 10) {
         self.session = session; self.catalog = catalog; self.defaults = defaults; self.player = player
+        roomActivity = NetEaseRoomActivity(defaults: defaults)
         self.makeItem = makeItem; self.seekTimeout = seekTimeout
         quality = defaults.string(forKey: "netease.quality.v1").flatMap(NetEaseQuality.init(rawValue:)) ?? .exhigh
         let s = AsyncStream<PlaybackSnapshot>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -96,7 +101,7 @@ struct NetEaseQueueState: Codable {
     }
     deinit {
         timer?.cancel(); radioTask?.cancel(); artworkTask?.cancel(); itemObservation?.invalidate()
-        roomPolling?.cancel(); roomSync?.cancel(); continuation.finish()
+        roomPolling?.cancel(); roomSync?.cancel(); roomMessageRead?.cancel(); continuation.finish()
     }
     func accountChanged() {
         let next = session.profile?.id
@@ -802,6 +807,7 @@ extension NetEasePlayback {
         try await withRoomOperation {
             if try await self.recoverRoom() { return }
             try await self.startNewRoom(kind)
+            self.roomActivity.status("已创建\(kind.title)", symbol: "checkmark.circle")
         }
         await synchronizeRoom()
     }
@@ -873,6 +879,7 @@ extension NetEasePlayback {
             let joined = try await self.roomAPI.join(invite)
             try self.checkRoomContext()
             self.enterRoom(joined)
+            self.roomActivity.status("已加入\(joined.kind.title)", symbol: "checkmark.circle")
         }
         await synchronizeRoom()
     }
@@ -889,6 +896,7 @@ extension NetEasePlayback {
             catch NetEaseError.request(488) {}
             try self.checkRoomContext()
             self.restoreOrdinaryPlayback(forgetRoom: true)
+            self.roomActivity.end(text: "你已离开房间")
         }
     }
 
@@ -900,6 +908,7 @@ extension NetEasePlayback {
         clearRoomAudio()
         queue = .init()
         listeningRoom = room
+        if let account { roomActivity.begin(room, account: account) }
         roomPausedLocally = false
         if let account { defaults.set(room.kind.rawValue, forKey: "netease.room.v1." + account) }
         save()
@@ -912,6 +921,11 @@ extension NetEasePlayback {
         roomPolling = nil
         roomSync?.cancel()
         roomSync = nil
+        roomMessageRead?.cancel()
+        roomMessageRead = nil
+        roomMessageReadID = UUID()
+        lastRoomMessageRead = -.infinity
+        roomActivity.reset()
         clearRoomAudio()
         queue = ordinaryBeforeRoom ?? .init()
         ordinaryBeforeRoom = nil
@@ -1024,12 +1038,17 @@ extension NetEasePlayback {
 
     private func refreshRoomSnapshot(_ room: NetEaseListeningRoom) async {
         do {
+            let context = session.currentState.contextID
             var next = try await roomAPI.update(room, position: position, playing: intentPlaying)
             try checkRoomContext()
             guard listeningRoom?.id == room.id else { throw CancellationError() }
             if let last = room.clock?.version, let version = next.clock?.version, version < last { return }
             next.isHost = room.isHost || next.isHost
+            if !next.hasRoster { next.members = room.members }
+            if !next.hasQueue { next.tracks = room.tracks }
             listeningRoom = next
+            let sampledAt = ProcessInfo.processInfo.systemUptime
+            readRoomMessages(next, now: sampledAt)
             try await applyRoomClock(next.clock)
             let ids = next.tracks.prefix(50).map(\.id)
             if ids != roomQueue.map(\.spotifyID) {
@@ -1037,17 +1056,50 @@ extension NetEasePlayback {
                 try checkRoomContext()
                 if let items { roomQueue = items }
             }
+            guard context == session.currentState.contextID, listeningRoom?.id == next.id else { return }
+            let names = roomQueue.reduce(into: [String: String]()) { $0[$1.spotifyID] = $1.name }
+            roomActivity.observe(next, now: sampledAt, names: names)
             roomNotice = nil
         } catch is CancellationError {}
         catch NetEaseRoomError.ended {
             guard !Task.isCancelled else { return }
             restoreOrdinaryPlayback(forgetRoom: true)
             roomNotice = NetEaseRoomError.ended.localizedDescription
+            roomActivity.end(text: "一起听房间已结束")
         } catch NetEaseError.request(488) {
             guard !Task.isCancelled else { return }
             restoreOrdinaryPlayback(forgetRoom: true)
             roomNotice = NetEaseRoomError.ended.localizedDescription
-        } catch { if !Task.isCancelled { roomNotice = error.localizedDescription } }
+            roomActivity.end(text: "一起听房间已结束")
+        } catch {
+            if !Task.isCancelled {
+                roomActivity.connectionInterrupted()
+                roomNotice = error.localizedDescription
+            }
+        }
+    }
+
+    private func readRoomMessages(_ room: NetEaseListeningRoom, now: TimeInterval) {
+        guard roomMessageRead == nil, now - lastRoomMessageRead >= 5,
+              let account else { return }
+        let peer = room.chattingPeer(viewer: account)
+        guard room.kind == .group ? room.chatID != nil : room.hasRoster && peer != nil else { return }
+        let request = UUID()
+        roomMessageReadID = request
+        lastRoomMessageRead = now
+        let context = session.currentState.contextID
+        roomMessageRead = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.roomMessageReadID == request { self.roomMessageRead = nil } }
+            let api = self.roomAPI
+            let messages = if let peer { try? await api.duetMessages(room, peer: peer) }
+                           else { try? await api.messages(room) }
+            guard !Task.isCancelled, let messages, self.roomMessageReadID == request,
+                  self.session.currentState.contextID == context,
+                  self.listeningRoom?.id == room.id, self.listeningRoom?.kind == room.kind,
+                  self.duetChatPeer?.id == peer?.id else { return }
+            self.roomActivity.observeMessages(messages, peer: peer?.id, receivedAt: Date())
+        }
     }
 
     private func applyRoomClock(_ clock: NetEaseRoomClock?) async throws {
@@ -1101,17 +1153,23 @@ extension NetEasePlayback {
             throw NetEaseRoomError.controlsUnavailable
         }
         try await sendRoomControl { room in
+            let alreadyQueued = room.kind == .duet && room.tracks.contains { $0.id == id }
             if room.kind == .group {
                 try await self.roomAPI.groupSong(room, song: .init(id: id, businessID: nil), next: false)
             } else {
                 var ids = room.tracks.map(\.id)
                 if !ids.contains(id) { ids.append(id) }
                 try await self.roomAPI.replaceDuetQueue(room, ids: ids, version: self.nextRoomSequence())
+                try self.checkRoomContext()
+                self.roomActivity.addedLocally(item, now: ProcessInfo.processInfo.systemUptime, alreadyQueued: alreadyQueued)
                 if room.clock == nil {
                     try self.checkRoomContext()
                     try await self.sendDuetCommand(room, "GOTO", song: id, playing: true, position: 0)
                 }
+                return
             }
+            try self.checkRoomContext()
+            self.roomActivity.addedLocally(item, now: ProcessInfo.processInfo.systemUptime, alreadyQueued: alreadyQueued)
         }
     }
 

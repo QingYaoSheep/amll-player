@@ -3,6 +3,31 @@ import XCTest
 final class MusicCatalogDesignUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor func testNetEaseLyricsRoomCapsuleOpensDetailsAndFriendChat() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--lyrics-ui-testing", "--netease-room-ui-testing", "--skip-welcome-ui-testing",
+            "--quick-settings-service", "netease", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        let miniPlayer = app.descendants(matching: .any)["miniPlayerBar"].firstMatch
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 12))
+        miniPlayer.tap()
+        let capsule = app.buttons["netEaseLyricsRoomCapsule"]
+        XCTAssertTrue(capsule.waitForExistence(timeout: 12))
+        let banner = app.buttons["netEaseRoomBanner"]
+        let bannerGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: banner)
+        XCTAssertEqual(XCTWaiter.wait(for: [bannerGone], timeout: 8), .completed)
+        XCTAssertGreaterThanOrEqual(capsule.frame.height, 44)
+        XCTAssertTrue((capsule.value as? String)?.contains("Fixture Friend") == true)
+        capture(app, "NetEase-lyrics-room-capsule")
+        capsule.tap()
+        let chat = app.buttons["netEaseDuetChat"]
+        XCTAssertTrue(chat.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["netEaseRoomAddSong"].exists)
+        capture(app, "NetEase-room-detail")
+        chat.tap()
+        XCTAssertTrue(app.staticTexts["你好"].firstMatch.waitForExistence(timeout: 8))
+    }
+
     @MainActor func testNetEaseFriendsOpensPrivateConversationAndSharesTheCurrentSong() {
         let app = XCUIApplication()
         app.launchArguments += ["--catalog-ui-testing", "--netease-friends-ui-testing", "--skip-welcome-ui-testing",

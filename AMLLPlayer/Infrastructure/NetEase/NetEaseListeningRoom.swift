@@ -1,6 +1,6 @@
 import Foundation
 
-enum NetEaseRoomKind: String, CaseIterable, Identifiable {
+enum NetEaseRoomKind: String, CaseIterable, Identifiable, Sendable {
     case duet, group
     var id: Self { self }
     var title: String { self == .duet ? "双人房" : "多人好友房" }
@@ -103,7 +103,7 @@ struct NetEaseRoomMember: Identifiable, Hashable {
         guard let id = NetEaseRoomInvite.numericID(object["uid"] ?? object["userId"]) else { return nil }
         self.id = id
         name = object["nickname"] as? String ?? "听友"
-        if let address = object["avatarUrl"] as? String, var url = URLComponents(string: address),
+        if let address = (object["avatarUrl"] ?? object["avatar"]) as? String, var url = URLComponents(string: address),
            let host = url.host, host.hasSuffix(".music.126.net"),
            url.user == nil, url.password == nil, url.port == nil,
            url.scheme == "https" || url.scheme == "http" {
@@ -116,6 +116,8 @@ struct NetEaseRoomMember: Identifiable, Hashable {
 struct NetEaseRoomTrack: Equatable {
     var id: String
     var businessID: String?
+    var recommenderID: String? = nil
+    var queueIdentity: String { businessID ?? id }
 }
 
 struct NetEaseRoomClock: Equatable {
@@ -140,6 +142,8 @@ struct NetEaseListeningRoom: Identifiable, Equatable {
     var heartbeat: Double = 5
     var chatID: String?
     var isHost = false
+    var hasRoster = true
+    var hasQueue = true
 
     func chattingPeer(viewer: String) -> NetEaseRoomMember? {
         guard kind == .duet else { return nil }
@@ -153,6 +157,7 @@ struct NetEaseRoomMessage: Identifiable, Equatable {
     var sender: String
     var text: String
     var time: Int64
+    var outgoing = false
 }
 
 enum NetEaseRoomError: LocalizedError {
@@ -248,12 +253,15 @@ enum NetEaseRoomError: LocalizedError {
         let status = try await call("/room/check", ["roomId": room.id])
         if status["inRoom"] as? Bool == false { throw NetEaseRoomError.ended }
         var next = try decode(status, kind: .duet) ?? room
+        if status["roomInfo"] == nil, status["roomId"] == nil { next.hasRoster = false }
         guard next.id == room.id else { throw NetEaseRoomError.ended }
         let playlist = data["playlist"] as? [String: Any]
         let list = playlist?["displayList"] as? [String: Any]
-        next.tracks = (list?["result"] as? [Any] ?? []).prefix(300).compactMap {
+        let entries = list?["result"] as? [Any]
+        next.hasQueue = entries != nil
+        next.tracks = entries?.prefix(300).compactMap {
             NetEaseRoomInvite.numericID($0).map { .init(id: $0, businessID: nil) }
-        }
+        } ?? room.tracks
         if let command = data["playCommand"] as? [String: Any],
            let id = NetEaseRoomInvite.numericID(command["targetSongId"]) ?? NetEaseRoomInvite.numericID(command["formerSongId"]),
            let state = command["playStatus"] as? String, state == "PLAY" || state == "PAUSE",
@@ -347,7 +355,7 @@ enum NetEaseRoomError: LocalizedError {
             default: text = message.preview
             }
             return .init(id: message.id, sender: message.outgoing ? "我" : peer.name,
-                         text: String(text.prefix(1000)), time: message.time)
+                         text: String(text.prefix(1000)), time: message.time, outgoing: message.outgoing)
         }.sorted { $0.time < $1.time }
     }
 
@@ -390,9 +398,10 @@ enum NetEaseRoomError: LocalizedError {
                   let time = Self.integer(row["sendTime"]),
                   let body = Self.object(row["imChatRoomMsgBody"]),
                   let text = (body["text"] ?? body["msg"]) as? String, !text.isEmpty else { return nil }
-            let id = "\(sender):\(time)"
+            let id = NetEaseRoomInvite.numericID(row["msgId"] ?? row["id"]) ?? "\(sender):\(time):\(text)"
             guard seen.insert(id).inserted else { return nil }
-            return .init(id: id, sender: row["nickname"] as? String ?? "听友", text: String(text.prefix(1000)), time: time)
+            return .init(id: id, sender: row["nickname"] as? String ?? "听友",
+                         text: String(text.prefix(1000)), time: time, outgoing: sender == viewer)
         }.sorted { $0.time < $1.time }
     }
 
@@ -433,17 +442,21 @@ enum NetEaseRoomError: LocalizedError {
         guard NetEaseRoomInvite.validRoom(id) else { throw NetEaseError.invalidResponse }
         let info = (fields["multiRoomInfoDTO"] ?? fields["roomInfo"]) as? [String: Any] ?? fields
         let users = (fields["multiLtRoomUserAgg"] ?? fields["roomUserList"]) as? [String: Any]
-        let rows = (users?["onlineUserInfos"] ?? info["roomUsers"]) as? [[String: Any]] ?? []
+        let rows = (users?["onlineUserInfos"] ?? info["roomUsers"] ?? fields["roomUserList"]) as? [[String: Any]]
         let host = NetEaseRoomInvite.numericID(info["hostUid"] ?? info["creatorUid"] ?? info["inviterId"])
         var members = Set<String>()
-        var room = NetEaseListeningRoom(kind: kind, id: id, members: rows.compactMap(NetEaseRoomMember.init)
+        var room = NetEaseListeningRoom(kind: kind, id: id, members: (rows ?? []).compactMap(NetEaseRoomMember.init)
             .filter { members.insert($0.id).inserted })
+        room.hasRoster = rows != nil
+        room.hasQueue = false
         room.isHost = host != nil && host == session.profile?.id
         room.chatID = NetEaseRoomInvite.numericID(info["chatRoomId"])
         room.heartbeat = min(60, max(1, Self.number(data["heartBeatDuration"] ?? fields["heartBeatDuration"]) ?? 5))
         if let playback = fields["roomPlaySongInfo"] as? [String: Any] {
-            let list = (playback["nextSongs"] as? [[String: Any]] ?? []).prefix(300)
-            room.tracks = list.compactMap(Self.track)
+            if let list = playback["nextSongs"] as? [[String: Any]] {
+                room.hasQueue = true
+                room.tracks = list.prefix(300).compactMap(Self.track)
+            }
             if let song = playback["playSong"] as? [String: Any], let track = Self.track(song),
                let progress = Self.number(playback["playedTime"]), let version = Self.integer(playback["version"]) {
                 room.clock = .init(track: track, position: progress / 1000, playing: true, version: version,
@@ -455,7 +468,8 @@ enum NetEaseRoomError: LocalizedError {
 
     private static func track(_ object: [String: Any]) -> NetEaseRoomTrack? {
         guard let id = NetEaseRoomInvite.numericID(object["songId"]) else { return nil }
-        return .init(id: id, businessID: NetEaseRoomInvite.numericID(object["songBizId"]))
+        return .init(id: id, businessID: NetEaseRoomInvite.numericID(object["songBizId"]),
+                     recommenderID: NetEaseRoomInvite.numericID(object["songRcmdUid"]))
     }
 
     private func milliseconds(_ value: Double) -> Int { Int(min(86_400, max(0, value.isFinite ? value : 0)) * 1000) }

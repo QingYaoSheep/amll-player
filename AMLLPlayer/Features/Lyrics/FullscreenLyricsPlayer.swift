@@ -231,13 +231,25 @@ struct FullscreenLyricsPlayer: View {
     }
 
     private var dismissalHandle: some View {
-        Capsule().fill(.white.opacity(0.4)).frame(width: 36, height: 5)
+        Group {
+            if model.selectedMusicService == .netease, let room = model.netEasePlayback.listeningRoom {
+                NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds) {
+                    quickSettings.openRoom(reduceMotion: reduceMotion)
+                }
+                .accessibilityAction(named: Text("关闭歌词页")) { dismiss() }
+            } else {
+                Capsule().fill(.white.opacity(0.4)).frame(width: 36, height: 5)
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .accessibilityIdentifier(immersiveViewport ? "closeLyricsPlayer" : "lyricsDismissHandle")
+                    .accessibilityLabel(Text("common.done"))
+                    .onTapGesture { if immersiveViewport { dismiss() } }
+                    .accessibilityHidden(!immersiveViewport)
+                    .accessibilityAddTraits(immersiveViewport ? .isButton : [])
+            }
+        }
             .frame(maxWidth: .infinity).frame(height: 44)
-            .accessibilityIdentifier(immersiveViewport ? "closeLyricsPlayer" : "lyricsDismissHandle")
-            .accessibilityLabel(Text("common.done"))
-            .onTapGesture { if immersiveViewport { dismiss() } }
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 8)
+            .simultaneousGesture(DragGesture(minimumDistance: 8)
                 .updating($drag) { value, state, _ in
                     if value.translation.height > abs(value.translation.width) {
                         state = max(0, value.translation.height)
@@ -250,8 +262,6 @@ struct FullscreenLyricsPlayer: View {
                         dismiss()
                     }
             }, including: usesSystemZoom ? .none : .all)
-            .accessibilityHidden(!immersiveViewport)
-            .accessibilityAddTraits(immersiveViewport ? .isButton : [])
             .accessibilityAction(.escape) { dismiss() }
     }
 

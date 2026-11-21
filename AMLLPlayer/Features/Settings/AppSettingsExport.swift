@@ -14,6 +14,7 @@ struct AppSettingsExport: Codable {
         let netEaseQuality: NetEaseQuality
         let netEaseShuffle: Bool
         let netEaseRepeat: MusicRepeatMode
+        let netEaseRoomSystemAlerts: Bool?
     }
 
     let version: Int
@@ -34,7 +35,8 @@ struct AppSettingsExport: Codable {
         version = 1
         music = Music(source: model.selectedMusicService,
                       spotifyClientID: model.environment.configuration.spotifyClientID.flatMap(SpotifyClientIDStore.normalized),
-                      netEaseQuality: playback.quality, netEaseShuffle: modes.shuffle, netEaseRepeat: modes.repeatMode)
+                      netEaseQuality: playback.quality, netEaseShuffle: modes.shuffle, netEaseRepeat: modes.repeatMode,
+                      netEaseRoomSystemAlerts: playback.roomActivity.savedSystemAlertsPreference)
         lyrics = model.lyrics.settings.validated()
         appearance = Appearance(profile: model.renderPreferences.profile, current: configuration,
                                 savedCustom: model.renderPreferences.migratedCustomConfiguration?.validated())

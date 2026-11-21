@@ -91,6 +91,7 @@ jobs:
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testHomePostersAccountMenuAndLongPressActions \
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testAccessibilityTextKeepsDescriptionAndControlsReachable \
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testNetEaseFriendsOpensPrivateConversationAndSharesTheCurrentSong \
+            -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests/testNetEaseLyricsRoomCapsuleOpensDetailsAndFriendChat \
             -resultBundlePath build/Home-iPad.xcresult \
             -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
       - name: Export screenshots

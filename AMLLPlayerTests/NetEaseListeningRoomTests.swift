@@ -2,6 +2,90 @@
 import XCTest
 
 @MainActor final class NetEaseListeningRoomTests: XCTestCase {
+    func testActivityBaselinesRosterAndQueueAndIgnoresOwnEcho() throws {
+        let activity = NetEaseRoomActivity(defaults: try activityDefaults())
+        let viewer = try XCTUnwrap(NetEaseRoomMember(["uid": 1, "nickname": "我"]))
+        let friend = try XCTUnwrap(NetEaseRoomMember(["uid": 2, "nickname": "好友"]))
+        var room = NetEaseListeningRoom(kind: .group, id: "room", members: [viewer])
+        room.tracks = [.init(id: "11", businessID: "101")]
+        activity.begin(room, account: "1")
+        activity.observe(room, now: 0)
+        XCTAssertTrue(activity.events.isEmpty)
+
+        var partial = room
+        partial.members = []
+        partial.tracks = []
+        partial.hasRoster = false
+        partial.hasQueue = false
+        activity.observe(partial, now: 5)
+        XCTAssertTrue(activity.events.isEmpty)
+
+        room.members.append(friend)
+        let track = NetEaseDecoder.missingTrack("42")
+        activity.addedLocally(track, now: 8, alreadyQueued: false)
+        room.tracks += [.init(id: "42", businessID: "102", recommenderID: "1"),
+                        .init(id: "43", businessID: "103", recommenderID: "2")]
+        activity.observe(room, now: 10, names: ["43": "另一首歌"])
+        activity.observe(room, now: 12)
+        XCTAssertEqual(activity.events.map(\.text),
+                       ["好友 添加了《另一首歌》", "好友 加入了房间", "你添加了《\(track.name)》"])
+        room.members.removeLast()
+        activity.observe(room, now: 15)
+        XCTAssertEqual(activity.events.first?.text, "好友 离开了房间")
+    }
+
+    func testDuetDurationPersistsPerAccountAndExcludesUnconfirmedGaps() throws {
+        let defaults = try activityDefaults()
+        let viewer = try XCTUnwrap(NetEaseRoomMember(["uid": 1]))
+        let friend = try XCTUnwrap(NetEaseRoomMember(["uid": 2]))
+        let room = NetEaseListeningRoom(kind: .duet, id: "room", members: [viewer, friend], heartbeat: 30)
+        let activity = NetEaseRoomActivity(defaults: defaults)
+        activity.begin(room, account: "1")
+        activity.observe(room, now: 0)
+        activity.observe(room, now: 30)
+        activity.connectionInterrupted()
+        activity.observe(room, now: 300)
+        XCTAssertEqual(activity.seconds, 0)
+        activity.observe(room, now: 330)
+        XCTAssertEqual(activity.seconds, 60)
+        let restored = NetEaseRoomActivity(defaults: defaults)
+        restored.begin(room, account: "1")
+        XCTAssertEqual(restored.seconds, 60)
+        restored.begin(room, account: "2")
+        XCTAssertEqual(restored.seconds, 0)
+    }
+
+    func testOnlyNewIncomingMessagesSurfaceAndChatDestinationRoundTrips() throws {
+        let activity = NetEaseRoomActivity(defaults: try activityDefaults())
+        let room = NetEaseListeningRoom(kind: .duet, id: "room", members: [])
+        activity.begin(room, account: "1")
+        let now = Date()
+        let time = Int64(now.timeIntervalSince1970 * 1_000)
+        let older = NetEaseRoomMessage(id: "a", sender: "好友", text: "旧", time: time - 2)
+        let incoming = NetEaseRoomMessage(id: "b", sender: "好友", text: "新", time: time - 1)
+        let own = NetEaseRoomMessage(id: "c", sender: "我", text: "自己", time: time, outgoing: true)
+        activity.observeMessages([older], peer: "2", receivedAt: now)
+        XCTAssertNil(activity.banner)
+        activity.observeMessages([older, incoming, own], peer: "2", receivedAt: now)
+        activity.observeMessages([older, incoming, own], peer: "2", receivedAt: now)
+        let destination = try XCTUnwrap(activity.banner?.destination)
+        XCTAssertTrue(destination.chat)
+        XCTAssertEqual(destination.peer, "2")
+        XCTAssertEqual(NetEaseRoomDestination(destination.userInfo), destination)
+        XCTAssertEqual(activity.events.count, 1)
+        XCTAssertNil(activity.events.first?.preview)
+        activity.setChatVisible(destination, token: UUID())
+        XCTAssertNil(activity.banner)
+        let newer = NetEaseRoomMessage(id: "d", sender: "好友", text: "再一条", time: time + 1)
+        activity.observeMessages([incoming, own, newer], peer: "2", receivedAt: now)
+        XCTAssertNil(activity.banner)
+        XCTAssertEqual(activity.events.count, 2)
+    }
+
+    private func activityDefaults() throws -> UserDefaults {
+        try XCTUnwrap(UserDefaults(suiteName: "RoomActivity-" + UUID().uuidString))
+    }
+
     func testOnlyOfficialInvitesRoundTripAndKeepTheirRoomKind() throws {
         for kind in NetEaseRoomKind.allCases {
             let invite = NetEaseRoomInvite(kind: kind, room: "example-123", inviter: "9007199254740993",

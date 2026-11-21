@@ -44,6 +44,12 @@ final class LyricsQuickSettingsPresentation {
         }
     }
 
+    func openRoom(reduceMotion: Bool) {
+        guard destination == nil, !destinationIsDismissing else { return }
+        if isPresented { close(reduceMotion: reduceMotion, then: .listeningRoom) }
+        else { destination = .listeningRoom }
+    }
+
     func destinationDidDismiss() {
         destination = nil
         destinationIsDismissing = false

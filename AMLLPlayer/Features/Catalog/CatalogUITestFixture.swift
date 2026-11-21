@@ -60,6 +60,10 @@
                         try? await Task.sleep(for: .milliseconds(10))
                     }
                     if let song = NetEaseDecoder.item(NetEaseFixtureAPI.song, kind: .track) { try? await model.playCatalog(song) }
+                    if arguments.contains("--netease-room-ui-testing") {
+                        try? await model.netEasePlayback.joinRoom(.init(kind: .duet, room: "fixture-room",
+                            inviter: "2", song: "42"), replacing: false)
+                    }
                 }
             }
             if arguments.contains("--lyrics-blending-metal-ui-testing") {
@@ -158,8 +162,35 @@
             static let song: [String: Any] = ["id": 42, "name": "Fixture Song", "dt": 120000, "ar": [["id": 1, "name": "Fixture Artist"]]]
             private var radioBatch = 0
             private var privateMessages: [[String: Any]] = []
+            private var roomJoined = false
+            private var roomSongs = ["43"]
             func send(_ path: String, _ parameters: [String: Any], cookie _: String?) async throws -> NetEaseResponse {
-                if ProcessInfo.processInfo.arguments.contains("--netease-friends-ui-testing") {
+                let arguments = ProcessInfo.processInfo.arguments
+                if arguments.contains("--netease-room-ui-testing") {
+                    let room: [String: Any] = ["inRoom": roomJoined, "roomInfo": [
+                        "roomId": "fixture-room", "roomUsers": [["uid": 1, "nickname": "Fixture"],
+                            ["uid": 2, "nickname": "Fixture Friend"]],
+                    ]]
+                    switch path {
+                    case "/listen/together/status/get", "/listen/together/room/check":
+                        return .init(object: ["data": room])
+                    case "/listen/together/play/invitation/accept":
+                        roomJoined = true
+                        return .init(object: ["data": [:]])
+                    case "/listen/together/sync/playlist/get":
+                        return .init(object: ["data": ["playlist": ["displayList": ["result": roomSongs]],
+                            "playCommand": ["targetSongId": "42", "playStatus": "PAUSE",
+                                "progress": 0, "serverSeq": 1]]])
+                    case "/listen/together/sync/list/command/report":
+                        roomSongs.append("42")
+                        return .init(object: ["code": 200])
+                    case "/listen/together/end/v2":
+                        roomJoined = false
+                        return .init(object: ["code": 200])
+                    default: break
+                    }
+                }
+                if arguments.contains("--netease-friends-ui-testing") || arguments.contains("--netease-room-ui-testing") {
                     let friend = ["userId": 2, "nickname": "Fixture Friend"] as [String: Any]
                     let viewer = ["userId": 1, "nickname": "Fixture"] as [String: Any]
                     if path == "/msg/private/users" {

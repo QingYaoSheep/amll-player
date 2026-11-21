@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NetEaseSongPicker: View {
     let model: AppModel
+    var title = "分享歌曲"
     let select: (MusicCatalogItem) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
@@ -40,11 +41,11 @@ struct NetEaseSongPicker: View {
                         }
                     }
                 } else {
-                    songs(.search(term, .track), title: "分享歌曲", delaySearch: true)
+                    songs(.search(term, .track), title: title, delaySearch: true)
                         .id(term)
                 }
             }
-            .navigationTitle("分享歌曲")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索网易云歌曲")
             .toolbar {

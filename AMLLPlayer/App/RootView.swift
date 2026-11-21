@@ -2,10 +2,12 @@ import SwiftUI
 
 struct RootView: View {
     @Bindable var model: AppModel
+    var roomNotification: NetEaseRoomNotificationDelegate.Response? = nil
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingPlayer = false
     @State private var showingWelcome = false
     @Namespace private var playerNamespace
+    @State private var roomOverlay = NetEaseRoomOverlay()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -13,6 +15,10 @@ struct RootView: View {
             MusicBrowserView(model: model, playerNamespace: playerNamespace, openPlayer: { showingPlayer = true })
                 .id(model.catalog.identity)
                 .accessibilityHidden(showingPlayer)
+        }
+        .background { NetEaseRoomOverlayAnchor(overlay: roomOverlay, model: model) }
+        .onChange(of: roomNotification, initial: true) {
+            if let roomNotification { roomOverlay.open(roomNotification.destination, model: model) }
         }
         .sheet(isPresented: $showingWelcome) {
             MusicWelcomeView(model: model) {

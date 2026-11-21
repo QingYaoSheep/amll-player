@@ -680,10 +680,10 @@ struct AMLLLyricsPlayer: View {
     private func dismissalHandle(metrics: AppleMusicLyricsLayoutMetrics) -> some View {
         Group {
             if model.selectedMusicService == .netease, let room = model.netEasePlayback.listeningRoom {
-                NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds) {
+                NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds,
+                                   closePlayer: { dismiss() }) {
                     quickSettings.openRoom(reduceMotion: reduceMotion)
                 }
-                .accessibilityAction(named: Text("关闭歌词页")) { dismiss() }
             } else {
                 Button { dismiss() } label: {
                     Capsule()

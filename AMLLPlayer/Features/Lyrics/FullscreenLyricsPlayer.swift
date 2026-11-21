@@ -233,10 +233,10 @@ struct FullscreenLyricsPlayer: View {
     private var dismissalHandle: some View {
         Group {
             if model.selectedMusicService == .netease, let room = model.netEasePlayback.listeningRoom {
-                NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds) {
+                NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds,
+                                   closePlayer: { dismiss() }) {
                     quickSettings.openRoom(reduceMotion: reduceMotion)
                 }
-                .accessibilityAction(named: Text("关闭歌词页")) { dismiss() }
             } else {
                 Capsule().fill(.white.opacity(0.4)).frame(width: 36, height: 5)
                     .frame(maxWidth: .infinity).frame(height: 44)

@@ -218,41 +218,37 @@ struct NetEaseRoomDurationLabel: View {
 struct NetEaseRoomCapsule: View {
     let room: NetEaseListeningRoom
     let seconds: Int
+    let closePlayer: () -> Void
     let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                avatars.fixedSize(horizontal: true, vertical: false)
-                ScrollView(.horizontal) { avatars }.scrollIndicators(.hidden)
-            }
-            .frame(maxWidth: room.kind == .duet ? 72 : 132)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: action)
-            .accessibilityHidden(true)
-            Button(action: action) {
-                HStack(spacing: 8) {
-                    Group {
-                        if room.members.count < 2 { Text("等待好友加入") }
-                        else { NetEaseRoomDurationLabel(seconds: seconds) }
-                    }
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(2)
-                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
-                        .accessibilityHidden(true)
+        Button(action: action) {
+            HStack(spacing: 8) {
+                ViewThatFits(in: .horizontal) {
+                    avatars.fixedSize(horizontal: true, vertical: false)
+                    ScrollView(.horizontal) { avatars }.scrollIndicators(.hidden)
                 }
-                .padding(.leading, room.members.isEmpty ? 0 : 8)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
+                .frame(maxWidth: room.kind == .duet ? 72 : 132)
+                .accessibilityHidden(true)
+                Group {
+                    if room.members.count < 2 { Text("等待好友加入") }
+                    else { NetEaseRoomDurationLabel(seconds: seconds) }
+                }
+                .font(.caption.weight(.semibold))
+                .lineLimit(2)
+                Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                    .accessibilityHidden(true)
             }
-            .buttonStyle(MusicContentButtonStyle())
-            .accessibilityIdentifier("netEaseLyricsRoomCapsule")
-            .accessibilityHint("打开房间详情")
-            .accessibilityValue(room.members.map(\.name).joined(separator: "、"))
+            .frame(minHeight: 44)
+            .padding(.horizontal, 12)
+            .modifier(NetEaseRoomGlass(shape: Capsule(), interactive: true))
+            .contentShape(Capsule())
         }
-        .padding(.horizontal, 12)
-        .modifier(NetEaseRoomGlass(shape: Capsule(), interactive: true))
-        .contentShape(Capsule())
+        .buttonStyle(MusicContentButtonStyle())
+        .accessibilityIdentifier("netEaseLyricsRoomCapsule")
+        .accessibilityHint("打开房间详情")
+        .accessibilityValue(room.members.map(\.name).joined(separator: "、"))
+        .accessibilityAction(named: Text("关闭歌词页"), closePlayer)
         .frame(maxWidth: 420)
         .padding(.horizontal, 16)
     }

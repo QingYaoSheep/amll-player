@@ -1,7 +1,79 @@
+import UIKit
 import XCTest
 
 final class MusicCatalogDesignUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+
+    @MainActor func testGlassIsContinuousBelowTheHandleInRoomAndQueue() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["--lyrics-ui-testing", "--skip-welcome-ui-testing", "--quick-settings-service", "netease"]
+        app.launch()
+        let player = app.buttons["openNowPlaying"]
+        XCTAssertTrue(player.waitForExistence(timeout: 12))
+        player.tap()
+        let settings = app.buttons["lyricsDisplayOptions"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+
+        for identifier in ["quickSettingsNetEaseListeningRoom", "quickSettingsRoute.queue"] {
+            let route = app.buttons[identifier]
+            for _ in 0 ..< 6 where !route.isHittable { scroll.swipeUp(velocity: .slow) }
+            XCTAssertTrue(route.isHittable)
+            route.tap()
+            let title = app.staticTexts["lyricsQuickSettingsDestinationTitle"]
+            XCTAssertTrue(title.waitForExistence(timeout: 5))
+            try assertNoGlassSeam(in: app, name: identifier)
+            if identifier == "quickSettingsNetEaseListeningRoom" {
+                let inbox = app.buttons["netEaseRoomInbox"]
+                XCTAssertTrue(inbox.isHittable)
+                inbox.tap()
+                XCTAssertTrue(app.staticTexts["收到的邀请"].waitForExistence(timeout: 5))
+                app.buttons["backLyricsQuickSettingsChild"].tap()
+                XCTAssertTrue(inbox.waitForExistence(timeout: 5))
+            }
+            app.buttons["backLyricsQuickSettingsDestination"].tap()
+            XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        }
+    }
+
+    @MainActor private func assertNoGlassSeam(in app: XCUIApplication, name: String) throws {
+        let handle = app.descendants(matching: .any)["lyricsQuickSettingsHandle"].firstMatch.frame
+        XCTAssertEqual(handle.height, 44, accuracy: 1)
+        let screen = app.frame
+        let capture = app.screenshot()
+        let attachment = XCTAttachment(screenshot: capture)
+        attachment.name = name + "-glass"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let image = try XCTUnwrap(capture.image.cgImage)
+        let scaleX = CGFloat(image.width) / screen.width
+        let scaleY = CGFloat(image.height) / screen.height
+
+        let jumps = try (2 ... 8).map { column -> Double in
+            let x = (handle.minX - screen.minX + handle.width * CGFloat(column) / 10) * scaleX
+            let y = handle.maxY - screen.minY
+            let above = try pixelLuminance(image, x: Int(x), y: Int((y - 1) * scaleY))
+            let below = try pixelLuminance(image, x: Int(x), y: Int((y + 1) * scaleY))
+            return abs(above - below)
+        }.sorted()
+        XCTAssertLessThan(jumps[jumps.count / 2], 12,
+                          "A full-width brightness step at the bottom of the handle indicates a second backdrop: \(jumps)")
+    }
+
+    private func pixelLuminance(_ image: CGImage, x: Int, y: Int) throws -> Double {
+        let rect = CGRect(x: x, y: y, width: 1, height: 1)
+        let pixel = try XCTUnwrap(image.cropping(to: rect))
+        var rgba = [UInt8](repeating: 0, count: 4)
+        try rgba.withUnsafeMutableBytes { bytes in
+            let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(pixel, in: CGRect(origin: .zero, size: rect.size))
+        }
+        return 0.2126 * Double(rgba[0]) + 0.7152 * Double(rgba[1]) + 0.0722 * Double(rgba[2])
+    }
 
     @MainActor func testNetEaseLyricsRoomCapsuleOpensDetailsAndFriendChat() {
         let app = XCUIApplication()

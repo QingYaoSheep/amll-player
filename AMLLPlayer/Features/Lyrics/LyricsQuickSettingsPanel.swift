@@ -222,7 +222,13 @@ struct LyricsQuickSettingsPanel: View {
             // Extend the surface while leaving the scroll viewport and its
             // hit targets inside the safe area.
             .padding(surfaceInsets)
-            .modifier(QuickSettingsGlassSurface(floating: floating))
+            .background {
+                // Sample the page once, behind both the handle and the content.
+                Color.clear
+                    .modifier(QuickSettingsGlassSurface(floating: floating))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             .padding(EdgeInsets(top: 0, leading: -surfaceInsets.leading,
                                 bottom: -surfaceInsets.bottom, trailing: -surfaceInsets.trailing))
             .modifier(QuickSettingsSDR())
@@ -586,6 +592,13 @@ struct LyricsQuickSettingsPanel: View {
 struct LyricsQuickSettingsNavigation {
     let back: (() -> Void)?
     let close: () -> Void
+    var backLabel: LocalizedStringKey = "quickSettings.back"
+    var backIdentifier = "backLyricsQuickSettingsDestination"
+
+    func child(back: @escaping () -> Void) -> Self {
+        Self(back: back, close: close, backLabel: "quickSettings.backOneLevel",
+             backIdentifier: "backLyricsQuickSettingsChild")
+    }
 }
 
 extension EnvironmentValues {
@@ -625,8 +638,8 @@ private struct LyricsQuickSettingsDestinationChrome: ViewModifier {
     private func header(_ navigation: LyricsQuickSettingsNavigation) -> some View {
         HStack(spacing: 8) {
             if let back = navigation.back {
-                control("quickSettings.back", symbol: "chevron.backward", action: back)
-                    .accessibilityIdentifier("backLyricsQuickSettingsDestination")
+                control(navigation.backLabel, symbol: "chevron.backward", action: back)
+                    .accessibilityIdentifier(navigation.backIdentifier)
             } else {
                 Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
             }

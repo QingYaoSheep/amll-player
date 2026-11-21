@@ -8,6 +8,11 @@ struct NetEaseRoomView: View {
         var id: String { "\(roomID):\(peer.id)" }
     }
 
+    private enum RoomPage: Equatable {
+        case contacts(NetEaseRoomInvite?)
+        case groupChat
+    }
+
     let model: AppModel
     private let opensChat: Bool
     private let onClose: (() -> Void)?
@@ -25,6 +30,8 @@ struct NetEaseRoomView: View {
     @State private var chatActions: NetEaseFriendRoomActions
     @State private var duetConversation: DuetConversation?
     @State private var showingGroupChat = false
+    @State private var roomPage: RoomPage?
+    @State private var invitationContact: NetEaseRoomMember?
     @State private var didOpenRequestedChat = false
     @State private var pickingSong = false
     @State private var changingNotifications = false
@@ -38,92 +45,40 @@ struct NetEaseRoomView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                if let room = playback.listeningRoom { activeRoom(room) }
-                else {
-                    Section("创建房间") {
-                        roomControls {
-                            ForEach(NetEaseRoomKind.allCases) { kind in
-                                Button {
-                                    run("正在创建房间…") { try await playback.createRoom(kind) }
-                                } label: {
-                                    QuickSettingsControlLabel(title: kind == .duet ? "创建双人房" : "创建多人房",
-                                        symbol: kind == .duet ? "person.2" : "person.3")
-                                }
-                                .buttonStyle(MusicContentButtonStyle())
+        Group {
+            if let quickSettingsNavigation {
+                embeddedRoom(navigation: quickSettingsNavigation)
+            } else {
+                NavigationStack {
+                    roomContent
+                        .navigationTitle("与好友一起听")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("完成") {
+                                    if let onClose { onClose() } else { dismiss() }
+                                }.accessibilityIdentifier("netEaseRoomDone")
                             }
                         }
-                        if let pendingOperation, pendingInvite == nil { ProgressView(pendingOperation) }
-                    }
-                }
-                Section("接受邀请") {
-                    TextField("粘贴网易云一起听链接", text: $pastedLink, axis: .vertical)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("netEaseRoomInviteLink")
-                    Button("查看邀请", systemImage: "link") {
-                        guard let invite = NetEaseRoomInvite.parse(pastedLink) else {
-                            error = NetEaseRoomError.invalidInvite.localizedDescription
-                            return
-                        }
-                        pendingInvite = invite
-                    }.disabled(pastedLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    NavigationLink("收到的邀请") {
-                        NetEaseRoomContacts(playback: playback, invite: nil) { pendingInvite = $0 }
-                    }.accessibilityIdentifier("netEaseRoomInbox")
-                }
-                if let pendingInvite {
-                    Section("待加入") {
-                        Label(pendingInvite.kind.title, systemImage: "person.2")
-                        Button("加入房间") { accept(pendingInvite) }
-                            .accessibilityIdentifier("netEaseRoomJoin")
-                        if let pendingOperation { ProgressView(pendingOperation) }
-                    }
-                }
-                if playback.roomBusy, pendingOperation == nil { ProgressView("正在处理房间操作") }
-                if let error = error ?? playback.roomNotice ?? (playback.isListeningTogether ? playback.failure : nil) {
-                    Section {
-                        Text(verbatim: error).foregroundStyle(.secondary)
-                        Button("刷新房间") { run { try await playback.refreshListeningRoom() } }
-                    }
+                        .navigationDestination(isPresented: $showingGroupChat) { groupChat }
                 }
             }
-            .accessibilityIdentifier("netEaseRoomContent")
-            .disabled(playback.roomBusy)
-            .navigationTitle("与好友一起听")
-            .navigationBarTitleDisplayMode(.inline)
-            .lyricsQuickSettingsDestination("与好友一起听")
-            .toolbar {
-                if quickSettingsNavigation == nil {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") {
-                            if let onClose { onClose() } else { dismiss() }
-                        }.accessibilityIdentifier("netEaseRoomDone")
-                    }
-                }
+        }
+        .task {
+            if opensChat, !didOpenRequestedChat, let room = playback.listeningRoom {
+                didOpenRequestedChat = true
+                openChat(room)
             }
-            .refreshable { await perform { try await playback.refreshListeningRoom() } }
-            .task {
-                if opensChat, !didOpenRequestedChat, let room = playback.listeningRoom {
-                    didOpenRequestedChat = true
-                    openChat(room)
-                }
-                await activity.refreshAuthorization()
-                if playback.listeningRoom == nil { await perform { try await playback.refreshListeningRoom() } }
-            }
-            .navigationDestination(isPresented: $showingGroupChat) {
-                if let room = playback.listeningRoom, room.kind == .group {
-                    NetEaseRoomChat(playback: playback, room: room, account: model.netEaseSession.profile?.id)
-                        .id(room.id)
-                        .toolbar(.visible, for: .navigationBar)
-                }
-            }
-            .confirmationDialog("离开当前房间并加入新房间？", isPresented: $confirmingSwitch, titleVisibility: .visible) {
-                if let pendingInvite {
-                    Button("切换房间", role: .destructive) {
-                        run("正在加入房间…") { try await playback.joinRoom(pendingInvite, replacing: true); clearInvite() }
-                    }
+            await activity.refreshAuthorization()
+            if playback.listeningRoom == nil { await perform { try await playback.refreshListeningRoom() } }
+        }
+        .onChange(of: playback.listeningRoom?.id) {
+            if case .groupChat = roomPage { roomPage = nil }
+        }
+        .confirmationDialog("离开当前房间并加入新房间？", isPresented: $confirmingSwitch, titleVisibility: .visible) {
+            if let pendingInvite {
+                Button("切换房间", role: .destructive) {
+                    run("正在加入房间…") { try await playback.joinRoom(pendingInvite, replacing: true); clearInvite() }
                 }
             }
         }
@@ -146,6 +101,116 @@ struct NetEaseRoomView: View {
                     }
             }
         }
+    }
+
+    private func embeddedRoom(navigation: LyricsQuickSettingsNavigation) -> some View {
+        // A NavigationStack supplies its own full-rect background even when
+        // the bar is hidden. Keep in-panel navigation in the glass hierarchy.
+        ZStack {
+            roomContent
+                .lyricsQuickSettingsDestination("与好友一起听")
+                .opacity(roomPage == nil ? 1 : 0)
+                .allowsHitTesting(roomPage == nil)
+                .accessibilityElement(children: .contain)
+                .accessibilityHidden(roomPage != nil)
+
+            switch roomPage {
+            case let .contacts(invite):
+                embeddedContacts(invite, navigation: navigation)
+                    .transition(.opacity)
+            case .groupChat:
+                groupChat
+                    .lyricsQuickSettingsDestination("房间聊天")
+                    .environment(\.lyricsQuickSettingsNavigation, navigation.child { roomPage = nil })
+                    .transition(.opacity)
+            case nil:
+                EmptyView()
+            }
+        }
+        .animation(MusicProductMotion.change, value: roomPage)
+    }
+
+    private func embeddedContacts(_ invite: NetEaseRoomInvite?, navigation: LyricsQuickSettingsNavigation) -> some View {
+        ZStack {
+            NetEaseRoomContacts(playback: playback, invite: invite, onInvite: { pendingInvite = $0 },
+                                onSelectContact: { invitationContact = $0 })
+                .lyricsQuickSettingsDestination(invite == nil ? "收到的邀请" : "邀请网易云好友")
+                .environment(\.lyricsQuickSettingsNavigation, navigation.child { roomPage = nil })
+                .opacity(invitationContact == nil ? 1 : 0)
+                .allowsHitTesting(invitationContact == nil)
+                .accessibilityElement(children: .contain)
+                .accessibilityHidden(invitationContact != nil)
+            if let invitationContact {
+                NetEaseRoomInvitations(api: playback.roomAPI, contact: invitationContact, onInvite: { pendingInvite = $0 },
+                                       close: { self.invitationContact = nil })
+                    .lyricsQuickSettingsDestination("\(invitationContact.name)")
+                    .environment(\.lyricsQuickSettingsNavigation, navigation.child { self.invitationContact = nil })
+                    .transition(.opacity)
+            }
+        }
+        .animation(MusicProductMotion.change, value: invitationContact?.id)
+    }
+
+    @ViewBuilder private var groupChat: some View {
+        if let room = playback.listeningRoom, room.kind == .group {
+            NetEaseRoomChat(playback: playback, room: room, account: model.netEaseSession.profile?.id)
+                .id(room.id)
+        }
+    }
+
+    private var roomContent: some View {
+        List {
+            if let room = playback.listeningRoom { activeRoom(room) }
+            else {
+                Section("创建房间") {
+                    roomControls {
+                        ForEach(NetEaseRoomKind.allCases) { kind in
+                            Button {
+                                run("正在创建房间…") { try await playback.createRoom(kind) }
+                            } label: {
+                                QuickSettingsControlLabel(title: kind == .duet ? "创建双人房" : "创建多人房",
+                                    symbol: kind == .duet ? "person.2" : "person.3")
+                            }
+                            .buttonStyle(MusicContentButtonStyle())
+                        }
+                    }
+                    if let pendingOperation, pendingInvite == nil { ProgressView(pendingOperation) }
+                }
+            }
+            Section("接受邀请") {
+                TextField("粘贴网易云一起听链接", text: $pastedLink, axis: .vertical)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("netEaseRoomInviteLink")
+                Button("查看邀请", systemImage: "link") {
+                    guard let invite = NetEaseRoomInvite.parse(pastedLink) else {
+                        error = NetEaseRoomError.invalidInvite.localizedDescription
+                        return
+                    }
+                    pendingInvite = invite
+                }.disabled(pastedLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                contactsLink(nil) { Label("收到的邀请", systemImage: "envelope") }
+                    .accessibilityIdentifier("netEaseRoomInbox")
+            }
+            if let pendingInvite {
+                Section("待加入") {
+                    Label(pendingInvite.kind.title, systemImage: "person.2")
+                    Button("加入房间") { accept(pendingInvite) }
+                        .accessibilityIdentifier("netEaseRoomJoin")
+                    if let pendingOperation { ProgressView(pendingOperation) }
+                }
+            }
+            if playback.roomBusy, pendingOperation == nil { ProgressView("正在处理房间操作") }
+            if let error = error ?? playback.roomNotice ?? (playback.isListeningTogether ? playback.failure : nil) {
+                Section {
+                    Text(verbatim: error).foregroundStyle(.secondary)
+                    Button("刷新房间") { run { try await playback.refreshListeningRoom() } }
+                }
+            }
+        }
+        .accessibilityIdentifier("netEaseRoomContent")
+        .disabled(playback.roomBusy)
+        .refreshable { await perform { try await playback.refreshListeningRoom() } }
     }
 
     @ViewBuilder private func activeRoom(_ room: NetEaseListeningRoom) -> some View {
@@ -286,9 +351,7 @@ struct NetEaseRoomView: View {
         }
         if room.members.count < 2 {
             if let invite = playback.roomShareLink {
-                NavigationLink {
-                    NetEaseRoomContacts(playback: playback, invite: invite) { _ in }
-                } label: {
+                contactsLink(invite) {
                     VStack(alignment: .leading, spacing: 8) {
                         Image(systemName: "person.badge.plus").font(.title3)
                             .frame(width: 54, height: 54)
@@ -331,13 +394,29 @@ struct NetEaseRoomView: View {
     }
 
     private func inviteButton(_ invite: NetEaseRoomInvite) -> some View {
-        NavigationLink {
-            NetEaseRoomContacts(playback: playback, invite: invite) { _ in }
-        } label: {
+        contactsLink(invite) {
             QuickSettingsControlLabel(title: "邀请网易云好友", symbol: "person.badge.plus", indicator: "chevron.forward")
         }
         .buttonStyle(MusicContentButtonStyle())
         .accessibilityIdentifier("netEaseRoomInviteFriend")
+    }
+
+    @ViewBuilder private func contactsLink<Label: View>(_ invite: NetEaseRoomInvite?,
+                                                         @ViewBuilder label: () -> Label) -> some View {
+        if quickSettingsNavigation != nil {
+            Button {
+                invitationContact = nil
+                roomPage = .contacts(invite)
+            } label: {
+                label()
+            }
+        } else {
+            NavigationLink {
+                NetEaseRoomContacts(playback: playback, invite: invite, onInvite: { pendingInvite = $0 })
+            } label: {
+                label()
+            }
+        }
     }
 
     private func roomControls<Controls: View>(@ViewBuilder _ controls: () -> Controls) -> some View {
@@ -349,7 +428,10 @@ struct NetEaseRoomView: View {
     }
 
     private func openChat(_ room: NetEaseListeningRoom) {
-        if room.kind == .group, room.chatID != nil { showingGroupChat = true }
+        if room.kind == .group, room.chatID != nil {
+            if quickSettingsNavigation != nil { roomPage = .groupChat }
+            else { showingGroupChat = true }
+        }
         if room.kind == .duet, let peer = playback.duetChatPeer {
             duetConversation = .init(roomID: room.id, peer: peer)
         }
@@ -385,6 +467,7 @@ private struct NetEaseRoomContacts: View {
     let playback: NetEasePlayback
     let invite: NetEaseRoomInvite?
     let onInvite: (NetEaseRoomInvite) -> Void
+    var onSelectContact: ((NetEaseRoomMember) -> Void)? = nil
     @State private var contacts: [NetEaseRoomMember] = []
     @State private var offset = 0
     @State private var more = true
@@ -403,6 +486,7 @@ private struct NetEaseRoomContacts: View {
             }
             ForEach(contacts) { member in
                 if invite != nil { Button(member.name) { recipient = member } }
+                else if let onSelectContact { Button(member.name) { onSelectContact(member) } }
                 else {
                     NavigationLink(member.name) {
                         NetEaseRoomInvitations(api: playback.roomAPI, contact: member, onInvite: onInvite)
@@ -415,7 +499,6 @@ private struct NetEaseRoomContacts: View {
             if let error { Text(verbatim: error).foregroundStyle(.secondary) }
         }
         .navigationTitle(invite == nil ? "收到的邀请" : "邀请网易云好友")
-        .toolbar(.visible, for: .navigationBar)
         .task { await load() }
         .confirmationDialog("将一起听链接发送给 \(recipient?.name ?? "")？",
                             isPresented: Binding(get: { recipient != nil }, set: { if !$0 { recipient = nil } }),
@@ -457,6 +540,7 @@ private struct NetEaseRoomInvitations: View {
     let api: NetEaseRoomAPI
     let contact: NetEaseRoomMember
     let onInvite: (NetEaseRoomInvite) -> Void
+    var close: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var invites: [NetEaseRoomInvite] = []
     @State private var loading = true
@@ -470,7 +554,7 @@ private struct NetEaseRoomInvitations: View {
             ForEach(invites) { invite in
                 Button {
                     onInvite(invite)
-                    dismiss()
+                    if let close { close() } else { dismiss() }
                 } label: { Label(invite.kind.title, systemImage: "link") }
             }
         }

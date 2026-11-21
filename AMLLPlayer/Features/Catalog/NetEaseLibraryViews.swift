@@ -125,59 +125,64 @@ struct NetEaseQueueView: View {
     var body: some View {
         if model.netEasePlayback.isListeningTogether {
             NetEaseRoomView(model: model)
+        } else if quickSettingsNavigation != nil {
+            queueContent
         } else {
-          NavigationStack {
-            List {
-                if model.netEasePlayback.isPersonalFM {
-                    Section("私人 FM") {
-                        Text("自动续播；可返回已听歌曲，暂停后停止主动补歌。").font(.subheadline)
-                        if model.netEasePlayback.isRefillingRadio { ProgressView("正在补充推荐") }
-                        if let error = model.netEasePlayback.radioFailure {
-                            Text(error).foregroundStyle(.secondary)
-                            Button("重试补歌") { Task { await model.netEasePlayback.retryPersonalFM() } }
-                        }
-                        Button("退出 FM，恢复普通队列") { model.netEasePlayback.exitPersonalFM() }
-                            .accessibilityIdentifier("exitPersonalFM")
-                    }
-                }
-                if let failure = model.netEasePlayback.failure { Text(failure).foregroundStyle(.secondary) }
-                if !model.netEasePlayback.actualQuality.isEmpty { Text("实际音质：\(model.netEasePlayback.actualQuality)") }
-                let entries = model.netEasePlayback.displayedEntries
-                if editMode.isEditing {
-                    Section("播放顺序") { queueRows(entries[...], canMove: true) }
-                } else if let index = entries.firstIndex(where: { $0.id == model.netEasePlayback.queue.currentID }) {
-                    Section("正在播放") { queueRows(entries[index ... index]) }
-                    Section("接下来播放") {
-                        let upcoming = entries[(index + 1)...]
-                        if upcoming.isEmpty { Text("暂无待播歌曲").foregroundStyle(.secondary) }
-                        else { queueRows(upcoming) }
-                    }
-                    if index > entries.startIndex {
-                        Section("之前的歌曲") { queueRows(entries[..<index]) }
-                    }
-                } else {
-                    Section("播放顺序") { queueRows(entries[...]) }
-                }
-                if !model.netEasePlayback.isPersonalFM {
-                    Text("移除正在播放的条目会暂停；其余条目可自由排序。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-                .navigationTitle("网易云播放队列")
-                .lyricsQuickSettingsDestination("网易云播放队列", showsEditButton: !model.netEasePlayback.isPersonalFM)
-                .toolbar {
-                    if quickSettingsNavigation == nil {
+            NavigationStack {
+                queueContent
+                    .navigationTitle("网易云播放队列")
+                    .toolbar {
                         if !model.netEasePlayback.isPersonalFM { EditButton() }
                         Button("完成") { dismiss() }
                     }
-                }
-                .environment(\.editMode, $editMode)
-                .onChange(of: model.netEasePlayback.isPersonalFM) { editMode = .inactive }
-                .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-                    Button("好", role: .cancel) { failure = nil }
-                } message: { Text(failure ?? "") }
-          }
+            }
+            .environment(\.editMode, $editMode)
         }
+    }
+
+    private var queueContent: some View {
+        List {
+            if model.netEasePlayback.isPersonalFM {
+                Section("私人 FM") {
+                    Text("自动续播；可返回已听歌曲，暂停后停止主动补歌。").font(.subheadline)
+                    if model.netEasePlayback.isRefillingRadio { ProgressView("正在补充推荐") }
+                    if let error = model.netEasePlayback.radioFailure {
+                        Text(error).foregroundStyle(.secondary)
+                        Button("重试补歌") { Task { await model.netEasePlayback.retryPersonalFM() } }
+                    }
+                    Button("退出 FM，恢复普通队列") { model.netEasePlayback.exitPersonalFM() }
+                        .accessibilityIdentifier("exitPersonalFM")
+                }
+            }
+            if let failure = model.netEasePlayback.failure { Text(failure).foregroundStyle(.secondary) }
+            if !model.netEasePlayback.actualQuality.isEmpty { Text("实际音质：\(model.netEasePlayback.actualQuality)") }
+            let entries = model.netEasePlayback.displayedEntries
+            if editMode.isEditing {
+                Section("播放顺序") { queueRows(entries[...], canMove: true) }
+            } else if let index = entries.firstIndex(where: { $0.id == model.netEasePlayback.queue.currentID }) {
+                Section("正在播放") { queueRows(entries[index ... index]) }
+                Section("接下来播放") {
+                    let upcoming = entries[(index + 1)...]
+                    if upcoming.isEmpty { Text("暂无待播歌曲").foregroundStyle(.secondary) }
+                    else { queueRows(upcoming) }
+                }
+                if index > entries.startIndex {
+                    Section("之前的歌曲") { queueRows(entries[..<index]) }
+                }
+            } else {
+                Section("播放顺序") { queueRows(entries[...]) }
+            }
+            if !model.netEasePlayback.isPersonalFM {
+                Text("移除正在播放的条目会暂停；其余条目可自由排序。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+            .lyricsQuickSettingsDestination("网易云播放队列", showsEditButton: !model.netEasePlayback.isPersonalFM)
+            .environment(\.editMode, $editMode)
+            .onChange(of: model.netEasePlayback.isPersonalFM) { editMode = .inactive }
+            .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+                Button("好", role: .cancel) { failure = nil }
+            } message: { Text(failure ?? "") }
     }
 
     private func queueRows(_ entries: ArraySlice<NetEaseQueueEntry>, canMove: Bool = false) -> some View {

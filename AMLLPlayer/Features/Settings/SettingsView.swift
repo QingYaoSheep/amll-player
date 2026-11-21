@@ -26,7 +26,7 @@ struct SettingsView: View {
                     SettingsItem(title: "歌词来源与匹配", subtitle: "来源顺序、匹配与时间偏移", symbol: "quote.bubble", color: .indigo)
                 }
             }
-            Section("存储") {
+            Section {
                 NavigationLink { MusicStorageView(model: model) } label: {
                     SettingsItem(title: "存储与缓存", subtitle: "管理歌词、封面与音译缓存", symbol: "internaldrive", color: .orange)
                 }
@@ -37,6 +37,8 @@ struct SettingsView: View {
                 }
                 .disabled(exportingSettings)
                 .accessibilityIdentifier("exportAllSettings")
+            } header: {
+                Text("存储")
             } footer: {
                 Text("导出包含外观、播放偏好、歌词匹配与偏移、读音纠错和封面层级调校。")
             }

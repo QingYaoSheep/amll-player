@@ -22,6 +22,7 @@ struct NetEaseRoomView: View {
     @State private var chatActions: NetEaseFriendRoomActions
     @State private var duetConversation: DuetConversation?
     @State private var showingGroupChat = false
+    @State private var didOpenRequestedChat = false
     @State private var pickingSong = false
     @State private var changingNotifications = false
 
@@ -88,13 +89,17 @@ struct NetEaseRoomView: View {
             .disabled(playback.roomBusy)
             .refreshable { await perform { try await playback.refreshListeningRoom() } }
             .task {
-                if opensChat, let room = playback.listeningRoom { openChat(room) }
+                if opensChat, !didOpenRequestedChat, let room = playback.listeningRoom {
+                    didOpenRequestedChat = true
+                    openChat(room)
+                }
                 await activity.refreshAuthorization()
                 if playback.listeningRoom == nil { await perform { try await playback.refreshListeningRoom() } }
             }
             .navigationDestination(isPresented: $showingGroupChat) {
                 if let room = playback.listeningRoom, room.kind == .group {
                     NetEaseRoomChat(playback: playback, room: room, account: model.netEaseSession.profile?.id)
+                        .id(room.id)
                 }
             }
             .confirmationDialog("离开当前房间并加入新房间？", isPresented: $confirmingSwitch, titleVisibility: .visible) {
@@ -428,7 +433,7 @@ private struct NetEaseRoomChat: View {
         .safeAreaInset(edge: .bottom) {
             HStack {
                 TextField("消息", text: $text, axis: .vertical).textFieldStyle(.roundedBorder)
-                Button("发送") { Task { await send() } }
+                Button(sending ? "发送中…" : "发送") { Task { await send() } }
                     .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.utf16.count > 100)
             }
             .padding()

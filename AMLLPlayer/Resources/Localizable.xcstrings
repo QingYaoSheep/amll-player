@@ -15,6 +15,7 @@
     "quickSettings.more" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"More"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"更多"}}}},
     "quickSettings.hdr" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"HDR highlights"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"HDR 高光"}}}},
     "quickSettings.background" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Background"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"背景模式"}}}},
+    "quickSettings.back" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Back to quick settings"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"返回快捷设置"}}}},
     "quickSettings.queue" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Play queue"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"播放队列"}}}},
     "quickSettings.shuffle" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Shuffle"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"随机播放"}}}},
     "quickSettings.repeat" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Repeat"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"循环模式"}}}},

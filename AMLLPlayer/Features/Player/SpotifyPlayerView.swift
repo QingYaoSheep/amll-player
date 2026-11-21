@@ -319,6 +319,7 @@ private struct DeviceSummaryView: View {
 struct DevicePickerView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.lyricsQuickSettingsNavigation) private var quickSettingsNavigation
 
     var body: some View {
         NavigationStack {
@@ -341,7 +342,7 @@ struct DevicePickerView: View {
                                 Button {
                                     Task {
                                         await model.transferPlayback(to: device.id)
-                                        dismiss()
+                                        close()
                                     }
                                 } label: {
                                     HStack {
@@ -354,7 +355,8 @@ struct DevicePickerView: View {
                                         Spacer()
                                         if device.isActive {
                                             Image(systemName: "checkmark.circle.fill")
-                                                .foregroundStyle(.green)
+                                                .foregroundStyle(quickSettingsNavigation == nil ? .green : MusicProductStyle.accent)
+                                                .accessibilityLabel("Active device")
                                         }
                                         if device.isRestricted {
                                             Image(systemName: "lock.fill")
@@ -380,11 +382,19 @@ struct DevicePickerView: View {
                 }
             }
             .navigationTitle("player.devices")
+            .lyricsQuickSettingsDestination()
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("common.done") { dismiss() }
+                if quickSettingsNavigation == nil {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("common.done", action: close)
+                    }
                 }
             }
         }
+    }
+
+    private func close() {
+        if let quickSettingsNavigation { quickSettingsNavigation.close() }
+        else { dismiss() }
     }
 }

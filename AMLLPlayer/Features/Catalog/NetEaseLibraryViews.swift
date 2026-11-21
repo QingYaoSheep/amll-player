@@ -118,6 +118,7 @@ struct NetEasePlaylistEditor: View {
 struct NetEaseQueueView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.lyricsQuickSettingsNavigation) private var quickSettingsNavigation
     @State private var failure: String?
     var body: some View {
         if model.netEasePlayback.isListeningTogether {
@@ -139,28 +140,58 @@ struct NetEaseQueueView: View {
                 }
                 if let failure = model.netEasePlayback.failure { Text(failure).foregroundStyle(.secondary) }
                 if !model.netEasePlayback.actualQuality.isEmpty { Text("实际音质：\(model.netEasePlayback.actualQuality)") }
-                ForEach(model.netEasePlayback.displayedEntries) { entry in
-                    Button {
-                        Task { do { try await model.netEasePlayback.selectEntry(entry.id) } catch { failure = error.localizedDescription } }
-                    } label: {
-                        HStack {
-                            if entry.id == model.netEasePlayback.queue.currentID { Image(systemName: "speaker.wave.2") }
-                            VStack(alignment: .leading) { Text(entry.item.name); Text(entry.item.subtitle).font(.caption).foregroundStyle(.secondary) }
-                        }
+                if let current = model.netEasePlayback.currentEntry {
+                    Section("正在播放") {
+                        queueRow(current)
                     }
                 }
-                .onDelete { model.netEasePlayback.removeDisplayed(at: $0) }
-                .onMove { model.netEasePlayback.move(from: $0, to: $1) }
-                .deleteDisabled(model.netEasePlayback.isPersonalFM)
-                .moveDisabled(model.netEasePlayback.isPersonalFM)
-                if !model.netEasePlayback.isPersonalFM { Text("移除正在播放的条目会暂停；其余条目可自由排序。").font(.footnote).foregroundStyle(.secondary) }
-            }.navigationTitle("网易云播放队列")
-                .toolbar { if !model.netEasePlayback.isPersonalFM { EditButton() }; Button("完成") { dismiss() } }
+                Section {
+                    ForEach(model.netEasePlayback.displayedEntries) { entry in
+                        Button {
+                            Task { do { try await model.netEasePlayback.selectEntry(entry.id) } catch { failure = error.localizedDescription } }
+                        } label: {
+                            queueRow(entry)
+                        }
+                    }
+                    .onDelete { model.netEasePlayback.removeDisplayed(at: $0) }
+                    .onMove { model.netEasePlayback.move(from: $0, to: $1) }
+                    .deleteDisabled(model.netEasePlayback.isPersonalFM)
+                    .moveDisabled(model.netEasePlayback.isPersonalFM)
+                } header: {
+                    Text("播放顺序")
+                } footer: {
+                    if !model.netEasePlayback.isPersonalFM { Text("移除正在播放的条目会暂停；其余条目可自由排序。") }
+                }
+            }
+                .navigationTitle("网易云播放队列")
+                .lyricsQuickSettingsDestination()
+                .toolbar {
+                    if !model.netEasePlayback.isPersonalFM { EditButton() }
+                    if quickSettingsNavigation == nil { Button("完成") { dismiss() } }
+                }
                 .alert("播放未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                     Button("好", role: .cancel) { failure = nil }
                 } message: { Text(failure ?? "") }
           }
         }
+    }
+
+    private func queueRow(_ entry: NetEaseQueueEntry) -> some View {
+        let current = entry.id == model.netEasePlayback.queue.currentID
+        return HStack(spacing: 12) {
+            CatalogArtwork(url: entry.item.artworkURL, size: 40).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.item.name).font(.subheadline.weight(current ? .semibold : .regular))
+                Text(entry.item.subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if current {
+                Image(systemName: "waveform").foregroundStyle(MusicProductStyle.accent)
+                    .accessibilityLabel("正在播放")
+            }
+        }
+        .frame(minHeight: 44, alignment: .leading)
+        .foregroundStyle(.primary)
     }
 }
 

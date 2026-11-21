@@ -33,6 +33,7 @@ final class MusicCatalogDesignUITests: XCTestCase {
         capsule.tap()
         let chat = app.buttons["netEaseDuetChat"]
         XCTAssertTrue(chat.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["backLyricsQuickSettingsDestination"].exists)
         XCTAssertTrue(app.buttons["netEaseRoomAddSong"].exists)
         capture(app, "NetEase-room-detail")
         chat.tap()
@@ -45,6 +46,8 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertTrue(song.waitForExistence(timeout: 5))
         song.tap()
         XCTAssertTrue(app.staticTexts["你添加了《Fixture Song》"].firstMatch.waitForExistence(timeout: 8))
+        app.buttons["closeLyricsQuickSettingsDestination"].tap()
+        XCTAssertTrue(capsule.waitForExistence(timeout: 5))
     }
 
     @MainActor func testNetEaseFriendsOpensPrivateConversationAndSharesTheCurrentSong() {

@@ -305,19 +305,28 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             let appearance = app.buttons["quickSettingsRoute.appearance"]
             reveal(appearance, in: app)
             XCTAssertTrue(appearance.isHittable)
+            let primaryHandleY = app.descendants(matching: .any)["lyricsQuickSettingsHandle"].firstMatch.frame.minY
+            let appearanceY = appearance.frame.minY
             appearance.tap()
             XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForExistence(timeout: 4))
+            XCTAssertLessThan(app.descendants(matching: .any)["lyricsQuickSettingsHandle"].firstMatch.frame.minY, primaryHandleY)
             XCTAssertFalse(panel(app).exists)
-            app.buttons["closeLyricsQuickSettingsDestination"].tap()
+            app.buttons["backLyricsQuickSettingsDestination"].tap()
             XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForNonExistence(timeout: 4))
-            app.buttons["lyricsDisplayOptions"].tap()
+            XCTAssertTrue(panel(app).waitForExistence(timeout: 4))
+            XCTAssertTrue(appearance.isHittable, "Returning must restore the visible route in the original scroll position.")
+            XCTAssertEqual(appearance.frame.minY, appearanceY, accuracy: 3)
             let search = app.buttons["quickSettingsRoute.lyricsSearch"]
             reveal(search, in: app)
             XCTAssertTrue(search.isHittable)
             search.tap()
-            XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 4))
+            let query = app.textFields["quickSettingsLyricsSearchField"]
+            XCTAssertTrue(query.waitForExistence(timeout: 4))
             XCTAssertFalse(panel(app).exists)
-            app.navigationBars["Find or correct lyrics"].buttons["Done"].tap()
+            query.tap()
+            query.typeText("Fixture")
+            XCTAssertEqual(query.value as? String, "Fixture")
+            app.buttons["closeLyricsQuickSettingsDestination"].tap()
             XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
             app.terminate()
         }
@@ -419,7 +428,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 4))
             XCTAssertTrue(app.staticTexts["Fixture Song"].exists)
             XCTAssertFalse(panel(app).exists)
-            app.navigationBars[title].buttons[service == "netease" ? "完成" : "Done"].tap()
+            app.buttons["closeLyricsQuickSettingsDestination"].tap()
             XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 3))
             app.buttons["lyricsDisplayOptions"].tap()
             reveal(shuffle, in: app)

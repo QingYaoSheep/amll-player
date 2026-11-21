@@ -247,6 +247,7 @@ struct FullscreenLyricsPlayer: View {
         Group {
             if let room {
                 NetEaseRoomCapsule(room: room, activity: model.netEasePlayback.roomActivity,
+                                   focusRevision: quickSettings.roomFocusRevision,
                                    closePlayer: { dismiss() }) {
                     quickSettings.openRoom(reduceMotion: reduceMotion)
                 }

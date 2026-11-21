@@ -253,6 +253,7 @@ struct LyricsAppearanceView: View {
         }
         .navigationTitle("render.settings")
         .navigationBarTitleDisplayMode(.inline)
+        .lyricsQuickSettingsDestination()
         .confirmationDialog("appearance.resetHelp", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("render.reset", role: .destructive) { preferences.restoreAMLLDefaults() }
         }

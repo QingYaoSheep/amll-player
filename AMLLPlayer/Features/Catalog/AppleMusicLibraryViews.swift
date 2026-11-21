@@ -221,17 +221,33 @@ struct AppleMusicPlaybackOptions: View {
 struct AppleMusicQueueView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.lyricsQuickSettingsNavigation) private var quickSettingsNavigation
+
     var body: some View {
         NavigationStack {
             List {
                 if let item = model.playbackSnapshot?.item {
-                    Section("正在播放") { Text(item.title); Text(item.artistLine) }
+                    Section("正在播放") {
+                        HStack(spacing: 12) {
+                            CatalogArtwork(url: item.artworkURL, size: 44).accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.title).font(.headline)
+                                Text(item.artistLine).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "waveform").foregroundStyle(MusicProductStyle.accent)
+                                .accessibilityHidden(true)
+                        }
+                    }
                 }
                 Section { Text("系统 MusicKit 仅提供当前队列条目。外部完整队列请在系统音乐 App 查看；本应用不推测或重排不可读取的队列。") }
                 Link("打开音乐", destination: URL(string: "music://")!)
             }
             .navigationTitle("系统播放队列")
-            .toolbar { Button("common.done") { dismiss() } }
+            .lyricsQuickSettingsDestination()
+            .toolbar {
+                if quickSettingsNavigation == nil { Button("common.done") { dismiss() } }
+            }
         }
     }
 }

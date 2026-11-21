@@ -262,8 +262,10 @@ struct NetEaseRoomCapsule: View {
 
     let room: NetEaseListeningRoom
     let activity: NetEaseRoomActivity
+    var focusRevision = 0
     let closePlayer: () -> Void
     let action: () -> Void
+    @AccessibilityFocusState private var focused: Bool
 
     var body: some View {
         Button(action: action) {
@@ -292,6 +294,8 @@ struct NetEaseRoomCapsule: View {
         .accessibilityIdentifier("netEaseLyricsRoomCapsule")
         .accessibilityHint("打开房间详情")
         .accessibilityValue(room.members.map(\.name).joined(separator: "、"))
+        .accessibilityFocused($focused)
+        .onChange(of: focusRevision) { focused = true }
         .accessibilityAction(named: Text("关闭歌词页"), closePlayer)
         .frame(maxWidth: 420)
         .padding(.horizontal, 16)

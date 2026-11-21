@@ -2,8 +2,7 @@ import Observation
 import SwiftUI
 import UIKit
 
-/// One presentation owner for the floating controls and their destination sheets.
-/// Opening controls does not suspend the lyric or artwork display clocks.
+/// Owns both levels of the docked panel, including its dismissal transition.
 @MainActor @Observable
 final class LyricsQuickSettingsPresentation {
     static let motionAnimation = Animation.spring(response: 0.32, dampingFraction: 0.9)
@@ -13,54 +12,84 @@ final class LyricsQuickSettingsPresentation {
     }
 
     private(set) var isPresented = false
-    var destination: Destination? {
-        didSet { if oldValue != nil, destination == nil { destinationIsDismissing = true } }
-    }
+    private(set) var destination: Destination?
+    private(set) var returnsToSettings = false
     private(set) var focusRevision = 0
+    private(set) var roomFocusRevision = 0
     @ObservationIgnored private var revision = 0
-    private var destinationIsDismissing = false
 
     var suspendsPage: Bool {
-        destination == .devices || destination == .lyricsSearch
+        isPresented && (destination == .devices || destination == .lyricsSearch)
     }
 
     func open(reduceMotion: Bool) {
-        guard destination == nil, !destinationIsDismissing else { return }
+        guard !isPresented else { return }
+        present(nil, reduceMotion: reduceMotion)
+    }
+
+    func show(_ target: Destination, reduceMotion: Bool) {
+        guard isPresented, destination == nil else { return }
         revision += 1
-        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Self.motionAnimation) {
-            isPresented = true
+        returnsToSettings = true
+        withAnimation(reduceMotion ? MusicProductMotion.change : Self.motionAnimation) {
+            destination = target
         }
     }
 
-    func close(reduceMotion: Bool, then target: Destination? = nil) {
+    func back(reduceMotion: Bool) {
+        guard isPresented, destination != nil, returnsToSettings else { return }
         revision += 1
-        let transaction = revision
-        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Self.motionAnimation, completionCriteria: .removed) {
-            isPresented = false
-        } completion: { [weak self] in
-            guard let self, self.revision == transaction else { return }
-            self.destination = target
-            if target == nil { self.focusRevision += 1 }
+        withAnimation(reduceMotion ? MusicProductMotion.change : Self.motionAnimation) {
+            destination = nil
         }
     }
 
     func openRoom(reduceMotion: Bool) {
-        guard destination == nil, !destinationIsDismissing else { return }
-        if isPresented { close(reduceMotion: reduceMotion, then: .listeningRoom) }
-        else { destination = .listeningRoom }
+        guard !isPresented else { return }
+        present(.listeningRoom, reduceMotion: reduceMotion)
     }
 
-    func destinationDidDismiss() {
-        destination = nil
-        destinationIsDismissing = false
-        focusRevision += 1
+    private func present(_ target: Destination?, reduceMotion: Bool) {
+        revision += 1
+        returnsToSettings = false
+        withAnimation(reduceMotion ? MusicProductMotion.change : Self.motionAnimation) {
+            destination = target
+            isPresented = true
+        }
+    }
+
+    func close(reduceMotion: Bool) {
+        guard isPresented else { return }
+        revision += 1
+        let transaction = revision
+        let openedFromRoom = destination == .listeningRoom && !returnsToSettings
+        withAnimation(reduceMotion ? MusicProductMotion.change : Self.motionAnimation, completionCriteria: .removed) {
+            isPresented = false
+        } completion: { [weak self] in
+            guard let self, self.revision == transaction else { return }
+            self.destination = nil
+            self.returnsToSettings = false
+            if openedFromRoom { self.roomFocusRevision += 1 }
+            else { self.focusRevision += 1 }
+        }
     }
 
     func reset() {
         revision += 1
         isPresented = false
         destination = nil
-        destinationIsDismissing = false
+        returnsToSettings = false
+    }
+
+    func navigation(reduceMotion: Bool) -> LyricsQuickSettingsNavigation {
+        let transaction = revision
+        return LyricsQuickSettingsNavigation(
+            back: returnsToSettings ? { [weak self] in self?.back(reduceMotion: reduceMotion) } : nil,
+            close: { [weak self] in
+                guard let self, self.revision == transaction else { return }
+                self.close(reduceMotion: reduceMotion)
+            }
+        )
     }
 }
 
@@ -99,7 +128,8 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
 
     func body(content: Content) -> some View {
         ZStack {
-            content.accessibilityHidden(presentation.isPresented)
+            content.ignoresSafeArea(.keyboard)
+                .accessibilityHidden(presentation.isPresented)
                 .allowsHitTesting(!presentation.isPresented)
             // The modal hit plane is a sibling of the live page. Disabling
             // hit testing on the page before attaching an overlay can also
@@ -117,13 +147,16 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
                                 .accessibilityHidden(true)
                                 .accessibilityIdentifier("lyricsQuickSettingsOutside")
                             let insets = geometry.safeAreaInsets
+                            let available = max(0, geometry.size.height - insets.top - insets.bottom)
                             LyricsQuickSettingsPanel(model: model, presentation: presentation, artworkStatus: artworkStatus,
-                                floating: floatingPanel, screenInsets: insets)
+                                floating: floatingPanel, screenInsets: insets, primaryHeight: available * 0.6)
                                 .frame(width: floatingPanel ? min(560, max(0, geometry.size.width - 40)) : geometry.size.width)
                                 // GeometryReader needs a concrete proposal. A maxHeight
                                 // alone can collapse to the header's intrinsic height,
                                 // leaving the scroll viewport with zero height.
-                                .frame(height: max(0, geometry.size.height - insets.top - insets.bottom) * 0.6)
+                                .frame(height: available * (presentation.destination == nil ? 0.6 : 0.8))
+                                .animation(reduceMotion ? nil : LyricsQuickSettingsPresentation.motionAnimation,
+                                           value: presentation.destination)
                                 .padding(.bottom, floatingPanel ? insets.bottom + 12 : 0)
                                 .transition(reduceMotion ? .opacity : .offset(y: geometry.size.height))
                         }
@@ -135,40 +168,8 @@ struct LyricsQuickSettingsPresenter: ViewModifier {
             // A drag on our floating handle belongs to this panel, not the
             // full-screen player's system zoom dismissal underneath it.
             .interactiveDismissDisabled(presentation.isPresented)
-            .sheet(item: $presentation.destination, onDismiss: { presentation.destinationDidDismiss() }) { target in
-                destination(target)
-            }
             .onChange(of: model.selectedMusicService) { presentation.reset() }
             .onDisappear { presentation.reset() }
-    }
-
-    @ViewBuilder private func destination(_ target: LyricsQuickSettingsPresentation.Destination) -> some View {
-        switch target {
-        case .devices:
-            DevicePickerView(model: model).task { await model.loadDevices() }
-        case .queue:
-            if model.selectedMusicService == .netease { NetEaseQueueView(model: model) }
-            else { AppleMusicQueueView(model: model) }
-        case .listeningRoom:
-            NetEaseRoomView(model: model)
-        case .lyricsSearch:
-            LyricsSearchView(coordinator: model.lyrics)
-        case .appearance:
-            NavigationStack {
-                LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { closeDestination } }
-            }
-        case .lyricsSources:
-            NavigationStack {
-                LyricsSettingsView(coordinator: model.lyrics)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { closeDestination } }
-            }
-        }
-    }
-
-    private var closeDestination: some View {
-        Button("common.done") { presentation.destination = nil }
-            .accessibilityIdentifier("closeLyricsQuickSettingsDestination")
     }
 }
 
@@ -178,15 +179,17 @@ struct LyricsQuickSettingsPanel: View {
     var artworkStatus: String? = nil
     let floating: Bool
     let screenInsets: EdgeInsets
+    let primaryHeight: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var contentHeight: CGFloat = 0
-    @State private var headerHeight: CGFloat = 100
+    @State private var headerHeight: CGFloat = 56
     @State private var drag: CGFloat = 0
     @State private var compositingDiagnosticCopied = false
     @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
     @GestureState private var dragIsActive = false
     @AccessibilityFocusState private var titleFocused: Bool
+    @AccessibilityFocusState private var focusedRoute: LyricsQuickSettingsPresentation.Destination?
 
     private var configuration: LyricsRenderConfiguration { model.renderPreferences.configuration }
     private var canManageLyrics: Bool { model.lyrics.track != nil && model.lyrics.settings.enabled }
@@ -196,31 +199,23 @@ struct LyricsQuickSettingsPanel: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { _ in
             VStack(spacing: 0) {
-                header
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        appearance
-                        typography
-                        playback
-                        globalTiming
-                        lyricActions
-                        more
+                handle
+                ZStack(alignment: .top) {
+                    primaryContent(height: max(0, primaryHeight - 44))
+                        .opacity(presentation.destination == nil ? 1 : 0)
+                        .accessibilityHidden(presentation.destination != nil)
+                        .allowsHitTesting(presentation.destination == nil)
+                    if let target = presentation.destination {
+                        destination(target)
+                            .environment(\.lyricsQuickSettingsNavigation, presentation.navigation(reduceMotion: reduceMotion))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity)
+                            .zIndex(1)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
                 }
-                .scrollIndicators(.hidden)
-                .accessibilityIdentifier("lyricsQuickSettingsScroll")
-                // Bootstrap with the available viewport, so lazy contents can
-                // become visible before their first measurement arrives.
-                .frame(height: max(0, min(contentHeight > 0 ? contentHeight : geometry.size.height,
-                                          geometry.size.height - headerHeight)))
+                .animation(MusicProductMotion.change, value: presentation.destination)
             }
             .frame(maxWidth: .infinity)
             // Extend the surface while leaving the scroll viewport and its
@@ -237,7 +232,11 @@ struct LyricsQuickSettingsPanel: View {
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
-        .onAppear { titleFocused = true }
+        .onAppear { if presentation.destination == nil { titleFocused = true } }
+        .onChange(of: presentation.destination) { old, new in
+            if new == nil, presentation.isPresented { focusedRoute = old }
+            else { focusedRoute = nil }
+        }
         .onChange(of: dragIsActive) { _, active in
             // onEnded is not called for a system-cancelled gesture. Gesture
             // activity resets on cancellation, but the released offset must
@@ -247,10 +246,54 @@ struct LyricsQuickSettingsPanel: View {
         .accessibilityAction(.escape) { presentation.close(reduceMotion: reduceMotion) }
     }
 
-    private var header: some View {
+    private func primaryContent(height: CGFloat) -> some View {
         VStack(spacing: 0) {
-            Capsule().fill(.white.opacity(0.45)).frame(width: 36, height: 5)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            primaryHeader
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    appearance
+                    typography
+                    playback
+                    globalTiming
+                    lyricActions
+                    more
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
+            }
+            .scrollIndicators(.hidden)
+            .accessibilityIdentifier("lyricsQuickSettingsScroll")
+            .frame(height: max(0, min(contentHeight > 0 ? contentHeight : height, height - headerHeight)))
+        }
+    }
+
+    @ViewBuilder private func destination(_ target: LyricsQuickSettingsPresentation.Destination) -> some View {
+        switch target {
+        case .devices:
+            DevicePickerView(model: model).task { await model.loadDevices() }
+        case .queue:
+            if model.selectedMusicService == .netease { NetEaseQueueView(model: model) }
+            else { AppleMusicQueueView(model: model) }
+        case .listeningRoom:
+            NetEaseRoomView(model: model)
+        case .lyricsSearch:
+            LyricsSearchView(coordinator: model.lyrics)
+        case .appearance:
+            NavigationStack {
+                LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics)
+            }
+        case .lyricsSources:
+            NavigationStack { LyricsSettingsView(coordinator: model.lyrics) }
+        }
+    }
+
+    private var handle: some View {
+        Capsule().fill(.white.opacity(0.45)).frame(width: 36, height: 5)
+                .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
                 .contentShape(Rectangle())
                 .accessibilityElement()
                 .accessibilityLabel(Text("quickSettings.closeHint"))
@@ -281,22 +324,24 @@ struct LyricsQuickSettingsPanel: View {
                             returnToRest()
                         }
                     })
-            HStack {
-                Text("quickSettings.title").font(.title3.bold())
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("lyricsQuickSettingsPanel")
-                    .accessibilityFocused($titleFocused)
-                Spacer()
-                Button { presentation.close(reduceMotion: reduceMotion) } label: {
-                    Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 44, height: 44)
-                }
-                .buttonStyle(MusicContentButtonStyle())
-                .accessibilityLabel(Text("common.done"))
-                .accessibilityIdentifier("closeLyricsQuickSettings")
+    }
+
+    private var primaryHeader: some View {
+        HStack {
+            Text("quickSettings.title").font(.title3.bold())
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("lyricsQuickSettingsPanel")
+                .accessibilityFocused($titleFocused)
+            Spacer()
+            Button { presentation.close(reduceMotion: reduceMotion) } label: {
+                Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 44, height: 44)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 12)
+            .buttonStyle(MusicContentButtonStyle())
+            .accessibilityLabel(Text("common.done"))
+            .accessibilityIdentifier("closeLyricsQuickSettings")
         }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
     }
 
     private func returnToRest() {
@@ -495,8 +540,9 @@ struct LyricsQuickSettingsPanel: View {
 
     private func route(_ title: LocalizedStringKey, symbol: String, to target: LyricsQuickSettingsPresentation.Destination) -> some View {
         action(title, symbol: symbol, indicator: "chevron.forward") {
-            presentation.close(reduceMotion: reduceMotion, then: target)
+            presentation.show(target, reduceMotion: reduceMotion)
         }
+        .accessibilityFocused($focusedRoute, equals: target)
         .accessibilityIdentifier("quickSettingsRoute." + target.rawValue)
     }
 
@@ -527,6 +573,55 @@ struct LyricsQuickSettingsPanel: View {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).accessibilityAddTraits(.isHeader)
             content()
         }.font(.subheadline).buttonStyle(.plain).tint(MusicProductStyle.accent)
+    }
+}
+
+/// Navigation chrome applied only to the root of an embedded destination.
+/// Pushed views keep their own back button and toolbar.
+struct LyricsQuickSettingsNavigation {
+    let back: (() -> Void)?
+    let close: () -> Void
+}
+
+extension EnvironmentValues {
+    @Entry var lyricsQuickSettingsNavigation: LyricsQuickSettingsNavigation? = nil
+}
+
+extension View {
+    func lyricsQuickSettingsDestination() -> some View {
+        modifier(LyricsQuickSettingsDestinationChrome())
+    }
+}
+
+private struct LyricsQuickSettingsDestinationChrome: ViewModifier {
+    @Environment(\.lyricsQuickSettingsNavigation) private var navigation
+
+    func body(content: Content) -> some View {
+        if let navigation {
+            content
+                .scrollContentBackground(.hidden)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .tint(MusicProductStyle.accent)
+                .toolbar {
+                    if let back = navigation.back {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("quickSettings.back", systemImage: "chevron.backward", action: back)
+                                .labelStyle(.iconOnly)
+                                .tint(.primary)
+                                .accessibilityIdentifier("backLyricsQuickSettingsDestination")
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("common.done", systemImage: "xmark", action: navigation.close)
+                            .labelStyle(.iconOnly)
+                            .tint(.primary)
+                            .accessibilityIdentifier("closeLyricsQuickSettingsDestination")
+                    }
+                }
+        } else {
+            content
+        }
     }
 }
 
@@ -563,7 +658,7 @@ private struct QuickSettingsRepeatMenu: View, Equatable {
     }
 }
 
-private struct QuickSettingsControlLabel: View {
+struct QuickSettingsControlLabel: View {
     let title: LocalizedStringKey
     let symbol: String
     var detail: String? = nil
@@ -571,6 +666,7 @@ private struct QuickSettingsControlLabel: View {
     var selected = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -591,8 +687,9 @@ private struct QuickSettingsControlLabel: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-        .foregroundStyle(.white)
-        .background(reduceTransparency ? Color(uiColor: .tertiarySystemBackground) : .white.opacity(0.09), in: shape)
+        .foregroundStyle(.primary)
+        .background(reduceTransparency ? Color(uiColor: .secondarySystemBackground) :
+            colorScheme == .dark ? .white.opacity(0.09) : Color(uiColor: .tertiarySystemFill), in: shape)
         .background { if selected { shape.fill(MusicProductStyle.filledAccent.opacity(0.24)) } }
         .overlay { shape.strokeBorder(selected ? MusicProductStyle.accent.opacity(0.7) : .white.opacity(0.08)) }
         .contentShape(shape)

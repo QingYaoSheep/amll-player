@@ -124,6 +124,7 @@ private struct LyricDiagnosticRow: View {
 struct LyricsSearchView: View {
     @Bindable var coordinator: LyricsCoordinator
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.lyricsQuickSettingsNavigation) private var quickSettingsNavigation
     @State private var query = ""
     @State private var selected: LyricCandidate?
     var body: some View {
@@ -155,19 +156,62 @@ struct LyricsSearchView: View {
                 }
             }
             .navigationTitle("lyrics.find")
-            .searchable(text: $query, prompt: "lyrics.search.prompt")
+            .modifier(LyricsSearchField(query: $query, inline: quickSettingsNavigation != nil))
+            .lyricsQuickSettingsDestination()
             .task(id: query) {
                 coordinator.cancelSearch()
                 do { try await Task.sleep(for: .milliseconds(350)); try Task.checkCancellation(); coordinator.search(query) }
                 catch {}
             }
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("common.done") { dismiss() }.keyboardShortcut(.cancelAction) } }
+            .toolbar {
+                if quickSettingsNavigation == nil {
+                    ToolbarItem(placement: .cancellationAction) { Button("common.done", action: close).keyboardShortcut(.cancelAction) }
+                }
+            }
             .sheet(item: $selected) { candidate in
-                LyricsPreviewView(coordinator: coordinator, candidate: candidate, onApply: { dismiss() })
+                LyricsPreviewView(coordinator: coordinator, candidate: candidate, onApply: close)
             }
         }
         .onDisappear { coordinator.cancelSearch() }
-        .onChange(of: coordinator.track?.spotifyID) { _, _ in dismiss() }
+        .onChange(of: coordinator.track?.spotifyID) { _, _ in close() }
+    }
+
+    private func close() {
+        if let quickSettingsNavigation { quickSettingsNavigation.close() }
+        else { dismiss() }
+    }
+}
+
+private struct LyricsSearchField: ViewModifier {
+    @Binding var query: String
+    let inline: Bool
+
+    func body(content: Content) -> some View {
+        if inline {
+            content
+                .scrollDismissesKeyboard(.interactively)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
+                        TextField("lyrics.search.prompt", text: $query)
+                            .submitLabel(.search)
+                            .accessibilityIdentifier("quickSettingsLyricsSearchField")
+                        if !query.isEmpty {
+                            Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
+                                .labelStyle(.iconOnly)
+                                .frame(width: 44, height: 44)
+                                .buttonStyle(MusicContentButtonStyle())
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 13))
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+                }
+        } else {
+            content.searchable(text: $query, prompt: "lyrics.search.prompt")
+        }
     }
 }
 
@@ -244,6 +288,7 @@ struct LyricsSettingsView: View {
             }
         }
         .navigationTitle("lyrics.settings")
+        .lyricsQuickSettingsDestination()
         .toolbar { EditButton() }
         .onAppear { draft = coordinator.settings }
         .onChange(of: draft) { _, value in coordinator.updateSettings(value) }

@@ -18,7 +18,10 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [bannerGone], timeout: 8), .completed)
         XCTAssertGreaterThanOrEqual(capsule.frame.height, 44)
         XCTAssertTrue((capsule.value as? String)?.contains("Fixture Friend") == true)
-        XCTAssertTrue(capsule.isHittable, "The room capsule must receive a tap outside the status bar")
+        let capsuleHittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"),
+                                                        object: capsule)
+        XCTAssertEqual(XCTWaiter.wait(for: [capsuleHittable], timeout: 4), .completed,
+                       "The room capsule must receive a tap outside the status bar")
         if app.frame.width < 550, app.frame.height > app.frame.width {
             XCTAssertGreaterThanOrEqual(capsule.frame.minY, 64, "Keep the room capsule below the Dynamic Island")
         }

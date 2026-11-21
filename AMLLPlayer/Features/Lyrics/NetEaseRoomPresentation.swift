@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -38,6 +39,8 @@ import UserNotifications
     private weak var mainWindow: UIWindow?
     private var window: BannerWindow?
     private var routeTask: Task<Void, Never>?
+    private var hideTask: Task<Void, Never>?
+    private var bannerObservationID = UUID()
 
     fileprivate func attach(to anchor: UIView, model: AppModel) {
         guard let mainWindow = anchor.window, let scene = mainWindow.windowScene else { return }
@@ -53,8 +56,9 @@ import UserNotifications
         window.rootViewController = host
         window.backgroundColor = .clear
         window.windowLevel = .normal + 1
-        window.isHidden = false
         self.window = window
+        bannerObservationID = UUID()
+        observeBanner(model.netEasePlayback.roomActivity, id: bannerObservationID)
     }
 
     fileprivate func detach(from anchor: UIView) {
@@ -63,7 +67,29 @@ import UserNotifications
         mainWindow = nil
         window?.isHidden = true
         window = nil
+        bannerObservationID = UUID()
+        hideTask?.cancel()
         routeTask?.cancel()
+    }
+
+    private func observeBanner(_ activity: NetEaseRoomActivity, id: UUID) {
+        guard id == bannerObservationID, let window else { return }
+        let visible = withObservationTracking { activity.banner != nil } onChange: { [weak self, weak activity] in
+            Task { @MainActor in
+                if let activity { self?.observeBanner(activity, id: id) }
+            }
+        }
+        hideTask?.cancel()
+        if visible {
+            window.isHidden = false
+        } else if !window.isHidden {
+            window.bannerFrame = .null
+            // Let the exit transition finish, then give the player its window back.
+            hideTask = Task { [weak window] in
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                window?.isHidden = true
+            }
+        }
     }
 
     func open(_ destination: NetEaseRoomDestination, model: AppModel) {
@@ -206,10 +232,11 @@ struct NetEaseRoomGlass<Surface: Shape>: ViewModifier {
 
 struct NetEaseRoomDurationLabel: View {
     let activity: NetEaseRoomActivity
+    @State private var tickOrigin = Date()
 
     var body: some View {
         if activity.isTiming {
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
+            TimelineView(.periodic(from: tickOrigin, by: 1)) { _ in
                 duration(activity.elapsed())
             }
         } else {

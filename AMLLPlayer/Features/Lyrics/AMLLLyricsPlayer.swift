@@ -43,8 +43,15 @@ struct AMLLLyricsPlayer: View {
     }
 
     var body: some View {
+        GeometryReader { safeArea in
+            playerPage(roomSafeTop: max(safeArea.safeAreaInsets.top, safeArea.frame(in: .global).minY))
+        }
+    }
+
+    private func playerPage(roomSafeTop: CGFloat) -> some View {
         GeometryReader { geometry in
-            let metrics = AppleMusicLyricsLayoutMetrics.responsive(in: geometry.size)
+            let room = model.selectedMusicService == .netease ? model.netEasePlayback.listeningRoom : nil
+            let metrics = pageMetrics(size: geometry.size, roomIsActive: room != nil, roomSafeTop: roomSafeTop)
             let drag = dismissalTransform(height: geometry.size.height)
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
             let canvasLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom, retainingHidden: true)
@@ -53,7 +60,7 @@ struct AMLLLyricsPlayer: View {
                 ZStack {
                     Color(white: 0.08)
                     if let item = model.playbackSnapshot?.item {
-                        mediaBackdrop(item, layout: lyricLayout, immersive: immersive, size: geometry.size)
+                        mediaBackdrop(item, layout: lyricLayout, immersive: immersive, size: geometry.size, metrics: metrics)
                     }
                 }
                 // A stable sibling, not an overlay whose identity inherits
@@ -90,7 +97,7 @@ struct AMLLLyricsPlayer: View {
             .scaleEffect(drag.scale)
             .offset(y: drag.offset)
             .opacity(immersive ? 1 : drag.opacity)
-            .overlay(alignment: .top) { dismissalHandle(metrics: metrics) }
+            .overlay(alignment: .top) { dismissalHandle(metrics: metrics, room: room) }
             .overlay(alignment: .topTrailing) {
                 if artworkDebug.showsButton, let item = model.playbackSnapshot?.item,
                    lyricLayout != nil || mountsImmersiveArtwork(item, size: geometry.size) {
@@ -468,9 +475,21 @@ struct AMLLLyricsPlayer: View {
             currentTrack: artworkLoader.trackID == model.playbackSnapshot?.item?.uri, hasURL: artworkLoader.playbackURL != nil)
     }
 
-    private func mediaBackdrop(_ item: PlaybackItem, layout: ImmersiveLyricsLayout?, immersive: Bool, size: CGSize) -> some View {
+    private func pageMetrics(size: CGSize, roomIsActive: Bool, roomSafeTop: CGFloat) -> AppleMusicLyricsLayoutMetrics {
+        var metrics = AppleMusicLyricsLayoutMetrics.responsive(in: size)
+        if roomIsActive, UIDevice.current.userInterfaceIdiom == .phone, size.height > size.width {
+            let top = max(56, roomSafeTop) + NetEaseRoomCapsule.safeAreaSpacing
+            let coverTop = top + NetEaseRoomCapsule.minimumHeight + NetEaseRoomCapsule.safeAreaSpacing
+            metrics.handleTop = top + 20
+            metrics.compactArtworkTop = max(metrics.compactArtworkTop, coverTop)
+            metrics.expandedArtworkTop = max(metrics.expandedArtworkTop, coverTop)
+        }
+        return metrics
+    }
+
+    private func mediaBackdrop(_ item: PlaybackItem, layout: ImmersiveLyricsLayout?, immersive: Bool, size: CGSize,
+                               metrics: AppleMusicLyricsLayoutMetrics) -> some View {
         let canKeepVideo = immersiveLyricsHasVideo
-        let metrics = AppleMusicLyricsLayoutMetrics.responsive(in: size)
         let inlineFrame: CGRect
         if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
             inlineFrame = artworkFrame ?? CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -677,9 +696,9 @@ struct AMLLLyricsPlayer: View {
         }
     }
 
-    private func dismissalHandle(metrics: AppleMusicLyricsLayoutMetrics) -> some View {
+    private func dismissalHandle(metrics: AppleMusicLyricsLayoutMetrics, room: NetEaseListeningRoom?) -> some View {
         Group {
-            if model.selectedMusicService == .netease, let room = model.netEasePlayback.listeningRoom {
+            if let room {
                 NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds,
                                    closePlayer: { dismiss() }) {
                     quickSettings.openRoom(reduceMotion: reduceMotion)

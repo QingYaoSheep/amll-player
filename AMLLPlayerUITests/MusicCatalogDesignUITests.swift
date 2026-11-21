@@ -19,6 +19,9 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(capsule.frame.height, 44)
         XCTAssertTrue((capsule.value as? String)?.contains("Fixture Friend") == true)
         XCTAssertTrue(capsule.isHittable, "The room capsule must receive a tap outside the status bar")
+        if app.frame.width < 550, app.frame.height > app.frame.width {
+            XCTAssertGreaterThanOrEqual(capsule.frame.minY, 64, "Keep the room capsule below the Dynamic Island")
+        }
         capture(app, "NetEase-lyrics-room-capsule")
         capsule.tap()
         let chat = app.buttons["netEaseDuetChat"]

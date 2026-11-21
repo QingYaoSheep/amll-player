@@ -68,8 +68,20 @@ struct FullscreenLyricsPlayer: View {
     }
 
     var body: some View {
+        GeometryReader { safeArea in
+            playerPage(roomSafeTop: max(safeArea.safeAreaInsets.top, safeArea.frame(in: .global).minY))
+        }
+    }
+
+    private func playerPage(roomSafeTop: CGFloat) -> some View {
         NavigationStack {
             GeometryReader { geometry in
+                let room = model.selectedMusicService == .netease ? model.netEasePlayback.listeningRoom : nil
+                let roomTopPadding: CGFloat = room != nil && UIDevice.current.userInterfaceIdiom == .phone
+                    && geometry.size.height > geometry.size.width
+                    ? max(NetEaseRoomCapsule.safeAreaSpacing,
+                          max(56, roomSafeTop) + NetEaseRoomCapsule.safeAreaSpacing - geometry.frame(in: .global).minY)
+                    : 0
                 let source = immersiveArtworkSource.forTrack(model.playbackSnapshot?.item?.uri)
                 let layout = ImmersiveLyricsLayout.isEnabled(configuration, isPhone: UIDevice.current.userInterfaceIdiom == .phone,
                     viewport: geometry.size) ? ImmersiveLyricsLayout.resolve(viewport: geometry.size,
@@ -91,7 +103,7 @@ struct FullscreenLyricsPlayer: View {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         let columns = geometry.size.width >= 700 || (geometry.size.width > geometry.size.height && geometry.size.width >= 550)
                         VStack(spacing: layout == nil ? 8 : 0) {
-                            dismissalHandle
+                            dismissalHandle(room: room).padding(.top, roomTopPadding)
                             if columns {
                                 HStack(spacing: 24) {
                                     ScrollView {
@@ -105,7 +117,8 @@ struct FullscreenLyricsPlayer: View {
                                 }
                                 .padding(.horizontal, 24)
                             } else {
-                                phoneLyrics(snapshot: snapshot, item: item, size: geometry.size, layout: layout)
+                                phoneLyrics(snapshot: snapshot, item: item, size: geometry.size, layout: layout,
+                                            headerInset: 44 + roomTopPadding)
                             }
                         }
                         .padding(.bottom, configuration.showControls && !columns && layout == nil ? phoneControlsHeight + 8 : 0)
@@ -189,10 +202,10 @@ struct FullscreenLyricsPlayer: View {
     }
 
     private func phoneLyrics(snapshot: PlaybackSnapshot, item: PlaybackItem, size: CGSize,
-                             layout: ImmersiveLyricsLayout?) -> some View {
+                             layout: ImmersiveLyricsLayout?, headerInset: CGFloat) -> some View {
         GeometryReader { available in
             let headerHeight = min(size.height * 0.38, configuration.coverLayout == .normal ? 290 : 180)
-            let viewport = layout.map { CGRect(x: $0.lyrics.minX, y: max(0, $0.lyrics.minY - 44),
+            let viewport = layout.map { CGRect(x: $0.lyrics.minX, y: max(0, $0.lyrics.minY - headerInset),
                 width: $0.lyrics.width, height: $0.lyrics.height) }
                 ?? CGRect(x: 0, y: headerHeight + 8, width: available.size.width,
                     height: max(1, available.size.height - headerHeight - 8))
@@ -218,7 +231,7 @@ struct FullscreenLyricsPlayer: View {
                     }
                     .frame(width: layout?.information.width ?? available.size.width)
                     .frame(height: layout?.information.height ?? headerHeight, alignment: .topLeading)
-                    .offset(x: layout?.information.minX ?? 0, y: max(0, (layout?.information.minY ?? 44) - 44))
+                    .offset(x: layout?.information.minX ?? 0, y: max(0, (layout?.information.minY ?? headerInset) - headerInset))
                     .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.information)
                     .animation(LyricsPageMotion.content, value: layout != nil)
                 }
@@ -230,9 +243,9 @@ struct FullscreenLyricsPlayer: View {
         }
     }
 
-    private var dismissalHandle: some View {
+    private func dismissalHandle(room: NetEaseListeningRoom?) -> some View {
         Group {
-            if model.selectedMusicService == .netease, let room = model.netEasePlayback.listeningRoom {
+            if let room {
                 NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds,
                                    closePlayer: { dismiss() }) {
                     quickSettings.openRoom(reduceMotion: reduceMotion)

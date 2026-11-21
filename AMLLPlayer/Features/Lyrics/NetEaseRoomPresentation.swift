@@ -216,6 +216,9 @@ struct NetEaseRoomDurationLabel: View {
 }
 
 struct NetEaseRoomCapsule: View {
+    static let minimumHeight: CGFloat = 44
+    static let safeAreaSpacing: CGFloat = 8
+
     let room: NetEaseListeningRoom
     let seconds: Int
     let closePlayer: () -> Void
@@ -239,7 +242,7 @@ struct NetEaseRoomCapsule: View {
                 Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
                     .accessibilityHidden(true)
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: Self.minimumHeight)
             .padding(.horizontal, 12)
             .modifier(NetEaseRoomGlass(shape: Capsule(), interactive: true))
             .contentShape(Capsule())

@@ -35,7 +35,7 @@ struct SettingsView: View {
             }
             Section {
                 NavigationLink { MusicStorageView(model: model) } label: {
-                    SettingsItem(title: "存储与缓存", subtitle: "管理歌词、封面与音译缓存", symbol: "internaldrive", color: .orange)
+                    SettingsItem(title: "存储与缓存", subtitle: "查看缓存用量，清理歌词、封面或音译缓存", symbol: "internaldrive", color: .orange)
                 }
                 Button {
                     Task { await exportSettings() }
@@ -47,11 +47,11 @@ struct SettingsView: View {
             } header: {
                 Text("存储")
             } footer: {
-                Text("导出包含外观、播放偏好、触感反馈、歌词匹配与偏移、读音纠错和封面层级调校。")
+                Text("导出包含外观和播放偏好（含触感反馈），也会保存歌词匹配及偏移、读音纠错和封面层级设置。")
             }
             Section("支持") {
                 NavigationLink { MusicHelpView(model: model) } label: {
-                    SettingsItem(title: "帮助与故障排查", subtitle: "使用说明与连接检查", symbol: "questionmark.circle", color: .blue)
+                    SettingsItem(title: "帮助与故障排查", subtitle: "查看使用说明或检查连接", symbol: "questionmark.circle", color: .blue)
                 }
                 NavigationLink { MusicAboutView() } label: {
                     SettingsItem(title: "关于 AMLL", subtitle: "版本、更新记录与开源许可", symbol: "info.circle", color: .gray)
@@ -187,7 +187,7 @@ struct MusicStorageView: View {
                 Button("清理生成音译缓存", role: .destructive) { clearing = "roman" }
                 Button("清理浏览封面缓存", role: .destructive) { clearing = "images" }
             } footer: {
-                Text("仅删除可重新获取的内容。保留登录、歌单、读音纠错、人工匹配和逐曲偏移；正在显示的内容可能保留至下次加载。")
+                Text("只清理可以重新获取的内容。保留登录、歌单、读音纠错、人工匹配和逐曲偏移。正在显示的内容可能会留到下次加载。")
             }
             if let failure { Section { Text(failure).foregroundStyle(.secondary) } }
         }
@@ -239,7 +239,7 @@ struct MusicHelpView: View {
                 NavigationLink("Spotify 配置帮助") { SpotifyLoginView(model: model) }
                 NavigationLink("歌词获取与匹配") { LyricsSettingsView(coordinator: model.lyrics) }
                 NavigationLink("播放跳转诊断") { PlaybackSeekDiagnosticsView() }
-                Text("连接失败时先检查网络，再返回服务页面重新检查。技术详情可展开查看；诊断不要包含 Cookie、令牌或临时播放地址。")
+                Text("连接失败时，先检查网络，再回到对应服务的页面重试。可展开查看技术详情。分享诊断时请勿附上 Cookie、令牌或临时播放地址。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             #if DEBUG
@@ -255,7 +255,7 @@ struct MusicAboutView: View {
         Form {
             Section {
                 Label("AMLL", systemImage: "music.note").font(.title2.bold())
-                Text("发现音乐，跟随歌词。").foregroundStyle(.secondary)
+                Text("浏览音乐，播放时查看同步歌词。").foregroundStyle(.secondary)
                 LabeledContent("settings.version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
             }
             Section("开源") {

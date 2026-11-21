@@ -32,7 +32,7 @@ struct AppleMusicLoginView: View {
                 }
                 if let error = model.appleMusicState.error {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(model.appleMusicState.connected ? "系统歌曲同步可用；歌单与搜索暂不可用。" : "连接未完成，请重新检查状态。")
+                        Text(model.appleMusicState.connected ? "可以同步系统歌曲。歌单和搜索暂不可用。" : "连接未完成，请重新检查状态。")
                         DisclosureGroup("查看技术详情") { Text(error.localizedDescription).textSelection(.enabled) }
                     }.font(.subheadline).foregroundStyle(.secondary)
                 }

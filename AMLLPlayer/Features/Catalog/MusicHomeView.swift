@@ -199,7 +199,7 @@ struct MusicHomeCard: View {
     }
     private func play(shuffled: Bool = false) {
         guard model.isConnected(to: row.item.service) else { login = true; return }
-        guard row.item.canPlay else { failure = "这项内容目前不能播放，可尝试在官方 App 打开。"; return }
+        guard row.item.canPlay else { failure = "暂时无法播放。可以试试在官方 App 中打开。"; return }
         Task { do { try await model.playCatalog(row.item, shuffled: shuffled) }
             catch is CancellationError {} catch { failure = error.localizedDescription } }
     }

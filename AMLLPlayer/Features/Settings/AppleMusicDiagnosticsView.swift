@@ -17,7 +17,7 @@ struct AppleMusicDiagnosticsView: View {
                 if let diagnostic {
                     Text(diagnostic).font(.footnote).textSelection(.enabled)
                 }
-                Text("系统歌曲同步与目录服务分别验证。目录请求需要官方开发者令牌；自动令牌要求实际 App ID 配置 MusicKit 服务。令牌失败不再关闭系统歌曲观察。可安装 IPA 或其他应用可同步歌曲，均不能证明本应用的目录请求可用。")
+                Text("系统歌曲同步单独检查。读取目录需要官方开发者令牌。要自动获取令牌，实际 App ID 还必须启用 MusicKit。令牌失败后，系统歌曲同步仍按系统授权运行。IPA 能安装，或其他应用能同步歌曲，都不足以确认 AMLL 的目录请求可用。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.navigationTitle("Apple Music 连接诊断")
@@ -44,7 +44,7 @@ struct AppleMusicDiagnosticsView: View {
         catch { results.append("目录服务：\(error.localizedDescription)") }
         guard !Task.isCancelled, model.appleMusicState.connected,
               context == model.appleMusicState.contextID else { return }
-        results.append("外部切歌、暂停、seek 与重签授权需在实际设备验证。")
+        results.append("从外部切歌、暂停或跳转播放进度，以及重新签名后的授权，都要在真机上验证。")
         diagnostic = results.joined(separator: "\n")
     }
 }

@@ -229,16 +229,16 @@ struct ImmersiveArtworkDebugPanel: View {
                         Text("视口 \(Int(viewport.width)) × \(Int(viewport.height)) pt；视频底边 \(video.maxY, specifier: "%.1f") pt")
                             .font(.caption).monospacedDigit()
                     }
-                    Text("位置为相对默认位置的 pt 偏移；宽高为默认尺寸的倍数，模糊层的纵向参数只调整上方渐变。视频在调整后的容器内始终等比完整显示。底部渐隐的不透明度表示渐隐强度。")
+                    Text("位置相对于默认位置计算，单位是 pt。宽度和高度按默认尺寸的倍数设置。调整模糊层的纵向参数只会改变上方渐变。调整容器后，视频仍会按原比例完整显示。底部渐隐的不透明度决定渐隐强度。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("独立模糊层实时处理它下方所有可见内容，底部保持完整模糊，向上减小模糊半径。顶部短距离另做透明羽化：最上沿透明，向下恢复整层混合比例，消除与原画面的硬分界。不叠加材质底色或暗度；羽化长度独立于半径和过渡高度，设为 0 可关闭。纯背景模糊不做顶部羽化。")
+                    Text("独立模糊层实时处理它下方所有可见内容，底部保持完整模糊，向上减小模糊半径。顶部短距离另做透明羽化：最上沿透明，向下恢复整层混合比例，消除与原画面的硬分界。模糊层不另加材质底色或暗度。羽化长度与模糊半径、过渡高度各自独立，设为 0 可关闭羽化。纯背景模糊不做顶部羽化。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
                     ForEach(store.configuration.orderedLayers) { layer in Text(layer.title) }
                         .onMove { from, to in store.configuration.moveLayers(fromOffsets: from, toOffset: to) }
                 } header: { Text("层级顺序（最上层 → 最下层）") } footer: {
-                    Text("点击编辑后拖动排序，与歌词来源顺序使用相同控件。上移提高层级；实时模糊只作用于它下方可见的内容。底部渐隐只作用于它下方的视频和倒影，背景模糊持续到屏幕底边。")
+                    Text("点「编辑」后拖动排序，和调整歌词来源顺序一样。排得越靠上，层级越高。实时模糊只处理它下方可见的内容。底部渐隐只影响它下方的视频和倒影，背景模糊一直延伸到屏幕底边。")
                 }
                 if frames != nil {
                     Section("倒影实时诊断") {

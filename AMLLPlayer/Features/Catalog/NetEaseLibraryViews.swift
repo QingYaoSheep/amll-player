@@ -144,7 +144,7 @@ struct NetEaseQueueView: View {
         List {
             if model.netEasePlayback.isPersonalFM {
                 Section("私人 FM") {
-                    Text("自动续播；可返回已听歌曲，暂停后停止主动补歌。").font(.subheadline)
+                    Text("私人 FM 会自动补歌，也可以回听。暂停后会停止主动补歌。").font(.subheadline)
                     if model.netEasePlayback.isRefillingRadio { ProgressView("正在补充推荐") }
                     if let error = model.netEasePlayback.radioFailure {
                         Text(error).foregroundStyle(.secondary)
@@ -173,7 +173,7 @@ struct NetEaseQueueView: View {
                 Section("播放顺序") { queueRows(entries[...]) }
             }
             if !model.netEasePlayback.isPersonalFM {
-                Text("移除正在播放的条目会暂停；其余条目可自由排序。")
+                Text("移除正在播放的歌曲会暂停播放。其他条目可以自由调整顺序。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }

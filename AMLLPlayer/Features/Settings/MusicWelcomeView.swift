@@ -8,8 +8,8 @@ struct MusicWelcomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     Image(systemName: "music.note").font(.system(size: 44)).foregroundStyle(MusicProductStyle.accent).accessibilityHidden(true)
-                    Text("音乐与歌词，从这里开始").font(.largeTitle.bold())
-                    Text("连接你使用的音乐服务，浏览喜欢的音乐，打开同步歌词。")
+                    Text("连接音乐服务").font(.largeTitle.bold())
+                    Text("连接后可浏览喜欢的音乐。播放时可以查看同步歌词。")
                         .font(.body).foregroundStyle(.secondary)
                     ForEach(MusicServiceID.allCases) { service in
                         NavigationLink {

@@ -72,7 +72,7 @@ struct LyricsAnimationSettingsView: View {
                         LabeledContent("最高选择句行数", value: String(blossom.maximumLines))
                     }.disabled(!blossom.limitsSelection)
                         .accessibilityIdentifier("blossom.maximum")
-                    Text("27 选择句逻辑不限制行数；其他逻辑可选择 2 或 3 行。单独修改选项后，预置会自动显示为自定义。")
+                    Text("选择句逻辑设为 27 时，行数不受此设置限制。其他逻辑可选 2 行或 3 行。单独改动选项后，预置会显示为「自定义」。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -105,7 +105,7 @@ struct LyricsAnimationSettingsView: View {
                 Slider(value: $preferences.configuration.anchor, in: 0.2 ... 0.7, step: 0.05)
                     .accessibilityLabel(Text("render.anchor"))
             } footer: {
-                Text("对齐位置由两种风格共用；沉浸式歌词保持 18% 对齐。")
+                Text("两种风格共用对齐位置。沉浸式歌词固定在 18%。")
             }
             Section {
                 Button("恢复当前风格默认值") { preferences.configuration.restoreCurrentAnimationDefaults() }

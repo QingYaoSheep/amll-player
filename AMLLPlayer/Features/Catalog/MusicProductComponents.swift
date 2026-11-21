@@ -82,11 +82,11 @@ struct MusicConnectionCard: View {
     }
     private var message: String {
         if model.selectedMusicService == .appleMusic, model.currentServiceConnected {
-            return "可以同步系统音乐与歌词。歌单和搜索暂不可用，请检查 Apple Music 连接配置。"
+            return "可以同步系统音乐 App 的歌曲和歌词。歌单和搜索暂不可用，请检查 Apple Music 的连接设置。"
         }
         switch model.selectedMusicService {
-        case .spotify: return "连接 Spotify 后查看你的歌单，控制正在播放的设备，并打开同步歌词。"
-        case .appleMusic: return "授权后同步系统音乐 App 的歌曲与歌词；歌单和搜索取决于当前安装环境。"
+        case .spotify: return "连接 Spotify 后，可以查看自己的歌单。也可以控制正在播放的设备并查看同步歌词。"
+        case .appleMusic: return "授权后，AMLL 会同步系统音乐 App 的歌曲和歌词。歌单和搜索能否使用，取决于当前安装版本的配置。"
         case .netease: return "先浏览推荐与排行榜，登录后解锁个人歌单与每日推荐。"
         }
     }

@@ -6,7 +6,7 @@ struct PlaybackSeekDiagnosticsView: View {
     var body: some View {
         Form {
             Section {
-                Text("出现跳转不同步后，在这里导出最近的跳转记录。记录包含目标时间、播放器确认、画布时间和行运动，不包含账号、Cookie、播放地址或歌词正文。")
+                Text("跳转后出现不同步时，可以在这里导出最近的跳转记录。记录会保存目标时间和播放器确认结果，也会记下歌词画布上的时间与歌词行的移动。不包含账号、Cookie、播放地址或歌词正文。")
                     .foregroundStyle(.secondary)
                 Button("生成诊断文件") {
                     do { exportURL = try PlaybackSeekDiagnostics.shared.export(); failure = nil }

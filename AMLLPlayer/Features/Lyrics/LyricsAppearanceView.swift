@@ -172,7 +172,7 @@ struct LyricsAppearanceView: View {
                     Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
                     Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
                     if preferences.configuration.backgroundMode == .meshColorMode2 {
-                        Text("使用 64×64 封面，保留原始颜色并进行两轮均值模糊；网格与动画沿用 Mesh 模式。")
+                        Text("使用 64×64 的封面图，保留原色并做两轮均值模糊。网格和动画沿用 Mesh 模式。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 } else if preferences.configuration.backgroundMode == .flowing {
@@ -180,17 +180,17 @@ struct LyricsAppearanceView: View {
                     flowingAdjustment("扭曲强度", key: \.distortion, range: 0 ... 8, step: 0.5, unit: "%")
                     flowingAdjustment("高斯模糊程度", key: \.blur, range: 0 ... 80, step: 5, unit: "pt")
                     Button("恢复流动背景默认值") { preferences.configuration.flowingBackground = .init() }
-                    Text("将专辑封面放大、缓慢旋转并柔和扭曲，再进行高斯模糊。暂停音乐时仍缓慢流动；扭曲百分比相对于屏幕短边。")
+                    Text("先放大专辑封面，让它缓慢旋转并平滑扭曲，再加高斯模糊。音乐暂停时，背景仍会缓慢流动。扭曲百分比以屏幕短边为基准。")
                         .font(.footnote).foregroundStyle(.secondary)
                 } else if preferences.configuration.backgroundMode == .pixi {
-                    Text("Pixi 使用原版多层封面、固定模糊和形变滤镜；歌词动效不受背景帧率影响。")
+                    Text("Pixi 沿用原版的多层封面、固定模糊和形变滤镜。背景帧率不影响歌词动效。")
                         .font(.footnote).foregroundStyle(.secondary)
                 } else {
                     ColorPicker("背景颜色", selection: backgroundColorBinding(\.backgroundColor), supportsOpacity: false)
                     if preferences.configuration.backgroundMode == .gradient {
                         ColorPicker("底部颜色", selection: backgroundColorBinding(\.backgroundGradientEnd), supportsOpacity: false)
                     }
-                    Text("纯色默认使用原版 #111111；渐变从顶部颜色过渡至底部颜色。")
+                    Text("纯色默认用原版的 #111111。渐变从顶部颜色过渡到底部颜色。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -208,7 +208,7 @@ struct LyricsAppearanceView: View {
                         Text("保留首尾").tag(AMLLObsceneWordMask.Mode.partial)
                         Text("全部遮罩").tag(AMLLObsceneWordMask.Mode.full)
                     }
-                    Text("仅处理歌词来源明确标记的不雅词，使用 * 遮罩；不会自动识别词语或修改原始歌词。")
+                    Text("只用 * 遮住歌词来源明确标记的不雅词。AMLL 不会自行识别词语，也不会改写原歌词。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 DisclosureGroup("歌词高光") {
@@ -217,7 +217,7 @@ struct LyricsAppearanceView: View {
                         set: { preferences.configuration.hdr = .init(enabled: $0) }
                     ).hapticSelection())
                     LyricsHDRStatusView().frame(minHeight: 44)
-                    Text("仅当前句已唱部分使用扩展亮度，上限为 SDR 白的 2 倍。关闭 HDR 后仍保留文字混色；不会提高系统亮度。")
+                    Text("当前句已唱的部分可以用 HDR 高光，最高可达普通白色（SDR）的 \(LyricsHDRConfiguration.targetBrightness, specifier: "%.1f") 倍，实际亮度取决于屏幕。关闭 HDR 后仍保留文字混色，系统亮度也不受影响。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 DisclosureGroup("动态专辑封面") {
@@ -249,10 +249,10 @@ struct LyricsAppearanceView: View {
                         Text("竖屏沉浸封面").tag(AnimatedArtworkConfiguration.Presentation.immersive)
                     }
                     if preferences.configuration.animatedArtwork?.presentation == .immersive {
-                        Text("从同一视频的底部画面生成柔和倒影；不会额外播放一份视频。")
+                        Text("倒影取自同一段视频的底部画面，无需另外播放一段视频。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    Text("默认仅在 Wi-Fi 下加载，缓存上限 200 MB。方形布局仅使用方形视频；沉浸布局选择竖形视频，在竖屏背景显示。无对应资源、离线或减少动态效果时回退静态图，横屏恢复普通布局。封面视频始终静音。")
+                    Text("默认只在 Wi-Fi 下加载，最多缓存 200 MB。方形布局只用方形视频。沉浸布局在竖屏时用竖版视频作背景，横屏时恢复普通布局。找不到合适的视频、离线或开启了「减少动态效果」时，会显示静态封面。封面视频始终静音。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("清理动态封面缓存", role: .destructive) { ArtworkMediaCache.shared.clear() }
                 }
@@ -278,7 +278,7 @@ private struct RomanizationSettingsView: View {
     var body: some View {
         Form {
             Section("自动音译") {
-                Text("日语和韩语歌词优先离线生成独立的罗马音 TTML 时间轴。无法可靠生成时使用歌词来源提供的音译。显示仍由上一级的音译开关控制。")
+                Text("AMLL 优先离线为日语和韩语歌词生成带独立时间轴的罗马音 TTML。无法可靠生成时，会用歌词来源提供的音译。是否显示音译由上一级的开关控制。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if let coordinator {
                     Text(coordinator.romanizationStatus.isEmpty ? "等待歌词" : coordinator.romanizationStatus)
@@ -309,7 +309,7 @@ private struct RomanizationSettingsView: View {
                 }
             }
             Section("读音纠错") {
-                Text("支持 Mineradio 的 ja／ko JSON 字典。导入失败时保留当前字典；修改不会改写原歌词。")
+                Text("可导入 Mineradio 的 ja／ko JSON 字典。导入失败时继续用当前字典。字典里的修改不会改写原歌词。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("导入纠错字典") { importing = true }
                 Button("准备导出纠错字典") {

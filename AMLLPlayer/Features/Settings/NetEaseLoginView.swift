@@ -13,7 +13,7 @@ struct NetEaseLoginView: View {
                 if let p = session.profile {
                     HStack { CatalogArtwork(url: p.avatar); Text(p.name) }
                     LabeledContent("会员类型", value: p.vipType.map { $0 == 0 ? "普通账号" : "会员类型 \($0)" } ?? "未获取")
-                    Text("可播放歌曲与音质以当前音源请求的实际权限为准。").font(.footnote).foregroundStyle(.secondary)
+                    Text("可播歌曲和可用音质，以网易云音乐对当前播放请求的实际授权为准。").font(.footnote).foregroundStyle(.secondary)
                 }
                 Label(model.netEaseState.connected ? "已连接" : "未连接", systemImage: "music.note")
                 Button(model.netEaseState.connected ? "重新扫码登录" : "登录到网易云音乐") {
@@ -25,7 +25,7 @@ struct NetEaseLoginView: View {
                     if let expiry = session.qrExpires { Text("二维码有效至 \(expiry.formatted(date: .omitted, time: .standard))").font(.caption) }
                     if let qrFile { ShareLink(item: qrFile) { Label("保存或分享二维码", systemImage: "square.and.arrow.up") } }
                     Button("刷新二维码") { Task { await session.beginQR() } }
-                    Text("使用网易云音乐官方 App 扫码确认。同机识别可尝试保存二维码后从相册扫描；是否支持以官方 App 为准，也可用另一台设备显示二维码。")
+                    Text("请用网易云音乐官方 App 扫码确认。也可以在另一台设备上显示二维码，再用手机扫。只有一台设备时，可以保存二维码，再试试从相册扫码，具体取决于官方 App 是否支持。")
                         .font(.footnote).foregroundStyle(.secondary)
                 } else if session.currentState.requesting { ProgressView(session.qrStatus) }
                 else { Text(session.qrStatus).foregroundStyle(.secondary) }
@@ -38,7 +38,7 @@ struct NetEaseLoginView: View {
                 Picker("请求音质", selection: Binding(get: { model.netEasePlayback.quality }, set: { model.netEasePlayback.quality = $0 })) {
                     ForEach(NetEaseQuality.allCases) { q in Text(q.title).tag(q) }
                 }
-                Text("默认高品质；修改后从下一首生效。当前歌曲需重新起播才能更换。实际音质取决于账号权限和设备解码能力。")
+                Text("默认使用高品质。音质改动从下一首歌开始生效。要应用到当前歌曲，请重新播放这首歌。实际音质取决于账号权限和设备的解码能力。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section {
@@ -82,7 +82,7 @@ private struct NetEaseCookieImportView: View {
                         do { try await session.importCookie(cookie) } catch is CancellationError {} catch { failure = error.localizedDescription }
                     }
                 }.disabled(importing || cookie.isEmpty)
-                Text("仅在你主动粘贴后验证，成功后保存在本机 Keychain；失败保留原有效登录。")
+                Text("仅在你主动粘贴后验证。验证通过才保存到本机 Keychain，失败时会保留原来有效的登录。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.navigationTitle("高级登录方式")

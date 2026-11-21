@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class LyricsQuickSettingsUITests: XCTestCase {
     @MainActor func testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage() {

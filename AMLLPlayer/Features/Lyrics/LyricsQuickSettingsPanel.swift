@@ -570,6 +570,7 @@ private struct QuickSettingsControlLabel: View {
     var indicator: String? = nil
     var selected = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -595,6 +596,7 @@ private struct QuickSettingsControlLabel: View {
         .background { if selected { shape.fill(MusicProductStyle.filledAccent.opacity(0.24)) } }
         .overlay { shape.strokeBorder(selected ? MusicProductStyle.accent.opacity(0.7) : .white.opacity(0.08)) }
         .contentShape(shape)
+        .opacity(isEnabled ? 1 : 0.48)
     }
 }
 

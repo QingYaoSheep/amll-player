@@ -210,6 +210,7 @@ struct CatalogSearchView: View {
     @State private var searchPresented = false
     @Namespace private var filterSelection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var searchPlacement: SearchFieldPlacement {
         return .navigationBarDrawer(displayMode: .always)
     }
@@ -311,16 +312,7 @@ struct CatalogSearchView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("搜索 " + model.selectedMusicService.title).font(.title3.weight(.semibold))
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(store.provider.searchKinds.filter { [.track, .album, .artist, .playlist].contains($0) }, id: \.self) { kind in
-                            MusicFilterPill(title: kind.title, symbol: kind.symbol, selected: store.searchFilter == kind) {
-                                store.searchFilter = kind
-                                searchPresented = true
-                            }
-                        }
-                    }
-                }.scrollIndicators(.hidden)
+                searchCategories
                 HStack {
                     Text("最近搜索").font(.title2.bold())
                     Spacer()
@@ -330,8 +322,7 @@ struct CatalogSearchView: View {
                     }
                 }
                 if store.searchHistory.isEmpty {
-                    ContentUnavailableView("寻找喜欢的音乐", systemImage: "magnifyingglass",
-                        description: Text("搜索歌曲、艺人、专辑或歌单。"))
+                    Text("暂无搜索记录").font(.subheadline).foregroundStyle(.secondary)
                 }
                 VStack(spacing: 0) {
                     ForEach(store.searchHistory, id: \.self) { term in
@@ -353,6 +344,42 @@ struct CatalogSearchView: View {
                     }
                 }
             }.padding(20).frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
+        }
+    }
+
+    private var searchCategories: some View {
+        let kinds = store.searchLibrary ? [MusicCatalogKind.track, .album, .artist, .playlist] : store.provider.searchKinds
+        let columns = typeSize.isAccessibilitySize
+            ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 128, maximum: 265), spacing: 10)]
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            ForEach(kinds, id: \.self) { kind in
+                let selected = kind == store.searchFilter
+                Button {
+                    store.searchFilter = kind
+                    searchPresented = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: kind.symbol)
+                            .font(.body.weight(.semibold))
+                            .frame(width: 34, height: 34)
+                            .foregroundStyle(MusicProductStyle.accent)
+                            .background(MusicProductStyle.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                            .accessibilityHidden(true)
+                        Text(kind.title).font(.subheadline.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.forward").font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary).accessibilityHidden(true)
+                    }
+                    .padding(10).frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .foregroundStyle(.primary)
+                    .background(selected ? MusicProductStyle.accent.opacity(0.1) : Color(uiColor: .secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(MusicContentButtonStyle())
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
         }
     }
 }

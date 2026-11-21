@@ -227,8 +227,19 @@ private struct MusicHomePoster: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .foregroundStyle(.white)
-        .padding(22)
+        .padding(.horizontal, 22).padding(.top, 28).padding(.bottom, 22)
         .frame(width: width, alignment: .leading)
+        .background {
+            GeometryReader { geometry in
+                // Tie contrast to the caption bounds, including when a title
+                // wraps or Dynamic Type takes up more of the poster.
+                LinearGradient(stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black.opacity(0.72), location: min(1, 28 / max(1, geometry.size.height))),
+                    .init(color: .black.opacity(0.95), location: 1)
+                ], startPoint: .top, endPoint: .bottom)
+            }
+        }
         .frame(minHeight: MusicHomeLayout.featuredHeight(for: width), alignment: .bottomLeading)
         .background {
             GeometryReader { geometry in
@@ -246,12 +257,8 @@ private struct MusicHomePoster: View {
                             .frame(maxHeight: .infinity, alignment: .top)
                             .padding(.top, 48)
                     }
-                    LinearGradient(stops: [
-                        .init(color: .clear, location: 0.28),
-                        .init(color: artworkColor.opacity(0.45), location: 0.58),
-                        .init(color: .black.opacity(0.90), location: 0.80),
-                        .init(color: .black.opacity(0.97), location: 1)
-                    ], startPoint: .top, endPoint: .bottom)
+                    LinearGradient(colors: [.clear, artworkColor.opacity(0.40)],
+                        startPoint: .center, endPoint: .bottom)
                 }
             }
             .accessibilityHidden(true)

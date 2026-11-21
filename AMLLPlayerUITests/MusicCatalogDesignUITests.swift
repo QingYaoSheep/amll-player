@@ -22,6 +22,10 @@ final class MusicCatalogDesignUITests: XCTestCase {
         if app.frame.width < 550, app.frame.height > app.frame.width {
             XCTAssertGreaterThanOrEqual(capsule.frame.minY, 64, "Keep the room capsule below the Dynamic Island")
         }
+        let initialTimeLabel = capsule.label
+        let clockTicks = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", initialTimeLabel),
+                                                   object: capsule)
+        XCTAssertEqual(XCTWaiter.wait(for: [clockTicks], timeout: 4), .completed)
         capture(app, "NetEase-lyrics-room-capsule")
         capsule.tap()
         let chat = app.buttons["netEaseDuetChat"]

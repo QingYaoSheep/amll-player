@@ -699,7 +699,7 @@ struct AMLLLyricsPlayer: View {
     private func dismissalHandle(metrics: AppleMusicLyricsLayoutMetrics, room: NetEaseListeningRoom?) -> some View {
         Group {
             if let room {
-                NetEaseRoomCapsule(room: room, seconds: model.netEasePlayback.roomActivity.seconds,
+                NetEaseRoomCapsule(room: room, activity: model.netEasePlayback.roomActivity,
                                    closePlayer: { dismiss() }) {
                     quickSettings.openRoom(reduceMotion: reduceMotion)
                 }

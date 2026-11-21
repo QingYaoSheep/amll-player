@@ -9,7 +9,8 @@ import XCTest
         var room = NetEaseListeningRoom(kind: .group, id: "room", members: [viewer])
         room.tracks = [.init(id: "11", businessID: "101")]
         activity.begin(room, account: "1")
-        activity.observe(room, now: 0)
+        activity.observeRoster(room, now: 0)
+        activity.observeQueue(room, now: 0, names: [:])
         XCTAssertTrue(activity.events.isEmpty)
 
         var partial = room
@@ -17,7 +18,8 @@ import XCTest
         partial.tracks = []
         partial.hasRoster = false
         partial.hasQueue = false
-        activity.observe(partial, now: 5)
+        activity.observeRoster(partial, now: 5)
+        activity.observeQueue(partial, now: 5, names: [:])
         XCTAssertTrue(activity.events.isEmpty)
 
         room.members.append(friend)
@@ -25,12 +27,14 @@ import XCTest
         activity.addedLocally(track, now: 8, alreadyQueued: false)
         room.tracks += [.init(id: "42", businessID: "102", recommenderID: "1"),
                         .init(id: "43", businessID: "103", recommenderID: "2")]
-        activity.observe(room, now: 10, names: ["43": "另一首歌"])
-        activity.observe(room, now: 12)
+        activity.observeRoster(room, now: 10)
+        activity.observeQueue(room, now: 10, names: ["43": "另一首歌"])
+        activity.observeRoster(room, now: 12)
+        activity.observeQueue(room, now: 12, names: [:])
         XCTAssertEqual(activity.events.map(\.text),
                        ["好友 添加了《另一首歌》", "好友 加入了房间", "你添加了《\(track.name)》"])
         room.members.removeLast()
-        activity.observe(room, now: 15)
+        activity.observeRoster(room, now: 15)
         XCTAssertEqual(activity.events.first?.text, "好友 离开了房间")
     }
 
@@ -40,14 +44,21 @@ import XCTest
         let friend = try XCTUnwrap(NetEaseRoomMember(["uid": 2]))
         let room = NetEaseListeningRoom(kind: .duet, id: "room", members: [viewer, friend], heartbeat: 30)
         let activity = NetEaseRoomActivity(defaults: defaults)
-        activity.begin(room, account: "1")
-        activity.observe(room, now: 0)
-        activity.observe(room, now: 30)
+        activity.begin(room, account: "1", now: 0)
+        XCTAssertEqual(activity.elapsed(at: 3), 3)
+        activity.observeRoster(room, now: 30)
+        var partial = room
+        partial.hasRoster = false
+        activity.observeRoster(partial, now: 35)
+        XCTAssertEqual(activity.elapsed(at: 37), 37)
         activity.connectionInterrupted()
-        activity.observe(room, now: 300)
-        XCTAssertEqual(activity.seconds, 0)
-        activity.observe(room, now: 330)
+        XCTAssertEqual(activity.elapsed(at: 300), 30)
+        activity.observeRoster(room, now: 300)
+        XCTAssertEqual(activity.seconds, 30)
+        XCTAssertEqual(activity.elapsed(at: 304), 34)
+        activity.observeRoster(room, now: 330)
         XCTAssertEqual(activity.seconds, 60)
+        XCTAssertEqual(activity.elapsed(at: 332), 62)
         let restored = NetEaseRoomActivity(defaults: defaults)
         restored.begin(room, account: "1")
         XCTAssertEqual(restored.seconds, 60)
@@ -84,6 +95,20 @@ import XCTest
 
     private func activityDefaults() throws -> UserDefaults {
         try XCTUnwrap(UserDefaults(suiteName: "RoomActivity-" + UUID().uuidString))
+    }
+
+    func testDuetHeartbeatUsesCurrentRoomWhenCheckOmitsMembers() async throws {
+        let api = RoomFixtureAPI()
+        api.duetJoined = true
+        api.duetCheckOmitsMembers = true
+        let session = NetEaseSession(api: api, store: SeekFixtureStore())
+        try await session.importCookie("MUSIC_U=fixture")
+        let service = NetEaseRoomAPI(session: session)
+        let updated = try await service.update(.init(kind: .duet, id: "duet-example", members: []),
+                                               position: 0, playing: false)
+        XCTAssertTrue(updated.hasRoster)
+        XCTAssertEqual(updated.members.map(\.id), ["1", "2"])
+        XCTAssertEqual(updated.tracks.map(\.id), ["42", "43"])
     }
 
     func testOnlyOfficialInvitesRoundTripAndKeepTheirRoomKind() throws {
@@ -269,6 +294,7 @@ import XCTest
     var sendSongError: Error?
     var sendInviteError: NetEaseError?
     var duetJoined = false
+    var duetCheckOmitsMembers = false
     var duetCreations = 0
     private var duet: [String: Any] {
         let viewer = ["userId": 1, "nickname": "我"] as [String: Any]
@@ -295,7 +321,8 @@ import XCTest
             duetJoined = true
             data = ["roomInfo": duet]
         case "/listen/together/heartbeat": data = [:]
-        case "/listen/together/room/check": data = ["roomInfo": duet]
+        case "/listen/together/room/check":
+            data = duetCheckOmitsMembers ? ["inRoom": true] : ["roomInfo": duet]
         case "/listen/together/sync/playlist/get":
             data = ["playlist": ["displayList": ["result": ["42", "43"]]],
                     "playCommand": ["targetSongId": "42", "playStatus": "PLAY", "progress": 5000, "serverSeq": 3]]

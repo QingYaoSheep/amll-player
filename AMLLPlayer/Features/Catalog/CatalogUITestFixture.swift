@@ -172,8 +172,10 @@
                             ["uid": 2, "nickname": "Fixture Friend"]],
                     ]]
                     switch path {
-                    case "/listen/together/status/get", "/listen/together/room/check":
+                    case "/listen/together/status/get":
                         return .init(object: ["data": room])
+                    case "/listen/together/room/check":
+                        return .init(object: ["data": ["inRoom": roomJoined]])
                     case "/listen/together/play/invitation/accept":
                         roomJoined = true
                         return .init(object: ["data": [:]])

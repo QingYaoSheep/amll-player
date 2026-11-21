@@ -240,7 +240,7 @@ enum NetEaseRoomError: LocalizedError {
             let data = try await call("/multi/match/heartbeat", ["roomId": room.id])
             if let next = try decode(data, kind: .group) {
                 guard next.id == room.id else { throw NetEaseRoomError.ended }
-                return next
+                return try await withRoster(next)
             }
             if let next = try await current(.group), next.id == room.id { return next }
             throw NetEaseRoomError.ended
@@ -274,7 +274,22 @@ enum NetEaseRoomError: LocalizedError {
                                playing: state == "PLAY", version: sequence,
                                sampledAt: (same ? old?.sampledAt : nil) ?? ProcessInfo.processInfo.systemUptime)
         } else { next.clock = room.clock }
-        return next
+        return try await withRoster(next)
+    }
+
+    private func withRoster(_ snapshot: NetEaseListeningRoom) async throws -> NetEaseListeningRoom {
+        guard !snapshot.hasRoster else { return snapshot }
+        // Some heartbeat/check responses confirm room status but omit the user list.
+        let latest = try? await current(snapshot.kind)
+        try ensureContext()
+        guard let latest else { return snapshot }
+        guard latest.id == snapshot.id else { throw NetEaseRoomError.ended }
+        guard latest.hasRoster else { return snapshot }
+        var merged = snapshot
+        merged.members = latest.members
+        merged.hasRoster = true
+        if merged.chatID == nil { merged.chatID = latest.chatID }
+        return merged
     }
 
     func duetCommand(_ room: NetEaseListeningRoom, _ action: String, song: String, former: String?,
@@ -447,7 +462,7 @@ enum NetEaseRoomError: LocalizedError {
         var members = Set<String>()
         var room = NetEaseListeningRoom(kind: kind, id: id, members: (rows ?? []).compactMap(NetEaseRoomMember.init)
             .filter { members.insert($0.id).inserted })
-        room.hasRoster = rows != nil
+        room.hasRoster = !room.members.isEmpty
         room.hasQueue = false
         room.isHost = host != nil && host == session.profile?.id
         room.chatID = NetEaseRoomInvite.numericID(info["chatRoomId"])

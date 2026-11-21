@@ -1037,17 +1037,22 @@ extension NetEasePlayback {
     }
 
     private func refreshRoomSnapshot(_ room: NetEaseListeningRoom) async {
+        var receivedRoomSnapshot = false
         do {
             let context = session.currentState.contextID
             var next = try await roomAPI.update(room, position: position, playing: intentPlaying)
             try checkRoomContext()
             guard listeningRoom?.id == room.id else { throw CancellationError() }
-            if let last = room.clock?.version, let version = next.clock?.version, version < last { return }
+            receivedRoomSnapshot = true
+            if let last = room.clock?.version, let version = next.clock?.version, version < last {
+                next.clock = room.clock
+            }
             next.isHost = room.isHost || next.isHost
             if !next.hasRoster { next.members = room.members }
             if !next.hasQueue { next.tracks = room.tracks }
             listeningRoom = next
             let sampledAt = ProcessInfo.processInfo.systemUptime
+            roomActivity.observeRoster(next, now: sampledAt)
             readRoomMessages(next, now: sampledAt)
             try await applyRoomClock(next.clock)
             let ids = next.tracks.prefix(50).map(\.id)
@@ -1058,7 +1063,7 @@ extension NetEasePlayback {
             }
             guard context == session.currentState.contextID, listeningRoom?.id == next.id else { return }
             let names = roomQueue.reduce(into: [String: String]()) { $0[$1.spotifyID] = $1.name }
-            roomActivity.observe(next, now: sampledAt, names: names)
+            roomActivity.observeQueue(next, now: sampledAt, names: names)
             roomNotice = nil
         } catch is CancellationError {}
         catch NetEaseRoomError.ended {
@@ -1073,7 +1078,7 @@ extension NetEasePlayback {
             roomActivity.end(text: "一起听房间已结束")
         } catch {
             if !Task.isCancelled {
-                roomActivity.connectionInterrupted()
+                if !receivedRoomSnapshot { roomActivity.connectionInterrupted() }
                 roomNotice = error.localizedDescription
             }
         }

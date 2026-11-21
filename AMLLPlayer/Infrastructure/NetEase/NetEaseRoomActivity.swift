@@ -46,15 +46,18 @@ struct NetEaseRoomEvent: Identifiable {
 final class NetEaseRoomActivity {
     private(set) var events: [NetEaseRoomEvent] = []
     private(set) var banner: NetEaseRoomEvent?
-    private(set) var seconds = 0
+    private var confirmedSeconds = 0.0
+    private var timeSample: (value: TimeInterval, expires: TimeInterval, peer: String?)?
+    var seconds: Int { Int(confirmedSeconds) }
+    var isTiming: Bool { timeSample != nil }
     private(set) var systemStatus: UNAuthorizationStatus = .notDetermined
     private var wantsSystemAlerts: Bool
     var systemAlertsEnabled: Bool { wantsSystemAlerts && Self.allowsAlerts(systemStatus) }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var room: NetEaseRoomDestination?
-    @ObservationIgnored private var previous: NetEaseListeningRoom?
-    @ObservationIgnored private var timeSample: (value: TimeInterval, peer: String?)?
+    @ObservationIgnored private var previousRoster: [NetEaseRoomMember]?
+    @ObservationIgnored private var previousQueue: [NetEaseRoomTrack]?
     @ObservationIgnored private var sessionSeconds = 0.0
     @ObservationIgnored private var chatBaseline: (peer: String?, time: Int64, ids: Set<String>)?
     @ObservationIgnored private var visibleChats: [UUID: NetEaseRoomDestination] = [:]
@@ -102,10 +105,10 @@ final class NetEaseRoomActivity {
         status == .authorized || status == .provisional || status == .ephemeral
     }
 
-    func begin(_ snapshot: NetEaseListeningRoom, account: String) {
+    func begin(_ snapshot: NetEaseListeningRoom, account: String, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         reset()
         room = .init(account: account, room: snapshot)
-        seconds = Int(storedSeconds(peer: snapshot.chattingPeer(viewer: account)?.id) / 60) * 60
+        if snapshot.hasRoster { updateDuration(snapshot, account: account, now: now) }
     }
 
     func reset() {
@@ -116,8 +119,9 @@ final class NetEaseRoomActivity {
             center.removeDeliveredNotifications(withIdentifiers: ids)
         }
         room = nil
-        previous = nil
-        seconds = 0
+        previousRoster = nil
+        previousQueue = nil
+        confirmedSeconds = 0
         sessionSeconds = 0
         timeSample = nil
         chatBaseline = nil
@@ -129,52 +133,46 @@ final class NetEaseRoomActivity {
 
     func connectionInterrupted() { timeSample = nil }
 
-    // Two adjacent confirmed rosters bound each counted interval.
-    func observe(_ snapshot: NetEaseListeningRoom, now: TimeInterval, names: [String: String] = [:]) {
-        guard let room, snapshot.id == room.roomID, snapshot.kind == room.kind else { return }
-        if snapshot.hasRoster { updateDuration(snapshot, account: room.account, now: now) }
-        else { connectionInterrupted() }
-        let old = previous
-        var baseline = snapshot
-        if !snapshot.hasRoster, let old {
-            baseline.members = old.members
-            baseline.hasRoster = old.hasRoster
+    func observeRoster(_ snapshot: NetEaseListeningRoom, now: TimeInterval) {
+        guard let room, snapshot.id == room.roomID, snapshot.kind == room.kind, snapshot.hasRoster else { return }
+        updateDuration(snapshot, account: room.account, now: now)
+        if snapshot.kind == .duet, snapshot.chattingPeer(viewer: room.account)?.id != chatBaseline?.peer {
+            chatBaseline = nil
         }
-        if !snapshot.hasQueue, let old {
-            baseline.tracks = old.tracks
-            baseline.hasQueue = old.hasQueue
-        }
-        previous = baseline
+        let old = previousRoster
+        previousRoster = snapshot.members
         guard let old else { return }
-
-        if old.hasRoster, snapshot.hasRoster {
-            let oldMembers = Set(old.members.map(\.id))
-            let members = Set(snapshot.members.map(\.id))
-            for member in snapshot.members where member.id != room.account && !oldMembers.contains(member.id) {
-                publish(.init(text: "\(member.name) 加入了房间", symbol: "person.badge.plus", destination: room))
-            }
-            for member in old.members where member.id != room.account && !members.contains(member.id) {
-                publish(.init(text: "\(member.name) 离开了房间", symbol: "person.badge.minus", destination: room))
-            }
+        let oldMembers = Set(old.map(\.id))
+        let members = Set(snapshot.members.map(\.id))
+        for member in snapshot.members where member.id != room.account && !oldMembers.contains(member.id) {
+            publish(.init(text: "\(member.name) 加入了房间", symbol: "person.badge.plus", destination: room))
         }
+        for member in old where member.id != room.account && !members.contains(member.id) {
+            publish(.init(text: "\(member.name) 离开了房间", symbol: "person.badge.minus", destination: room))
+        }
+    }
 
-        guard old.hasQueue, snapshot.hasQueue else { return }
-        let additions = addedTracks(from: old, to: snapshot, now: now)
+    func observeQueue(_ snapshot: NetEaseListeningRoom, now: TimeInterval, names: [String: String]) {
+        guard let room, snapshot.id == room.roomID, snapshot.kind == room.kind, snapshot.hasQueue else { return }
+        let old = previousQueue
+        previousQueue = snapshot.tracks
+        guard let old else { return }
+        let additions = addedTracks(from: old, to: snapshot.tracks, now: now)
         for group in Dictionary(grouping: additions, by: { $0.recommenderID ?? "" }).values
             .sorted(by: { ($0.first?.recommenderID ?? "") < ($1.first?.recommenderID ?? "") }) {
             let titles = group.compactMap { names[$0.id] }
-            let subject = baseline.members.first { $0.id == group.first?.recommenderID }
+            let subject = snapshot.members.first { $0.id == group.first?.recommenderID }
                 .map { $0.id == room.account ? "你添加了" : "\($0.name) 添加了" } ?? "队列新增"
             let song = group.count == 1 && titles.count == 1 ? "《\(titles[0])》" : "\(group.count) 首歌曲"
             publish(.init(text: "\(subject)\(song)", symbol: "music.note.list", destination: room))
         }
     }
 
-    private func addedTracks(from old: NetEaseListeningRoom, to next: NetEaseListeningRoom, now: TimeInterval) -> [NetEaseRoomTrack] {
+    private func addedTracks(from old: [NetEaseRoomTrack], to next: [NetEaseRoomTrack], now: TimeInterval) -> [NetEaseRoomTrack] {
         localAdds = localAdds.mapValues { $0.filter { $0 > now } }.filter { !$0.value.isEmpty }
         var counts: [String: Int] = [:]
-        for track in old.tracks { counts[track.queueIdentity, default: 0] += 1 }
-        return next.tracks.filter { track in
+        for track in old { counts[track.queueIdentity, default: 0] += 1 }
+        return next.filter { track in
             if counts[track.queueIdentity, default: 0] > 0 {
                 counts[track.queueIdentity, default: 0] -= 1
                 return false
@@ -243,16 +241,20 @@ final class NetEaseRoomActivity {
         let together = snapshot.members.contains { $0.id != account } && (snapshot.kind == .group || peer != nil)
         guard together else { timeSample = nil; return }
         let previous = timeSample
-        timeSample = (now, peer)
+        // Allow one missed poll and the latency of the roster refresh.
+        timeSample = (now, now + max(5, snapshot.heartbeat) * 2 + 10, peer)
         var total = peer == nil ? sessionSeconds : storedSeconds(peer: peer)
-        if let previous, previous.peer == peer, now >= previous.value,
-           now - previous.value <= snapshot.heartbeat * 2 + 5 {
+        if let previous, previous.peer == peer, now >= previous.value, now <= previous.expires {
             total += now - previous.value
             if let key = durationKey(peer: peer) { defaults.set(total, forKey: key) }
             else { sessionSeconds = total }
         }
-        let wholeMinutes = Int(total / 60) * 60
-        if seconds != wholeMinutes { seconds = wholeMinutes }
+        if confirmedSeconds != total { confirmedSeconds = total }
+    }
+
+    func elapsed(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Int {
+        guard let sample = timeSample else { return seconds }
+        return Int(confirmedSeconds + max(0, min(now, sample.expires) - sample.value))
     }
 
     private func durationKey(peer: String?) -> String? {

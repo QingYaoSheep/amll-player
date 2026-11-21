@@ -205,13 +205,27 @@ struct NetEaseRoomGlass<Surface: Shape>: ViewModifier {
 }
 
 struct NetEaseRoomDurationLabel: View {
-    let seconds: Int
+    let activity: NetEaseRoomActivity
 
     var body: some View {
-        let minutes = seconds / 60
-        if minutes == 0 { Text("一起听不到 1 分钟") }
-        else if minutes < 60 { Text("一起听了 \(minutes) 分钟") }
-        else { Text("一起听了 \(minutes / 60) 小时 \(minutes % 60) 分钟") }
+        if activity.isTiming {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                duration(activity.elapsed())
+            }
+        } else {
+            duration(activity.seconds)
+        }
+    }
+
+    private func duration(_ seconds: Int) -> some View {
+        let formatted = Duration.seconds(seconds).formatted(
+            .time(pattern: seconds < 3_600 ? .minuteSecond : .hourMinuteSecond)
+        )
+        return HStack(spacing: 5) {
+            Text("一起听")
+            Text(formatted).monospacedDigit().accessibilityIdentifier("netEaseRoomElapsed")
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -220,7 +234,7 @@ struct NetEaseRoomCapsule: View {
     static let safeAreaSpacing: CGFloat = 8
 
     let room: NetEaseListeningRoom
-    let seconds: Int
+    let activity: NetEaseRoomActivity
     let closePlayer: () -> Void
     let action: () -> Void
 
@@ -235,7 +249,7 @@ struct NetEaseRoomCapsule: View {
                 .accessibilityHidden(true)
                 Group {
                     if room.members.count < 2 { Text("等待好友加入") }
-                    else { NetEaseRoomDurationLabel(seconds: seconds) }
+                    else { NetEaseRoomDurationLabel(activity: activity) }
                 }
                 .font(.caption.weight(.semibold))
                 .lineLimit(2)

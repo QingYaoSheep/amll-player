@@ -144,7 +144,7 @@ struct NetEaseRoomView: View {
                         .lineLimit(2)
                         .accessibilityAddTraits(.isHeader)
                     if room.members.count >= 2 {
-                        NetEaseRoomDurationLabel(seconds: activity.seconds)
+                        NetEaseRoomDurationLabel(activity: activity)
                             .font(.subheadline.weight(.medium))
                         Text(room.kind == .duet ? "本机记录起" : "本场一起听")
                             .font(.caption).foregroundStyle(.secondary)

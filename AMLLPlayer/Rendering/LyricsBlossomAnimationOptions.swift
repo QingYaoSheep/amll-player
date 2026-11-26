@@ -113,6 +113,9 @@ struct LyricsBlossomAnimationOptions: Codable, Equatable, Sendable {
         }
     }
 
+    /// Family 2 clears the foreground pass only with the newer scale setting.
+    var cutsForegroundOnDeparture: Bool { selectionFamily == 2 && scale != 1 }
+
     /// FUN_1402fb4f0 initializes a 0.25s release for the newer emphasis family;
     /// FUN_1402fc010 multiplies scale/offset residuals by remaining/new duration.
     func emphasisReleaseWeight(lineTime: Double, wordEnd: Double, reverseElapsed: Double) -> Double {

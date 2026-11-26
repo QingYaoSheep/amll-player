@@ -2,6 +2,102 @@
 import XCTest
 
 final class LyricsBlossomMechanismTests: XCTestCase {
+    func testCutoffClearsSingleRowClockOnlyWhenSamplingAndAtHalfSecond() {
+        for family in [0, 2, 3] {
+            let store = LyricsBlossomRunStore(), model = layout()
+            store.beginFrame(.init(time: 0.75, delta: 0, playing: true, revision: 0, family: family, selectedRows: [0]))
+            _ = store.sample(key: "m", row: 0, layout: model)
+            store.applySelection(entered: [], left: [], catchUp: [0])
+            store.beginFrame(.init(time: 0.251, delta: 0, playing: true, revision: 0, family: family))
+            XCTAssertTrue(store.rewindRows.isEmpty)
+            store.beginFrame(.init(time: 0.25, delta: 0, playing: true, revision: 0, family: family, refreshClock: false))
+            XCTAssertTrue(store.cursorStates(key: "m")[0].suppressed)
+            store.beginFrame(.init(time: 0.25, delta: 0, playing: true, revision: 0, family: family))
+            XCTAssertEqual(store.rewindRows, [0])
+            let reset = store.cursorStates(key: "m")[0]
+            XCTAssertFalse(reset.suppressed)
+            XCTAssertEqual(reset.elapsed, 0)
+            XCTAssertEqual(reset.value, 0)
+            XCTAssertTrue(reset.active)
+        }
+    }
+
+    func testCutoffKeepsEquivalentGeometryButDropsOldTweenWhenTextGroupChanges() {
+        let store = LyricsBlossomRunStore()
+        func layout(text: String) -> LyricsBlossomRunLayout {
+            .init(text: text, pieces: [.init(range: NSRange(location: 0, length: 1), width: 100, start: 0, end: 1)],
+                  pixelsPerPoint: 1)
+        }
+        store.beginFrame(.init(time: 0.5, delta: 0, playing: true, revision: 0, family: 2, selectedRows: [0]))
+        _ = store.sample(key: "m", row: 0, layout: layout(text: "A"))
+        store.applySelection(entered: [], left: [], catchUp: [0])
+        store.beginFrame(.init(time: 0.55, delta: 0.05, playing: true, revision: 0, family: 2,
+                              selectedRows: [0], selectionRebased: true))
+        let old = store.cursorStates(key: "m")[0]
+        _ = store.sample(key: "m", row: 0, layout: layout(text: "A"))
+        XCTAssertEqual(store.cursorStates(key: "m")[0], old)
+        _ = store.sample(key: "m", row: 0, layout: layout(text: "B"))
+        XCTAssertFalse(store.cursorStates(key: "m")[0].suppressed)
+        XCTAssertEqual(store.cursorStates(key: "m")[0].value, 0)
+    }
+
+    func testFamilyThreeEntryResyncsAlreadyVisibleAndNewRows() {
+        let model = layout(), store = LyricsBlossomRunStore()
+        store.beginFrame(.init(time: 0.5, delta: 0, playing: true, revision: 0, family: 3))
+        _ = store.sample(key: "m", row: 0, layout: model)
+        store.applySelection(entered: [0, 1], left: [], catchUp: [])
+        _ = store.sample(key: "m2", row: 1, layout: model)
+        XCTAssertEqual(store.cursorStates(key: "m"), store.cursorStates(key: "m2"))
+        XCTAssertEqual(store.cursorStates(key: "m")[0].value, 90)
+        XCTAssertFalse(store.cursorStates(key: "m")[0].active)
+    }
+
+    func testOnlyOrdinarySelectorClearsTerminalSelectionWithoutPendingRecord() {
+        let records: [LyricsBlossomSelectionSchedule.Record] = [
+            .init(index: 0, start: 1, end: 5, lastWordEnd: 5)
+        ]
+        for family in [0, 2, 3] {
+            var selector = LyricsBlossomSelectionSchedule()
+            selector.rebase(records: records, now: 4, capacity: 2, bypassClock: false, family: family)
+            let before = selector.update(family: family, now: 4.999, wall: 0, records: records,
+                                         capacity: 2, running: true, rebased: false, browsing: false) { _ in false }
+            XCTAssertEqual(before.selected, [0])
+            let end = selector.update(family: family, now: 5, wall: 0.05, records: records,
+                                      capacity: 2, running: true, rebased: false, browsing: false) { _ in false }
+            XCTAssertEqual(end.left, family == 0 ? [0] : [])
+        }
+    }
+
+    func testFamilyTwoForegroundCutsWhileTheOldRunIsStillActive() throws {
+        for preset in [LyricsBlossomAnimationOptions.Preset.appleMusic264, .appleMusic27] {
+            var options = LyricsBlossomAnimationOptions()
+            options.apply(preset)
+            XCTAssertTrue(options.cutsForegroundOnDeparture)
+            let model = layout(), store = LyricsBlossomRunStore()
+            store.beginFrame(.init(time: 1.75, delta: 0, playing: true, revision: 0, family: 2, selectedRows: [0]))
+            _ = store.sample(key: "m", row: 0, layout: model)
+            store.applySelection(entered: [], left: [], catchUp: [0])
+            let armed = try XCTUnwrap(store.cursorStates(key: "m").first)
+            store.beginFrame(.init(time: 1.80, delta: 0.05, playing: true, revision: 0, family: 2))
+            store.applySelection(entered: [1], left: [0], catchUp: [])
+            let departed = try XCTUnwrap(store.cursorStates(key: "m").first)
+            let live = LyricsBlossomRunFill(bright: 1, dark: 0.3)
+            let flat = LyricsBlossomRunFill(bright: 1, dark: 0.3, cutsOverlay: options.cutsForegroundOnDeparture)
+            XCTAssertGreaterThan(live.overlay, 0)
+            XCTAssertEqual(live.base, flat.base)
+            XCTAssertEqual(flat.overlay, 0)
+            XCTAssertGreaterThan(departed.value, armed.value)
+            XCTAssertTrue(departed.active)
+            XCTAssertTrue(departed.suppressed)
+            XCTAssertEqual(departed.to, armed.to)
+            store.beginFrame(.init(time: 2.1, delta: 0.21, playing: true, revision: 0, family: 2))
+            XCTAssertEqual(store.cursorStates(key: "m")[0].value, armed.to)
+            XCTAssertFalse(store.cursorStates(key: "m")[0].active)
+            options.scale = 1
+            XCTAssertFalse(options.cutsForegroundOnDeparture)
+        }
+    }
+
     func testLatePronunciationCatchUpContinuesAfterBodyLeavesSelection() {
         for family in [0, 2, 3] {
             let store = LyricsBlossomRunStore()

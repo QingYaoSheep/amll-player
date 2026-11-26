@@ -20,6 +20,7 @@ struct LyricsBlossomRunLayout {
     private struct Fragment: Equatable { var record: Int; var advance: Double }
     let identity = UUID()
     private let placements: [NSRange: Fragment]
+    private let sourceText: String
     let records: [[LyricsBlossomRunSweep.Segment]]
     let pixelsPerPoint: Double
     var feather: Double { 30 / pixelsPerPoint }
@@ -33,6 +34,7 @@ struct LyricsBlossomRunLayout {
     init(text: String, pieces: [Piece], pixelsPerPoint: Double,
          fragmentRanges: [NSRange]? = nil, fragments: [Placement]? = nil) {
         self.pixelsPerPoint = pixelsPerPoint.isFinite && pixelsPerPoint > 0 ? pixelsPerPoint : 1
+        sourceText = text
         let ns = text as NSString
         let valid = pieces.filter {
             $0.width.isFinite && $0.width >= 0 && $0.start.isFinite && $0.end.isFinite
@@ -123,7 +125,8 @@ struct LyricsBlossomRunLayout {
         .init(starts: sample.starts, feather: 40 / pixelsPerPoint)
     }
     func equivalent(to other: Self) -> Bool {
-        pixelsPerPoint == other.pixelsPerPoint && records == other.records && placements == other.placements
+        pixelsPerPoint == other.pixelsPerPoint && sourceText.utf8.elementsEqual(other.sourceText.utf8)
+            && records == other.records && placements == other.placements
     }
     func edge(for range: NSRange, sample: Sample) -> Double? {
         guard let fragment = placements[range], sample.starts.indices.contains(fragment.record),

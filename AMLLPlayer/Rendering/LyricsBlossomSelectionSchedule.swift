@@ -70,7 +70,14 @@ struct LyricsBlossomSelectionSchedule {
         if special, !records.contains(where: { $0.index == output.pending }) {
             output.pending = seed(in: records, at: now, retainLast: family == 3)
         }
-        guard let p = records.firstIndex(where: { $0.index == output.pending }) else { return output }
+        guard let p = records.firstIndex(where: { $0.index == output.pending }) else {
+            if family == 0, output.pending == nil,
+               let last = selected.last, let record = records.first(where: { $0.index == last }), now >= record.end {
+                output.selected.removeAll()
+                output.active.removeAll()
+            }
+            return output
+        }
         let pendingRecord = records[p]
         let back = selected.last.flatMap { key in records.firstIndex { $0.index == key } }
         if family == 2, !selected.isEmpty, back == nil { return output }
@@ -177,6 +184,11 @@ struct LyricsBlossomSelectionSchedule {
         }
     }
 
+    func willPulse(family: Int, wall: Double, running: Bool, rebased: Bool, hasRecords: Bool) -> Bool {
+        running && !rebased && hasRecords
+            && ((family != 2 && family != 3) || (wall.isFinite && wall - lastPulse >= 1.0 / 30))
+    }
+
     mutating func update(family: Int, now: Double, wall: Double, records: [Record],
                          capacity: Int, running: Bool, rebased: Bool, browsing: Bool,
                          adaptive: Bool = false,
@@ -187,8 +199,7 @@ struct LyricsBlossomSelectionSchedule {
         let ticketHold = !bypassClock && !tickets.isEmpty
         let clockHold = !bypassClock && state.deadline >= 0 && now < state.deadline
         let mainHold = family == 3 ? positionTicket != nil : ticketHold || (family != 2 && clockHold)
-        let pulse = running && !rebased && !records.isEmpty
-            && ((family != 2 && family != 3) || (wall.isFinite && wall - lastPulse >= 1.0 / 30))
+        let pulse = willPulse(family: family, wall: wall, running: running, rebased: rebased, hasRecords: !records.isEmpty)
         var output = Output(selected: state.selected, active: state.active, pending: state.pending, deadline: state.deadline)
         if pulse {
             lastPulse = wall

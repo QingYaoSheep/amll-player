@@ -237,6 +237,18 @@ final class LyricsBlossomLineEndTests: XCTestCase {
         XCTAssertEqual(cursor, finished)
     }
 
+    func testOvershotTerminalCursorDropsOldEndpointsAndKeepsSuppression() {
+        let segments = LyricsBlossomRunSweep.segments([.init(start: 2, end: 5, width: 100, text: "tail")])
+        var exact = LyricsBlossomRunSweep.Cursor(value: 130, from: 130, to: 150, elapsed: 0,
+                                                duration: 1, active: true, lastIndex: 0, suppressed: true)
+        exact.step(now: 5, delta: 0.125, segments: segments, force: false)
+        XCTAssertTrue(exact.active)
+        XCTAssertEqual(exact.value, 132.5)
+        exact.step(now: 5, delta: 0.125, segments: segments, force: false)
+        XCTAssertEqual(exact, .init(value: 130, from: 130, to: 130, elapsed: 0,
+                                   duration: 1, active: false, lastIndex: -1, suppressed: true))
+    }
+
     func testCursorAfterEndKeepsExistingTweenThenSnapsOnTheFollowingCall() {
         var cursor = LyricsBlossomRunSweep.Cursor(value: 40, from: 0, to: 80,
             elapsed: 0.5, duration: 1, active: true, lastIndex: 1)

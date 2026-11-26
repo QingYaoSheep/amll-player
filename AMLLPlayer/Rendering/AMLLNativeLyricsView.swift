@@ -635,7 +635,12 @@ final class AMLLNativeCanvas: UIView {
             capabilities = hdrCapabilitiesOverride ?? capabilities
         #endif
         lastHeadroom = capabilities.headroom
-        let visible = state.rows.filter { !$0.hidden && $0.y + heights[$0.lineIndex] >= -bounds.height * 0.5 && $0.y <= bounds.height * 1.5 }
+        let sourceClipping = configuration.animationStyle == .appleMusic164
+        let margin = sourceClipping ? 50 : bounds.height * 0.5
+        let visible = state.rows.filter {
+            let extent = heights[$0.lineIndex] * (sourceClipping ? $0.scale : 1)
+            return !$0.hidden && $0.y + extent >= -margin && $0.y <= bounds.height + margin
+        }
         let brightness = capabilities.outputBrightness(configuration: configuration.hdr ?? .init(),
                                                         reduceTransparency: reduceTransparency)
         let actualTime = hdrTime ?? state.lyricTime
@@ -1387,6 +1392,8 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
                           playing: false)
         }
         independent.wordClock = clock
+        // Pronunciation can still be singing after the body has left.
+        independent.blossomWordExit = nil
         independent.fillComplete = cue.precision == .word && time >= end
         independent.hdrHold = animated && independent.fillComplete && row.hdrHold
         independent.active = time >= start && time < end
@@ -1718,6 +1725,7 @@ private final class AMLLNativeRow: UIView {
     }
 
     private var lastVisualRow: AMLLFrameState.Row?
+    private var lastVisualFlatDeparture = false
     private var lastVisualConfiguration: LyricsRenderConfiguration?
     private var lastVisualMotion = false
     private var lastVisualGain = 1.0
@@ -1766,19 +1774,27 @@ private final class AMLLNativeRow: UIView {
             ? runStore.sample(key: runKey, row: row.lineIndex, layout: blossomLayout, role: runRole) : nil
         let nextSample = configuration.usesCalibratedApple164Appearance
             ? runSample.map(blossomLayout.withCalibratedFeather) : runSample
-        let runChanged = nextSample != blossomSample
+        let flat = runStore.draftTime == nil && usesFlatDeparture(row, configuration: configuration)
+        let runChanged = !flat && nextSample != blossomSample
         blossomSample = nextSample
-        guard runChanged || visual != lastVisualRow || configuration != lastVisualConfiguration
+        guard runChanged || flat != lastVisualFlatDeparture || visual != lastVisualRow || configuration != lastVisualConfiguration
             || motionEnabled != lastVisualMotion || gain != lastVisualGain else { return }
         lastVisualRow = visual
+        lastVisualFlatDeparture = flat
         lastVisualConfiguration = configuration
         lastVisualMotion = motionEnabled
         lastVisualGain = gain
         visualUpdateCount += 1
-        apply(row: row, configuration: configuration, motionEnabled: motionEnabled)
-        let hdrSubmitted = applyHDR(renderer: renderer, gain: gain, row: row, configuration: configuration)
+        apply(row: row, configuration: configuration, motionEnabled: motionEnabled, flatDeparture: flat)
+        let hdrSubmitted = applyHDR(renderer: flat ? nil : renderer, gain: gain, row: row, configuration: configuration)
         needsHDRRetry = gain > 1 && renderer != nil && !hdrSubmitted
         if needsHDRRetry { lastVisualRow = nil }
+    }
+
+    private func usesFlatDeparture(_ row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration) -> Bool {
+        configuration.animationStyle == .appleMusic164 && row.blossomWordExit != nil
+            && line.precision == .word && !line.isBackground && !isRomanization
+            && (configuration.appleMusicAnimation ?? .init()).cutsForegroundOnDeparture
     }
 
     /// One geometry calculation feeds both the SDR gradient and HDR coverage.
@@ -1797,15 +1813,16 @@ private final class AMLLNativeRow: UIView {
     }
 
     private func runFill(range: NSRange, row: AMLLFrameState.Row,
-                         configuration: LyricsRenderConfiguration) -> LyricsBlossomRunFill? {
+                         configuration: LyricsRenderConfiguration, cutsOverlay: Bool = false) -> LyricsBlossomRunFill? {
         guard appliesSourceRunFill,
               let blossomSample, blossomLayout.edge(for: range, sample: blossomSample) != nil else { return nil }
-        return .init(bright: row.brightAlpha, dark: row.darkAlpha)
+        return .init(bright: row.brightAlpha, dark: row.darkAlpha, cutsOverlay: cutsOverlay)
     }
 
     private func sourceRunFillEnabled(_ configuration: LyricsRenderConfiguration) -> Bool {
         guard base.isHidden, configuration.animationStyle == .appleMusic164,
-              (configuration.appleMusicAnimation ?? .init()).selectionFamily == 2,
+              (configuration.appleMusicAnimation ?? .init()).cutsForegroundOnDeparture,
+              !line.isBackground,
               let blossomSample, !blossomLayout.records.isEmpty, blossomLayout.fallbackCount == 0 else { return false }
         return words.allSatisfy { $0.layer.isHidden || blossomLayout.edge(for: $0.fragment.range, sample: blossomSample) != nil }
             && characters.allSatisfy { blossomLayout.edge(for: $0.fragment.range, sample: blossomSample) != nil }
@@ -1852,12 +1869,16 @@ private final class AMLLNativeRow: UIView {
         base.isHidden = piece.isHidden
     }
 
-    func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool) {
+    func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool,
+               flatDeparture: Bool = false) {
         if accessibilityConfiguration != configuration {
             accessibilityConfiguration = configuration
             accessibilityLabel = layoutLineAccessibilityText()
         }
-        let bright = row.brightAlpha, dark = row.darkAlpha
+        let dark = row.darkAlpha
+        let bright = flatDeparture ? dark : row.brightAlpha
+        let effectClock = row.blossomWordExit?.clock ?? row.wordClock
+        let effectWeight = row.blossomWordExit?.weight ?? 1
         for base in runFillBases.values { base.opacity = 0 }
         let weights = LyricsAnimationBlur.weights(radius: row.blur, maximum: blurMaximum)
         let sharpWeight = weights.sharp
@@ -1871,7 +1892,7 @@ private final class AMLLNativeRow: UIView {
         // A blurred bitmap has no word mask. Preserve the same unplayed
         // brightness instead of displaying its white pixels at full alpha.
         let lineBrightness = row.retirement != nil ? bright : (row.active || row.visualFocus == .holding ? 1.0 : dark)
-        let blurredAlpha = Float(sourceFill ? LyricsBlossomRunFill(bright: bright, dark: dark).base
+        let blurredAlpha = Float(sourceFill ? LyricsBlossomRunFill(bright: row.brightAlpha, dark: dark, cutsOverlay: flatDeparture).base
             : (row.retirement != nil ? bright : (words.isEmpty ? lineBrightness : dark)))
         nearBlur.opacity = weights.near * blurredAlpha
         farBlur.opacity = weights.far * blurredAlpha
@@ -1888,11 +1909,11 @@ private final class AMLLNativeRow: UIView {
                 let word = textLayout.sourceAtoms[fragment.wordIndex].word
                 let start = fragment.motionStart ?? word.start
                 let end = fragment.motionEnd ?? word.end
-                let elapsed = row.wordClock.floatElapsed(wordStart: start - line.start, duration: end - start)
+                let elapsed = effectClock.floatElapsed(wordStart: start - line.start, duration: end - start)
                 let offset = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: end - start,
                                                                isBackground: line.isBackground)
                 entry.layer.setAffineTransform(CGAffineTransform(translationX: 0,
-                    y: motionEnabled ? offset * liftUnit : 0))
+                    y: motionEnabled ? offset * liftUnit * effectWeight : 0))
             }
             guard let start = fragment.start, let end = fragment.end,
                   start.isFinite, end.isFinite, end > start
@@ -1900,6 +1921,11 @@ private final class AMLLNativeRow: UIView {
                 // Legacy/untimed annotation remains visible; never manufacture
                 // syllable timing from its character count.
                 entry.mask.colors = [UIColor.white.cgColor, UIColor.white.cgColor]
+                continue
+            }
+            if flatDeparture {
+                let color = UIColor.white.withAlphaComponent(dark).cgColor
+                entry.mask.colors = [color, color]
                 continue
             }
             let width = max(1, fragment.rect.width)
@@ -1931,16 +1957,27 @@ private final class AMLLNativeRow: UIView {
             var lift = 0.0
             if motionEnabled && !isRomanization {
                 let duration = word.end - word.start
-                let elapsed = row.wordClock.floatElapsed(wordStart: word.start - line.start, duration: duration)
-                lift = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground) * liftUnit
+                let elapsed = effectClock.floatElapsed(wordStart: word.start - line.start, duration: duration)
+                lift = AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground)
+                    * liftUnit * effectWeight
             }
             entry.layer.setAffineTransform(CGAffineTransform(translationX: 0, y: lift))
+            let fill = runFill(range: entry.fragment.range, row: row, configuration: configuration, cutsOverlay: flatDeparture)
+            if let fill { applyRunFillBase(to: entry.layer, opacity: Float(fill.base)) }
+            if flatDeparture {
+                if fill != nil {
+                    entry.layer.opacity = 0
+                } else {
+                    let color = UIColor.white.withAlphaComponent(dark).cgColor
+                    entry.mask.colors = [color, color]
+                    entry.layer.opacity = sharpWeight
+                }
+                continue
+            }
             let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
                 maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
-            let fill = runFill(range: entry.fragment.range, row: row, configuration: configuration)
-            if let fill { applyRunFillBase(to: entry.layer, opacity: Float(fill.base)) }
             entry.mask.colors = [UIColor.white.withAlphaComponent(fill?.overlay ?? bright).cgColor,
                                  UIColor.white.withAlphaComponent(fill == nil ? dark : 0).cgColor]
             entry.mask.locations = [0, 1]
@@ -1953,13 +1990,14 @@ private final class AMLLNativeRow: UIView {
         for entry in characters {
             let word = entry.fragment.word
             let presentation = motionEnabled && configuration.emphasizeWords
-                ? entry.animation?.sample(lineTime: row.wordClock.time)
+                ? entry.animation?.sample(lineTime: effectClock.time)
                 : nil
-            let emphasisWeight = configuration.animationStyle == .appleMusic164
+            let presetWeight = configuration.animationStyle == .appleMusic164
                 ? (configuration.appleMusicAnimation ?? .init()).emphasisReleaseWeight(
-                    lineTime: row.wordClock.time, wordEnd: word.end - line.start,
-                    reverseElapsed: row.wordClock.enabled ? 0 : row.wordClock.reverseElapsed)
+                    lineTime: effectClock.time, wordEnd: word.end - line.start,
+                    reverseElapsed: effectClock.enabled ? 0 : effectClock.reverseElapsed)
                 : 1
+            let emphasisWeight = presetWeight * effectWeight
             let scale = 1 + ((presentation?.scale ?? 1) - 1) * emphasisWeight * (calibrated ? 0.14 / 0.12 : 1)
             let x = (presentation?.offsetX ?? 0) * emphasisWeight * textLayout.font.pointSize
             var y = 0.0
@@ -1967,8 +2005,9 @@ private final class AMLLNativeRow: UIView {
                 y = (presentation?.offsetY ?? 0) * emphasisWeight * textLayout.font.pointSize
                 if motionEnabled {
                     let duration = max(0.001, entry.fragment.range.length > 0 ? word.end - word.start : 0.001)
-                    let elapsed = row.wordClock.floatElapsed(wordStart: word.start - line.start, duration: duration)
-                    y += AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground) * liftUnit
+                    let elapsed = effectClock.floatElapsed(wordStart: word.start - line.start, duration: duration)
+                    y += AMLLSourceWordAnimation.wordFloat(elapsed: elapsed, duration: duration, isBackground: line.isBackground)
+                        * liftUnit * effectWeight
                 }
             }
             entry.layer.setAffineTransform(CGAffineTransform(translationX: x, y: y).scaledBy(x: scale, y: scale))
@@ -1976,12 +2015,22 @@ private final class AMLLNativeRow: UIView {
             entry.layer.shadowRadius = CGFloat((presentation?.glowRadius ?? 0) * emphasisWeight) * textLayout.font.pointSize
             entry.layer.shadowOpacity = Float((presentation?.glowOpacity ?? 0) * emphasisWeight)
             entry.layer.shadowOffset = .zero
+            let fill = runFill(range: entry.fragment.range, row: row, configuration: configuration, cutsOverlay: flatDeparture)
+            if let fill { applyRunFillBase(to: entry.layer, opacity: Float(fill.base)) }
+            if flatDeparture {
+                if fill != nil {
+                    entry.layer.opacity = 0
+                } else {
+                    let color = UIColor.white.withAlphaComponent(dark).cgColor
+                    entry.mask.colors = [color, color]
+                    entry.layer.opacity = sharpWeight
+                }
+                continue
+            }
             let (edge, feather) = fillWindow(range: entry.fragment.range, width: entry.fragment.rect.width,
                 maskIndex: entry.maskIndex, advance: entry.advance, row: row, configuration: configuration)
             let width = max(1, entry.fragment.rect.width)
             let start = edge / width, end = (edge + max(0.0001, feather)) / width
-            let fill = runFill(range: entry.fragment.range, row: row, configuration: configuration)
-            if let fill { applyRunFillBase(to: entry.layer, opacity: Float(fill.base)) }
             entry.mask.colors = [UIColor.white.withAlphaComponent(fill?.overlay ?? bright).cgColor,
                                  UIColor.white.withAlphaComponent(fill == nil ? dark : 0).cgColor]
             entry.mask.locations = [0, 1]

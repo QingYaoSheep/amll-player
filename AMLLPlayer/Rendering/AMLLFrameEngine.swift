@@ -126,25 +126,32 @@ struct AMLLFrameState: Codable, Sendable {
             var hdrWeight: Double
         }
 
+        struct WordExit: Codable, Equatable, Sendable {
+            var clock: AMLLWordAnimationClock
+            var weight: Double
+        }
+        var blossomWordExit: WordExit?
         var retirement: Retirement?
         var positionMotion: AMLLScheduledSpring.Schedule?
 
         private enum CodingKeys: String, CodingKey {
             case lineIndex, groupIndex, y, scale, brightAlpha, darkAlpha, wordClock, opacity, blur, active, hidden
-            case visualFocus, fillComplete, hdrHold, retirement, positionMotion
+            case visualFocus, fillComplete, hdrHold, retirement, positionMotion, blossomWordExit
         }
 
         init(lineIndex: Int, groupIndex: Int, y: Double, scale: Double, brightAlpha: Double, darkAlpha: Double,
              wordClock: AMLLWordAnimationClock, opacity: Double = 1, blur: Double = 0,
              active: Bool = false, hidden: Bool = false, visualFocus: VisualFocus = .waiting,
              fillComplete: Bool = false, hdrHold: Bool = false,
-             positionMotion: AMLLScheduledSpring.Schedule? = nil, retirement: Retirement? = nil)
+             positionMotion: AMLLScheduledSpring.Schedule? = nil, retirement: Retirement? = nil,
+             blossomWordExit: WordExit? = nil)
         {
             self.lineIndex = lineIndex; self.groupIndex = groupIndex; self.y = y; self.scale = scale
             self.brightAlpha = brightAlpha; self.darkAlpha = darkAlpha; self.wordClock = wordClock
             self.opacity = opacity; self.blur = blur; self.active = active; self.hidden = hidden
             self.visualFocus = visualFocus; self.fillComplete = fillComplete; self.hdrHold = hdrHold
             self.positionMotion = positionMotion; self.retirement = retirement
+            self.blossomWordExit = blossomWordExit
         }
 
         init(from decoder: Decoder) throws {
@@ -165,6 +172,7 @@ struct AMLLFrameState: Codable, Sendable {
             hdrHold = try values.decodeIfPresent(Bool.self, forKey: .hdrHold) ?? false
             retirement = try values.decodeIfPresent(Retirement.self, forKey: .retirement)
             positionMotion = try values.decodeIfPresent(AMLLScheduledSpring.Schedule.self, forKey: .positionMotion)
+            blossomWordExit = try values.decodeIfPresent(WordExit.self, forKey: .blossomWordExit)
         }
     }
 
@@ -274,6 +282,18 @@ struct AMLLFrameEngine {
     private(set) var blossomSchedule: LyricsBlossomSelectionSchedule.Output?
 
     private struct GroupMotion {
+        struct WordRelease {
+            let start: Double
+            let clock: AMLLWordAnimationClock
+
+            func presentation(at time: Double, easesOut: Bool) -> AMLLFrameState.Row.WordExit {
+                let weight = easesOut ? max(0, 1 - (time - start) / 0.25) : 0
+                return .init(clock: weight > 0 ? clock : .init(), weight: weight)
+            }
+        }
+
+        var mainWordRelease: WordRelease?
+        var backgroundWordRelease: WordRelease?
         var y = AMLLScheduledSpring()
         var slide = AMLLScheduledSpring(-80)
         var mainScale = LyricsAnimationSpring(100)
@@ -360,6 +380,8 @@ struct AMLLFrameEngine {
     private var pendingVisualFocus: (index: Int, startTime: Double)?
     private var positionRevision = 0
     private var positionReset = false
+    private var blossomHardPosition = false
+    private var blossomProgressDragging = false
     private var releasedForInterlude = false
     private var previousSongEnded = false
 
@@ -652,6 +674,8 @@ struct AMLLFrameEngine {
         let options = environment.appleMusicAnimation ?? .init()
         let family = options.selectionFamily
         let usesBlossomSelector = appleStyle && LyricsBlossomSelectionSchedule.supported(family)
+        blossomHardPosition = false
+        blossomProgressDragging = input.progressDraft != nil
         var layout = timeline.update(time: time + (appleStyle ? 0 : environment.advance * 1000),
                                      groups: appleStyle ? document.singingTimings : document.timings,
                                      seeking: seeking, hasBottomContent: false)
@@ -671,14 +695,25 @@ struct AMLLFrameEngine {
             }
             frameStart = animationTime
             let lyricTime = time / 1000
-            let rebased = seeking || blossomNeedsRebase || previousInput?.offset != input.offset
+            let clockRebased = seeking || previousInput?.offset != input.offset
                 || (previousInput?.progressDraft != nil && input.progressDraft == nil)
+            let rebased = clockRebased || blossomNeedsRebase
+            let running = input.playing && !songEnded && !input.awaitingSeekConfirmation && !blossomProgressDragging
             let records = family == 2 || family == 3 ? blossomRecords : blossomOrdinaryRecords
             let capacity = options.maximumLines
             if rebased {
                 let target = timeline.focus
                 let visible = motions.indices.contains(target) && motions[target].y.position < environment.height
                     && motions[target].y.position + height(document.groups[target].main) > 0
+                // A confirmed relocation outside the renderable viewport has
+                // no meaningful visible origin. Taps on visible lines keep the spring.
+                blossomHardPosition = seeking && !visible && !blossomProgressDragging
+                if clockRebased {
+                    for index in motions.indices {
+                        motions[index].mainWordRelease = nil
+                        motions[index].backgroundWordRelease = nil
+                    }
+                }
                 blossomSelector.rebase(records: records, now: lyricTime, capacity: capacity,
                     bypassClock: !seeking || firstFrame || !visible || input.progressDraft != nil, family: family)
                 pendingVisualFocus = nil
@@ -686,21 +721,27 @@ struct AMLLFrameEngine {
                 for key in blossomSelector.state.selected where document.groups.indices.contains(key) {
                     motions[key].mainRetirement = nil
                     motions[key].backgroundRetirement = nil
+                    motions[key].mainWordRelease = nil
+                    motions[key].backgroundWordRelease = nil
                 }
                 blossomNeedsRebase = false
                 dirty = true
             }
+            let refreshClock = !input.awaitingSeekConfirmation && (
+                (family != 2 && family != 3) || (rebased && family != 3)
+                || blossomSelector.willPulse(family: family, wall: animationTime, running: running,
+                                             rebased: rebased, hasRecords: !records.isEmpty))
             runStore.beginFrame(.init(time: lyricTime, delta: elapsed,
                 playing: input.playing && !input.awaitingSeekConfirmation,
                 revision: timeAnchorRevision, family: family, offset: input.offset,
                 draftTime: input.progressDraft.map { $0 - input.offset },
-                selectedRows: blossomRows(blossomSelector.state.selected), rebase: rebased))
+                selectedRows: blossomRows(blossomSelector.state.selected), rebase: clockRebased,
+                refreshClock: refreshClock, selectionRebased: rebased))
             // Snapshot pending commands before mutating the scheduler so the
             // completion query cannot overlap an inout access to this engine.
             let pendingTickets = pendingBlossomTickets()
             let schedule = blossomSelector.update(family: family, now: lyricTime, wall: animationTime,
-                records: records, capacity: capacity, running: input.playing && !songEnded
-                    && !input.awaitingSeekConfirmation && input.progressDraft == nil,
+                records: records, capacity: capacity, running: running,
                 rebased: rebased, browsing: browsing, adaptive: family == 2, isPending: pendingTickets.contains)
             if schedule.takeover != blossomSchedule?.takeover || schedule.kind != .none
                 || !schedule.left.isEmpty || !schedule.entered.isEmpty { dirty = true }
@@ -722,6 +763,9 @@ struct AMLLFrameEngine {
             motions[index].mainWords.advance(elapsed, playing: previousInput?.playing ?? false)
             motions[index].backgroundWords.advance(elapsed, playing: previousInput?.playing ?? false)
             let group = document.groups[index]
+            if appleStyle, runStore.rewindRows.contains(group.main) {
+                motions[index].mainWords = .init()
+            }
             let mainStart = document.actualLineStarts[group.main]
             let mainEnd = document.actualLineEnds[group.main]
             let mainSinging = mainStart <= time / 1000 && time / 1000 < mainEnd
@@ -755,6 +799,9 @@ struct AMLLFrameEngine {
                 motions[index].mainWords.disable()
             }
             if let background = group.background {
+                if appleStyle, runStore.rewindRows.contains(background) {
+                    motions[index].backgroundWords = .init()
+                }
                 let backgroundStart = document.actualLineStarts[background]
                 if environment.animationStyle == .appleMusic164 {
                     let ready = input.playing && time / 1000 >= backgroundStart
@@ -812,11 +859,15 @@ struct AMLLFrameEngine {
         } else if usesBlossomSelector && !browsing {
             if let schedule = blossomSchedule {
                 for key in schedule.left where document.groups.indices.contains(key) {
+                    motions[key].mainWordRelease = .init(start: frameStart, clock: motions[key].mainWords)
+                    motions[key].backgroundWordRelease = .init(start: frameStart, clock: motions[key].backgroundWords)
                     releaseVisualFocus(in: key, at: frameStart, selectionExit: true)
                 }
                 for key in schedule.entered where document.groups.indices.contains(key) {
                     motions[key].mainRetirement = nil
                     motions[key].backgroundRetirement = nil
+                    motions[key].mainWordRelease = nil
+                    motions[key].backgroundWordRelease = nil
                 }
                 let selected = Set(schedule.selected)
                 for index in motions.indices {
@@ -946,7 +997,9 @@ struct AMLLFrameEngine {
                               active: motion.mainSinging,
                               hidden: false,
                               visualFocus: visualState, fillComplete: motion.mainCompleted, hdrHold: holdHDR,
-                              positionMotion: motion.y.schedule, retirement: mainExit?.state))
+                              positionMotion: motion.y.schedule, retirement: mainExit?.state,
+                              blossomWordExit: usesBlossomSelector ? motion.mainWordRelease?.presentation(
+                                at: animationTime, easesOut: options.emphasis != 0 && !environment.reduceMotion) : nil))
             if let background = group.background {
                 let backgroundState: AMLLFrameState.Row.VisualFocus = motion.backgroundRetirement != nil ? .passed
                     : motion.backgroundSinging ? .current
@@ -963,11 +1016,17 @@ struct AMLLFrameEngine {
                                   active: motion.backgroundSinging, hidden: !motion.active && progress == 0 && (motion.backgroundRetirement?.arrived ?? true),
                                   visualFocus: backgroundState, fillComplete: motion.backgroundCompleted,
                                   hdrHold: backgroundState == .holding && !songEnded && interlude == nil,
-                                  positionMotion: motion.y.schedule, retirement: backgroundExit?.state))
+                                  positionMotion: motion.y.schedule, retirement: backgroundExit?.state,
+                                  blossomWordExit: usesBlossomSelector ? motion.backgroundWordRelease?.presentation(
+                                    at: animationTime, easesOut: options.emphasis != 0 && !environment.reduceMotion) : nil))
             }
             if environment.animationStyle == .appleMusic164 {
                 allSettled = allSettled && motion.mainLightUp.arrived && motion.backgroundLightUp.arrived
                     && motion.mainScaleWait == nil && motion.backgroundScaleWait == nil
+            }
+            if usesBlossomSelector, options.emphasis != 0, !environment.reduceMotion,
+               let release = motion.mainWordRelease ?? motion.backgroundWordRelease, animationTime - release.start < 0.25 {
+                allSettled = false
             }
             allSettled = allSettled && (motion.mainRetirement?.arrived ?? true) && (motion.backgroundRetirement?.arrived ?? true)
             if environment.enableSpring || environment.reduceMotion {
@@ -1169,7 +1228,12 @@ struct AMLLFrameEngine {
         let clearsBlossomDelay = environment.animationStyle == .appleMusic164
             && LyricsBlossomLineSchedule.clearsDelay(wordVersion: blossom?.word ?? 0,
                                                     paused: !playing, hidden: false, advanceSatisfied: false)
-        var delay = 0.0, baseDelay = touching || clearsBlossomDelay ? 0 : LyricsBlossomLineSchedule.step
+        let hasIndependentExit = blossom?.selectionFamily == 2 && blossomSchedule?.removed != nil
+            && blossomSchedule?.enterIndex == nil && !blossomProgressDragging && !browsing
+        let hardPosition = blossom != nil && !blossomProgressDragging && (blossomHardPosition || positionReset)
+        if hardPosition { blossomSelector.invalidateTickets() }
+        var delay = 0.0
+        var baseDelay = touching || clearsBlossomDelay || hasIndependentExit ? 0 : LyricsBlossomLineSchedule.step
         // Native selected voices supply real row-end times. The predicate only
         // clears the scale wait; it cannot seek or force a word to be filled.
         let selected = blossomSchedule?.selected.filter { document.groups.indices.contains($0) }
@@ -1246,7 +1310,7 @@ struct AMLLFrameEngine {
             // follows the same spring as Return to Current. Only initial layout
             // and the existing accessibility variant position immediately.
             let immediate = firstFrame || environment.reduceMotion
-            let scaleDelay: Double = if let blossom, !seeking, !browsing,
+            let scaleDelay: Double = if let blossom, !seeking, !browsing, !hasIndependentExit,
                 !LyricsBlossomLineSchedule.clearsDelay(wordVersion: blossom.word, paused: !playing,
                     hidden: false, advanceSatisfied: advanceClearsScale) {
                 blossom.selectionFamily == 3
@@ -1260,7 +1324,7 @@ struct AMLLFrameEngine {
                     motions[index].mainScaleParameters = parameters
                 }
             }
-            let immediatePosition = immediate || browsing || positionReset
+            let immediatePosition = immediate || browsing || hardPosition || (blossom == nil && positionReset)
             let positionTargetChanged = motions[index].y.target != y
             let presentedY = environment.enableSpring && !environment.reduceMotion
                 ? motions[index].y.position : motions[index].yTransition.value
@@ -1275,7 +1339,7 @@ struct AMLLFrameEngine {
                 motions[index].yTransition.setPosition(y)
                 motions[index].slideTransition.setPosition(slide)
             }
-            if immediate {
+            if immediate || hardPosition {
                 motions[index].mainScaleWait = nil
                 motions[index].backgroundScaleWait = nil
                 motions[index].mainScale.setPosition(mainScale)
@@ -1304,6 +1368,13 @@ struct AMLLFrameEngine {
                                                        usesTabletBlurCurve: environment.tabletTypography != nil)
             } else {
                 if !immediatePosition {
+                    if hasIndependentExit {
+                        let exitParameters = AMLLSourceSpring.Parameters(mass: 1, damping: 18, stiffness: 100)
+                        motions[index].y.updateParameters(exitParameters)
+                        motions[index].slide.updateParameters(exitParameters)
+                        motions[index].y.clearPendingDelay(at: frameStart)
+                        motions[index].slide.clearPendingDelay(at: frameStart)
+                    }
                     motions[index].y.setTarget(y, startTime: frameStart + delay, at: frameStart, revision: positionRevision)
                     // The local background reveal shares the focus event; do not queue a second stagger.
                     motions[index].slide.setTarget(slide, startTime: frameStart, at: frameStart, revision: positionRevision)
@@ -1327,7 +1398,7 @@ struct AMLLFrameEngine {
                 if oldY != y { changed.append(.position) }
                 if oldScale != mainScale || oldBackgroundScale != bgScale { changed.append(.scale) }
                 if oldVisual != focused {
-                    motions[index].mainLightUp.setFocused(focused, immediately: immediate)
+                    motions[index].mainLightUp.setFocused(focused, immediately: immediate || hardPosition)
                     changed.append(.light)
                 }
                 if oldOpacity != motions[index].opacityTransition.target { changed.append(.opacity) }

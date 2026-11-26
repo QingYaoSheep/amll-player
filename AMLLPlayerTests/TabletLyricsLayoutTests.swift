@@ -14,7 +14,7 @@ final class TabletLyricsLayoutTests: XCTestCase {
         XCTAssertEqual(layout.transportCenter.x - layout.transportSpacing - layout.buttonSize / 2, 210.29, accuracy: 0.001)
         XCTAssertEqual(layout.buttonSize, 68, accuracy: 0.001)
         XCTAssertEqual(layout.glyphSize, 36, accuracy: 0.001)
-        XCTAssertEqual(try XCTUnwrap(layout.volume).minY, 905, accuracy: 0.001)
+        assertRect(try XCTUnwrap(layout.volume), 85.04, 905, 496.5, 20)
         XCTAssertEqual(layout.typography.anchor * 1030, 443.525, accuracy: 0.001)
         XCTAssertEqual(layout.typography.primarySize, 48)
         for (visualLines, step) in [(1, 98.0), (2, 156.0), (3, 214.0)] {

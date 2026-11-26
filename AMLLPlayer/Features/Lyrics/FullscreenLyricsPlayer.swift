@@ -508,11 +508,12 @@ struct LyricsVolumeControl: View {
     let device: PlaybackDevice
     let volume: Int
     var tabletTrackThickness: CGFloat? = nil
+    var showsIcons = true
     @State private var editing = false
     @State private var draft = 0.0
     var body: some View {
         HStack {
-            Image(systemName: "speaker.fill")
+            if showsIcons { Image(systemName: "speaker.fill") }
             LyricsCapsuleSlider(value: Binding(get: { editing ? draft : Double(volume) }, set: { draft = $0 }), maximum: 100, trackThickness: tabletTrackThickness) { value in
                 if value {
                     draft = Double(volume); editing = true
@@ -520,7 +521,7 @@ struct LyricsVolumeControl: View {
                     editing = false; Task { await model.setVolume(percent: Int(draft), deviceID: device.id) }
                 }
             }.accessibilityLabel(Text("render.volume")).disabled(device.isRestricted || model.isPerformingAction)
-            Image(systemName: "speaker.wave.3.fill")
+            if showsIcons { Image(systemName: "speaker.wave.3.fill") }
         }.font(.caption)
     }
 }

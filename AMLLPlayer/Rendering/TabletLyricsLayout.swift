@@ -63,9 +63,9 @@ struct TabletLyricsLayout: Equatable {
             buttonSize = max(44, 68 * s)
             transportWidth = column
             transportSpacing = 95 * s
-            transportCenter = CGPoint(x: x + column / 2, y: lowerY + lowerHeight / 2 + 24 * s)
+            transportCenter = CGPoint(x: x + column / 2 + s, y: lowerY + lowerHeight / 2 + 24 * s)
             glyphSize = 36 * s
-            volume = CGRect(x: x, y: lowerY + lowerHeight - 40 * s, width: column, height: 20 * s)
+            volume = CGRect(x: x + 30 * s, y: lowerY + lowerHeight - 40 * s, width: max(1, column - 70 * s), height: 20 * s)
             let left = max(0, w / 2 - 18)
             let availableHeight = max(1, h - bottomInset)
             lyrics = CGRect(x: left, y: 0, width: max(1, 0.96 * w - left), height: availableHeight)

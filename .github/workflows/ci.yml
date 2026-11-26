@@ -84,8 +84,30 @@ jobs:
           fi
           node Scripts/prepare-ci-simulators.cjs
 
+      - name: Verify the ordinary iPad lyrics pages
+        if: ${{ !cancelled() && matrix.run-tests && steps.prepare-simulators.outcome == 'success' }}
+        run: >-
+          xcodebuild test
+          -project AMLLPlayer.xcodeproj
+          -scheme AMLLPlayer
+          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
+          -only-testing:AMLLPlayerTests/TabletLyricsLayoutTests
+          -only-testing:AMLLPlayerUITests/TabletLyricsPlayerUITests
+          -resultBundlePath build/Xcode27-tablet-lyrics.xcresult
+          -collect-test-diagnostics never
+          -parallel-testing-enabled NO
+          CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload iPad lyrics verification
+        if: ${{ !cancelled() && matrix.run-tests }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: AMLLPlayer-iPad-lyrics-verification
+          path: build/Xcode27-tablet-lyrics.xcresult
+          if-no-files-found: ignore
+
       - name: Test on iPhone with Xcode 27
-        if: matrix.run-tests
+        if: ${{ !cancelled() && matrix.run-tests && steps.prepare-simulators.outcome == 'success' }}
         run: >-
           xcodebuild test
           -project AMLLPlayer.xcodeproj
@@ -118,28 +140,6 @@ jobs:
         with:
           name: AMLLPlayer-visual-review
           path: build/Plan5-images
-          if-no-files-found: ignore
-
-      - name: Verify the ordinary iPad lyrics pages
-        if: ${{ !cancelled() && matrix.run-tests && steps.prepare-simulators.outcome == 'success' }}
-        run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
-          -only-testing:AMLLPlayerTests/TabletLyricsLayoutTests
-          -only-testing:AMLLPlayerUITests/TabletLyricsPlayerUITests
-          -resultBundlePath build/Xcode27-tablet-lyrics.xcresult
-          -collect-test-diagnostics never
-          -parallel-testing-enabled NO
-          CODE_SIGNING_ALLOWED=NO
-
-      - name: Upload iPad lyrics verification
-        if: ${{ !cancelled() && matrix.run-tests }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: AMLLPlayer-iPad-lyrics-verification
-          path: build/Xcode27-tablet-lyrics.xcresult
           if-no-files-found: ignore
 
       - name: Build with iOS 27 SDK

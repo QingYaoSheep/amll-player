@@ -53,7 +53,7 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View, Actions: View>: View {
                     .allowsHitTesting(controlsVisible).accessibilityHidden(!controlsVisible)
 
                 if let volume = layout.volume, controlsVisible, configuration.showVolume {
-                    place(volume, alignment: .center) { volumeControl }
+                    volumeControl(at: volume)
                 }
             }
             .animation(LyricsPageMotion.content, value: controlsVisible)
@@ -173,14 +173,29 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View, Actions: View>: View {
         model.isPerformingAction || (model.selectedMusicService == .netease && !model.netEasePlayback.canEditPersonalQueue)
     }
 
-    @ViewBuilder private var volumeControl: some View {
-        if model.selectedMusicService == .spotify {
-            if let device = snapshot.device, device.supportsVolume, let volume = device.volumePercent {
-                LyricsVolumeControl(model: model, device: device, volume: volume, tabletTrackThickness: 7.5 * layout.scale)
+    @ViewBuilder private func volumeControl(at track: CGRect) -> some View {
+        let device = snapshot.device
+        if model.selectedMusicService != .spotify || (device?.supportsVolume == true && device?.volumePercent != nil) {
+            place(track, alignment: .center) {
+                if model.selectedMusicService == .spotify, let device, let volume = device.volumePercent {
+                    LyricsVolumeControl(model: model, device: device, volume: volume,
+                                        tabletTrackThickness: 7.5 * layout.scale, showsIcons: false)
+                } else {
+                    SystemMusicVolumeView().frame(height: 44)
+                        .accessibilityLabel(Text("render.volume"))
+                }
             }
-        } else {
-            SystemMusicVolumeView().frame(height: 44).padding(.horizontal, 30 * layout.scale)
+            speaker("speaker.fill", x: track.minX - 16 * layout.scale, y: track.midY, glyph: 14)
+            speaker("speaker.wave.3.fill", x: track.maxX + 26 * layout.scale, y: track.midY, glyph: 20)
         }
+    }
+
+    private func speaker(_ symbol: String, x: CGFloat, y: CGFloat, glyph: CGFloat) -> some View {
+        let size = 28 * layout.scale
+        return Image(systemName: symbol).font(.system(size: glyph * layout.scale))
+            .frame(width: size, height: size)
+            .offset(x: x - size / 2, y: y - size / 2)
+            .accessibilityHidden(true).allowsHitTesting(false)
     }
 
     private func place<V: View>(_ rect: CGRect, alignment: Alignment, @ViewBuilder content: () -> V) -> some View {

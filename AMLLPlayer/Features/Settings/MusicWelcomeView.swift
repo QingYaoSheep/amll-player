@@ -7,33 +7,60 @@ struct MusicWelcomeView: View {
     var body: some View {
         NavigationStack {
             SettingsPage {
-                VStack(alignment: .leading, spacing: 12) {
-                    Image(systemName: "music.note")
-                        .font(.largeTitle.weight(.semibold))
-                        .foregroundStyle(MusicProductStyle.accent)
-                        .accessibilityHidden(true)
-                    Text("连接音乐服务").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                }
-                .settingsSurface(radius: SettingsCorners.card)
-                SettingsSection {
-                    ForEach(MusicServiceID.allCases) { service in
-                        NavigationLink {
-                            MusicLoginDestination(model: model, service: service)
-                                .toolbar {
-                                    ToolbarItem(placement: .confirmationAction) { Button("common.done", action: complete) }
-                                }
-                        } label: {
-                            SettingsActionLabel(title: LocalizedStringKey(service.title), icon: service.settingsIcon, navigates: true)
+                SettingsGroup(radius: SettingsCorners.hero) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [MusicProductStyle.accent.opacity(0.28), MusicProductStyle.accent.opacity(0.10)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                            Image(systemName: "music.note")
+                                .font(.title.weight(.semibold))
+                                .foregroundStyle(MusicProductStyle.accent)
                         }
-                        .simultaneousGesture(TapGesture().onEnded { model.selectMusicService(service) })
+                        .frame(width: 56, height: 56)
+                        .accessibilityHidden(true)
+
+                        Text("连接音乐服务")
+                            .font(.largeTitle.bold())
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    .padding(20)
+                }
+
+                SettingsSection {
+                    SettingsGroup {
+                        ForEach(Array(MusicServiceID.allCases.enumerated()), id: \.element.id) { index, service in
+                            if index > 0 { SettingsDivider() }
+                            NavigationLink {
+                                MusicLoginDestination(model: model, service: service)
+                                    .toolbar {
+                                        ToolbarItem(placement: .confirmationAction) { Button("common.done", action: complete) }
+                                    }
+                            } label: {
+                                SettingsRowLabel(
+                                    title: LocalizedStringKey(service.title),
+                                    icon: service.settingsIcon,
+                                    iconColor: service.brandColor,
+                                    navigates: true
+                                )
+                            }
+                            .buttonStyle(SettingsRowButtonStyle())
+                            .simultaneousGesture(TapGesture().onEnded { model.selectMusicService(service) })
+                        }
                     }
                 }
+
                 Button(action: complete) {
-                    SettingsActionLabel(title: "稍后设置", icon: "arrow.right")
+                    SettingsActionLabel(title: "稍后设置", icon: "arrow.right", iconColor: .secondary)
                 }
+                .buttonStyle(SettingsButtonStyle())
                 .accessibilityIdentifier("skipMusicWelcome")
             }
-            .buttonStyle(SettingsButtonStyle())
         }
         .tint(MusicProductStyle.accent)
         .interactiveDismissDisabled()

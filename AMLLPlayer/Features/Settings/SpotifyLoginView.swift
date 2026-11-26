@@ -30,37 +30,57 @@ struct SpotifyLoginView: View {
                             icon: "safari", busy: model.isSpotifyLoginBusy, style: .primary
                         )
                     }
+                    .buttonStyle(SettingsButtonStyle())
                     .disabled(SpotifyClientIDStore.normalized(clientID) == nil || unavailable)
                     .accessibilityIdentifier("spotifyAuthorize")
                 }
 
-                if model.sessionState.isAuthenticated {
-                    Button(role: .destructive) {
-                        model.logout()
-                        needsRetry = false
-                    } label: {
-                        SettingsActionLabel(title: "settings.logout", icon: "rectangle.portrait.and.arrow.right", style: .destructive)
+                if model.sessionState.isAuthenticated || model.environment.configuration.spotifyClientID != nil {
+                    SettingsGroup {
+                        if model.environment.configuration.spotifyClientID != nil {
+                            Button {
+                                isEditingClientID = false
+                                if showConfiguration { clientID = model.environment.configuration.spotifyClientID ?? "" }
+                                withAnimation(reduceMotion ? nil : SettingsMotion.disclosure) { showConfiguration.toggle() }
+                            } label: {
+                                SettingsRowLabel(
+                                    title: showConfiguration ? "收起配置" : "编辑 Spotify 配置",
+                                    icon: "slider.horizontal.3",
+                                    iconColor: MusicServiceID.spotify.brandColor
+                                )
+                            }
+                            .buttonStyle(SettingsRowButtonStyle())
+                            .disabled(unavailable)
+                            .accessibilityIdentifier("spotifyAdvancedConfiguration")
+                        }
+
+                        if model.environment.configuration.spotifyClientID != nil && model.sessionState.isAuthenticated {
+                            SettingsDivider()
+                        }
+
+                        if model.sessionState.isAuthenticated {
+                            Button(role: .destructive) {
+                                model.logout()
+                                needsRetry = false
+                            } label: {
+                                SettingsRowLabel(
+                                    title: "settings.logout",
+                                    icon: "rectangle.portrait.and.arrow.right",
+                                    role: .destructive
+                                )
+                            }
+                            .buttonStyle(SettingsRowButtonStyle())
+                            .disabled(unavailable)
+                            .accessibilityIdentifier("spotifySignOut")
+                        }
                     }
-                    .disabled(unavailable)
-                    .accessibilityIdentifier("spotifySignOut")
                 }
-            }
-            if model.environment.configuration.spotifyClientID != nil {
-                Button {
-                    isEditingClientID = false
-                    if showConfiguration { clientID = model.environment.configuration.spotifyClientID ?? "" }
-                    withAnimation(reduceMotion ? nil : MusicProductMotion.change) { showConfiguration.toggle() }
-                } label: {
-                    SettingsActionLabel(title: showConfiguration ? "收起配置" : "编辑 Spotify 配置", icon: "slider.horizontal.3")
-                }
-                .disabled(unavailable)
-                .accessibilityIdentifier("spotifyAdvancedConfiguration")
             }
             if showConfiguration {
-                configuration.transition(.opacity)
+                configuration
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
             }
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("settings.login.spotify")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: isConnectedWithThisClient) { _, connected in
@@ -76,41 +96,71 @@ struct SpotifyLoginView: View {
 
     private var configuration: some View {
         SettingsSection("Spotify 配置") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("settings.clientID").font(.subheadline.weight(.semibold))
-                TextField("settings.clientID", text: $clientID)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.asciiCapable)
-                    .submitLabel(.done)
-                    .focused($isEditingClientID)
-                    .onSubmit { isEditingClientID = false }
-                    .accessibilityIdentifier("spotifyClientID")
-                if SpotifyClientIDStore.normalized(clientID) == nil {
-                    Text("从 Spotify 开发者后台复制 Client ID 到这里。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            SettingsGroup {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("settings.clientID")
+                        .font(.subheadline.weight(.semibold))
+                    TextField("settings.clientID", text: $clientID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.asciiCapable)
+                        .submitLabel(.done)
+                        .focused($isEditingClientID)
+                        .onSubmit { isEditingClientID = false }
+                        .accessibilityIdentifier("spotifyClientID")
+                    if SpotifyClientIDStore.normalized(clientID) == nil {
+                        Text("从 Spotify 开发者后台复制 Client ID 到这里。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            }
-            .settingsSurface()
-            configurationValue("回调地址", AppConfiguration.defaultRedirectURI.absoluteString)
-            configurationValue("Bundle ID", Bundle.main.bundleIdentifier ?? "net.stevexmh.amllplayer")
-            Link(destination: URL(string: "https://developer.spotify.com/dashboard")!) {
-                SettingsActionLabel(title: "settings.login.dashboard", icon: "arrow.up.right")
-            }
-            Link(destination: URL(string: "https://developer.spotify.com/documentation/web-api/concepts/apps")!) {
-                SettingsActionLabel(title: "settings.login.documentation", icon: "book")
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+                SettingsDivider(inset: 16)
+
+                SettingsInfoRow(
+                    title: "回调地址",
+                    value: AppConfiguration.defaultRedirectURI.absoluteString,
+                    monospacedValue: true,
+                    selectable: true
+                )
+
+                SettingsDivider(inset: 16)
+
+                SettingsInfoRow(
+                    title: "Bundle ID",
+                    value: Bundle.main.bundleIdentifier ?? "net.stevexmh.amllplayer",
+                    monospacedValue: true,
+                    selectable: true
+                )
+
+                SettingsDivider()
+
+                Link(destination: URL(string: "https://developer.spotify.com/dashboard")!) {
+                    SettingsRowLabel(
+                        title: "settings.login.dashboard",
+                        icon: "arrow.up.right",
+                        iconColor: MusicServiceID.spotify.brandColor,
+                        navigates: true
+                    )
+                }
+                .buttonStyle(SettingsRowButtonStyle())
+
+                SettingsDivider()
+
+                Link(destination: URL(string: "https://developer.spotify.com/documentation/web-api/concepts/apps")!) {
+                    SettingsRowLabel(
+                        title: "settings.login.documentation",
+                        icon: "book",
+                        iconColor: .blue,
+                        navigates: true
+                    )
+                }
+                .buttonStyle(SettingsRowButtonStyle())
             }
         }
         .disabled(unavailable)
-    }
-
-    private func configurationValue(_ title: LocalizedStringKey, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.subheadline.weight(.semibold))
-            Text(value).font(.footnote.monospaced()).textSelection(.enabled).foregroundStyle(.secondary)
-        }
-        .settingsSurface()
     }
 
     private var profile: MusicProfile? {

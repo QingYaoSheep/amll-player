@@ -28,49 +28,85 @@ struct NetEaseLoginView: View {
             )
             SettingsSection {
                 if hasActiveQR {
-                    qrCard.transition(.opacity)
+                    qrCard
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                 } else if requestedQR, session.currentState.error == nil, !isGenerating, session.qrStatus != "登录成功" {
-                    Text(LocalizedStringKey(session.qrStatus)).font(.subheadline).foregroundStyle(.secondary)
+                    Text(LocalizedStringKey(session.qrStatus))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
                 }
                 if let error = session.currentState.error {
-                    Text(error.localizedDescription).font(.subheadline).foregroundStyle(.secondary)
+                    Text(error.localizedDescription)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
                         .accessibilityIdentifier("neteaseLoginError")
                 }
                 Button(action: startQR) {
                     SettingsActionLabel(
                         title: qrButtonTitle, icon: hasActiveQR ? "arrow.clockwise" : "qrcode.viewfinder",
-                        busy: isGenerating, style: connected || hasActiveQR ? .secondary : .primary
+                        busy: isGenerating, style: connected || hasActiveQR ? .secondary : .primary,
+                        iconColor: MusicServiceID.netease.brandColor
                     )
                 }
+                .buttonStyle(SettingsButtonStyle())
                 .disabled(isGenerating || isCheckingAccount)
                 .accessibilityIdentifier("neteaseAuthorize")
             }
             SettingsSection {
-                Button { refreshAccount() } label: {
-                    SettingsActionLabel(title: "重新检查状态", icon: "arrow.clockwise", busy: isCheckingAccount)
-                }
-                .disabled(isCheckingAccount || session.currentState.requesting)
-                NavigationLink { NetEaseCookieImportView(session: session) } label: {
-                    SettingsActionLabel(title: "高级登录方式", icon: "key", navigates: true)
-                }
-                .disabled(isStartingQR || isCheckingAccount)
-                if connected {
-                    Button(role: .destructive) {
-                        model.disconnectNetEase()
-                        requestedQR = false
-                    } label: {
-                        SettingsActionLabel(title: "退出网易云音乐", icon: "rectangle.portrait.and.arrow.right", style: .destructive)
+                SettingsGroup {
+                    Button { refreshAccount() } label: {
+                        SettingsRowLabel(
+                            title: "重新检查状态",
+                            icon: "arrow.clockwise",
+                            iconColor: .blue,
+                            busy: isCheckingAccount
+                        )
                     }
+                    .buttonStyle(SettingsRowButtonStyle())
+                    .disabled(isCheckingAccount || session.currentState.requesting)
+
+                    SettingsDivider()
+
+                    NavigationLink { NetEaseCookieImportView(session: session) } label: {
+                        SettingsRowLabel(
+                            title: "高级登录方式",
+                            icon: "key",
+                            iconColor: .orange,
+                            navigates: true
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
                     .disabled(isStartingQR || isCheckingAccount)
+
+                    if connected {
+                        SettingsDivider()
+
+                        Button(role: .destructive) {
+                            model.disconnectNetEase()
+                            requestedQR = false
+                        } label: {
+                            SettingsRowLabel(
+                                title: "退出网易云音乐",
+                                icon: "rectangle.portrait.and.arrow.right",
+                                role: .destructive
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+                        .disabled(isStartingQR || isCheckingAccount)
+                    }
                 }
             }
             SettingsSection {
-                MusicSourcePicker(model: model).settingsSurface()
-                NetEaseQualityPicker(model: model)
+                SettingsGroup {
+                    MusicSourcePicker(model: model)
+                    SettingsDivider()
+                    NetEaseQualityPicker(model: model)
+                }
             }
         }
-        .buttonStyle(SettingsButtonStyle())
-        .animation(reduceMotion ? nil : MusicProductMotion.change, value: hasActiveQR)
+        .animation(reduceMotion ? nil : SettingsMotion.disclosure, value: hasActiveQR)
         .navigationTitle("登录到网易云音乐")
         .navigationBarTitleDisplayMode(.inline)
         .task { await session.refresh() }
@@ -89,33 +125,46 @@ struct NetEaseLoginView: View {
     }
 
     private var qrCard: some View {
-        VStack(spacing: 12) {
-            if let qr, qr.source == session.qrURL {
-                Image(uiImage: qr.image)
-                    .interpolation(.none).resizable().scaledToFit().frame(maxWidth: 220)
-                    .padding(12)
-                    .background(.white, in: RoundedRectangle(cornerRadius: SettingsCorners.inset, style: .continuous))
-                    .accessibilityLabel("网易云音乐登录二维码")
-                Text("用网易云音乐 App 扫码确认").font(.subheadline.weight(.semibold))
-                if let file = qr.file {
-                    ShareLink(item: file) {
-                        SettingsActionLabel(title: "保存或分享二维码", icon: "square.and.arrow.up")
-                    }
+        SettingsGroup(radius: SettingsCorners.hero) {
+            VStack(spacing: 12) {
+                if let qr, qr.source == session.qrURL {
+                    Image(uiImage: qr.image)
+                        .interpolation(.none).resizable().scaledToFit().frame(maxWidth: 210)
+                        .padding(12)
+                        .background(.white, in: RoundedRectangle(cornerRadius: SettingsCorners.inset, style: .continuous))
+                        .accessibilityLabel("网易云音乐登录二维码")
+                    Text("用网易云音乐 App 扫码确认")
+                        .font(.subheadline.weight(.semibold))
+                } else {
+                    ProgressView()
+                        .padding(.vertical, 40)
                 }
-            } else {
-                ProgressView()
+                Text(LocalizedStringKey(session.qrStatus))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("neteaseQRStatus")
+                if let expiry = session.qrExpires {
+                    Text("二维码有效至 \(expiry.formatted(date: .omitted, time: .standard))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            Text(LocalizedStringKey(session.qrStatus))
-                .font(.subheadline)
-                .accessibilityIdentifier("neteaseQRStatus")
-            if let expiry = session.qrExpires {
-                Text("二维码有效至 \(expiry.formatted(date: .omitted, time: .standard))")
-                    .font(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .multilineTextAlignment(.center)
+            .padding(18)
+
+            if let qr, qr.source == session.qrURL, let file = qr.file {
+                SettingsDivider(inset: 16)
+                ShareLink(item: file) {
+                    SettingsRowLabel(
+                        title: "保存或分享二维码",
+                        icon: "square.and.arrow.up",
+                        iconColor: MusicServiceID.netease.brandColor
+                    )
+                }
+                .buttonStyle(SettingsRowButtonStyle())
             }
         }
-        .frame(maxWidth: .infinity)
-        .multilineTextAlignment(.center)
-        .settingsSurface(radius: SettingsCorners.card)
     }
 
     private func startQR() {
@@ -168,22 +217,22 @@ private struct NetEaseCookieImportView: View {
 
     var body: some View {
         SettingsPage {
-            SettingsSection("Cookie 登录") {
-                SecureField("粘贴网易云 Cookie", text: $cookie)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .privacySensitive()
-                    .settingsSurface()
-                if !cookie.isEmpty {
-                    Text("验证通过后才会替换已保存的登录。").font(.footnote).foregroundStyle(.secondary)
+            SettingsSection("Cookie 登录", footer: cookie.isEmpty ? nil : "验证通过后才会替换已保存的登录。") {
+                SettingsGroup {
+                    SecureField("粘贴网易云 Cookie", text: $cookie)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .privacySensitive()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 13)
                 }
-                Button(action: importCookie) {
-                    SettingsActionLabel(title: "验证并导入", icon: "key", busy: importing, style: .primary)
-                }
-                .disabled(importing || cookie.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+            Button(action: importCookie) {
+                SettingsActionLabel(title: "验证并导入", icon: "key", busy: importing, style: .primary)
+            }
+            .buttonStyle(SettingsButtonStyle())
+            .disabled(importing || cookie.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("高级登录方式")
         .onDisappear { cookie = "" }
         .alert("登录未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {

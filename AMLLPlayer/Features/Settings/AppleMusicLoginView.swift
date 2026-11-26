@@ -11,22 +11,34 @@ struct AppleMusicLoginView: View {
     var body: some View {
         SettingsPage {
             SettingsAccountHeader(service: .appleMusic, status: status, connected: state.connected)
+
             if state.connected {
                 SettingsSection {
-                    LabeledContent("系统歌曲同步", value: String(localized: "已启用")).settingsSurface()
-                    LabeledContent("歌单与搜索", value: catalogStatus).settingsSurface()
-                    if state.capabilities.canBrowse {
-                        LabeledContent("订阅播放", value: state.capabilities.canPlayCatalog ? String(localized: "可用") : String(localized: "当前订阅不可播放"))
-                            .settingsSurface()
-                        LabeledContent("云资料库", value: state.capabilities.canModifyLibrary ? String(localized: "已启用") : String(localized: "未启用"))
-                            .settingsSurface()
-                    }
-                    if let region = state.storefront {
-                        LabeledContent("地区", value: region.uppercased()).settingsSurface()
+                    SettingsGroup {
+                        SettingsInfoRow(title: "系统歌曲同步", value: String(localized: "已启用"), valueColor: .green)
+                        SettingsDivider(inset: 16)
+                        SettingsInfoRow(title: "歌单与搜索", value: catalogStatus)
+                        if state.capabilities.canBrowse {
+                            SettingsDivider(inset: 16)
+                            SettingsInfoRow(
+                                title: "订阅播放",
+                                value: state.capabilities.canPlayCatalog ? String(localized: "可用") : String(localized: "当前订阅不可播放")
+                            )
+                            SettingsDivider(inset: 16)
+                            SettingsInfoRow(
+                                title: "云资料库",
+                                value: state.capabilities.canModifyLibrary ? String(localized: "已启用") : String(localized: "未启用")
+                            )
+                        }
+                        if let region = state.storefront {
+                            SettingsDivider(inset: 16)
+                            SettingsInfoRow(title: "地区", value: region.uppercased())
+                        }
                     }
                 }
                 .transition(.opacity)
             }
+
             SettingsSection {
                 if requiresSystemSettings {
                     systemSettingsButton(primary: true)
@@ -37,39 +49,73 @@ struct AppleMusicLoginView: View {
                             icon: "music.note", busy: operation == .connect || state.requesting, style: .primary
                         )
                     }
+                    .buttonStyle(SettingsButtonStyle())
                     .disabled(isBusy)
                     .accessibilityIdentifier("appleMusicAuthorize")
                 }
 
-                if let error = state.error {
-                    DisclosureGroup("查看连接错误") {
-                        Text(error.localizedDescription).font(.footnote).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsGroup {
+                    if let error = state.error {
+                        SettingsDisclosureRow(title: "查看连接错误", icon: "exclamationmark.triangle", iconColor: .orange) {
+                            Text(error.localizedDescription)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                        }
+                        SettingsDivider()
                     }
-                    .settingsSurface()
-                }
-                Button { perform(.refresh) } label: {
-                    SettingsActionLabel(title: "重新检查状态", icon: "arrow.clockwise", busy: operation == .refresh)
-                }
-                .disabled(isBusy)
 
-                if !requiresSystemSettings { systemSettingsButton(primary: false) }
-                if state.connected {
-                    Button(role: .destructive) { model.disconnectAppleMusic() } label: {
-                        SettingsActionLabel(title: "断开 Apple Music", icon: "link.badge.minus", style: .destructive)
+                    Button { perform(.refresh) } label: {
+                        SettingsRowLabel(
+                            title: "重新检查状态",
+                            icon: "arrow.clockwise",
+                            iconColor: .blue,
+                            busy: operation == .refresh
+                        )
                     }
+                    .buttonStyle(SettingsRowButtonStyle())
                     .disabled(isBusy)
+
+                    if !requiresSystemSettings {
+                        SettingsDivider()
+                        systemSettingsButton(primary: false)
+                    }
+
+                    if state.connected {
+                        SettingsDivider()
+                        Button(role: .destructive) { model.disconnectAppleMusic() } label: {
+                            SettingsRowLabel(
+                                title: "断开 Apple Music",
+                                icon: "link.badge.minus",
+                                role: .destructive
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+                        .disabled(isBusy)
+                    }
                 }
             }
+
             SettingsSection {
-                MusicSourcePicker(model: model).settingsSurface()
-                NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
-                    SettingsActionLabel(title: "Apple Music 连接诊断", icon: "stethoscope", navigates: true)
+                SettingsGroup {
+                    MusicSourcePicker(model: model)
+                    SettingsDivider()
+                    NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
+                        SettingsRowLabel(
+                            title: "Apple Music 连接诊断",
+                            icon: "stethoscope",
+                            iconColor: MusicServiceID.appleMusic.brandColor,
+                            navigates: true
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
         }
-        .buttonStyle(SettingsButtonStyle())
-        .animation(reduceMotion ? nil : MusicProductMotion.change, value: state.connected)
+        .animation(reduceMotion ? nil : SettingsMotion.change, value: state.connected)
         .navigationTitle("登录到 Apple Music")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.refreshAppleMusic() }
@@ -96,16 +142,29 @@ struct AppleMusicLoginView: View {
         return state.capabilities.canBrowse ? String(localized: "可用") : String(localized: "暂不可用")
     }
 
+    @ViewBuilder
     private func systemSettingsButton(primary: Bool) -> some View {
-        Button {
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+        if primary {
+            Button(action: openSystemSettings) {
+                SettingsActionLabel(title: "打开系统设置", icon: "gearshape", style: .primary)
             }
-        } label: {
-            SettingsActionLabel(title: "打开系统设置", icon: "gearshape", style: primary ? .primary : .secondary)
+            .buttonStyle(SettingsButtonStyle())
+            .disabled(isBusy)
+            .accessibilityIdentifier("appleMusicSystemSettings")
+        } else {
+            Button(action: openSystemSettings) {
+                SettingsRowLabel(title: "打开系统设置", icon: "gearshape", iconColor: .secondary)
+            }
+            .buttonStyle(SettingsRowButtonStyle())
+            .disabled(isBusy)
+            .accessibilityIdentifier("appleMusicSystemSettings")
         }
-        .disabled(isBusy)
-        .accessibilityIdentifier("appleMusicSystemSettings")
+    }
+
+    private func openSystemSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
     }
 
     private func perform(_ next: Operation) {
@@ -130,6 +189,6 @@ struct MusicSourcePicker: View {
         }
         .pickerStyle(.menu)
         .accessibilityIdentifier("musicSourcePicker")
-        .settingsPickerRow("当前音乐来源")
+        .settingsPickerRow("当前音乐来源", icon: "music.note.list", iconColor: MusicProductStyle.accent)
     }
 }

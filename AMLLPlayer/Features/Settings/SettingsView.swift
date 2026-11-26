@@ -15,67 +15,144 @@ struct SettingsView: View {
                 MusicAccountsView(model: model)
             } label: {
                 SettingsAccountHeader(
-                    service: model.selectedMusicService, name: accountName, avatar: accountAvatar,
-                    status: model.settingsConnectionStatus(model.selectedMusicService), connected: model.currentServiceConnected,
-                    action: model.currentServiceConnected ? "管理账号" : "连接账号"
+                    service: model.selectedMusicService,
+                    name: accountName,
+                    avatar: accountAvatar,
+                    status: model.settingsConnectionStatus(model.selectedMusicService),
+                    connected: model.currentServiceConnected,
+                    showsChevron: true,
+                    serviceStatuses: MusicServiceID.allCases.map { ($0, model.isConnected(to: $0)) }
                 )
             }
+            .buttonStyle(SettingsButtonStyle())
             .accessibilityIdentifier("musicAccountsLink")
 
             SettingsSection("播放与歌词") {
-                NavigationLink { MusicPlaybackSettingsView(model: model) } label: {
-                    SettingsActionLabel(title: "settings.playbackTitle", icon: "play.fill", navigates: true)
+                SettingsGroup {
+                    NavigationLink { MusicPlaybackSettingsView(model: model) } label: {
+                        SettingsRowLabel(
+                            title: "settings.playbackTitle",
+                            icon: "play.fill",
+                            iconColor: MusicProductStyle.accent,
+                            value: model.selectedMusicService.title,
+                            navigates: true
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    NavigationLink {
+                        LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics)
+                    } label: {
+                        SettingsRowLabel(
+                            title: "歌词与外观",
+                            icon: "textformat.size",
+                            iconColor: .indigo,
+                            value: appearanceSummary,
+                            navigates: true
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
+                        SettingsRowLabel(
+                            title: "歌词来源与匹配",
+                            icon: "quote.bubble",
+                            iconColor: .cyan,
+                            value: lyricsSummary,
+                            navigates: true
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+                    .accessibilityIdentifier("lyricsSourceSettingsLink")
+
+                    SettingsDivider()
+
+                    Toggle(isOn: $hapticsEnabled.hapticSelection()) {
+                        SettingsIconToggleLabel(title: "settings.haptics", icon: "hand.tap", color: .orange)
+                    }
+                    .accessibilityIdentifier("appHapticsEnabled")
                 }
-                NavigationLink {
-                    LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics)
-                } label: {
-                    SettingsActionLabel(title: "歌词与外观", icon: "textformat.size", navigates: true)
-                }
-                NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
-                    SettingsActionLabel(title: "歌词来源与匹配", icon: "quote.bubble", navigates: true)
-                }
-                .accessibilityIdentifier("lyricsSourceSettingsLink")
-                Toggle(isOn: $hapticsEnabled.hapticSelection()) {
-                    Label("settings.haptics", systemImage: "hand.tap")
-                }
-                .settingsSurface()
-                .accessibilityIdentifier("appHapticsEnabled")
             }
 
             SettingsSection("存储") {
-                NavigationLink { MusicStorageView(model: model) } label: {
-                    SettingsActionLabel(title: "存储与缓存", icon: "internaldrive", navigates: true)
+                SettingsGroup {
+                    NavigationLink { MusicStorageView(model: model) } label: {
+                        SettingsRowLabel(
+                            title: "存储与缓存",
+                            icon: "internaldrive",
+                            iconColor: .blue,
+                            navigates: true
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    Button {
+                        Task { await exportSettings() }
+                    } label: {
+                        SettingsRowLabel(
+                            title: "导出所有设置",
+                            icon: "square.and.arrow.up",
+                            iconColor: .teal,
+                            busy: exportingSettings
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+                    .disabled(exportingSettings)
+                    .accessibilityIdentifier("exportAllSettings")
                 }
-                Button {
-                    Task { await exportSettings() }
-                } label: {
-                    SettingsActionLabel(title: "导出所有设置", icon: "square.and.arrow.up", busy: exportingSettings)
-                }
-                .disabled(exportingSettings)
-                .accessibilityIdentifier("exportAllSettings")
             }
 
             SettingsSection("支持") {
-                NavigationLink { MusicHelpView(model: model) } label: {
-                    SettingsActionLabel(title: "帮助与故障排查", icon: "questionmark.circle", navigates: true)
-                }
-                NavigationLink { MusicAboutView() } label: {
-                    SettingsActionLabel(title: "关于 AMLL", icon: "info.circle", navigates: true)
-                }
-                DisclosureGroup("开发与调试") {
-                    NavigationLink {
-                        ImmersiveArtworkDebugPanel(
-                            backgroundDimming: model.renderPreferences.configuration.validated().backgroundDimming ?? 0.16
+                SettingsGroup {
+                    NavigationLink { MusicHelpView(model: model) } label: {
+                        SettingsRowLabel(
+                            title: "帮助与故障排查",
+                            icon: "questionmark.circle",
+                            iconColor: .blue,
+                            navigates: true
                         )
-                    } label: {
-                        Label("沉浸封面层级调试（临时）", systemImage: "slider.horizontal.3")
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    NavigationLink { MusicAboutView() } label: {
+                        SettingsRowLabel(
+                            title: "关于 AMLL",
+                            icon: "info.circle",
+                            iconColor: .secondary,
+                            value: appVersion,
+                            navigates: true
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    SettingsDisclosureRow(title: "开发与调试", icon: "wrench.and.screwdriver", iconColor: .purple) {
+                        NavigationLink {
+                            ImmersiveArtworkDebugPanel(
+                                backgroundDimming: model.renderPreferences.configuration.validated().backgroundDimming ?? 0.16
+                            )
+                        } label: {
+                            SettingsRowLabel(
+                                title: "沉浸封面层级调试（临时）",
+                                icon: "slider.horizontal.3",
+                                iconColor: .purple,
+                                navigates: true
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
                     }
                 }
-                .settingsSurface()
             }
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("tab.settings")
         .navigationBarTitleDisplayMode(.large)
         .fileExporter(isPresented: $showingSettingsExporter, document: settingsDocument, contentType: .json,
@@ -112,6 +189,23 @@ struct SettingsView: View {
         }
     }
 
+    private var appearanceSummary: String {
+        let config = model.renderPreferences.configuration
+        if let preset = config.sizePreset {
+            return String(localized: String.LocalizationValue("render.size." + preset.rawValue))
+        }
+        return String(format: "%.0f pt", config.fontSize)
+    }
+
+    private var lyricsSummary: String {
+        guard model.lyrics.settings.enabled else { return String(localized: "settings.lyrics.off") }
+        return model.lyrics.settings.priority.first?.name ?? ""
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+
     private func exportSettings() async {
         guard !exportingSettings else { return }
         exportingSettings = true
@@ -135,74 +229,105 @@ struct MusicAccountsView: View {
     var body: some View {
         SettingsPage {
             SettingsSection {
-                MusicSourcePicker(model: model).settingsSurface()
+                SettingsGroup {
+                    MusicSourcePicker(model: model)
+                }
             }
             SettingsSection("音乐账号") {
-                ForEach(MusicServiceID.allCases) { service in
-                    NavigationLink {
-                        MusicLoginDestination(model: model, service: service)
-                    } label: {
-                        SettingsActionLabel(
-                            title: LocalizedStringKey(service.title), icon: service.settingsIcon,
-                            detail: model.settingsConnectionStatus(service), navigates: true
-                        )
+                SettingsGroup {
+                    ForEach(Array(MusicServiceID.allCases.enumerated()), id: \.element.id) { index, service in
+                        if index > 0 { SettingsDivider() }
+                        NavigationLink {
+                            MusicLoginDestination(model: model, service: service)
+                        } label: {
+                            SettingsRowLabel(
+                                title: LocalizedStringKey(service.title),
+                                icon: service.settingsIcon,
+                                iconColor: service.brandColor,
+                                subtitle: model.settingsConnectionStatus(service),
+                                navigates: true
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+                        .accessibilityIdentifier(service.rawValue + "LoginLink")
                     }
-                    .accessibilityIdentifier(service.rawValue + "LoginLink")
                 }
             }
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("账号与音乐来源")
     }
 }
 
 struct MusicPlaybackSettingsView: View {
     @Bindable var model: AppModel
+    @State private var showTiming = false
 
     var body: some View {
         SettingsPage {
-            SettingsSection {
-                LabeledContent("当前音乐来源", value: model.selectedMusicService.title).settingsSurface()
-                if model.selectedMusicService == .netease {
-                    NetEaseQualityPicker(model: model)
-                }
-                if model.currentServiceConnected {
-                    NavigationLink { DevicePickerView(model: model).task { await model.loadDevices() } } label: {
-                        SettingsActionLabel(title: "选择播放设备", icon: "airplayaudio", navigates: true)
+            SettingsSection(footer: showTiming ? "新音质从下一首开始生效。" : nil) {
+                SettingsGroup {
+                    SettingsInfoRow(
+                        title: "当前音乐来源",
+                        value: model.selectedMusicService.title,
+                        icon: model.selectedMusicService.settingsIcon,
+                        iconColor: model.selectedMusicService.brandColor
+                    )
+                    if model.selectedMusicService == .netease {
+                        SettingsDivider()
+                        NetEaseQualityPicker(model: model, showTiming: $showTiming)
                     }
-                } else {
-                    NavigationLink { MusicLoginDestination(model: model, service: model.selectedMusicService) } label: {
-                        SettingsActionLabel(title: "连接账号", icon: "person.crop.circle", navigates: true)
+                    SettingsDivider()
+                    if model.currentServiceConnected {
+                        NavigationLink { DevicePickerView(model: model).task { await model.loadDevices() } } label: {
+                            SettingsRowLabel(
+                                title: "选择播放设备",
+                                icon: "airplayaudio",
+                                iconColor: .blue,
+                                navigates: true
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+                    } else {
+                        NavigationLink { MusicLoginDestination(model: model, service: model.selectedMusicService) } label: {
+                            SettingsRowLabel(
+                                title: "连接账号",
+                                icon: "person.crop.circle",
+                                iconColor: MusicProductStyle.accent,
+                                navigates: true
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
                     }
                 }
             }
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("settings.playbackTitle")
     }
 }
 
 struct NetEaseQualityPicker: View {
     @Bindable var model: AppModel
-    @State private var showTiming = false
+    var showTiming: Binding<Bool>? = nil
+    @State private var localShowTiming = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let timingBinding = showTiming ?? $localShowTiming
+        VStack(alignment: .leading, spacing: 4) {
             Picker("播放音质", selection: Binding(get: { model.netEasePlayback.quality }, set: { quality in
                 guard quality != model.netEasePlayback.quality else { return }
                 model.netEasePlayback.quality = quality
-                withAnimation(reduceMotion ? nil : MusicProductMotion.change) { showTiming = true }
+                withAnimation(reduceMotion ? nil : SettingsMotion.change) { timingBinding.wrappedValue = true }
             })) {
                 ForEach(NetEaseQuality.allCases) { quality in Text(quality.title).tag(quality) }
             }
-            .settingsPickerRow("播放音质")
-            .settingsSurface()
-            if showTiming {
+            .settingsPickerRow("播放音质", icon: "waveform", iconColor: MusicProductStyle.accent)
+            if showTiming == nil, localShowTiming {
                 Text("新音质从下一首开始生效。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
                     .transition(.opacity)
             }
         }
@@ -218,6 +343,7 @@ struct MusicStorageView: View {
     @State private var clearing: Cache?
     @State private var isClearing = false
     @State private var failure: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Cache: String, CaseIterable, Identifiable {
         case lyrics, artwork, roman, images
@@ -229,6 +355,24 @@ struct MusicStorageView: View {
             case .artwork: "动态封面缓存"
             case .roman: "生成音译缓存"
             case .images: "浏览封面缓存"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .lyrics: "quote.bubble"
+            case .artwork: "sparkles.rectangle.stack"
+            case .roman: "character.book.closed"
+            case .images: "photo.stack"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .lyrics: .cyan
+            case .artwork: .indigo
+            case .roman: .orange
+            case .images: .blue
             }
         }
 
@@ -244,22 +388,81 @@ struct MusicStorageView: View {
 
     var body: some View {
         SettingsPage {
-            SettingsSection("缓存占用") {
-                ForEach(Cache.allCases) { cache in
-                    LabeledContent(cache.name, value: size(of: cache)).settingsSurface()
-                }
-            }
-            SettingsSection {
-                ForEach(Cache.allCases) { cache in
-                    Button(role: .destructive) { clearing = cache } label: {
-                        SettingsActionLabel(title: cache.clearTitle, icon: "trash", style: .destructive)
+            SettingsGroup(radius: SettingsCorners.hero) {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.storage.total")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(format(totalBytes))
+                            .font(.title.bold())
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                    }
+
+                    storageBreakdownBar
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 10)], alignment: .leading, spacing: 6) {
+                        ForEach(Cache.allCases) { cache in
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(cache.color)
+                                    .frame(width: 8, height: 8)
+                                Text(cache.name)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
                     }
                 }
-                .disabled(isClearing)
-                if let failure { Text(failure).font(.footnote).foregroundStyle(.secondary) }
+                .padding(16)
+            }
+
+            SettingsSection("缓存占用") {
+                SettingsGroup {
+                    ForEach(Array(Cache.allCases.enumerated()), id: \.element.id) { index, cache in
+                        if index > 0 { SettingsDivider() }
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemImage: cache.icon, color: cache.color)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(cache.name)
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                Text(size(of: cache))
+                                    .font(.footnote)
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                                    .contentTransition(.numericText())
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            Button(role: .destructive) { clearing = cache } label: {
+                                Text("settings.storage.clear")
+                                    .font(.footnote.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.red.opacity(0.12), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.red)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                            .disabled(isClearing || isZero(cache))
+                            .accessibilityLabel(cache.clearTitle)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .frame(minHeight: 54)
+                    }
+                }
+                if let failure {
+                    Text(failure)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 12)
+                }
             }
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("存储与缓存")
         .task { await refresh() }
         .confirmationDialog(
@@ -275,6 +478,51 @@ struct MusicStorageView: View {
         } message: { cache in
             Text(cache.name)
         }
+    }
+
+    private var storageBreakdownBar: some View {
+        let segments = Cache.allCases.compactMap { cache -> (Cache, Int64)? in
+            let count = bytes(of: cache) ?? 0
+            return count > 0 ? (cache, count) : nil
+        }
+        return GeometryReader { proxy in
+            let total = max(1, totalBytes)
+            let gap: CGFloat = segments.count > 1 ? 2 : 0
+            let available = max(0, proxy.size.width - CGFloat(max(0, segments.count - 1)) * gap)
+            HStack(spacing: gap) {
+                if segments.isEmpty {
+                    Capsule().fill(Color.primary.opacity(0.08))
+                } else {
+                    ForEach(segments, id: \.0.id) { cache, count in
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(cache.color)
+                            .frame(width: max(4, available * (CGFloat(count) / CGFloat(total))))
+                    }
+                }
+            }
+        }
+        .frame(height: 10)
+        .clipShape(Capsule())
+        .background(Color.primary.opacity(0.06), in: Capsule())
+        .animation(reduceMotion ? nil : SettingsMotion.change, value: totalBytes)
+    }
+
+    private var totalBytes: Int64 {
+        (lyricsBytes ?? 0) + artworkBytes + romanBytes + imageBytes
+    }
+
+    private func bytes(of cache: Cache) -> Int64? {
+        switch cache {
+        case .lyrics: lyricsBytes
+        case .artwork: artworkBytes
+        case .roman: romanBytes
+        case .images: imageBytes
+        }
+    }
+
+    private func isZero(_ cache: Cache) -> Bool {
+        guard let count = bytes(of: cache) else { return false }
+        return count <= 0
     }
 
     private func size(of cache: Cache) -> String {
@@ -317,33 +565,53 @@ struct MusicHelpView: View {
     var body: some View {
         SettingsPage {
             SettingsSection("音乐账号") {
-                NavigationLink { MusicAccountsView(model: model) } label: {
-                    SettingsActionLabel(title: "settings.manageSources", icon: "person.crop.circle", navigates: true)
-                }
-                NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
-                    SettingsActionLabel(title: "Apple Music 连接诊断", icon: "stethoscope", navigates: true)
-                }
-                NavigationLink { SpotifyLoginView(model: model, startsWithConfiguration: true) } label: {
-                    SettingsActionLabel(title: "Spotify 配置帮助", icon: "gearshape", navigates: true)
+                SettingsGroup {
+                    NavigationLink { MusicAccountsView(model: model) } label: {
+                        SettingsRowLabel(title: "settings.manageSources", icon: "person.crop.circle", iconColor: MusicProductStyle.accent, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
+                        SettingsRowLabel(title: "Apple Music 连接诊断", icon: "stethoscope", iconColor: .pink, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    NavigationLink { SpotifyLoginView(model: model, startsWithConfiguration: true) } label: {
+                        SettingsRowLabel(title: "Spotify 配置帮助", icon: "gearshape", iconColor: MusicServiceID.spotify.brandColor, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
             SettingsSection("播放与歌词") {
-                NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
-                    SettingsActionLabel(title: "歌词来源与匹配", icon: "quote.bubble", navigates: true)
-                }
-                NavigationLink { PlaybackSeekDiagnosticsView() } label: {
-                    SettingsActionLabel(title: "播放跳转诊断", icon: "waveform", navigates: true)
+                SettingsGroup {
+                    NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
+                        SettingsRowLabel(title: "歌词来源与匹配", icon: "quote.bubble", iconColor: .cyan, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    NavigationLink { PlaybackSeekDiagnosticsView() } label: {
+                        SettingsRowLabel(title: "播放跳转诊断", icon: "waveform", iconColor: .orange, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
             #if DEBUG
             SettingsSection("开发工具") {
-                NavigationLink { LyricsRenderPreview() } label: {
-                    SettingsActionLabel(title: "render.debug", icon: "waveform.path", navigates: true)
+                SettingsGroup {
+                    NavigationLink { LyricsRenderPreview() } label: {
+                        SettingsRowLabel(title: "render.debug", icon: "waveform.path", iconColor: .purple, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
             #endif
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("帮助与故障排查")
     }
 }
@@ -353,24 +621,71 @@ struct MusicAboutView: View {
 
     var body: some View {
         SettingsPage {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("AMLL", systemImage: "music.note").font(.title2.bold())
-                LabeledContent("settings.version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
+            SettingsGroup(radius: SettingsCorners.hero) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [MusicProductStyle.accent.opacity(0.28), MusicProductStyle.accent.opacity(0.10)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Image(systemName: "music.note")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(MusicProductStyle.accent)
+                    }
+                    .frame(width: 56, height: 56)
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("AMLL")
+                            .font(.title2.bold())
+                        HStack(spacing: 6) {
+                            Text("settings.version")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(versionString)
+                                .font(.caption.weight(.semibold))
+                                .monospacedDigit()
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.primary.opacity(0.06), in: Capsule())
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(16)
             }
-            .settingsSurface(radius: SettingsCorners.card)
+
             SettingsSection("开源") {
-                Link(destination: URL(string: root + "/blob/swiftui-native/Docs/CHANGELOG.md")!) {
-                    SettingsActionLabel(title: "更新记录", icon: "clock.arrow.circlepath", navigates: true)
-                }
-                Link(destination: URL(string: root)!) {
-                    SettingsActionLabel(title: "settings.sourceCode", icon: "chevron.left.forwardslash.chevron.right", navigates: true)
-                }
-                Link(destination: URL(string: root + "/blob/swiftui-native/THIRD_PARTY_NOTICES.md")!) {
-                    SettingsActionLabel(title: "开源许可与来源归属", icon: "doc.text", navigates: true)
+                SettingsGroup {
+                    Link(destination: URL(string: root + "/blob/swiftui-native/Docs/CHANGELOG.md")!) {
+                        SettingsRowLabel(title: "更新记录", icon: "clock.arrow.circlepath", iconColor: .blue, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    Link(destination: URL(string: root)!) {
+                        SettingsRowLabel(title: "settings.sourceCode", icon: "chevron.left.forwardslash.chevron.right", iconColor: .indigo, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    Link(destination: URL(string: root + "/blob/swiftui-native/THIRD_PARTY_NOTICES.md")!) {
+                        SettingsRowLabel(title: "开源许可与来源归属", icon: "doc.text", iconColor: .secondary, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("关于 AMLL")
+    }
+
+    private var versionString: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
 }

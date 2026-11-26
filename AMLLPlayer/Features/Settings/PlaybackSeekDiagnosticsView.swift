@@ -8,22 +8,31 @@ struct PlaybackSeekDiagnosticsView: View {
     var body: some View {
         SettingsPage {
             SettingsSection {
-                SettingsTextButton(title: "生成诊断文件", icon: "doc.badge.plus") {
-                    do { exportURL = try PlaybackSeekDiagnostics.shared.export(); failure = nil }
-                    catch { failure = "导出失败，请重试。" }
-                }
-                if let exportURL {
-                    ShareLink(item: exportURL) {
-                        SettingsActionLabel(title: "分享跳转诊断", icon: "square.and.arrow.up")
+                SettingsGroup {
+                    SettingsTextButton(title: "生成诊断文件", icon: "doc.badge.plus", iconColor: .blue, inGroup: true) {
+                        do { exportURL = try PlaybackSeekDiagnostics.shared.export(); failure = nil }
+                        catch { failure = "导出失败，请重试。" }
+                    }
+                    if let exportURL {
+                        SettingsDivider()
+                        ShareLink(item: exportURL) {
+                            SettingsRowLabel(title: "分享跳转诊断", icon: "square.and.arrow.up", iconColor: .teal)
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+                    }
+                    SettingsDivider()
+                    SettingsTextButton(title: "清除诊断记录", icon: "trash", role: .destructive, inGroup: true) {
+                        confirmClear = true
                     }
                 }
-                if let failure { Text(LocalizedStringKey(failure)).foregroundStyle(.secondary) }
-                SettingsTextButton(title: "清除诊断记录", icon: "trash", role: .destructive) {
-                    confirmClear = true
+                if let failure {
+                    Text(LocalizedStringKey(failure))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
                 }
             }
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("播放跳转诊断")
         .confirmationDialog("清除诊断记录？", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("清除诊断记录", role: .destructive) {

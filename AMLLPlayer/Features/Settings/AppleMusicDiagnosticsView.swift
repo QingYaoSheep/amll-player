@@ -8,26 +8,48 @@ struct AppleMusicDiagnosticsView: View {
     var body: some View {
         SettingsPage {
             SettingsSection {
-                LabeledContent("Bundle ID", value: Bundle.main.bundleIdentifier ?? String(localized: "未知"))
-                    .settingsSurface()
+                SettingsGroup {
+                    SettingsInfoRow(
+                        title: "Bundle ID",
+                        value: Bundle.main.bundleIdentifier ?? String(localized: "未知"),
+                        monospacedValue: true,
+                        selectable: true
+                    )
+                }
+
                 if model.appleMusicState.connected {
                     Button {
                         Task { await checkInstallation() }
                     } label: {
                         SettingsActionLabel(title: "检查 Apple Music 连接", icon: "stethoscope", busy: checking, style: .primary)
                     }
+                    .buttonStyle(SettingsButtonStyle())
                     .disabled(checking)
                 } else {
-                    NavigationLink { AppleMusicLoginView(model: model) } label: {
-                        SettingsActionLabel(title: "连接 Apple Music", icon: "music.note", navigates: true)
+                    SettingsGroup {
+                        NavigationLink { AppleMusicLoginView(model: model) } label: {
+                            SettingsRowLabel(
+                                title: "连接 Apple Music",
+                                icon: "music.note",
+                                iconColor: MusicServiceID.appleMusic.brandColor,
+                                navigates: true
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
                     }
                 }
+
                 if let diagnostic {
-                    Text(diagnostic).font(.footnote).textSelection(.enabled).settingsSurface()
+                    SettingsGroup {
+                        Text(diagnostic)
+                            .font(.footnote)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                    }
                 }
             }
         }
-        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("Apple Music 连接诊断")
     }
     private func checkInstallation() async {

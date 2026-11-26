@@ -1,6 +1,7 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "lyrics.maintenance" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Maintenance"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"维护"}}}},
     "背景模式" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Background Mode"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"背景模式"}}}},
     "Mesh 网格" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Mesh"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Mesh 网格"}}}},
     "Mesh网格（取色模式2）" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Mesh (Color Mode 2)"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Mesh网格（取色模式2）"}}}},

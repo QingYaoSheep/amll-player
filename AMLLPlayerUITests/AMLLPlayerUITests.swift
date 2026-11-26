@@ -169,6 +169,29 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons.count >= 3)
     }
 
+    @MainActor func testLyricsSettingsKeepsOffsetControlsTogether() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--lyrics-ui-testing", "--skip-welcome-ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.buttons["openNowPlaying"].waitForExistence(timeout: 15))
+        openHomeSettings(app)
+        let sourceSettings = app.buttons["lyricsSourceSettingsLink"]
+        XCTAssertTrue(sourceSettings.waitForExistence(timeout: 4))
+        sourceSettings.tap()
+        XCTAssertTrue(app.navigationBars["Lyrics settings"].buttons["Edit"].waitForExistence(timeout: 4))
+
+        let reset = app.buttons["lyricsSettingsOffsetReset"]
+        for _ in 0 ..< 4 where !reset.isHittable { app.swipeUp() }
+        let slider = app.sliders["lyricsSettingsOffsetSlider"]
+        let readout = app.descendants(matching: .any)["lyricsSettingsOffsetReadout"].firstMatch
+        XCTAssertTrue(reset.isHittable)
+        XCTAssertTrue(slider.isHittable)
+        XCTAssertTrue(readout.exists)
+        XCTAssertLessThan(readout.frame.midY, slider.frame.midY)
+        XCTAssertLessThan(slider.frame.midY, reset.frame.midY)
+        capture(app, name: "Lyrics-settings-aligned-offset-card")
+    }
+
     @MainActor func testProductPagesAndSearchHistory() {
         let app = catalogApp()
         XCTAssertTrue(app.staticTexts["为 Test Listener 精选"].waitForExistence(timeout: 5))

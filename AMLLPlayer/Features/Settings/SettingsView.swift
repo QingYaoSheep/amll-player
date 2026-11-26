@@ -34,6 +34,7 @@ struct SettingsView: View {
                 NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
                     SettingsActionLabel(title: "歌词来源与匹配", icon: "quote.bubble", navigates: true)
                 }
+                .accessibilityIdentifier("lyricsSourceSettingsLink")
                 Toggle(isOn: $hapticsEnabled.hapticSelection()) {
                     Label("settings.haptics", systemImage: "hand.tap")
                 }

@@ -264,44 +264,71 @@ struct LyricsSettingsView: View {
     @State private var draft = LyricsSettings()
     @State private var editMode: EditMode = .inactive
     @State private var confirm: DestructiveAction?
-    private enum DestructiveAction: String, Identifiable { case cache, matches; var id: String {
-        rawValue
-    } }
+    private enum DestructiveAction { case cache, matches }
+
     var body: some View {
-        Form {
+        List {
             Section {
                 Toggle("lyrics.enabled", isOn: $draft.enabled.hapticSelection())
+                    .settingsSurface()
+                    .modifier(LyricsSettingsRow())
                 NavigationLink {
                     AppleLyricsSettingsView(coordinator: coordinator)
                         .toolbar(.visible, for: .navigationBar)
                 } label: {
                     Label("lyrics.apple.settings", systemImage: "music.note")
+                        .frame(minHeight: 52)
                 }
+                .modifier(LyricsSettingsRow(usesRowSurface: true))
             }
             Section {
-                ForEach(draft.priority) { source in Text(source.name) }
-                    .onMove { from, to in draft.priority.move(fromOffsets: from, toOffset: to) }
-            } header: { Text("lyrics.priority") }
+                ForEach(draft.priority) { source in
+                    Text(source.name)
+                        .frame(minHeight: 52)
+                        .modifier(LyricsSettingsRow(usesRowSurface: true))
+                }
+                .onMove { from, to in draft.priority.move(fromOffsets: from, toOffset: to) }
+            } header: { sectionTitle("lyrics.priority") }
             Section {
-                Toggle("lyrics.cache.enabled", isOn: $draft.cacheEnabled.hapticSelection())
-                Stepper(value: $draft.refreshDays, in: 0 ... 3650) { LabeledContent("lyrics.cache.days", value: "\(draft.refreshDays)") }
-                SettingsTextButton(title: "lyrics.cache.clear", icon: "trash", role: .destructive) { confirm = .cache }
-                    .listRowBackground(Color.clear)
-                SettingsTextButton(title: "lyrics.matches.reset", icon: "arrow.counterclockwise", role: .destructive) { confirm = .matches }
-                    .listRowBackground(Color.clear)
-            } header: { Text("lyrics.cache") }
+                VStack(spacing: 6) {
+                    Toggle("lyrics.cache.enabled", isOn: $draft.cacheEnabled.hapticSelection())
+                        .frame(minHeight: 44)
+                    Divider()
+                    Stepper(value: $draft.refreshDays, in: 0 ... 3650) {
+                        LabeledContent("lyrics.cache.days", value: draft.refreshDays.formatted())
+                    }
+                    .frame(minHeight: 44)
+                }
+                .settingsSurface(radius: SettingsCorners.card)
+                .accessibilityIdentifier("lyricsSettingsCacheControls")
+                .modifier(LyricsSettingsRow())
+            } header: { sectionTitle("lyrics.cache") }
             if coordinator.track != nil {
-                Section {
-                    Slider(value: Binding(get: { coordinator.selection.offset }, set: { coordinator.setOffset($0) }), in: -10 ... 10, step: 0.1)
-                    Text(String(format: "%+.1f s", coordinator.selection.offset)).monospacedDigit()
-                    SettingsTextButton(title: "lyrics.offset.zero", icon: "arrow.counterclockwise") { coordinator.setOffset(0) }
-                        .listRowBackground(Color.clear)
-                } header: { Text("lyrics.offset") }
+                trackOffsetCard
+                    .modifier(LyricsSettingsRow())
             }
+            Section {
+                SettingsTextButton(title: "lyrics.cache.clear", icon: "trash", role: .destructive) { confirm = .cache }
+                    .modifier(LyricsSettingsRow())
+                SettingsTextButton(title: "lyrics.matches.reset", icon: "arrow.counterclockwise", role: .destructive) { confirm = .matches }
+                    .modifier(LyricsSettingsRow())
+            } header: { sectionTitle("lyrics.maintenance") }
             if let warning = coordinator.cacheWarning {
-                Section { Text(warning).foregroundStyle(.orange) }
+                Text(warning)
+                    .foregroundStyle(.orange)
+                    .settingsSurface()
+                    .modifier(LyricsSettingsRow())
             }
         }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(16)
+        .scrollContentBackground(.hidden)
+        .frame(maxWidth: 600)
+        .frame(maxWidth: .infinity)
+        .background {
+            if quickSettingsNavigation == nil { Color(uiColor: .systemGroupedBackground).ignoresSafeArea() }
+        }
+        .accessibilityIdentifier("lyricsSettingsList")
         .navigationTitle("lyrics.settings")
         .lyricsQuickSettingsDestination("lyrics.settings", showsEditButton: true)
         .toolbar { if quickSettingsNavigation == nil { EditButton() } }
@@ -320,6 +347,61 @@ struct LyricsSettingsView: View {
                 Button("lyrics.matches.reset", role: .destructive) { coordinator.resetMatches(); confirm = nil }
             }
         } message: { Text(LocalizedStringKey(confirm == .cache ? "lyrics.cache.clear.help" : "lyrics.matches.reset.help")) }
+    }
+
+    private var trackOffsetCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent("lyrics.offset", value: String(format: "%+.1f s", coordinator.selection.offset))
+                .monospacedDigit()
+                .accessibilityIdentifier("lyricsSettingsOffsetReadout")
+            Slider(
+                value: Binding(get: { coordinator.selection.offset }, set: { coordinator.setOffset($0) }),
+                in: -10 ... 10, step: 0.1
+            ) {
+                Text("lyrics.offset")
+            }
+            .accessibilityIdentifier("lyricsSettingsOffsetSlider")
+            Button {
+                coordinator.setOffset(0)
+            } label: {
+                Label("lyrics.offset.zero", systemImage: "arrow.counterclockwise")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(MusicProductStyle.accent)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .background(Color.primary.opacity(0.06), in: Capsule())
+            }
+            .buttonStyle(SettingsButtonStyle())
+            .accessibilityIdentifier("lyricsSettingsOffsetReset")
+        }
+        .settingsSurface(radius: SettingsCorners.card)
+    }
+
+    private func sectionTitle(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .textCase(nil)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct LyricsSettingsRow: ViewModifier {
+    var usesRowSurface = false
+
+    func body(content: Content) -> some View {
+        content
+            .listRowInsets(EdgeInsets(top: 4, leading: usesRowSurface ? 14 : 0, bottom: 4, trailing: usesRowSurface ? 14 : 0))
+            .listRowSeparator(.hidden)
+            .listRowBackground(rowBackground)
+    }
+
+    @ViewBuilder private var rowBackground: some View {
+        if usesRowSurface {
+            Color.clear.settingsSurface(padded: false).padding(.vertical, 4)
+        } else {
+            Color.clear
+        }
     }
 }
 

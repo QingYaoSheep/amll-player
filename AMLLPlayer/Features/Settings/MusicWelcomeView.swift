@@ -10,7 +10,7 @@ struct MusicWelcomeView: View {
                 SettingsGroup(radius: SettingsCorners.hero) {
                     VStack(alignment: .leading, spacing: 14) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(
                                     LinearGradient(
                                         colors: [MusicProductStyle.accent.opacity(0.28), MusicProductStyle.accent.opacity(0.10)],
@@ -22,7 +22,7 @@ struct MusicWelcomeView: View {
                                 .font(.title.weight(.semibold))
                                 .foregroundStyle(MusicProductStyle.accent)
                         }
-                        .frame(width: 56, height: 56)
+                        .frame(width: 58, height: 58)
                         .accessibilityHidden(true)
 
                         Text("连接音乐服务")

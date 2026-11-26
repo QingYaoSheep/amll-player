@@ -1,15 +1,15 @@
 import SwiftUI
 
 enum SettingsCorners {
-    static let card: CGFloat = 22
-    static let hero: CGFloat = 24
-    static let button: CGFloat = 16
-    static let badge: CGFloat = 8.5
-    static let inset: CGFloat = 14
+    static let card: CGFloat = 28
+    static let hero: CGFloat = 32
+    static let button: CGFloat = 26
+    static let badge: CGFloat = 10
+    static let inset: CGFloat = 18
 
     // Compatibility aliases for callers transitioning to grouped cards.
-    static let row: CGFloat = 18
-    static let primary: CGFloat = 16
+    static let row: CGFloat = 24
+    static let primary: CGFloat = 26
 }
 
 enum SettingsMotion {
@@ -25,13 +25,13 @@ struct SettingsPage<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: quickSettingsNavigation == nil ? 28 : 22) {
                 content
             }
             .frame(maxWidth: 580)
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 32)
+            .padding(.horizontal, quickSettingsNavigation == nil ? 18 : 16)
+            .padding(.top, quickSettingsNavigation == nil ? 14 : 10)
+            .padding(.bottom, quickSettingsNavigation == nil ? 40 : 28)
             .frame(maxWidth: .infinity)
         }
         .background {
@@ -58,21 +58,21 @@ struct SettingsSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             if let title {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 16)
             }
             content
             if let footer {
                 Text(footer)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 2)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -94,13 +94,14 @@ struct SettingsGroup<Content: View>: View {
 }
 
 struct SettingsDivider: View {
-    var inset: CGFloat = 58
+    var inset: CGFloat = 64
 
     var body: some View {
         Rectangle()
             .fill(Color.primary.opacity(0.09))
             .frame(height: 0.5)
-            .padding(.leading, inset)
+            .padding(.leading, inset <= 16 ? 18 : inset)
+            .padding(.trailing, 18)
             .accessibilityHidden(true)
     }
 }
@@ -124,11 +125,11 @@ struct SettingsIconBadge: View {
                     .tint(color)
             } else {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(color)
             }
         }
-        .frame(width: 30, height: 30)
+        .frame(width: 32, height: 32)
         .accessibilityHidden(true)
     }
 }
@@ -181,7 +182,7 @@ struct SettingsRowLabel: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(spacing: 12))
 
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             if let icon {
                 SettingsIconBadge(systemImage: icon, color: effectiveColor, busy: busy)
             } else if busy {
@@ -192,7 +193,7 @@ struct SettingsRowLabel: View {
                     .accessibilityHidden(true)
             }
             layout {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.body.weight(role == .destructive ? .medium : .regular))
                         .foregroundStyle(titleColor)
@@ -219,9 +220,9 @@ struct SettingsRowLabel: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 11)
-        .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
         .contentShape(Rectangle())
     }
 }
@@ -253,8 +254,8 @@ struct SettingsActionLabel: View {
                     Text(title).font(.body.weight(.semibold))
                 }
                 .foregroundStyle(Color.white)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 54)
+                .padding(.horizontal, 20)
                 .background(
                     MusicProductStyle.filledAccent,
                     in: RoundedRectangle(cornerRadius: SettingsCorners.button, style: .continuous)
@@ -282,7 +283,7 @@ struct SettingsIconToggleLabel: View {
     var color: Color = MusicProductStyle.accent
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             SettingsIconBadge(systemImage: icon, color: color)
             Text(title)
                 .font(.body)
@@ -308,9 +309,9 @@ private struct SettingsToggleStyle: ToggleStyle {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .frame(minHeight: 48)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 11)
+            .frame(minHeight: 54)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -365,7 +366,7 @@ struct SettingsInfoRow: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(spacing: 12))
 
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             if let icon {
                 SettingsIconBadge(systemImage: icon, color: iconColor)
             }
@@ -379,9 +380,9 @@ struct SettingsInfoRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
     }
 
     @ViewBuilder private var valueView: some View {
@@ -435,7 +436,7 @@ struct SettingsSliderRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 titleText
                     .font(.body)
@@ -445,8 +446,8 @@ struct SettingsSliderRow: View {
             }
             sliderView
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
         .opacity(disabled ? 0.45 : 1)
     }
 
@@ -496,11 +497,11 @@ struct SettingsDisclosureRow<Content: View>: View {
                     isExpanded.toggle()
                 }
             } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: 14) {
                     if let icon {
                         SettingsIconBadge(systemImage: icon, color: iconColor)
                     }
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(title)
                             .font(.body)
                             .foregroundStyle(.primary)
@@ -517,9 +518,9 @@ struct SettingsDisclosureRow<Content: View>: View {
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
-                .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(SettingsRowButtonStyle())
@@ -527,7 +528,7 @@ struct SettingsDisclosureRow<Content: View>: View {
 
             if isExpanded {
                 VStack(spacing: 0) {
-                    SettingsDivider(inset: icon == nil ? 16 : 58)
+                    SettingsDivider(inset: icon == nil ? 18 : 64)
                     content
                 }
                 .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
@@ -550,14 +551,14 @@ struct SettingsAccountHeader: View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 if let avatar {
-                    CatalogArtwork(url: avatar, size: 56, isArtist: true)
+                    CatalogArtwork(url: avatar, size: 58, isArtist: true)
                         .overlay {
                             Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
                         }
                         .accessibilityHidden(true)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [service.brandColor.opacity(0.24), service.brandColor.opacity(0.10)],
@@ -569,7 +570,7 @@ struct SettingsAccountHeader: View {
                             .font(.title2.weight(.semibold))
                             .foregroundStyle(service.brandColor)
                     }
-                    .frame(width: 56, height: 56)
+                    .frame(width: 58, height: 58)
                     .accessibilityHidden(true)
                 }
 
@@ -614,10 +615,10 @@ struct SettingsAccountHeader: View {
                         .accessibilityHidden(true)
                 }
             }
-            .padding(16)
+            .padding(18)
 
             if let serviceStatuses, !serviceStatuses.isEmpty {
-                SettingsDivider(inset: 16)
+                SettingsDivider(inset: 18)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(serviceStatuses, id: \.0.id) { itemService, itemConnected in
@@ -643,11 +644,11 @@ struct SettingsAccountHeader: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
                 }
             } else if let action {
-                SettingsDivider(inset: 16)
+                SettingsDivider(inset: 18)
                 HStack {
                     Text(action)
                         .font(.subheadline.weight(.semibold))
@@ -657,8 +658,8 @@ struct SettingsAccountHeader: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(MusicProductStyle.accent)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 13)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -713,7 +714,7 @@ private struct SettingsPickerRow: ViewModifier {
         let layout = typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(spacing: 12))
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             if let icon {
                 SettingsIconBadge(systemImage: icon, color: iconColor)
             }
@@ -726,9 +727,9 @@ private struct SettingsPickerRow: ViewModifier {
                 content.labelsHidden()
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .frame(minHeight: 48)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 11)
+        .frame(minHeight: 54)
     }
 }
 
@@ -778,9 +779,9 @@ private struct SettingsSurface: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
-            .padding(.horizontal, padded ? 16 : 0)
-            .padding(.vertical, padded ? 11 : 0)
-            .frame(maxWidth: .infinity, minHeight: prominent ? 52 : 48, alignment: .leading)
+            .padding(.horizontal, padded ? 18 : 0)
+            .padding(.vertical, padded ? 14 : 0)
+            .frame(maxWidth: .infinity, minHeight: prominent ? 54 : 52, alignment: .leading)
             .background(fill, in: shape)
             .clipShape(shape)
             .contentShape(shape)

@@ -416,14 +416,14 @@ struct MusicStorageView: View {
                         }
                     }
                 }
-                .padding(16)
+                .padding(18)
             }
 
             SettingsSection("缓存占用") {
                 SettingsGroup {
                     ForEach(Array(Cache.allCases.enumerated()), id: \.element.id) { index, cache in
                         if index > 0 { SettingsDivider() }
-                        HStack(spacing: 12) {
+                        HStack(spacing: 14) {
                             SettingsIconBadge(systemImage: cache.icon, color: MusicProductStyle.accent)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(cache.name)
@@ -450,9 +450,9 @@ struct MusicStorageView: View {
                             .disabled(isClearing || isZero(cache))
                             .accessibilityLabel(cache.clearTitle)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .frame(minHeight: 54)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 56)
                     }
                 }
                 if let failure {
@@ -624,7 +624,7 @@ struct MusicAboutView: View {
             SettingsGroup(radius: SettingsCorners.hero) {
                 HStack(spacing: 14) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [MusicProductStyle.accent.opacity(0.28), MusicProductStyle.accent.opacity(0.10)],
@@ -636,7 +636,7 @@ struct MusicAboutView: View {
                             .font(.title2.weight(.semibold))
                             .foregroundStyle(MusicProductStyle.accent)
                     }
-                    .frame(width: 56, height: 56)
+                    .frame(width: 58, height: 58)
                     .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -656,7 +656,7 @@ struct MusicAboutView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(16)
+                .padding(18)
             }
 
             SettingsSection("开源") {

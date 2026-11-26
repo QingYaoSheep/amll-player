@@ -172,6 +172,7 @@ private struct NetEaseFriendsView: View {
     @Environment(\.scenePhase) private var phase
     @State private var actions: NetEaseFriendRoomActions
     @State private var conversations: [NetEaseConversation] = []
+    @State private var search = ""
     @State private var peer: NetEaseRoomMember?
     @State private var showingContacts = false
     @State private var contactSelection: NetEaseRoomMember?
@@ -193,7 +194,7 @@ private struct NetEaseFriendsView: View {
                     inbox.navigationSplitViewColumnWidth(min: 300, ideal: 340)
                 } detail: {
                     if let peer { conversation(peer) }
-                    else { ContentUnavailableView("选择一段私信", systemImage: "bubble.left.and.bubble.right") }
+                    else { emptyDetail }
                 }
             } else {
                 NavigationStack {
@@ -211,52 +212,120 @@ private struct NetEaseFriendsView: View {
         }
     }
 
+    private var filteredConversations: [NetEaseConversation] {
+        let term = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return conversations }
+        return conversations.filter {
+            $0.peer.name.localizedStandardContains(term) || $0.preview.localizedStandardContains(term)
+        }
+    }
+
+    private var emptyDetail: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(MusicProductStyle.accent.opacity(0.12))
+                    .frame(width: 72, height: 72)
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(MusicProductStyle.accent)
+            }
+            Text("选择一段私信")
+                .font(.title3.bold())
+            Text("与网易云好友实时私信、分享歌曲或开启一起听")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                showingContacts = true
+            } label: {
+                Label("发起新私信", systemImage: "square.and.pencil")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: 44)
+                    .background(MusicProductStyle.filledAccent, in: Capsule())
+            }
+            .buttonStyle(MusicContentButtonStyle())
+            .padding(.top, 4)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var inbox: some View {
         List {
-            if !conversations.isEmpty {
-                ForEach(conversations) { item in
-                    HStack(spacing: 8) {
+            if !filteredConversations.isEmpty {
+                ForEach(filteredConversations) { item in
+                    HStack(spacing: 6) {
                         Button { peer = item.peer } label: {
                             HStack(spacing: 12) {
-                                CatalogArtwork(url: item.peer.avatar, size: 48, isArtist: true)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.peer.name).font(.headline)
-                                    Text(item.preview)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                }
-                                Spacer(minLength: 0)
-                                VStack(alignment: .trailing, spacing: 5) {
-                                    if let time = item.time, time > 0 {
-                                        Text(Date(timeIntervalSince1970: Double(time) / 1_000), style: .relative)
-                                            .font(.caption2).foregroundStyle(.secondary)
+                                Circle()
+                                    .fill(item.unread > 0 ? MusicProductStyle.accent : .clear)
+                                    .frame(width: 9, height: 9)
+                                    .accessibilityHidden(true)
+
+                                CatalogArtwork(url: item.peer.avatar, size: 54, isArtist: true)
+                                    .overlay {
+                                        Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
                                     }
-                                    if item.unread > 0 {
-                                        Text(item.unread, format: .number)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 6) {
+                                        Text(item.peer.name)
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 4)
+                                        if let time = item.time, time > 0 {
+                                            Text(IMessageStyle.formatInboxTime(time))
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Image(systemName: "chevron.forward")
                                             .font(.caption2.weight(.semibold))
-                                            .padding(.horizontal, 7).padding(.vertical, 3)
-                                            .foregroundStyle(.white)
-                                            .background(MusicProductStyle.filledAccent, in: Capsule())
-                                            .accessibilityLabel("\(item.unread) 条未读")
+                                            .foregroundStyle(.tertiary)
+                                            .accessibilityHidden(true)
+                                    }
+
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Text(item.preview)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                        Spacer(minLength: 0)
+                                        if item.unread > 0 {
+                                            Text(item.unread, format: .number)
+                                                .font(.caption2.weight(.semibold))
+                                                .monospacedDigit()
+                                                .padding(.horizontal, 7)
+                                                .padding(.vertical, 2.5)
+                                                .foregroundStyle(.white)
+                                                .background(MusicProductStyle.filledAccent, in: Capsule())
+                                                .accessibilityLabel("\(item.unread) 条未读")
+                                        }
                                     }
                                 }
                             }
-                            .foregroundStyle(.primary)
-                            .frame(minHeight: 54)
+                            .frame(minHeight: 62)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(MusicContentButtonStyle())
                         .accessibilityIdentifier("netEaseConversation:\(item.id)")
+
                         NetEaseListenButton(peer: item.peer, actions: actions)
                     }
-                    .listRowBackground(peer?.id == item.id ? Color.accentColor.opacity(0.08) : nil)
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 76 }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 14))
+                    .listRowBackground(peer?.id == item.id ? MusicProductStyle.accent.opacity(0.10) : nil)
                 }
             } else if loaded, failure == nil {
                 ContentUnavailableView {
-                    Label("还没有私信", systemImage: "bubble.left.and.bubble.right")
+                    Label(search.isEmpty ? "还没有私信" : "没有匹配的私信", systemImage: "bubble.left.and.bubble.right")
                 } actions: {
-                    Button("从关注列表发起聊天") { showingContacts = true }
+                    if search.isEmpty {
+                        Button("从关注列表发起聊天") { showingContacts = true }
+                    }
                 }
                 .listRowSeparator(.hidden)
             }
@@ -269,13 +338,15 @@ private struct NetEaseFriendsView: View {
             }
         }
         .listStyle(.plain)
+        .searchable(text: $search, prompt: "搜索好友或消息")
         .navigationTitle("最近私信")
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("关闭", systemImage: "xmark") { dismiss() }
             }
             ToolbarItem(placement: .primaryAction) {
-                Button("我的关注", systemImage: "person.crop.rectangle") { showingContacts = true }
+                Button("我的关注", systemImage: "square.and.pencil") { showingContacts = true }
                     .accessibilityIdentifier("netEaseContacts")
             }
         }
@@ -354,19 +425,32 @@ private struct NetEaseContactsView: View {
         NavigationStack {
             List {
                 ForEach(matches) { peer in
-                    HStack {
+                    HStack(spacing: 8) {
                         Button { select(peer) } label: {
                             HStack(spacing: 12) {
-                                CatalogArtwork(url: peer.avatar, size: 44, isArtist: true)
-                                Text(peer.name).font(.headline).foregroundStyle(.primary)
+                                CatalogArtwork(url: peer.avatar, size: 48, isArtist: true)
+                                    .overlay {
+                                        Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                                    }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(peer.name)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Text("点击发起私信")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
-                            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(MusicContentButtonStyle())
                         .accessibilityIdentifier("netEaseContact:\(peer.id)")
                         NetEaseListenButton(peer: peer, actions: actions)
                     }
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 64 }
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 14))
                 }
                 if matches.isEmpty, next == nil, failure == nil {
                     ContentUnavailableView(search.isEmpty ? "还没有关注的人" : "没有匹配的昵称", systemImage: "person.2")
@@ -423,8 +507,12 @@ struct NetEaseListenButton: View {
     var body: some View {
         Button { Task { await actions.listen(peer) } } label: {
             Image(systemName: "headphones")
-                .font(.body.weight(.semibold))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(MusicProductStyle.accent)
+                .frame(width: 34, height: 34)
+                .background(MusicProductStyle.accent.opacity(0.12), in: Circle())
                 .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Circle())
         }
         .buttonStyle(MusicContentButtonStyle())
         .disabled(actions.busy)
@@ -442,12 +530,24 @@ struct NetEaseFriendRoomStatus: View {
                 HStack(spacing: 10) { content }
                 VStack(alignment: .leading, spacing: 4) { content }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, minHeight: 44)
             .background {
-                if reduceTransparency { Color(uiColor: .secondarySystemBackground) }
-                else { Rectangle().fill(.regularMaterial) }
+                let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+                if reduceTransparency {
+                    shape.fill(Color(uiColor: .secondarySystemBackground))
+                } else {
+                    shape.fill(.ultraThinMaterial)
+                }
             }
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
+            .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .transition(.opacity)
             .animation(MusicProductMotion.change, value: actions.status)
         }

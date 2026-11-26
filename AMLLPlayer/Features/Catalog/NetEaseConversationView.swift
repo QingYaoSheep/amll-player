@@ -18,6 +18,7 @@ struct NetEaseConversationView: View {
     let actions: NetEaseFriendRoomActions
     var duetRoomID: String? = nil
     @Environment(\.scenePhase) private var phase
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var messages: [NetEaseDirectMessage] = []
@@ -58,15 +59,38 @@ struct NetEaseConversationView: View {
         return .init(account: account, room: room, chat: true, peer: peer.id)
     }
 
+    private var isActiveListeningPeer: Bool {
+        guard let account = model.netEaseSession.profile?.id,
+              let room = model.netEasePlayback.listeningRoom else { return false }
+        return room.chattingPeer(viewer: account)?.id == peer.id
+    }
+
     var body: some View {
         timeline
             .navigationTitle(peer.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    HStack(spacing: 7) {
-                        CatalogArtwork(url: peer.avatar, size: 28, isArtist: true)
-                        Text(peer.name).font(.headline).lineLimit(1)
+                    HStack(spacing: 8) {
+                        CatalogArtwork(url: peer.avatar, size: 30, isArtist: true)
+                            .overlay {
+                                Circle().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+                            }
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(peer.name)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            if isActiveListeningPeer {
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(MusicProductStyle.accent)
+                                        .frame(width: 5, height: 5)
+                                    Text("一起听中")
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(MusicProductStyle.accent)
+                                }
+                            }
+                        }
                     }
                     .accessibilityAddTraits(.isHeader)
                 }
@@ -115,45 +139,108 @@ struct NetEaseConversationView: View {
 
     private var timeline: some View {
         ScrollView {
-            LazyVStack(spacing: 8) {
+            LazyVStack(spacing: 0) {
                 if older != nil {
-                    Button("查看更早的消息") { Task { await refresh(more: true) } }
-                        .font(.footnote).frame(minHeight: 44).disabled(loading)
-                        .id("older")
+                    Button {
+                        Task { await refresh(more: true) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if loading { ProgressView().controlSize(.small) }
+                            Text("查看更早的消息")
+                        }
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(loading)
+                    .padding(.bottom, 6)
+                    .id("older")
                 }
                 if let historyError {
-                    Button("重新加载私信") { Task { await refresh() } }
-                    Text(historyError).font(.footnote).foregroundStyle(.secondary)
+                    VStack(spacing: 6) {
+                        Button("重新加载私信") { Task { await refresh() } }
+                            .font(.subheadline.weight(.semibold))
+                        Text(historyError).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 12)
                 } else if !didLoad {
-                    ProgressView().frame(minHeight: 60)
+                    ProgressView().frame(minHeight: 80)
                 } else if messages.isEmpty, receipts.isEmpty {
-                    ContentUnavailableView("还没有消息", systemImage: "bubble.left.and.bubble.right")
+                    VStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(MusicProductStyle.accent.opacity(0.12))
+                                .frame(width: 60, height: 60)
+                            Image(systemName: "bubble.left.and.bubble.right.fill")
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(MusicProductStyle.accent)
+                        }
+                        Text("还没有消息")
+                            .font(.headline)
+                        Text("发送文本、分享一首歌，或邀请\(peer.name)一起听")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.vertical, 48)
+                    .padding(.horizontal, 24)
                 }
                 ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                    VStack(spacing: 8) {
-                        if index == 0 || message.time - messages[index - 1].time >= 1_800_000 {
-                            Text(message.date.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption2).foregroundStyle(.secondary)
-                                .padding(.top, 8)
+                    let timestamp = showsTimestamp(at: index)
+                    let grouped = isGroupedWithPrevious(at: index)
+                    let showsTail = isLastInBurst(at: index)
+                    VStack(spacing: 0) {
+                        if timestamp {
+                            Text(IMessageStyle.formatChatHeader(message.date))
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, index == 0 ? 4 : 14)
+                                .padding(.bottom, 8)
                                 .accessibilityAddTraits(.isHeader)
                         }
-                        bubble(message.content, outgoing: message.outgoing)
+                        bubble(message.content, outgoing: message.outgoing, showsTail: showsTail)
                     }
-                        .id("message:" + message.id)
-                        .contextMenu {
-                            if case .text(let text) = message.content {
-                                Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
-                            }
+                    .padding(.top, timestamp ? 0 : (grouped ? 3 : 12))
+                    .id("message:" + message.id)
+                    .contextMenu {
+                        if case .text(let text) = message.content {
+                            Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
                         }
+                    }
                 }
-                ForEach(receipts) { receipt in
-                    bubble(receipt.content, outgoing: true)
+                ForEach(Array(receipts.enumerated()), id: \.element.id) { index, receipt in
+                    let grouped = index > 0 || messages.last?.outgoing == true
+                    let showsTail = index == receipts.count - 1
+                    bubble(receipt.content, outgoing: true, showsTail: showsTail)
+                        .padding(.top, grouped ? 3 : 12)
                         .transition(reduceMotion ? .opacity : .offset(x: 0, y: 7).combined(with: .opacity))
+                }
+                if !receipts.isEmpty {
+                    HStack {
+                        Spacer()
+                        Text("发送中…")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.trailing, 8)
+                    .padding(.top, 4)
+                } else if messages.last?.outgoing == true {
+                    HStack {
+                        Spacer()
+                        Text("已送达")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.trailing, 8)
+                    .padding(.top, 4)
                 }
             }
             .scrollTargetLayout()
             .frame(maxWidth: 660)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 12)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
         }
@@ -170,137 +257,328 @@ struct NetEaseConversationView: View {
         }
         .overlay(alignment: .bottom) {
             if unseen {
-                Button("新消息", systemImage: "arrow.down") {
+                Button {
                     withAnimation(reduceMotion ? nil : MusicProductMotion.change) { position.scrollTo(edge: .bottom) }
                     unseen = false
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(MusicProductStyle.accent)
+                        Text("新消息")
+                            .foregroundStyle(.primary)
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 40)
+                    .background {
+                        if reduceTransparency {
+                            Capsule().fill(Color(uiColor: .secondarySystemBackground))
+                        } else {
+                            Capsule().fill(.ultraThinMaterial)
+                        }
+                    }
+                    .overlay {
+                        Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                    }
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
                 }
-                .font(.footnote.weight(.semibold))
-                .padding(.horizontal, 14).frame(minHeight: 44)
-                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
-                .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
-                .padding(.bottom, 8)
+                .padding(.bottom, 10)
             }
         }
     }
 
-    private func bubble(_ content: NetEaseDirectMessage.Content, outgoing: Bool) -> some View {
-        HStack(spacing: 0) {
-            if outgoing { Spacer(minLength: 28) }
+    private func showsTimestamp(at index: Int) -> Bool {
+        index == 0 || messages[index].time - messages[index - 1].time >= 1_800_000
+    }
+
+    private func isGroupedWithPrevious(at index: Int) -> Bool {
+        index > 0
+            && !showsTimestamp(at: index)
+            && messages[index].outgoing == messages[index - 1].outgoing
+            && messages[index].time - messages[index - 1].time < 180_000
+    }
+
+    private func isLastInBurst(at index: Int) -> Bool {
+        guard index < messages.count - 1 else {
+            return !(messages[index].outgoing && !receipts.isEmpty)
+        }
+        let current = messages[index]
+        let next = messages[index + 1]
+        if next.time - current.time >= 1_800_000 { return true }
+        if next.outgoing != current.outgoing { return true }
+        return next.time - current.time >= 180_000
+    }
+
+    private func bubble(_ content: NetEaseDirectMessage.Content, outgoing: Bool, showsTail: Bool) -> some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            if outgoing {
+                Spacer(minLength: 44)
+            } else {
+                if showsTail {
+                    CatalogArtwork(url: peer.avatar, size: 28, isArtist: true)
+                        .overlay {
+                            Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                        }
+                        .accessibilityHidden(true)
+                } else {
+                    Color.clear
+                        .frame(width: 28, height: 1)
+                        .accessibilityHidden(true)
+                }
+            }
+
             switch content {
             case .text(let text):
-                Text(verbatim: text)
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .foregroundStyle(outgoing ? Color.white : Color.primary)
-                    .background(outgoing ? MusicProductStyle.filledAccent : Color(uiColor: .secondarySystemBackground),
-                                in: RoundedRectangle(cornerRadius: 19))
+                Group {
+                    if outgoing {
+                        Text(verbatim: text)
+                            .font(.body)
+                            .foregroundStyle(.white)
+                            .padding(.leading, 14)
+                            .padding(.trailing, showsTail ? 19 : 14)
+                            .padding(.vertical, 9.5)
+                            .background(
+                                IMessageStyle.outgoingFill(),
+                                in: IMessageBubbleShape(outgoing: true, showsTail: showsTail)
+                            )
+                            .padding(.trailing, showsTail ? 0 : 5)
+                    } else {
+                        Text(verbatim: text)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .padding(.leading, showsTail ? 19 : 14)
+                            .padding(.trailing, 14)
+                            .padding(.vertical, 9.5)
+                            .background(
+                                IMessageStyle.incomingFill(for: colorScheme),
+                                in: IMessageBubbleShape(outgoing: false, showsTail: showsTail)
+                            )
+                            .padding(.leading, showsTail ? 0 : 5)
+                    }
+                }
             case .song(let id):
                 NetEaseSharedSongCard(model: model, songID: id) { songDetail = id }
+                    .padding(outgoing ? .trailing : .leading, 5)
             case .invitation(let invite):
                 invitation(invite, outgoing: outgoing)
+                    .padding(outgoing ? .trailing : .leading, 5)
             case .unsupported:
-                Text("在网易云音乐查看此消息").font(.footnote).foregroundStyle(.secondary)
-                    .padding(10)
+                Text("在网易云音乐查看此消息")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9.5)
+                    .background(
+                        IMessageStyle.incomingFill(for: colorScheme),
+                        in: RoundedRectangle(cornerRadius: 19, style: .continuous)
+                    )
+                    .padding(outgoing ? .trailing : .leading, 5)
             }
-            if !outgoing { Spacer(minLength: 28) }
+
+            if !outgoing { Spacer(minLength: 44) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(outgoing ? "我发送的消息" : peer.name + "发送的消息")
     }
 
     private func invitation(_ invite: NetEaseRoomInvite, outgoing: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("邀请一起听", systemImage: "headphones")
-                .font(.headline)
-            Text(invite.kind.title).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 11) {
+                ZStack {
+                    Circle()
+                        .fill(MusicProductStyle.accent.opacity(0.14))
+                    Image(systemName: "headphones")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(MusicProductStyle.accent)
+                }
+                .frame(width: 40, height: 40)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("邀请一起听")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(invite.kind.title)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+
             if !outgoing, duetRoomID == nil {
-                Button("加入房间", systemImage: "arrow.right") {
+                Button {
                     if let room = model.netEasePlayback.listeningRoom,
                        room.id != invite.room || room.kind != invite.kind {
                         joinInvite = invite
                     } else {
                         Task { await actions.join(invite, replacing: false) }
                     }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("加入房间")
+                        Image(systemName: "arrow.forward")
+                            .font(.caption.weight(.bold))
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(MusicProductStyle.filledAccent, in: Capsule())
                 }
                 .buttonStyle(MusicContentButtonStyle())
-                .frame(minHeight: 44)
                 .disabled(actions.busy || !available)
             }
         }
         .padding(14)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18).strokeBorder(Color.accentColor.opacity(0.2))
+        .frame(maxWidth: 268, alignment: .leading)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+            shape
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                .overlay {
+                    shape.fill(
+                        LinearGradient(
+                            colors: [MusicProductStyle.accent.opacity(0.10), .clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                }
         }
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(MusicProductStyle.accent.opacity(0.22), lineWidth: 0.75)
+        }
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if let errorMessage = sendError {
-                Text(errorMessage).font(.footnote).foregroundStyle(.secondary)
-                if unconfirmed != nil {
-                    Button("检查发送结果", systemImage: "arrow.clockwise") { Task { await verifyPending() } }
-                        .font(.footnote.weight(.semibold)).frame(minHeight: 44)
-                        .disabled(sending || !available)
-                    Button("结束确认") {
-                        if let unconfirmed { clearSentDraft(unconfirmed) }
-                        unconfirmed = nil
-                        sendError = nil
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(MusicProductStyle.accent)
+                    Text(errorMessage).font(.footnote).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if unconfirmed != nil {
+                        Button("检查发送结果") { Task { await verifyPending() } }
+                            .font(.footnote.weight(.semibold))
+                            .frame(minHeight: 36)
+                            .disabled(sending || !available)
+                        Button("结束确认") {
+                            if let unconfirmed { clearSentDraft(unconfirmed) }
+                            unconfirmed = nil
+                            sendError = nil
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(minHeight: 36)
                     }
-                    .font(.footnote).frame(minHeight: 44)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(MusicProductStyle.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             if !available {
                 Label("会话当前不可用", systemImage: "exclamationmark.circle")
                     .font(.footnote).foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
             }
             if let song {
-                HStack(spacing: 8) {
-                    CatalogArtwork(url: song.artworkURL, size: 32)
-                    VStack(alignment: .leading) {
-                        Text(song.name).font(.subheadline.weight(.semibold))
+                HStack(spacing: 10) {
+                    CatalogArtwork(url: song.artworkURL, size: 42)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("待分享歌曲")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(MusicProductStyle.accent)
+                        Text(song.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                         Text(song.subtitle).font(.caption).foregroundStyle(.secondary)
                     }.lineLimit(1)
-                    Spacer()
+                    Spacer(minLength: 0)
                     Button("移除待分享歌曲", systemImage: "xmark.circle.fill") { self.song = nil }
                         .labelStyle(.iconOnly)
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
                         .frame(minWidth: 44, minHeight: 44)
                 }
+                .padding(.leading, 10)
+                .padding(.trailing, 4)
+                .padding(.vertical, 6)
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                }
             }
-            HStack(alignment: .bottom, spacing: 6) {
+            HStack(alignment: .bottom, spacing: 8) {
                 Button { pickingSong = true } label: {
-                    Image(systemName: "plus.circle").font(.title2)
-                        .frame(minWidth: 44, minHeight: 44)
+                    Image(systemName: "plus")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, height: 36)
+                        .background(Color(uiColor: .tertiarySystemFill), in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(MusicContentButtonStyle())
                 .accessibilityLabel("分享歌曲")
                 .accessibilityIdentifier("netEaseShareSong")
-                TextField("网易云私信", text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .padding(.horizontal, 12).padding(.vertical, 9)
-                    .frame(minHeight: 44)
-                    .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 20))
-                    .accessibilityIdentifier("netEaseMessageDraft")
-                Button { Task { await send() } } label: {
-                    if sending { ProgressView().frame(width: 44, height: 44) }
-                    else {
-                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 30))
-                            .frame(width: 44, height: 44)
+
+                HStack(alignment: .bottom, spacing: 4) {
+                    TextField("网易云私信", text: $draft, axis: .vertical)
+                        .lineLimit(1...5)
+                        .padding(.leading, 14)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("netEaseMessageDraft")
+                    Button {
+                        AppHaptics.shared.play(.selection)
+                        Task { await send() }
+                    } label: {
+                        Group {
+                            if sending {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 30, height: 30)
+                                    .background(canSend ? MusicProductStyle.filledAccent : Color.secondary.opacity(0.28), in: Circle())
+                                    .scaleEffect(canSend ? 1.0 : 0.94)
+                                    .animation(reduceMotion ? nil : MusicProductMotion.feedback, value: canSend)
+                            }
+                        }
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                     }
+                    .buttonStyle(MusicContentButtonStyle())
+                    .accessibilityLabel("发送")
+                    .accessibilityIdentifier("netEaseSendMessage")
+                    .disabled(!canSend)
                 }
-                .buttonStyle(MusicContentButtonStyle())
-                .accessibilityLabel("发送")
-                .accessibilityIdentifier("netEaseSendMessage")
-                .disabled(!canSend)
+                .background(
+                    Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
+                }
             }
             if trimmedDraft.utf16.count > 500 {
-                Text("单条消息最多 500 字").font(.caption).foregroundStyle(.secondary)
+                Text("单条消息最多 500 字").font(.caption).foregroundStyle(MusicProductStyle.accent)
+                    .padding(.leading, 56)
             }
         }
         .disabled(!available || sending)
-        .padding(.horizontal, 14).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .background {
             if reduceTransparency { Color(uiColor: .secondarySystemBackground) }
-            else { Rectangle().fill(.regularMaterial) }
+            else { Rectangle().fill(.ultraThinMaterial) }
+        }
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
         }
     }
 
@@ -405,5 +683,90 @@ struct NetEaseConversationView: View {
     private func clearSentDraft(_ pending: Pending) {
         if pending.content == .text(trimmedDraft) { draft = "" }
         if let song, pending.content == .song(song.spotifyID) { self.song = nil }
+    }
+}
+
+struct IMessageBubbleShape: Shape {
+    let outgoing: Bool
+    let showsTail: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let h = rect.height
+        guard showsTail, w >= 14, h >= 14 else {
+            return RoundedRectangle(cornerRadius: min(19, min(w, h) / 2), style: .continuous).path(in: rect)
+        }
+        let tail: CGFloat = 5
+        let right = w - tail
+        let r = min(18, min(right / 2, h / 2))
+        var path = Path()
+        path.move(to: CGPoint(x: r, y: 0))
+        path.addLine(to: CGPoint(x: right - r, y: 0))
+        path.addQuadCurve(to: CGPoint(x: right, y: r), control: CGPoint(x: right, y: 0))
+        path.addLine(to: CGPoint(x: right, y: max(r, h - 12)))
+        path.addCurve(
+            to: CGPoint(x: w, y: h),
+            control1: CGPoint(x: right, y: max(r, h - 4.5)),
+            control2: CGPoint(x: w - 0.5, y: h - 1)
+        )
+        path.addCurve(
+            to: CGPoint(x: max(r, right - 6), y: h - 2.5),
+            control1: CGPoint(x: w - 2.5, y: h),
+            control2: CGPoint(x: max(r, right - 3), y: h - 0.5)
+        )
+        path.addCurve(
+            to: CGPoint(x: max(r, right - 15), y: h),
+            control1: CGPoint(x: max(r, right - 8), y: h),
+            control2: CGPoint(x: max(r, right - 11), y: h)
+        )
+        path.addLine(to: CGPoint(x: r, y: h))
+        path.addQuadCurve(to: CGPoint(x: 0, y: h - r), control: CGPoint(x: 0, y: h))
+        path.addLine(to: CGPoint(x: 0, y: r))
+        path.addQuadCurve(to: CGPoint(x: r, y: 0), control: CGPoint(x: 0, y: 0))
+        path.closeSubpath()
+
+        if outgoing { return path }
+        return path.applying(CGAffineTransform(translationX: w, y: 0).scaledBy(x: -1, y: 1))
+    }
+}
+
+enum IMessageStyle {
+    static func outgoingFill() -> LinearGradient {
+        LinearGradient(
+            colors: [MusicProductStyle.accent, MusicProductStyle.filledAccent],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    static func incomingFill(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(white: 0.17) : Color(uiColor: .systemGray5)
+    }
+
+    static func formatInboxTime(_ millis: Int64) -> String {
+        let date = Date(timeIntervalSince1970: Double(millis) / 1_000)
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        if calendar.isDateInYesterday(date) {
+            return "昨天"
+        }
+        if let weekAgo = calendar.date(byAdding: .day, value: -6, to: Date()), date >= weekAgo {
+            return date.formatted(.dateTime.weekday(.abbreviated))
+        }
+        return date.formatted(.dateTime.month(.defaultDigits).day(.defaultDigits))
+    }
+
+    static func formatChatHeader(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
+        if calendar.isDateInToday(date) {
+            return "今天 " + time
+        }
+        if calendar.isDateInYesterday(date) {
+            return "昨天 " + time
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 }

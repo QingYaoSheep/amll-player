@@ -575,6 +575,9 @@ private struct NetEaseRoomChat: View {
     let room: NetEaseListeningRoom
     let account: String?
     @Environment(\.scenePhase) private var phase
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var visibilityToken = UUID()
     @State private var messages: [NetEaseRoomMessage] = []
     @State private var text = ""
@@ -587,31 +590,124 @@ private struct NetEaseRoomChat: View {
         playback.listeningRoom?.id == room.id && playback.listeningRoom?.kind == room.kind
     }
 
+    private var trimmedText: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSendMessage: Bool {
+        active && !sending && !trimmedText.isEmpty && text.utf16.count <= 100
+    }
+
     var body: some View {
-        List {
-            if !active { Text("房间成员已变更。").foregroundStyle(.secondary) }
-            if let error = error ?? readError { Text(verbatim: error).foregroundStyle(.secondary) }
-            ForEach(messages) { message in
-                VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 4) {
-                    if !message.outgoing { Text(message.sender).font(.caption).foregroundStyle(.secondary) }
-                    Text(verbatim: message.text)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(message.outgoing ? MusicProductStyle.accent.opacity(0.18) :
-                            Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                if !active {
+                    Text("房间成员已变更。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
                 }
-                .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
-                .listRowSeparator(.hidden)
+                if let error = error ?? readError {
+                    Text(verbatim: error)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 6)
+                }
+                ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                    let sameSender = index > 0 && messages[index - 1].outgoing == message.outgoing && messages[index - 1].sender == message.sender
+                    let isLast = index == messages.count - 1 || messages[index + 1].outgoing != message.outgoing || messages[index + 1].sender != message.sender
+                    VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 4) {
+                        if !message.outgoing, !sameSender {
+                            Text(message.sender)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 8)
+                        }
+                        if message.outgoing {
+                            Text(verbatim: message.text)
+                                .font(.body)
+                                .foregroundStyle(.white)
+                                .padding(.leading, 14)
+                                .padding(.trailing, isLast ? 19 : 14)
+                                .padding(.vertical, 9)
+                                .background(
+                                    IMessageStyle.outgoingFill(),
+                                    in: IMessageBubbleShape(outgoing: true, showsTail: isLast)
+                                )
+                                .padding(.trailing, isLast ? 0 : 5)
+                        } else {
+                            Text(verbatim: message.text)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                                .padding(.leading, isLast ? 19 : 14)
+                                .padding(.trailing, 14)
+                                .padding(.vertical, 9)
+                                .background(
+                                    IMessageStyle.incomingFill(for: colorScheme),
+                                    in: IMessageBubbleShape(outgoing: false, showsTail: isLast)
+                                )
+                                .padding(.leading, isLast ? 0 : 5)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
+                    .padding(.top, sameSender ? 3 : 12)
+                }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
         }
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.bottom, for: .alignment)
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("房间聊天")
         .safeAreaInset(edge: .bottom) {
-            HStack {
-                TextField("消息", text: $text, axis: .vertical).textFieldStyle(.roundedBorder)
-                Button(sending ? "发送中…" : "发送") { Task { await send() } }
-                    .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.utf16.count > 100)
+            HStack(alignment: .bottom, spacing: 4) {
+                TextField("消息", text: $text, axis: .vertical)
+                    .lineLimit(1...4)
+                    .padding(.leading, 14)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 44)
+                Button {
+                    AppHaptics.shared.play(.selection)
+                    Task { await send() }
+                } label: {
+                    Group {
+                        if sending {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 30, height: 30)
+                                .background(canSendMessage ? MusicProductStyle.filledAccent : Color.secondary.opacity(0.28), in: Circle())
+                                .scaleEffect(canSendMessage ? 1.0 : 0.94)
+                                .animation(reduceMotion ? nil : MusicProductMotion.feedback, value: canSendMessage)
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+                }
+                .buttonStyle(MusicContentButtonStyle())
+                .accessibilityLabel("发送")
+                .disabled(!canSendMessage)
             }
-            .padding()
-            .background(.regularMaterial)
+            .background(
+                Color(uiColor: .secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background {
+                if reduceTransparency { Color(uiColor: .secondarySystemBackground) }
+                else { Rectangle().fill(.ultraThinMaterial) }
+            }
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
+            }
             .disabled(!active)
         }
         .refreshable { await refresh() }

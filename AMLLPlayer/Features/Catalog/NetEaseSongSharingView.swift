@@ -24,7 +24,10 @@ struct NetEaseSongPicker: View {
                             NavigationLink {
                                 songs(.collection(.savedTracks), title: "我喜欢的音乐")
                             } label: {
-                                Label("我喜欢的音乐", systemImage: "heart")
+                                HStack(spacing: 12) {
+                                    SettingsIconBadge(systemImage: "heart.fill", color: MusicProductStyle.accent)
+                                    Text("我喜欢的音乐")
+                                }
                             }
                             NavigationLink {
                                 NetEaseSongPickerList(catalog: model.netEaseCatalog, query: .collection(.playlists),
@@ -36,10 +39,14 @@ struct NetEaseSongPicker: View {
                                     }
                                 }
                             } label: {
-                                Label("个人歌单", systemImage: "music.note.list")
+                                HStack(spacing: 12) {
+                                    SettingsIconBadge(systemImage: "music.note.list", color: MusicProductStyle.accent)
+                                    Text("个人歌单")
+                                }
                             }
                         }
                     }
+                    .listStyle(.insetGrouped)
                 } else {
                     songs(.search(term, .track), title: title, delaySearch: true)
                         .id(term)
@@ -139,8 +146,8 @@ private struct NetEaseSharingTrackLabel: View {
     let item: MusicCatalogItem
 
     var body: some View {
-        HStack(spacing: 10) {
-            CatalogArtwork(url: item.artworkURL, size: 40)
+        HStack(spacing: 12) {
+            CatalogArtwork(url: item.artworkURL, size: 46)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                 Text(item.subtitle).font(.caption).foregroundStyle(.secondary)
@@ -160,23 +167,62 @@ struct NetEaseSharedSongCard: View {
     private var detail: MusicCatalogDetailState { model.catalog.detail(kind: .track, id: songID) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
                 Button(action: showDetail) {
                     if let song = detail.value?.item {
-                        NetEaseSharingTrackLabel(item: song)
+                        HStack(spacing: 12) {
+                            CatalogArtwork(url: song.artworkURL, size: 54)
+                                .shadow(color: .black.opacity(0.10), radius: 4, y: 2)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(song.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(2)
+                                Text(song.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                HStack(spacing: 4) {
+                                    Image(systemName: "music.note")
+                                    Text("网易云音乐")
+                                }
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(MusicProductStyle.accent)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     } else {
-                        Label("网易云歌曲", systemImage: "music.note").font(.subheadline.weight(.semibold))
+                        HStack(spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(MusicProductStyle.accent.opacity(0.12))
+                                Image(systemName: "music.note")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(MusicProductStyle.accent)
+                            }
+                            .frame(width: 48, height: 48)
+                            Text("网易云歌曲")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            Spacer(minLength: 0)
+                        }
                     }
                 }
                 .buttonStyle(MusicContentButtonStyle())
                 .accessibilityHint("打开歌曲详情")
+
                 if let song = detail.value?.item {
                     Button {
                         Task { await play(song) }
                     } label: {
                         Image(systemName: model.netEasePlayback.isListeningTogether ? "text.line.first.and.arrowtriangle.forward" : "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(MusicProductStyle.filledAccent, in: Circle())
                             .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Circle())
                     }
                     .buttonStyle(MusicContentButtonStyle())
                     .disabled(!song.canPlay || busy)
@@ -187,8 +233,14 @@ struct NetEaseSharedSongCard: View {
                 Text(failure).font(.caption).foregroundStyle(.secondary)
             }
         }
-        .padding(10)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+        .padding(12)
+        .frame(maxWidth: 280, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
         .task(id: songID) {
             guard model.selectedMusicService == .netease else { return }
             await detail.load(kind: .track, id: songID, provider: model.catalog.provider)

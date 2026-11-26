@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "更换 Spotify Client ID？" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Change Spotify Client ID?"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"更换 Spotify Client ID？"}}}},
+    "更换并登录" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Change and Sign In"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"更换并登录"}}}},
+    "更换后会断开当前 Spotify 账号，需要重新登录。" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Changing the Client ID disconnects your Spotify account and requires a new sign-in."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"更换后会断开当前 Spotify 账号，需要重新登录。"}}}},
     "生成诊断文件" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Generate Diagnostics File"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"生成诊断文件"}}}},
     "分享跳转诊断" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Share Seek Diagnostics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"分享跳转诊断"}}}},
     "导出失败，请重试。" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Export failed. Try again."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"导出失败，请重试。"}}}},

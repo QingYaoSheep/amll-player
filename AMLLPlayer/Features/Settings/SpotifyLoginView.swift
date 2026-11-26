@@ -5,6 +5,7 @@ struct SpotifyLoginView: View {
     @State private var clientID: String
     @State private var showConfiguration: Bool
     @State private var needsRetry = false
+    @State private var confirmClientChange = false
     @FocusState private var isEditingClientID: Bool
 
     init(model: AppModel, startsWithConfiguration: Bool = false) {
@@ -22,14 +23,7 @@ struct SpotifyLoginView: View {
             )
             SettingsSection {
                 if !isConnectedWithThisClient || model.isSpotifyLoginBusy {
-                    Button {
-                        isEditingClientID = false
-                        needsRetry = false
-                        Task {
-                            await model.authorizeInBrowser(clientID: clientID)
-                            needsRetry = !isConnectedWithThisClient
-                        }
-                    } label: {
+                    Button(action: prepareSignIn) {
                         SettingsActionLabel(
                             title: model.isSpotifyLoginBusy ? "player.authorizing" : needsRetry ? "重试 Spotify 登录" : "登录 Spotify",
                             icon: "safari", busy: model.isSpotifyLoginBusy, style: .primary
@@ -47,11 +41,8 @@ struct SpotifyLoginView: View {
                         SettingsActionLabel(title: "settings.logout", icon: "rectangle.portrait.and.arrow.right", style: .destructive)
                     }
                     .disabled(unavailable)
+                    .accessibilityIdentifier("spotifySignOut")
                 }
-            }
-            if showConfiguration {
-                configuration
-                    .transition(.opacity)
             }
             if model.environment.configuration.spotifyClientID != nil {
                 Button {
@@ -64,12 +55,21 @@ struct SpotifyLoginView: View {
                 .disabled(unavailable)
                 .accessibilityIdentifier("spotifyAdvancedConfiguration")
             }
+            if showConfiguration {
+                configuration.transition(.opacity)
+            }
         }
         .buttonStyle(SettingsButtonStyle())
         .navigationTitle("settings.login.spotify")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: isConnectedWithThisClient) { _, connected in
             if connected { needsRetry = false }
+        }
+        .confirmationDialog("更换 Spotify Client ID？", isPresented: $confirmClientChange, titleVisibility: .visible) {
+            Button("更换并登录", role: .destructive, action: signIn)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("更换后会断开当前 Spotify 账号，需要重新登录。")
         }
     }
 
@@ -123,6 +123,25 @@ struct SpotifyLoginView: View {
     }
 
     private var unavailable: Bool { model.isSpotifyLoginBusy || model.isPerformingAction }
+
+    private func prepareSignIn() {
+        isEditingClientID = false
+        if model.sessionState.isAuthenticated && !isConnectedWithThisClient {
+            confirmClientChange = true
+        } else {
+            signIn()
+        }
+    }
+
+    private func signIn() {
+        guard !unavailable else { return }
+        let submittedID = clientID
+        needsRetry = false
+        Task {
+            await model.authorizeInBrowser(clientID: submittedID)
+            needsRetry = !isConnectedWithThisClient
+        }
+    }
 
     private var isConnectedWithThisClient: Bool {
         model.sessionState.isAuthenticated

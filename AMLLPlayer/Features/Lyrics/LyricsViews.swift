@@ -357,9 +357,8 @@ struct LyricsSettingsView: View {
             Slider(
                 value: Binding(get: { coordinator.selection.offset }, set: { coordinator.setOffset($0) }),
                 in: -10 ... 10, step: 0.1
-            ) {
-                Text("lyrics.offset")
-            }
+            )
+            .accessibilityLabel(Text("lyrics.offset"))
             .accessibilityIdentifier("lyricsSettingsOffsetSlider")
             Button {
                 coordinator.setOffset(0)

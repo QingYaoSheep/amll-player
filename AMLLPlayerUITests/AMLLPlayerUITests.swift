@@ -209,8 +209,9 @@ final class AMLLPlayerUITests: XCTestCase {
         clientID.tap()
         clientID.typeText("-replacement\n")
         app.buttons["spotifyAuthorize"].tap()
-        XCTAssertTrue(app.buttons["Change and Sign In"].waitForExistence(timeout: 3))
-        app.buttons["Cancel"].tap()
+        let confirmation = app.alerts.firstMatch
+        XCTAssertTrue(confirmation.buttons["Change and Sign In"].waitForExistence(timeout: 3))
+        confirmation.buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons["spotifySignOut"].exists, "Cancelling must preserve the current Spotify connection.")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.navigationBars.buttons.element(boundBy: 0).tap()

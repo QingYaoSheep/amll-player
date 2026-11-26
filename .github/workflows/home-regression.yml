@@ -69,6 +69,7 @@ jobs:
           UI_TESTS=(
             -only-testing:AMLLPlayerUITests/MusicCatalogDesignUITests
             -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testPlayerAndSettingsAreReachable
+            -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testLyricsSettingsKeepsOffsetControlsTogether
             -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testWelcomeCanBeSkippedIntoStableNavigation
             -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testProductPagesAndSearchHistory
             -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testAppearanceChangesPersistThroughTheProductionPanel

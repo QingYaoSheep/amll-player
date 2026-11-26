@@ -66,7 +66,7 @@ struct SpotifyLoginView: View {
         .onChange(of: isConnectedWithThisClient) { _, connected in
             if connected { needsRetry = false }
         }
-        .confirmationDialog("更换 Spotify Client ID？", isPresented: $confirmClientChange, titleVisibility: .visible) {
+        .alert("更换 Spotify Client ID？", isPresented: $confirmClientChange) {
             Button("更换并登录", role: .destructive, action: signIn)
             Button("Cancel", role: .cancel) {}
         } message: {

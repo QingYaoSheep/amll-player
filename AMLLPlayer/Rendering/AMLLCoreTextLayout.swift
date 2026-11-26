@@ -18,13 +18,21 @@ fileprivate struct AMLLCoreTextRasterRow {
 struct AMLLCoreTextRasterSnapshot: @unchecked Sendable {
     fileprivate let size: CGSize
     fileprivate let rows: [AMLLCoreTextRasterRow]
+    fileprivate var softwareBlur = false
     nonisolated(unsafe) private static let rasterContext = CIContext(options: nil)
+    nonisolated(unsafe) private static let softwareRasterContext = CIContext(options: [.useSoftwareRenderer: true])
+
+    func usingSoftwareBlur(_ enabled: Bool) -> Self {
+        var copy = self
+        copy.softwareBlur = enabled
+        return copy
+    }
 
     func hidingAuxiliary(_ kinds: Set<LyricsAuxiliaryKind>) -> Self {
         .init(size: size, rows: rows.filter { row in
             if let kind = row.auxiliaryKind, kinds.contains(kind) { return false }
             return !(row.romanization && kinds.contains(.romanization))
-        })
+        }, softwareBlur: softwareBlur)
     }
 
     var auxiliaryKinds: Set<LyricsAuxiliaryKind> {
@@ -59,7 +67,8 @@ struct AMLLCoreTextRasterSnapshot: @unchecked Sendable {
         guard blurRadius > 0, let input = CIImage(image: sharp) else { return sharp }
         let extent = input.extent
         let filtered = input.applyingFilter("CIGaussianBlur", parameters: ["inputRadius": blurRadius * scale])
-        guard let output = Self.rasterContext.createCGImage(filtered, from: extent) else { return sharp }
+        let context = softwareBlur ? Self.softwareRasterContext : Self.rasterContext
+        guard let output = context.createCGImage(filtered, from: extent) else { return sharp }
         return UIImage(cgImage: output, scale: scale, orientation: .up)
     }
 }

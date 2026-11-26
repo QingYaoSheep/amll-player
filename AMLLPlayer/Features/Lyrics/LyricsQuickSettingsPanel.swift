@@ -421,6 +421,9 @@ struct LyricsQuickSettingsPanel: View {
                                      get: { configuration.hdr?.enabled ?? false },
                                      set: { model.renderPreferences.configuration.hdr = .init(enabled: $0) }
                                  ))
+                if model.desktopLyrics.isSupported {
+                    desktopLyricsButton
+                }
             }
             appearanceButton("quickSettings.immersiveLyrics", symbol: "rectangle.topthird.inset.filled",
                              id: "quickSettingsImmersiveLyrics", accent: MusicProductStyle.accent,
@@ -428,6 +431,28 @@ struct LyricsQuickSettingsPanel: View {
                                  get: { configuration.immersiveLyrics == true },
                                  set: { model.renderPreferences.configuration.immersiveLyrics = $0 }
                              ))
+        }
+    }
+
+    private var desktopLyricsButton: some View {
+        let pip = model.desktopLyrics
+        return Button {
+            AppHaptics.shared.play(.selection)
+            pip.toggle()
+        } label: {
+            QuickSettingsControlLabel(
+                title: "desktopLyrics.title", symbol: pip.isOpen ? "pip.exit" : "pip.enter",
+                indicator: pip.isOpen ? "checkmark.circle.fill" : "circle",
+                selected: pip.isOpen, accentColor: MusicProductStyle.accent
+            )
+        }
+        .buttonStyle(MusicContentButtonStyle())
+        .disabled(pip.isBusy || model.playbackSnapshot?.item == nil)
+        .accessibilityValue(Text(LocalizedStringKey(pip.isOpen ? "quickSettings.on" : "quickSettings.off")))
+        .accessibilityIdentifier("quickSettingsDesktopLyrics")
+        .alert("desktopLyrics.unavailable", isPresented: Binding(get: { pip.showsStartError },
+                                                                  set: { pip.showsStartError = $0 })) {
+            Button("common.ok", role: .cancel) {}
         }
     }
 

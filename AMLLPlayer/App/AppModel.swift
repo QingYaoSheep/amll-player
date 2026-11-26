@@ -69,6 +69,8 @@ final class AppModel {
     private(set) var catalog: SpotifyCatalogStore
     let lyrics: LyricsCoordinator
     let renderPreferences: LyricsRenderPreferences
+    let desktopLyrics = DesktopLyricsController()
+    @ObservationIgnored private var desktopLyricsRunning = false
     private(set) var selectedDeviceID: String?
     private(set) var isBrowserLoginInProgress = false
 
@@ -223,17 +225,43 @@ final class AppModel {
             Task { await appleSession.refresh(); await netEaseSession.refresh() }
         case .background:
             isForeground = false
-            lyricsMetadataTask?.cancel()
-            lyrics.setForeground(false)
-            currentPlayback.enterBackground()
+            suspendForegroundPlayback()
         case .inactive:
             break
         @unknown default:
             isForeground = false
-            lyrics.setForeground(false)
-            lyricsMetadataTask?.cancel()
+            suspendForegroundPlayback()
+        }
+    }
+
+    private func suspendForegroundPlayback() {
+        if !desktopLyricsRunning { lyricsMetadataTask?.cancel() }
+        lyrics.setForeground(desktopLyricsRunning)
+        if selectedMusicService != .appleMusic || !desktopLyricsRunning {
             currentPlayback.enterBackground()
         }
+    }
+
+    func setDesktopLyricsRunning(_ running: Bool) {
+        guard desktopLyricsRunning != running else { return }
+        desktopLyricsRunning = running
+        if selectedMusicService == .spotify {
+            environment.spotifyPlayback.setBackgroundLyricsEnabled(running)
+        }
+        if !isForeground {
+            if running {
+                lyrics.setForeground(true)
+                if selectedMusicService == .appleMusic { applePlayback.enterForeground() }
+            } else {
+                suspendForegroundPlayback()
+            }
+        }
+    }
+
+    func setDesktopLyricsPlayback(playing: Bool) async {
+        guard let snapshot = playbackSnapshot, snapshot.isPlaying != playing else { return }
+        guard playing ? snapshot.restrictions.canResume : snapshot.restrictions.canPause else { return }
+        await togglePlayPause()
     }
 
     func handleOpenURL(_ url: URL) {
@@ -483,6 +511,8 @@ final class AppModel {
     func selectMusicService(_ service: MusicServiceID) {
         guard service != selectedMusicService else { return }
         AppHaptics.shared.play(.selection)
+        desktopLyrics.stop()
+        setDesktopLyricsRunning(false)
         sourceGeneration = UUID()
         currentPlayback.enterBackground()
         if selectedMusicService == .netease { netEasePlayback.deselect() }
@@ -621,6 +651,8 @@ final class AppModel {
     }
 
     private func clearPlayback() {
+        desktopLyrics.stop()
+        setDesktopLyricsRunning(false)
         lyricsMetadataTask?.cancel()
         lyrics.update(track: nil)
         playbackSnapshot = nil
@@ -659,6 +691,7 @@ final class AppModel {
         playbackSnapshot = snapshot
         clock = PlayerClock(anchor: snapshot)
         updateLyricsMetadata(snapshot.item)
+        desktopLyrics.playbackChanged()
     }
 
     private func prepareAppleMusic() {

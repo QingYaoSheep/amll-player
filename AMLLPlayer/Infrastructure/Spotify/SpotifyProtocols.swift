@@ -30,6 +30,7 @@ protocol SpotifyPlaybackProviding: MusicPlaybackProviding {
     func stop()
     func enterForeground()
     func enterBackground()
+    func setBackgroundLyricsEnabled(_ enabled: Bool)
     func refresh() async throws
     func play() async throws
     func pause() async throws
@@ -44,6 +45,8 @@ protocol SpotifyPlaybackProviding: MusicPlaybackProviding {
 }
 
 extension SpotifyPlaybackProviding {
+    func setBackgroundLyricsEnabled(_: Bool) {}
+
     func play(item: MusicCatalogItem, context: MusicResourceID?, position: Int?) async throws {
         guard item.service == .spotify, let uri = item.uri else { throw MusicServiceError.unsupportedOperation }
         if let context, let position {

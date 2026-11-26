@@ -84,6 +84,7 @@ jobs:
           -project AMLLPlayer.xcodeproj
           -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
+          -only-testing:AMLLPlayerTests/DesktopLyricsTests
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkDebugStoreTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkLayersTests

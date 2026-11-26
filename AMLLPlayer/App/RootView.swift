@@ -5,6 +5,7 @@ struct RootView: View {
     var roomNotification: NetEaseRoomNotificationDelegate.Response? = nil
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingPlayer = false
+    @AppStorage(DesktopLyricsController.autoStartKey) private var autoDesktopLyrics = false
     @State private var showingWelcome = false
     @Namespace private var playerNamespace
     @State private var roomOverlay = NetEaseRoomOverlay()
@@ -27,7 +28,19 @@ struct RootView: View {
             }
         }
         .fullScreenCover(isPresented: $showingPlayer) {
+            let presentation = $showingPlayer
             player
+                .background {
+                    if model.desktopLyrics.isSupported {
+                        DesktopLyricsAnchor(model: model, phase: scenePhase, autoStart: autoDesktopLyrics,
+                                            lyricsVisible: model.renderPreferences.configuration.showLyrics,
+                                            configuration: model.renderPreferences.configuration) {
+                            presentation.wrappedValue = true
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
+                }
                 .modifier(PlayerZoomTransition(namespace: playerNamespace, enabled: !reduceMotion))
         }
         .onChange(of: model.catalog.identity) { showingPlayer = false }

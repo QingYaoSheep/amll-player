@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @AppStorage(DesktopLyricsController.autoStartKey) private var autoDesktopLyrics = false
     @AppStorage(AppHaptics.preferenceKey) private var hapticsEnabled = true
     @State private var exportingSettings = false
     @State private var showingSettingsExporter = false
@@ -68,6 +69,16 @@ struct SettingsView: View {
                     }
                     .buttonStyle(SettingsRowButtonStyle())
                     .accessibilityIdentifier("lyricsSourceSettingsLink")
+
+                    if model.desktopLyrics.isSupported {
+                        SettingsDivider()
+
+                        Toggle(isOn: $autoDesktopLyrics.hapticSelection()) {
+                            SettingsIconToggleLabel(title: "desktopLyrics.autoStart", icon: "pip.enter",
+                                                    color: MusicProductStyle.accent)
+                        }
+                        .accessibilityIdentifier("autoDesktopLyrics")
+                    }
 
                     SettingsDivider()
 

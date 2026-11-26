@@ -48,6 +48,12 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
 
 @MainActor
 final class AMLLNativeCanvas: UIView {
+    var drivesFramesExternally = false
+    var exportRasterScale: CGFloat = 1
+    private var exportTransition = DesktopLyricsLineTransition()
+    private var rasterScale: CGFloat { drivesFramesExternally ? exportRasterScale : (window?.screen.scale ?? 2) }
+    private var rendersOffscreenOrAttached: Bool { drivesFramesExternally || window != nil }
+
     var fadeTop: CGFloat? {
         didSet {
             if oldValue != fadeTop {
@@ -270,7 +276,7 @@ final class AMLLNativeCanvas: UIView {
         }
         let oldLayoutSettings = Self.layoutSettings(auxiliaryFade.layoutConfiguration(self.configuration))
         if documentChanged { auxiliaryFade.reset(configuration) }
-        else { auxiliaryFade.update(configuration, animated: active && window != nil, reduceMotion: reduceMotion) }
+        else { auxiliaryFade.update(configuration, animated: active && rendersOffscreenOrAttached, reduceMotion: reduceMotion) }
         if documentChanged || self.configuration.obsceneWordMask != configuration.obsceneWordMask {
             hdrTime = nil
             source = document
@@ -329,7 +335,7 @@ final class AMLLNativeCanvas: UIView {
         }
         syncLink()
         #if DEBUG
-            if link == nil, !controlledReplay, needsFrame, !dirty { draw(delta: 0) }
+            if !drivesFramesExternally, link == nil, !controlledReplay, needsFrame, !dirty { draw(delta: 0) }
         #endif
     }
 
@@ -383,7 +389,7 @@ final class AMLLNativeCanvas: UIView {
         needsFrame = true
         // Debug's explicit replay has no display link. Production commits the
         // new size and the first frame together on the next CADisplayLink tick.
-        if link == nil || auxiliaryLayoutPreparation != nil || replacedAuxiliaryRows { draw(delta: 0) }
+        if !drivesFramesExternally && (link == nil || auxiliaryLayoutPreparation != nil || replacedAuxiliaryRows) { draw(delta: 0) }
     }
 
     fileprivate func auxiliaryPixelsReady() { needsFrame = true; syncLink() }
@@ -420,7 +426,7 @@ final class AMLLNativeCanvas: UIView {
     private func currentLayoutKey() -> LayoutKey {
         .init(targetTranslation: configuration.translation, targetRomanization: configuration.romanization,
               documentVersion: sourceVersion, viewport: bounds.size,
-              displayScale: window?.screen.scale ?? 1,
+              displayScale: drivesFramesExternally ? rasterScale : (window?.screen.scale ?? 1),
               pointSize: resolvedPointSize, inset: inset,
               boldText: traitCollection.legibilityWeight == .bold,
               direction: effectiveUserInterfaceLayoutDirection,
@@ -481,7 +487,7 @@ final class AMLLNativeCanvas: UIView {
                                                 // the Core Text layout instead of scaling them again.
                                                 fontSize: Double(resolvedPointSize))
         environment.safeArea = safe
-        environment.displayScale = Double(screen?.scale ?? 1)
+        environment.displayScale = Double(drivesFramesExternally ? rasterScale : (screen?.scale ?? 1))
         environment.recordBlossomDiagnostics = performanceRecordingEnabled
         environment.maximumFPS = screen?.maximumFramesPerSecond ?? 60
         environment.localeIdentifier = Locale.current.identifier
@@ -604,6 +610,7 @@ final class AMLLNativeCanvas: UIView {
         let previousAnchor = engine!.timeAnchorRevision
         let state = engine!.render(input, delta: delta)
         if frameState != nil, engine!.timeAnchorRevision != previousAnchor {
+            exportTransition.reset()
             auxiliaryReflow.reset(); auxiliarySlotReflow.reset()
         }
         input.seeking = false
@@ -637,9 +644,23 @@ final class AMLLNativeCanvas: UIView {
         lastHeadroom = capabilities.headroom
         let sourceClipping = configuration.animationStyle == .appleMusic164
         let margin = sourceClipping ? 50 : bounds.height * 0.5
-        let visible = state.rows.filter {
+        var visible = state.rows.filter {
             let extent = heights[$0.lineIndex] * (sourceClipping ? $0.scale : 1)
             return !$0.hidden && $0.y + extent >= -margin && $0.y <= bounds.height + margin
+        }
+        if drivesFramesExternally {
+            exportTransition.keepVisible(Set(visible.map(\.lineIndex)))
+            let now = ProcessInfo.processInfo.systemUptime
+            let maximum = requestsBlurImages ? lyricBlurMaximum : 0
+            for index in visible.indices {
+                let row = visible[index]
+                let appearance = exportTransition.appearance(
+                    index: row.lineIndex, focused: row.active || row.visualFocus == .current || row.visualFocus == .holding,
+                    opacity: row.opacity, blur: row.blur, maximumBlur: maximum, now: now, reduceMotion: reduceMotion
+                )
+                visible[index].opacity = appearance.opacity
+                visible[index].blur = appearance.blur
+            }
         }
         let brightness = capabilities.outputBrightness(configuration: configuration.hdr ?? .init(),
                                                         reduceTransparency: reduceTransparency)
@@ -688,7 +709,7 @@ final class AMLLNativeCanvas: UIView {
                     let initialBlurMaximum: Double? = nil
                 #endif
                 view = AMLLCompositeRow(line: display.lines[row.lineIndex], layouts: layout,
-                                        scale: window?.screen.scale ?? 2, prepared: prepared,
+                                        scale: rasterScale, prepared: prepared,
                                         initialBlurMaximum: initialBlurMaximum, auxiliaryFade: auxiliaryFade,
                                         awaitsBlurSource: requestsBlurImages && row.blur > 0,
                                         blurStarter: auxiliaryBlurStarters.removeValue(forKey: row.lineIndex))
@@ -794,17 +815,17 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private func scheduleBlurRefresh(visible: [AMLLFrameState.Row]) {
-        guard active, window != nil, requestsBlurImages, !blurRefreshInFlight, preparingRows.isEmpty else { return }
+        guard active, rendersOffscreenOrAttached, requestsBlurImages, !blurRefreshInFlight, preparingRows.isEmpty else { return }
         let maximum = lyricBlurMaximum
         guard let row = visible.first(where: {
-            $0.blur > 0 && rowViews[$0.lineIndex]?.blurMaximum != maximum
+            ($0.blur > 0 || (drivesFramesExternally && $0.active)) && rowViews[$0.lineIndex]?.blurMaximum != maximum
         }), let view = rowViews[row.lineIndex], let layout = layouts[row.lineIndex] else { return }
         let index = row.lineIndex
         let identity = ObjectIdentifier(view)
         let generation = prewarmGeneration
-        let scale = window?.screen.scale ?? 2
-        let original = layout.original.rasterSnapshot()
-        let romanization = layout.romanization?.rasterSnapshot()
+        let scale = rasterScale
+        let original = layout.original.rasterSnapshot().usingSoftwareBlur(drivesFramesExternally)
+        let romanization = layout.romanization?.rasterSnapshot().usingSoftwareBlur(drivesFramesExternally)
         let hidesInline = layout.hidesInlineRomanization
         let legacyOverlay = layout.usesLegacyOverlay
         var delay = max(0, 0.09 - (CACurrentMediaTime() - blurLevelChangedAt))
@@ -819,7 +840,7 @@ final class AMLLNativeCanvas: UIView {
                 blurRefreshInFlight = false
                 needsFrame = true
             }
-            guard active, window != nil, requestsBlurImages, prewarmGeneration == generation,
+            guard active, rendersOffscreenOrAttached, requestsBlurImages, prewarmGeneration == generation,
                   lyricBlurMaximum == maximum else { return }
             let images = await Task.detached(priority: .utility) {
                 (
@@ -828,7 +849,7 @@ final class AMLLNativeCanvas: UIView {
                     legacyOverlay ? AMLLPreparedBlurImages(snapshot: original, scale: scale, maximum: maximum, overlay: true) : nil
                 )
             }.value
-            guard active, window != nil, requestsBlurImages, prewarmGeneration == generation,
+            guard active, rendersOffscreenOrAttached, requestsBlurImages, prewarmGeneration == generation,
                   lyricBlurMaximum == maximum,
                   let current = rowViews[index], ObjectIdentifier(current) == identity else { return }
             current.installBlur(original: images.0, romanization: images.1, overlay: images.2)
@@ -855,7 +876,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private func schedulePrewarm(visible: [AMLLFrameState.Row], rows: [AMLLFrameState.Row]) {
-        guard active, window != nil,
+        guard active, rendersOffscreenOrAttached,
               let first = visible.map(\.lineIndex).min(),
               let last = visible.map(\.lineIndex).max(), let display else { return }
         let center = (first + last) / 2
@@ -876,9 +897,9 @@ final class AMLLNativeCanvas: UIView {
                   !preparingRows.contains(index), let layout = layouts[index] else { continue }
             preparingRows.insert(index)
             let generation = prewarmGeneration
-            let scale = window?.screen.scale ?? 2
-            let original = layout.original.rasterSnapshot()
-            let romanization = layout.romanization?.rasterSnapshot()
+            let scale = rasterScale
+            let original = layout.original.rasterSnapshot().usingSoftwareBlur(drivesFramesExternally)
+            let romanization = layout.romanization?.rasterSnapshot().usingSoftwareBlur(drivesFramesExternally)
             let hidesInline = layout.hidesInlineRomanization
             let legacyOverlay = layout.usesLegacyOverlay
             let maximum = requestsBlurImages ? lyricBlurMaximum : nil
@@ -1062,6 +1083,7 @@ final class AMLLNativeCanvas: UIView {
     #endif
 
     private func syncLink() {
+        guard !drivesFramesExternally else { return }
         #if DEBUG
             if controlledReplay {
                 stop(); return
@@ -1105,6 +1127,42 @@ final class AMLLNativeCanvas: UIView {
             frameMilliseconds = sampleWork * 1000 / Double(framesInSample)
             framesInSample = 0; sampleDuration = 0; sampleWork = 0
         }
+    }
+
+    func resetExportTransition() { exportTransition.reset() }
+
+    /// Evaluate model layers offscreen and draw them into the PiP sample.
+    func drawExportFrame(in context: CGContext, sample: LyricsPlaybackFrame, delta: Double, additive: Bool) -> Bool {
+        if dirty || lastLayoutKey != currentLayoutKey() || fadeSize != bounds.size {
+            setNeedsLayout()
+            layoutIfNeeded()
+            if dirty || lastLayoutKey != currentLayoutKey() { layoutSubviews() }
+        }
+        draw(delta: delta, playbackSample: sample)
+        context.saveGState()
+        context.clip(to: bounds)
+        let focused = frameState?.rows.filter {
+            !$0.hidden && ($0.active || $0.visualFocus == .current || $0.visualFocus == .holding)
+        } ?? []
+        let focusBounds = focused.reduce(CGRect.null) { rect, row in
+            guard let nativeRow = rowViews[row.lineIndex] else { return rect }
+            return rect.union(nativeRow.frame)
+        }
+        // Fit unusually tall focus groups without changing their run geometry.
+        if !focusBounds.isNull, focusBounds.maxY > bounds.height - 12 {
+            let fit = min(1, (bounds.height - 24) / max(1, focusBounds.height))
+            context.translateBy(x: bounds.midX * (1 - fit), y: min(0, bounds.height - 12 - focusBounds.maxY * fit))
+            context.scaleBy(x: fit, y: fit)
+        }
+        if additive {
+            context.setBlendMode(.plusLighter)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
+        layer.render(in: context)
+        if additive { context.endTransparencyLayer() }
+        context.restoreGState()
+        return needsFrame || blurRefreshInFlight || !preparingRows.isEmpty || exportTransition.isAnimating || auxiliaryFade.isAnimating
+            || auxiliaryReflow.isAnimating || auxiliarySlotReflow.isAnimating || frameState?.settled == false
     }
 
     func handleInteraction(_ interaction: AMLLInteraction) {

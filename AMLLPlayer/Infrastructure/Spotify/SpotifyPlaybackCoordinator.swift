@@ -14,6 +14,7 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
     private var pollingTask: Task<Void, Never>?
     private var started = false
     private var isForeground = false
+    private var backgroundLyricsEnabled = false
     private var allowBackwardCalibration = false
     private var clock = PlayerClock()
     private var snapshotContinuations: [
@@ -102,6 +103,7 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
     }
 
     func stop() {
+        backgroundLyricsEnabled = false
         enterBackground()
         sessionTask?.cancel()
         remoteStateTask?.cancel()
@@ -126,7 +128,22 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
         pollingTask = nil
         appRemote.disconnect()
         appRemoteState = .disconnected
-        record("Playback synchronization suspended")
+        if backgroundLyricsEnabled && session.currentState.isAuthenticated {
+            startPolling()
+        } else {
+            record("Playback synchronization suspended")
+        }
+    }
+
+    func setBackgroundLyricsEnabled(_ enabled: Bool) {
+        backgroundLyricsEnabled = enabled
+        guard !isForeground else { return }
+        if enabled && session.currentState.isAuthenticated {
+            startPolling()
+        } else if !enabled {
+            pollingTask?.cancel()
+            pollingTask = nil
+        }
     }
 
     func refresh() async throws {
@@ -311,7 +328,7 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
             pollingTask = nil
             record("App Remote connected")
         case .failed, .disconnected, .unavailable:
-            if isForeground, session.currentState.isAuthenticated {
+            if isForeground || backgroundLyricsEnabled, session.currentState.isAuthenticated {
                 startPolling()
             }
         case .connecting:
@@ -320,7 +337,7 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
     }
 
     private func startPolling() {
-        guard pollingTask == nil, isForeground else {
+        guard pollingTask == nil, isForeground || backgroundLyricsEnabled else {
             return
         }
 

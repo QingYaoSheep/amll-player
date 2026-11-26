@@ -116,9 +116,9 @@ final class LyricsBlossomRunStore {
             let segments = entry.layout.records[index]
             if reset { entry.cursors[index] = .init() }
             if rebuild {
-                entry.cursors[index].reconstruct(now: Float(frame.draftTime == nil ? frame.time : effective), segments: segments)
+                entry.cursors[index].reconstruct(now: frame.draftTime == nil ? now : effective, segments: segments)
             } else if frame.draftTime != nil {
-                entry.cursors[index].step(now: Float(effective), delta: Float(frame.delta), segments: segments, force: true)
+                entry.cursors[index].step(now: effective, delta: Float(frame.delta), segments: segments, force: true)
             } else if frame.playing {
                 let retarget: Bool
                 if case .body = entry.role { retarget = retargetingRows.contains(entry.row) }

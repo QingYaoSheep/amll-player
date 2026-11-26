@@ -6,21 +6,29 @@ struct AppleMusicDiagnosticsView: View {
     @State private var checking = false
     @State private var diagnostic: String?
     var body: some View {
-        Form {
-            Section("安装环境验证") {
-                LabeledContent("Bundle ID", value: Bundle.main.bundleIdentifier ?? "未知")
-                Button("验证歌单、搜索及系统歌曲同步") { Task { await checkInstallation() } }
-                    .disabled(checking || !model.appleMusicState.connected)
-                if checking {
-                    ProgressView()
+        SettingsPage {
+            SettingsSection {
+                LabeledContent("Bundle ID", value: Bundle.main.bundleIdentifier ?? String(localized: "未知"))
+                    .settingsSurface()
+                if model.appleMusicState.connected {
+                    Button {
+                        Task { await checkInstallation() }
+                    } label: {
+                        SettingsActionLabel(title: "检查 Apple Music 连接", icon: "stethoscope", busy: checking, style: .primary)
+                    }
+                    .disabled(checking)
+                } else {
+                    NavigationLink { AppleMusicLoginView(model: model) } label: {
+                        SettingsActionLabel(title: "连接 Apple Music", icon: "music.note", navigates: true)
+                    }
                 }
                 if let diagnostic {
-                    Text(diagnostic).font(.footnote).textSelection(.enabled)
+                    Text(diagnostic).font(.footnote).textSelection(.enabled).settingsSurface()
                 }
-                Text("系统歌曲同步单独检查。读取目录需要官方开发者令牌。要自动获取令牌，实际 App ID 还必须启用 MusicKit。令牌失败后，系统歌曲同步仍按系统授权运行。IPA 能安装，或其他应用能同步歌曲，都不足以确认 AMLL 的目录请求可用。")
-                    .font(.footnote).foregroundStyle(.secondary)
             }
-        }.navigationTitle("Apple Music 连接诊断")
+        }
+        .buttonStyle(SettingsButtonStyle())
+        .navigationTitle("Apple Music 连接诊断")
     }
     private func checkInstallation() async {
         checking = true
@@ -44,7 +52,6 @@ struct AppleMusicDiagnosticsView: View {
         catch { results.append("目录服务：\(error.localizedDescription)") }
         guard !Task.isCancelled, model.appleMusicState.connected,
               context == model.appleMusicState.contextID else { return }
-        results.append("从外部切歌、暂停或跳转播放进度，以及重新签名后的授权，都要在真机上验证。")
         diagnostic = results.joined(separator: "\n")
     }
 }

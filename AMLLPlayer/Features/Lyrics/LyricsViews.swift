@@ -271,27 +271,32 @@ struct LyricsSettingsView: View {
         Form {
             Section {
                 Toggle("lyrics.enabled", isOn: $draft.enabled.hapticSelection())
-                NavigationLink("lyrics.apple.settings") {
+                NavigationLink {
                     AppleLyricsSettingsView(coordinator: coordinator)
                         .toolbar(.visible, for: .navigationBar)
+                } label: {
+                    Label("lyrics.apple.settings", systemImage: "music.note")
                 }
             }
             Section {
                 ForEach(draft.priority) { source in Text(source.name) }
                     .onMove { from, to in draft.priority.move(fromOffsets: from, toOffset: to) }
-            } header: { Text("lyrics.priority") } footer: { Text("lyrics.priority.help") }
+            } header: { Text("lyrics.priority") }
             Section {
                 Toggle("lyrics.cache.enabled", isOn: $draft.cacheEnabled.hapticSelection())
                 Stepper(value: $draft.refreshDays, in: 0 ... 3650) { LabeledContent("lyrics.cache.days", value: "\(draft.refreshDays)") }
-                Button("lyrics.cache.clear", role: .destructive) { confirm = .cache }
-                Button("lyrics.matches.reset", role: .destructive) { confirm = .matches }
-            } header: { Text("lyrics.cache") } footer: { Text("lyrics.cache.help") }
+                SettingsTextButton(title: "lyrics.cache.clear", icon: "trash", role: .destructive) { confirm = .cache }
+                    .listRowBackground(Color.clear)
+                SettingsTextButton(title: "lyrics.matches.reset", icon: "arrow.counterclockwise", role: .destructive) { confirm = .matches }
+                    .listRowBackground(Color.clear)
+            } header: { Text("lyrics.cache") }
             if coordinator.track != nil {
                 Section {
                     Slider(value: Binding(get: { coordinator.selection.offset }, set: { coordinator.setOffset($0) }), in: -10 ... 10, step: 0.1)
                     Text(String(format: "%+.1f s", coordinator.selection.offset)).monospacedDigit()
-                    Button("lyrics.offset.zero") { coordinator.setOffset(0) }
-                } header: { Text("lyrics.offset") } footer: { Text("lyrics.offset.help") }
+                    SettingsTextButton(title: "lyrics.offset.zero", icon: "arrow.counterclockwise") { coordinator.setOffset(0) }
+                        .listRowBackground(Color.clear)
+                } header: { Text("lyrics.offset") }
             }
             if let warning = coordinator.cacheWarning {
                 Section { Text(warning).foregroundStyle(.orange) }
@@ -331,25 +336,30 @@ private struct AppleLyricsSettingsView: View {
     @State private var busy = false
     @State private var deleting: String?
     var body: some View {
-        Form {
-            Section("lyrics.apple.region") {
+        SettingsPage {
+            SettingsSection("lyrics.apple.region") {
                 TextField("lyrics.apple.storefront", text: $storefront).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .settingsSurface()
                 TextField("lyrics.apple.language", text: $language).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("lyrics.save") {
+                    .settingsSurface()
+                SettingsTextButton(title: "lyrics.save", icon: "checkmark") {
                     var settings = coordinator.settings; settings.storefront = storefront; settings.language = language
                     coordinator.updateSettings(settings); storefront = coordinator.settings.storefront; language = coordinator.settings.language
                 }
             }
-            Section {
+            SettingsSection("lyrics.apple.account") {
                 SecureField("media-user-token", text: $media).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                    .settingsSurface()
                 Text(LocalizedStringKey(hasMedia ? "lyrics.credential.saved" : "lyrics.credential.empty")).font(.caption)
-                Button("lyrics.credential.saveMedia") { perform { try coordinator.apple?.credentials.saveMedia(media); media = "" } }
+                SettingsTextButton(title: "lyrics.credential.saveMedia", icon: "checkmark") {
+                    perform { try coordinator.apple?.credentials.saveMedia(media); media = "" }
+                }
                     .disabled(media.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("lyrics.credential.deleteMedia", role: .destructive) { deleting = "media" }
-            } header: { Text("lyrics.apple.account") } footer: { Text("lyrics.apple.credentials.help") }
-            Section {
+                SettingsTextButton(title: "lyrics.credential.deleteMedia", icon: "trash", role: .destructive) { deleting = "media" }
+            }
+            SettingsSection("lyrics.apple.bearer") {
                 Text(automatic).font(.caption)
-                Button("lyrics.apple.discover") {
+                SettingsTextButton(title: "lyrics.apple.discover", icon: "arrow.clockwise") {
                     busy = true
                     Task {
                         defer { busy = false; refreshStatus() }
@@ -357,22 +367,25 @@ private struct AppleLyricsSettingsView: View {
                         catch { feedback = LyricsCoordinator.safeError(error) }
                     }
                 }.disabled(busy)
-                Button("lyrics.apple.clearAutomatic", role: .destructive) { deleting = "automatic" }
+                SettingsTextButton(title: "lyrics.apple.clearAutomatic", icon: "trash", role: .destructive) { deleting = "automatic" }
                 SecureField("Authorization Bearer", text: $manual).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                    .settingsSurface()
                 Text(LocalizedStringKey(hasManual ? "lyrics.credential.saved" : "lyrics.credential.empty")).font(.caption)
-                Button("lyrics.credential.saveManual") { perform { try coordinator.apple?.credentials.saveManual(manual); manual = "" } }
+                SettingsTextButton(title: "lyrics.credential.saveManual", icon: "checkmark") {
+                    perform { try coordinator.apple?.credentials.saveManual(manual); manual = "" }
+                }
                     .disabled(manual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("lyrics.credential.deleteManual", role: .destructive) { deleting = "manual" }
-            } header: { Text("lyrics.apple.bearer") } footer: { Text("lyrics.apple.bearer.help") }
-            Section("lyrics.apple.diagnostics") {
-                Button("lyrics.apple.testCatalog") { Task { await coordinator.testApple(account: false) } }
-                Button("lyrics.apple.testAccount") { Task { await coordinator.testApple(account: true) } }
+                SettingsTextButton(title: "lyrics.credential.deleteManual", icon: "trash", role: .destructive) { deleting = "manual" }
+            }
+            SettingsSection("lyrics.apple.diagnostics") {
+                SettingsTextButton(title: "lyrics.apple.testCatalog", icon: "stethoscope") { Task { await coordinator.testApple(account: false) } }
+                SettingsTextButton(title: "lyrics.apple.testAccount", icon: "person.crop.circle.badge.checkmark") { Task { await coordinator.testApple(account: true) } }
                 if coordinator.isTestingApple {
                     ProgressView()
                 }
                 Text(coordinator.appleStatus).font(.caption)
-                Text(feedback).font(.caption)
-                Button("lyrics.credential.deleteAll", role: .destructive) { deleting = "all" }
+                if !feedback.isEmpty { Text(feedback).font(.caption) }
+                SettingsTextButton(title: "lyrics.credential.deleteAll", icon: "trash", role: .destructive) { deleting = "all" }
             }.disabled(coordinator.isTestingApple || busy)
         }
         .navigationTitle("lyrics.apple.settings")

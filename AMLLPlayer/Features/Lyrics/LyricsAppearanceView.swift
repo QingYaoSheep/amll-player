@@ -13,6 +13,7 @@ struct LyricsAppearanceView: View {
             LabeledContent(title, value: String(format: "%.2g %@", binding.wrappedValue, unit))
             Slider(value: binding, in: range, step: step).accessibilityLabel(Text(title))
         }
+        .settingsSurface()
     }
     private func backgroundColorBinding(_ key: WritableKeyPath<LyricsRenderConfiguration, LyricsRenderConfiguration.BackgroundColor?>) -> Binding<Color> {
         Binding(get: { (preferences.configuration[keyPath: key] ?? .sourceDefault).swiftUIColor }, set: { color in
@@ -25,6 +26,7 @@ struct LyricsAppearanceView: View {
     @Bindable var preferences: LyricsRenderPreferences
     var coordinator: LyricsCoordinator? = nil
     @State private var confirmReset = false
+    @State private var confirmClearArtwork = false
 
     private func adjustment(_ title: LocalizedStringKey, key: WritableKeyPath<LyricsRenderConfiguration, Double?>, fallback: Double, range: ClosedRange<Double>, step: Double = 1) -> some View {
         let binding = Binding(get: { preferences.configuration[keyPath: key] ?? fallback },
@@ -33,20 +35,20 @@ struct LyricsAppearanceView: View {
             LabeledContent(title, value: String(format: "%.2g", binding.wrappedValue))
             Slider(value: binding, in: range, step: step).accessibilityLabel(Text(title))
         }
+        .settingsSurface()
     }
 
     var body: some View {
-        Form {
-            Section("appearance.quick") {
-                Text("appearance.quickHelp").font(.footnote).foregroundStyle(.secondary)
-                Button("appearance.reading") {
+        SettingsPage {
+            SettingsSection("appearance.quick") {
+                SettingsTextButton(title: "appearance.reading", icon: "textformat.size") {
                     preferences.configuration.fontSize = 32
                     preferences.configuration.sizePreset = nil
                     preferences.configuration.bold = true
                     preferences.configuration.translation = true
                     preferences.configuration.romanization = false
                 }
-                Button("appearance.calm") {
+                SettingsTextButton(title: "appearance.calm", icon: "waveform.path") {
                     preferences.configuration.emphasizeWords = false
                     preferences.configuration.enableScale = false
                     preferences.configuration.enableSpring = false
@@ -59,17 +61,18 @@ struct LyricsAppearanceView: View {
                         Text("render.profile.amll").tag(LyricsPresentationProfile.amll)
                         Text("render.profile.custom").tag(LyricsPresentationProfile.custom)
                     }
-                    Text("render.profile.help").font(.footnote).foregroundStyle(.secondary)
                 }
+                .settingsSurface()
             }
-            Section("render.typography") {
+            SettingsSection("render.typography") {
                 Text("render.sample").font(.system(size: preferences.configuration.resolvedFontSize(width: 320, height: 600), weight: preferences.configuration.bold ? .bold : .regular))
                     .tracking(preferences.configuration.tracking).frame(minHeight: 70)
-                Text("appearance.previewHelp").font(.caption).foregroundStyle(.secondary)
+                    .settingsSurface()
                 Toggle("appearance.autoSize", isOn: Binding(
                     get: { preferences.configuration.sizePreset != nil },
                     set: { preferences.configuration.sizePreset = $0 ? .medium : nil }
                 ).hapticSelection())
+                .settingsSurface()
                 if preferences.configuration.sizePreset == nil {
                     Picker("render.fontSize", selection: Binding(
                         get: { preferences.configuration.fontSize },
@@ -95,11 +98,16 @@ struct LyricsAppearanceView: View {
                     }
                 }
                 Toggle("render.bold", isOn: $preferences.configuration.bold.hapticSelection())
+                    .settingsSurface()
                 Toggle("render.translation", isOn: $preferences.configuration.translation.hapticSelection())
+                    .settingsSurface()
                 Toggle("render.romanization", isOn: $preferences.configuration.romanization.hapticSelection())
-                NavigationLink("日语／韩语自动音译") {
+                    .settingsSurface()
+                NavigationLink {
                     RomanizationSettingsView(coordinator: coordinator)
                         .toolbar(.visible, for: .navigationBar)
+                } label: {
+                    SettingsActionLabel(title: "日语／韩语自动音译", icon: "character.book.closed", navigates: true)
                 }
                 DisclosureGroup("appearance.textDetails") {
                     LabeledContent("render.tracking", value: String(format: "%.1f", preferences.configuration.tracking))
@@ -111,19 +119,28 @@ struct LyricsAppearanceView: View {
                         adjustment("appearance.auxSize", key: \.auxiliaryScale, fallback: 0.5, range: 0.3 ... 1, step: 0.05)
                     }
                 }
+                .settingsSurface()
             }
-            Section("render.motion") {
+            SettingsSection("render.motion") {
                 Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive.hapticSelection())
+                    .settingsSurface()
                 Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords.hapticSelection())
+                    .settingsSurface()
                 Toggle("render.spring", isOn: $preferences.configuration.enableSpring.hapticSelection())
+                    .settingsSurface()
                 Toggle("render.scale", isOn: $preferences.configuration.enableScale.hapticSelection())
-                NavigationLink("精细动画调整") {
+                    .settingsSurface()
+                NavigationLink {
                     LyricsAnimationSettingsView(preferences: preferences)
                         .toolbar(.visible, for: .navigationBar)
-                }.accessibilityIdentifier("lyricsAnimationSettings")
+                } label: {
+                    SettingsActionLabel(title: "精细动画调整", icon: "waveform.path", navigates: true)
+                }
+                .accessibilityIdentifier("lyricsAnimationSettings")
             }
-            Section("render.layout") {
+            SettingsSection("render.layout") {
                 Toggle("render.showLyrics", isOn: $preferences.configuration.showLyrics.hapticSelection())
+                    .settingsSurface()
                 if preferences.profile == .amll {
                     Toggle("appearance.metadata", isOn: Binding(
                         get: { preferences.configuration.showMetadata ?? true },
@@ -152,8 +169,9 @@ struct LyricsAppearanceView: View {
                         }
                     }
                 }
+                .settingsSurface()
             }
-            Section("render.background") {
+            SettingsSection("render.background") {
                 Picker("背景模式", selection: Binding(get: { preferences.configuration.backgroundMode ?? .mesh },
                                                   set: { preferences.configuration.backgroundMode = $0 }))
                 {
@@ -170,31 +188,19 @@ struct LyricsAppearanceView: View {
                 if (preferences.configuration.backgroundMode ?? .mesh).isMesh {
                     LabeledContent("render.backgroundBlur", value: String(format: "%.0f pt", preferences.configuration.backgroundBlur))
                     Slider(value: $preferences.configuration.backgroundBlur, in: 0 ... 80, step: 5).accessibilityLabel(Text("render.backgroundBlur"))
-                    Text("render.backgroundHelp").font(.footnote).foregroundStyle(.secondary)
-                    if preferences.configuration.backgroundMode == .meshColorMode2 {
-                        Text("使用 64×64 的封面图，保留原色并做两轮均值模糊。网格和动画沿用 Mesh 模式。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
                 } else if preferences.configuration.backgroundMode == .flowing {
                     flowingAdjustment("旋转速度", key: \.rotationSpeed, range: 0 ... 6, step: 0.25, unit: "°/秒")
                     flowingAdjustment("扭曲强度", key: \.distortion, range: 0 ... 8, step: 0.5, unit: "%")
                     flowingAdjustment("高斯模糊程度", key: \.blur, range: 0 ... 80, step: 5, unit: "pt")
-                    Button("恢复流动背景默认值") { preferences.configuration.flowingBackground = .init() }
-                    Text("先放大专辑封面，让它缓慢旋转并平滑扭曲，再加高斯模糊。音乐暂停时，背景仍会缓慢流动。扭曲百分比以屏幕短边为基准。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                } else if preferences.configuration.backgroundMode == .pixi {
-                    Text("Pixi 沿用原版的多层封面、固定模糊和形变滤镜。背景帧率不影响歌词动效。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                } else {
+                    SettingsTextButton(title: "恢复流动背景默认值", icon: "arrow.counterclockwise") { preferences.configuration.flowingBackground = .init() }
+                } else if preferences.configuration.backgroundMode != .pixi {
                     ColorPicker("背景颜色", selection: backgroundColorBinding(\.backgroundColor), supportsOpacity: false)
                     if preferences.configuration.backgroundMode == .gradient {
                         ColorPicker("底部颜色", selection: backgroundColorBinding(\.backgroundGradientEnd), supportsOpacity: false)
                     }
-                    Text("纯色默认用原版的 #111111。渐变从顶部颜色过渡到底部颜色。")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            Section("高级视觉") {
+            SettingsSection("高级视觉") {
                 DisclosureGroup("歌词内容遮罩") {
                     Picker("标记词显示", selection: Binding(
                         get: { preferences.configuration.obsceneWordMask?.mode ?? .disabled },
@@ -208,18 +214,16 @@ struct LyricsAppearanceView: View {
                         Text("保留首尾").tag(AMLLObsceneWordMask.Mode.partial)
                         Text("全部遮罩").tag(AMLLObsceneWordMask.Mode.full)
                     }
-                    Text("只用 * 遮住歌词来源明确标记的不雅词。AMLL 不会自行识别词语，也不会改写原歌词。")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
+                .settingsSurface()
                 DisclosureGroup("歌词高光") {
                     Toggle("当前句 HDR 高光", isOn: Binding(
                         get: { preferences.configuration.hdr?.enabled ?? false },
                         set: { preferences.configuration.hdr = .init(enabled: $0) }
                     ).hapticSelection())
                     LyricsHDRStatusView().frame(minHeight: 44)
-                    Text("当前句已唱的部分可以用 HDR 高光，最高可达普通白色（SDR）的 \(LyricsHDRConfiguration.targetBrightness, specifier: "%.1f") 倍，实际亮度取决于屏幕。关闭 HDR 后仍保留文字混色，系统亮度也不受影响。")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
+                .settingsSurface()
                 DisclosureGroup("动态专辑封面") {
                     Toggle("启用动态封面", isOn: Binding(
                         get: { preferences.configuration.animatedArtwork?.enabled ?? false },
@@ -248,20 +252,19 @@ struct LyricsAppearanceView: View {
                         Text("方形封面").tag(AnimatedArtworkConfiguration.Presentation.square)
                         Text("竖屏沉浸封面").tag(AnimatedArtworkConfiguration.Presentation.immersive)
                     }
-                    if preferences.configuration.animatedArtwork?.presentation == .immersive {
-                        Text("倒影取自同一段视频的底部画面，无需另外播放一段视频。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                    Text("默认只在 Wi-Fi 下加载，最多缓存 200 MB。方形布局只用方形视频。沉浸布局在竖屏时用竖版视频作背景，横屏时恢复普通布局。找不到合适的视频、离线或开启了「减少动态效果」时，会显示静态封面。封面视频始终静音。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Button("清理动态封面缓存", role: .destructive) { ArtworkMediaCache.shared.clear() }
+                    SettingsTextButton(title: "清理动态封面缓存", icon: "trash", role: .destructive) { confirmClearArtwork = true }
                 }
+                .settingsSurface()
             }
-            Button("render.reset", role: .destructive) { confirmReset = true }
+            SettingsTextButton(title: "render.reset", icon: "arrow.counterclockwise", role: .destructive) { confirmReset = true }
         }
+        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("render.settings")
         .navigationBarTitleDisplayMode(.inline)
         .lyricsQuickSettingsDestination("render.settings")
+        .confirmationDialog("清理动态封面缓存？", isPresented: $confirmClearArtwork, titleVisibility: .visible) {
+            Button("清理缓存", role: .destructive) { ArtworkMediaCache.shared.clear() }
+        }
         .confirmationDialog("appearance.resetHelp", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("render.reset", role: .destructive) { preferences.restoreAMLLDefaults() }
         }
@@ -274,18 +277,17 @@ private struct RomanizationSettingsView: View {
     @State private var exportedFile: URL?
     @State private var exportedTTMLFile: URL?
     @State private var message = ""
+    @State private var confirmResetOverrides = false
 
     var body: some View {
-        Form {
-            Section("自动音译") {
-                Text("AMLL 优先离线为日语和韩语歌词生成带独立时间轴的罗马音 TTML。无法可靠生成时，会用歌词来源提供的音译。是否显示音译由上一级的开关控制。")
-                    .font(.footnote).foregroundStyle(.secondary)
+        SettingsPage {
+            SettingsSection("自动音译") {
                 if let coordinator {
                     Text(coordinator.romanizationStatus.isEmpty ? "等待歌词" : coordinator.romanizationStatus)
                         .font(.footnote)
                 }
-                Button("重新生成当前歌词") { coordinator?.regenerateRomanization() }
-                Button("准备导出当前罗马音 TTML") {
+                SettingsTextButton(title: "重新生成当前歌词", icon: "arrow.clockwise") { coordinator?.regenerateRomanization() }
+                SettingsTextButton(title: "准备导出当前罗马音 TTML", icon: "doc") {
                     guard let ttml = coordinator?.document?.romanizationTTMLTrack?.ttml else {
                         message = "当前歌词没有生成的罗马音 TTML"
                         return
@@ -297,8 +299,12 @@ private struct RomanizationSettingsView: View {
                         message = "罗马音 TTML 已准备好导出"
                     } catch { message = "TTML 导出失败" }
                 }
-                if let exportedTTMLFile { ShareLink("分享罗马音 TTML", item: exportedTTMLFile) }
-                Button("清理生成缓存") {
+                if let exportedTTMLFile {
+                    ShareLink(item: exportedTTMLFile) {
+                        SettingsActionLabel(title: "分享罗马音 TTML", icon: "square.and.arrow.up")
+                    }
+                }
+                SettingsTextButton(title: "清理生成缓存", icon: "trash") {
                     Task {
                         do {
                             try await LyricsRomanizationEngine.shared.clearGeneratedCache()
@@ -308,11 +314,9 @@ private struct RomanizationSettingsView: View {
                     }
                 }
             }
-            Section("读音纠错") {
-                Text("可导入 Mineradio 的 ja／ko JSON 字典。导入失败时继续用当前字典。字典里的修改不会改写原歌词。")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Button("导入纠错字典") { importing = true }
-                Button("准备导出纠错字典") {
+            SettingsSection("读音纠错") {
+                SettingsTextButton(title: "导入纠错字典", icon: "square.and.arrow.down") { importing = true }
+                SettingsTextButton(title: "准备导出纠错字典", icon: "square.and.arrow.up") {
                     Task {
                         do {
                             let data = try await LyricsRomanizationEngine.shared.exportOverrides()
@@ -323,20 +327,30 @@ private struct RomanizationSettingsView: View {
                         } catch { message = "导出失败" }
                     }
                 }
-                if let exportedFile { ShareLink("分享纠错字典", item: exportedFile) }
-                Button("重置纠错字典", role: .destructive) {
-                    Task {
-                        do {
-                            try await LyricsRomanizationEngine.shared.resetOverrides()
-                            coordinator?.regenerateRomanization()
-                            message = "纠错字典已重置"
-                        } catch { message = "重置失败" }
+                if let exportedFile {
+                    ShareLink(item: exportedFile) {
+                        SettingsActionLabel(title: "分享纠错字典", icon: "square.and.arrow.up")
                     }
+                }
+                SettingsTextButton(title: "重置纠错字典", icon: "arrow.counterclockwise", role: .destructive) {
+                    confirmResetOverrides = true
                 }
             }
             if !message.isEmpty { Text(message).font(.footnote) }
         }
+        .buttonStyle(SettingsButtonStyle())
         .navigationTitle("自动音译")
+        .confirmationDialog("删除已导入的读音纠错？", isPresented: $confirmResetOverrides, titleVisibility: .visible) {
+            Button("重置纠错字典", role: .destructive) {
+                Task {
+                    do {
+                        try await LyricsRomanizationEngine.shared.resetOverrides()
+                        coordinator?.regenerateRomanization()
+                        message = "纠错字典已重置"
+                    } catch { message = "重置失败" }
+                }
+            }
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { selection in
             guard case let .success(url) = selection else { message = "导入已取消"; return }
             Task {

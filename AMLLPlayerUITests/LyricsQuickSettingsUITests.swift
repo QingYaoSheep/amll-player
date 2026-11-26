@@ -6,8 +6,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         let app = lyricsApp()
         app.launchArguments += ["--quick-settings-preferences-suite", "quick-settings-ui-animation-style-" + UUID().uuidString]
         func revealSetting(_ element: XCUIElement, towardTop: Bool = false) {
-            // Form reports a partially clipped row as hittable. The native
-            // switch's center must be inside the unobscured content viewport.
+            // The accessibility frame must be inside the unobscured viewport.
             func fullyVisible() -> Bool {
                 guard element.exists, element.isHittable else { return false }
                 let frame = element.frame
@@ -62,9 +61,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         capture(app, name: "Lyrics-animation-version-controls")
         let scale = app.switches["animationStyleScale"]
         revealSetting(scale)
-        // SwiftUI exposes the entire Form row as the switch's AX frame. Hit
-        // the native control's center, clear of its Liquid Glass right rim.
-        scale.coordinate(withNormalizedOffset: CGVector(dx: 0.87, dy: 0.5)).tap()
+        scale.tap()
         let scaleDisabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: scale)
         XCTAssertEqual(XCTWaiter.wait(for: [scaleDisabled], timeout: 3), .completed)
         select("AMLL")
@@ -74,7 +71,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         revealSetting(scale)
         XCTAssertEqual(scale.value as? String, "0")
         capture(app, name: "Lyrics-fine-animation-style")
-        app.navigationBars["精细动画调整"].buttons["BackButton"].tap()
+        app.navigationBars["Fine Animation Controls"].buttons["BackButton"].tap()
         XCTAssertTrue(app.buttons["closeLyricsQuickSettingsDestination"].waitForExistence(timeout: 3))
         app.buttons["closeLyricsQuickSettingsDestination"].tap()
         XCTAssertTrue(app.buttons["lyricsDisplayOptions"].waitForExistence(timeout: 4))

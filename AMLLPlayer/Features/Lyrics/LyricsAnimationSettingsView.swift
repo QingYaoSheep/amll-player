@@ -24,8 +24,8 @@ struct LyricsAnimationSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
+        SettingsPage {
+            SettingsSection {
                 Picker("逐字动画风格", selection: Binding(
                     get: { preferences.configuration.animationStyle },
                     set: { preferences.configuration.selectAnimationStyle($0) }
@@ -36,11 +36,10 @@ struct LyricsAnimationSettingsView: View {
                 }.pickerStyle(.menu)
                     .accessibilityIdentifier("lyricsAnimationStyle")
                     .accessibilityValue(preferences.configuration.animationStyle.title)
-            } footer: {
-                Text("两种风格分别保存动画选项和模糊等级。首次切换时复制其他动画选项，模糊等级使用设备默认值。")
+                    .settingsSurface()
             }
             if preferences.configuration.animationStyle == .appleMusic164 {
-                Section("歌词风格") {
+                SettingsSection("歌词风格") {
                     Picker("歌词和逻辑预置", selection: Binding(
                         get: { blossom.matchedPreset },
                         set: { value in
@@ -52,18 +51,17 @@ struct LyricsAnimationSettingsView: View {
                             Text(preset.title).tag(preset).disabled(preset == .custom)
                         }
                     }.accessibilityIdentifier("blossomPreset").accessibilityValue(blossom.matchedPreset.title)
+                        .settingsSurface()
                     ForEach(LyricsBlossomAnimationOptions.Control.allCases, id: \.rawValue) { control in
                         Picker(selection: blossomBinding(control)) {
                             ForEach(control.choices, id: \.value) { choice in
                                 Text(choice.title).tag(choice.value)
                             }
                         } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(control.title)
-                                Text(control.help).font(.caption).foregroundStyle(.secondary)
-                            }
+                            Text(control.title)
                         }.accessibilityIdentifier("blossom." + control.rawValue)
                             .accessibilityValue(control.choices.first { $0.value == blossom[keyPath: control.key] }?.title ?? "")
+                            .settingsSurface()
                     }
                     Stepper(value: Binding(get: { blossom.maximumLines }, set: { count in
                         var next = blossom; next.maximumLines = count
@@ -72,12 +70,12 @@ struct LyricsAnimationSettingsView: View {
                         LabeledContent("最高选择句行数", value: String(blossom.maximumLines))
                     }.disabled(!blossom.limitsSelection)
                         .accessibilityIdentifier("blossom.maximum")
-                    Text("选择句逻辑设为 27 时，行数不受此设置限制。其他逻辑可选 2 行或 3 行。单独改动选项后，预置会显示为「自定义」。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .settingsSurface()
                 }
             }
-            Section("动画选项") {
+            SettingsSection("动画选项") {
                 Toggle("render.blurInactive", isOn: $preferences.configuration.blurInactive.hapticSelection())
+                    .settingsSurface()
                 LabeledContent("歌词模糊程度", value: "\(Int(blurLevel.wrappedValue)) 级")
                 Slider(value: blurLevel, in: 1 ... 10, step: 1)
                     .disabled(!preferences.configuration.blurInactive)
@@ -85,11 +83,16 @@ struct LyricsAnimationSettingsView: View {
                     .accessibilityValue("\(Int(blurLevel.wrappedValue)) 级")
                     .accessibilityIdentifier("lyricBlurLevel")
                 Toggle("render.emphasizeWords", isOn: $preferences.configuration.emphasizeWords.hapticSelection())
+                    .settingsSurface()
                 Toggle("render.spring", isOn: $preferences.configuration.enableSpring.hapticSelection())
+                    .settingsSurface()
                 Toggle("render.scale", isOn: $preferences.configuration.enableScale.hapticSelection())
+                    .settingsSurface()
                     .accessibilityIdentifier("animationStyleScale")
                 Toggle("render.hidePassedLines", isOn: $preferences.configuration.hidePassedLines.hapticSelection())
+                    .settingsSurface()
                 Toggle("render.marquee", isOn: $preferences.configuration.marquee.hapticSelection())
+                    .settingsSurface()
                 if preferences.configuration.animationStyle != .appleMusic164 {
                     LabeledContent("render.gradientWidth", value: String(format: "%.2f em", preferences.configuration.gradientWidth))
                     Slider(value: $preferences.configuration.gradientWidth, in: 0 ... 1, step: 0.05)
@@ -97,23 +100,18 @@ struct LyricsAnimationSettingsView: View {
                     LabeledContent("render.advance", value: String(format: "%.1f s", preferences.configuration.advance))
                     Slider(value: $preferences.configuration.advance, in: 0 ... 1, step: 0.1)
                         .accessibilityLabel(Text("render.advance"))
-                    Text("render.advanceHelp").font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            Section {
+            SettingsSection {
                 LabeledContent("render.anchor", value: String(format: "%.0f%%", preferences.configuration.anchor * 100))
                 Slider(value: $preferences.configuration.anchor, in: 0.2 ... 0.7, step: 0.05)
                     .accessibilityLabel(Text("render.anchor"))
-            } footer: {
-                Text("两种风格共用对齐位置。沉浸式歌词固定在 18%。")
             }
-            Section {
-                Button("恢复当前风格默认值") { preferences.configuration.restoreCurrentAnimationDefaults() }
+            SettingsSection {
+                SettingsTextButton(title: "恢复当前风格默认值", icon: "arrow.counterclockwise") {
+                    preferences.configuration.restoreCurrentAnimationDefaults()
+                }
                     .accessibilityIdentifier("resetLyricsAnimationStyle")
-            }
-            Section("风格来源") {
-                Text("提前选择和渐变窗口由风格管理。16.4 和 16.4 advance 的外观参考 iPadOS 16.4 还原资料与实测截图。")
-                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .tint(Color("MusicAccent"))

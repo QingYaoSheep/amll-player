@@ -3,23 +3,80 @@ import SwiftUI
 struct SpotifyLoginView: View {
     @Bindable var model: AppModel
     @State private var clientID: String
+    @State private var showConfiguration: Bool
+    @State private var needsRetry = false
     @FocusState private var isEditingClientID: Bool
 
-    init(model: AppModel) {
+    init(model: AppModel, startsWithConfiguration: Bool = false) {
         self.model = model
-        _clientID = State(initialValue: model.environment.configuration.spotifyClientID ?? "")
+        let configuredID = model.environment.configuration.spotifyClientID ?? ""
+        _clientID = State(initialValue: configuredID)
+        _showConfiguration = State(initialValue: startsWithConfiguration || SpotifyClientIDStore.normalized(configuredID) == nil)
     }
 
     var body: some View {
-        Form {
-            Section {
-                Label(model.sessionState.isAuthenticated ? "已连接 Spotify" : "连接 Spotify", systemImage: "music.note")
-                if SpotifyClientIDStore.normalized(clientID) == nil {
-                    Text("此安装包需要先配置 Spotify Client ID，再登录你的账号。").font(.subheadline).foregroundStyle(.secondary)
+        SettingsPage {
+            SettingsAccountHeader(
+                service: .spotify, name: profile?.displayName, avatar: profile?.avatarURL,
+                status: status, connected: model.sessionState.isAuthenticated
+            )
+            SettingsSection {
+                if !isConnectedWithThisClient || model.isSpotifyLoginBusy {
+                    Button {
+                        isEditingClientID = false
+                        needsRetry = false
+                        Task {
+                            await model.authorizeInBrowser(clientID: clientID)
+                            needsRetry = !isConnectedWithThisClient
+                        }
+                    } label: {
+                        SettingsActionLabel(
+                            title: model.isSpotifyLoginBusy ? "player.authorizing" : needsRetry ? "重试 Spotify 登录" : "登录 Spotify",
+                            icon: "safari", busy: model.isSpotifyLoginBusy, style: .primary
+                        )
+                    }
+                    .disabled(SpotifyClientIDStore.normalized(clientID) == nil || unavailable)
+                    .accessibilityIdentifier("spotifyAuthorize")
                 }
-                NavigationLink("高级配置与连接帮助") {
-                    Form {
-                        Section("settings.clientID") {
+
+                if model.sessionState.isAuthenticated {
+                    Button(role: .destructive) {
+                        model.logout()
+                        needsRetry = false
+                    } label: {
+                        SettingsActionLabel(title: "settings.logout", icon: "rectangle.portrait.and.arrow.right", style: .destructive)
+                    }
+                    .disabled(unavailable)
+                }
+            }
+            if showConfiguration {
+                configuration
+                    .transition(.opacity)
+            }
+            if model.environment.configuration.spotifyClientID != nil {
+                Button {
+                    isEditingClientID = false
+                    if showConfiguration { clientID = model.environment.configuration.spotifyClientID ?? "" }
+                    withAnimation(MusicProductMotion.change) { showConfiguration.toggle() }
+                } label: {
+                    SettingsActionLabel(title: showConfiguration ? "收起配置" : "编辑 Spotify 配置", icon: "slider.horizontal.3")
+                }
+                .disabled(unavailable)
+                .accessibilityIdentifier("spotifyAdvancedConfiguration")
+            }
+        }
+        .buttonStyle(SettingsButtonStyle())
+        .navigationTitle("settings.login.spotify")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: isConnectedWithThisClient) { _, connected in
+            if connected { needsRetry = false }
+        }
+    }
+
+    private var configuration: some View {
+        SettingsSection("Spotify 配置") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("settings.clientID").font(.subheadline.weight(.semibold))
                 TextField("settings.clientID", text: $clientID)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -27,84 +84,48 @@ struct SpotifyLoginView: View {
                     .submitLabel(.done)
                     .focused($isEditingClientID)
                     .onSubmit { isEditingClientID = false }
-                    .disabled(model.isSpotifyLoginBusy)
                     .accessibilityIdentifier("spotifyClientID")
-                        }
-                        Section("配置说明") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("settings.login.saveHelp")
-                    Text("settings.login.apiHelp")
-                    Text(AppConfiguration.defaultRedirectURI.absoluteString)
-                        .font(.footnote.monospaced())
-                        .textSelection(.enabled)
-                    Text("settings.login.bundleHelp")
-                    Text(Bundle.main.bundleIdentifier ?? "net.stevexmh.amllplayer")
-                        .font(.footnote.monospaced())
-                        .textSelection(.enabled)
-                    Text("settings.login.finishHelp")
-                    Link(
-                        "settings.login.dashboard",
-                        destination: URL(string: "https://developer.spotify.com/dashboard")!
-                    )
-                    Link(
-                        "settings.login.documentation",
-                        destination: URL(
-                            string: "https://developer.spotify.com/documentation/web-api/concepts/apps"
-                        )!
-                    )
+                if SpotifyClientIDStore.normalized(clientID) == nil {
+                    Text("从 Spotify 开发者后台复制 Client ID 到这里。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .textCase(nil)
-                        }
-                    }.navigationTitle("Spotify 配置")
-                }.accessibilityIdentifier("spotifyAdvancedConfiguration")
-
-
-                Button {
-                    isEditingClientID = false
-                    Task { await model.authorizeInBrowser(clientID: clientID) }
-                } label: {
-                    Label("settings.login.authorize", systemImage: "safari")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                    SpotifyClientIDStore.normalized(clientID) == nil
-                        || model.isSpotifyLoginBusy || model.isPerformingAction
-                        || isConnectedWithThisClient
-                )
-                .accessibilityIdentifier("spotifyAuthorize")
-
-                if model.isSpotifyLoginBusy {
-                    ProgressView("player.authorizing")
-                } else if isConnectedWithThisClient {
-                    Label("settings.connected", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                }
-
-                if model.sessionState.isAuthenticated {
-                    Button("settings.logout", role: .destructive) {
-                        model.logout()
-                    }
-                    .disabled(model.isSpotifyLoginBusy || model.isPerformingAction)
-                }
-            } header: {
-                Text("音乐账号")
-            } footer: {
-                Text("登录后控制 Spotify 设备上的播放。AMLL 不在本机播放 Spotify 音频。")
-                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            .settingsSurface()
+            configurationValue("回调地址", AppConfiguration.defaultRedirectURI.absoluteString)
+            configurationValue("Bundle ID", Bundle.main.bundleIdentifier ?? "net.stevexmh.amllplayer")
+            Link(destination: URL(string: "https://developer.spotify.com/dashboard")!) {
+                SettingsActionLabel(title: "settings.login.dashboard", icon: "arrow.up.right")
+            }
+            Link(destination: URL(string: "https://developer.spotify.com/documentation/web-api/concepts/apps")!) {
+                SettingsActionLabel(title: "settings.login.documentation", icon: "book")
             }
         }
-        .navigationTitle("settings.login.spotify")
-        .navigationBarTitleDisplayMode(.inline)
-        .scrollDismissesKeyboard(.interactively)
+        .disabled(unavailable)
     }
+
+    private func configurationValue(_ title: LocalizedStringKey, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(value).font(.footnote.monospaced()).textSelection(.enabled).foregroundStyle(.secondary)
+        }
+        .settingsSurface()
+    }
+
+    private var profile: MusicProfile? {
+        model.selectedMusicService == .spotify && model.sessionState.isAuthenticated ? model.catalog.profile : nil
+    }
+
+    private var status: String {
+        if model.isSpotifyLoginBusy { return String(localized: "player.authorizing") }
+        if needsRetry { return String(localized: "登录未完成") }
+        return model.settingsConnectionStatus(.spotify)
+    }
+
+    private var unavailable: Bool { model.isSpotifyLoginBusy || model.isPerformingAction }
 
     private var isConnectedWithThisClient: Bool {
         model.sessionState.isAuthenticated
-            && SpotifyClientIDStore.normalized(clientID)
-                == model.environment.configuration.spotifyClientID
+            && SpotifyClientIDStore.normalized(clientID) == model.environment.configuration.spotifyClientID
     }
 }

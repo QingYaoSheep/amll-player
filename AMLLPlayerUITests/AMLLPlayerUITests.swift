@@ -132,18 +132,28 @@ final class AMLLPlayerUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         app.buttons["musicAccountsLink"].tap()
         XCTAssertTrue(app.buttons["spotifyLoginLink"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["neteaseLoginLink"].exists)
+        app.buttons["neteaseLoginLink"].tap()
+        XCTAssertTrue(app.buttons["neteaseAuthorize"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["neteaseAuthorize"].isEnabled)
+        capture(app, name: "Product-netease-login")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["appleMusicLoginLink"].exists)
         app.buttons["appleMusicLoginLink"].tap()
         XCTAssertTrue(app.buttons["appleMusicAuthorize"].waitForExistence(timeout: 3))
+        capture(app, name: "Product-apple-music-login")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["spotifyLoginLink"].tap()
         XCTAssertTrue(app.buttons["spotifyAuthorize"].waitForExistence(timeout: 3))
-        app.buttons["spotifyAdvancedConfiguration"].tap()
         let clientID = app.textFields["spotifyClientID"]
+        if !clientID.exists { app.buttons["spotifyAdvancedConfiguration"].tap() }
         XCTAssertTrue(clientID.waitForExistence(timeout: 3))
+        if !app.buttons["spotifyAuthorize"].isEnabled {
+            XCTAssertTrue(clientID.isHittable, "A missing client ID must expose configuration in the sign-in page.")
+        }
         clientID.tap(); clientID.typeText("test-client\n")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["spotifyAuthorize"].isEnabled)
+        capture(app, name: "Product-spotify-login")
     }
 
     @MainActor func testWelcomeCanBeSkippedIntoStableNavigation() {

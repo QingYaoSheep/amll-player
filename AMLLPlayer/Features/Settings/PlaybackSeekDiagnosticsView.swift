@@ -3,21 +3,33 @@ import SwiftUI
 struct PlaybackSeekDiagnosticsView: View {
     @State private var exportURL: URL?
     @State private var failure: String?
+    @State private var confirmClear = false
+
     var body: some View {
-        Form {
-            Section {
-                Text("跳转后出现不同步时，可以在这里导出最近的跳转记录。记录会保存目标时间和播放器确认结果，也会记下歌词画布上的时间与歌词行的移动。不包含账号、Cookie、播放地址或歌词正文。")
-                    .foregroundStyle(.secondary)
-                Button("生成诊断文件") {
+        SettingsPage {
+            SettingsSection {
+                SettingsTextButton(title: "生成诊断文件", icon: "doc.badge.plus") {
                     do { exportURL = try PlaybackSeekDiagnostics.shared.export(); failure = nil }
                     catch { failure = "导出失败，请重试。" }
                 }
-                if let exportURL { ShareLink("分享跳转诊断", item: exportURL) }
-                if let failure { Text(failure).foregroundStyle(.secondary) }
-                Button("清除诊断记录", role: .destructive) {
-                    PlaybackSeekDiagnostics.shared.clear(); exportURL = nil
+                if let exportURL {
+                    ShareLink(item: exportURL) {
+                        SettingsActionLabel(title: "分享跳转诊断", icon: "square.and.arrow.up")
+                    }
+                }
+                if let failure { Text(LocalizedStringKey(failure)).foregroundStyle(.secondary) }
+                SettingsTextButton(title: "清除诊断记录", icon: "trash", role: .destructive) {
+                    confirmClear = true
                 }
             }
-        }.navigationTitle("播放跳转诊断")
+        }
+        .buttonStyle(SettingsButtonStyle())
+        .navigationTitle("播放跳转诊断")
+        .confirmationDialog("清除诊断记录？", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("清除诊断记录", role: .destructive) {
+                PlaybackSeekDiagnostics.shared.clear()
+                exportURL = nil
+            }
+        }
     }
 }

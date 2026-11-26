@@ -3,68 +3,158 @@ import SwiftUI
 
 struct NetEaseLoginView: View {
     @Bindable var model: AppModel
-    @State private var failure: String?
-    @State private var qrImage: UIImage?
-    @State private var qrFile: URL?
+    @State private var qr: QRPresentation?
+    @State private var requestedQR = false
+    @State private var isStartingQR = false
+    @State private var isCheckingAccount = false
+
+    private struct QRPresentation {
+        let source: URL
+        let image: UIImage
+        let file: URL?
+    }
+
     private var session: NetEaseSession { model.netEaseSession }
+    private var connected: Bool { session.currentState.connected }
+    private var hasActiveQR: Bool { session.qrURL != nil }
+    private var isGenerating: Bool { isStartingQR || (session.currentState.requesting && !hasActiveQR) }
+
     var body: some View {
-        Form {
-            Section("网易云音乐") {
-                if let p = session.profile {
-                    HStack { CatalogArtwork(url: p.avatar); Text(p.name) }
-                    LabeledContent("会员类型", value: p.vipType.map { $0 == 0 ? "普通账号" : "会员类型 \($0)" } ?? "未获取")
-                    Text("可播歌曲和可用音质，以网易云音乐对当前播放请求的实际授权为准。").font(.footnote).foregroundStyle(.secondary)
+        SettingsPage {
+            SettingsAccountHeader(
+                service: .netease, name: session.profile?.name, avatar: session.profile?.avatar,
+                status: model.settingsConnectionStatus(.netease), connected: connected
+            )
+            SettingsSection {
+                if hasActiveQR {
+                    qrCard.transition(.opacity)
+                } else if requestedQR, session.currentState.error == nil, !isGenerating, session.qrStatus != "登录成功" {
+                    Text(LocalizedStringKey(session.qrStatus)).font(.subheadline).foregroundStyle(.secondary)
                 }
-                Label(model.netEaseState.connected ? "已连接" : "未连接", systemImage: "music.note")
-                Button(model.netEaseState.connected ? "重新扫码登录" : "登录到网易云音乐") {
-                    Task { await session.beginQR() }
-                }.accessibilityIdentifier("neteaseAuthorize")
-                if let qrImage {
-                    Image(uiImage: qrImage).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 240)
-                    Text(session.qrStatus)
-                    if let expiry = session.qrExpires { Text("二维码有效至 \(expiry.formatted(date: .omitted, time: .standard))").font(.caption) }
-                    if let qrFile { ShareLink(item: qrFile) { Label("保存或分享二维码", systemImage: "square.and.arrow.up") } }
-                    Button("刷新二维码") { Task { await session.beginQR() } }
-                    Text("请用网易云音乐官方 App 扫码确认。也可以在另一台设备上显示二维码，再用手机扫。只有一台设备时，可以保存二维码，再试试从相册扫码，具体取决于官方 App 是否支持。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                } else if session.currentState.requesting { ProgressView(session.qrStatus) }
-                else { Text(session.qrStatus).foregroundStyle(.secondary) }
-                if let error = session.currentState.error { Text(error.localizedDescription).foregroundStyle(.secondary) }
-                Button("重新检查状态") { Task { await session.refresh() } }
-                if session.currentState.connected { Button("退出网易云音乐", role: .destructive) { model.disconnectNetEase() } }
-            }
-            Section("当前音乐来源") { MusicSourcePicker(model: model) }
-            Section("播放音质") {
-                Picker("请求音质", selection: Binding(get: { model.netEasePlayback.quality }, set: { model.netEasePlayback.quality = $0 })) {
-                    ForEach(NetEaseQuality.allCases) { q in Text(q.title).tag(q) }
+                if let error = session.currentState.error {
+                    Text(error.localizedDescription).font(.subheadline).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("neteaseLoginError")
                 }
-                Text("默认使用高品质。音质改动从下一首歌开始生效。要应用到当前歌曲，请重新播放这首歌。实际音质取决于账号权限和设备的解码能力。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Button(action: startQR) {
+                    SettingsActionLabel(
+                        title: qrButtonTitle, icon: hasActiveQR ? "arrow.clockwise" : "qrcode.viewfinder",
+                        busy: isGenerating, style: connected || hasActiveQR ? .secondary : .primary
+                    )
+                }
+                .disabled(isGenerating || isCheckingAccount)
+                .accessibilityIdentifier("neteaseAuthorize")
             }
-            Section {
-                NavigationLink("高级登录方式") { NetEaseCookieImportView(session: session) }
+            SettingsSection {
+                Button { refreshAccount() } label: {
+                    SettingsActionLabel(title: "重新检查状态", icon: "arrow.clockwise", busy: isCheckingAccount)
+                }
+                .disabled(isCheckingAccount || session.currentState.requesting)
+                NavigationLink { NetEaseCookieImportView(session: session) } label: {
+                    SettingsActionLabel(title: "高级登录方式", icon: "key", navigates: true)
+                }
+                .disabled(isStartingQR || isCheckingAccount)
+                if connected {
+                    Button(role: .destructive) {
+                        model.disconnectNetEase()
+                        requestedQR = false
+                    } label: {
+                        SettingsActionLabel(title: "退出网易云音乐", icon: "rectangle.portrait.and.arrow.right", style: .destructive)
+                    }
+                    .disabled(isStartingQR || isCheckingAccount)
+                }
+            }
+            SettingsSection {
+                MusicSourcePicker(model: model).settingsSurface()
+                NetEaseQualityPicker(model: model)
             }
         }
+        .buttonStyle(SettingsButtonStyle())
+        .animation(MusicProductMotion.change, value: hasActiveQR)
         .navigationTitle("登录到网易云音乐")
+        .navigationBarTitleDisplayMode(.inline)
         .task { await session.refresh() }
         .task(id: session.qrURL) { makeQR() }
-        .onDisappear { session.cancelQR(); clearQRFile() }
-        .alert("登录未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-            Button("好", role: .cancel) { failure = nil }
-        } message: { Text(failure ?? "") }
+        .onDisappear {
+            session.cancelQR()
+            requestedQR = false
+            clearQR()
+        }
     }
+
+    private var qrButtonTitle: LocalizedStringKey {
+        if isGenerating { return "正在生成二维码" }
+        if hasActiveQR || (requestedQR && session.qrStatus != "登录成功") { return "刷新二维码" }
+        return connected ? "重新扫码登录" : "扫码登录"
+    }
+
+    private var qrCard: some View {
+        VStack(spacing: 12) {
+            if let qr, qr.source == session.qrURL {
+                Image(uiImage: qr.image)
+                    .interpolation(.none).resizable().scaledToFit().frame(maxWidth: 220)
+                    .padding(12).background(.white, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityLabel("网易云音乐登录二维码")
+                Text("用网易云音乐 App 扫码确认").font(.subheadline.weight(.semibold))
+                if let file = qr.file {
+                    ShareLink(item: file) {
+                        SettingsActionLabel(title: "保存或分享二维码", icon: "square.and.arrow.up")
+                    }
+                }
+            } else {
+                ProgressView()
+            }
+            Text(LocalizedStringKey(session.qrStatus))
+                .font(.subheadline)
+                .accessibilityIdentifier("neteaseQRStatus")
+            if let expiry = session.qrExpires {
+                Text("二维码有效至 \(expiry.formatted(date: .omitted, time: .standard))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
+        .settingsSurface(radius: 24)
+    }
+
+    private func startQR() {
+        guard !isGenerating, !isCheckingAccount else { return }
+        requestedQR = true
+        isStartingQR = true
+        Task {
+            defer { isStartingQR = false }
+            await session.beginQR()
+        }
+    }
+
+    private func refreshAccount() {
+        guard !isCheckingAccount, !session.currentState.requesting else { return }
+        isCheckingAccount = true
+        Task {
+            defer { isCheckingAccount = false }
+            await session.refresh()
+        }
+    }
+
     private func makeQR() {
-        qrImage = nil; clearQRFile()
+        clearQR()
         guard let url = session.qrURL else { return }
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(url.absoluteString.utf8)
         guard let ci = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
               let cg = CIContext().createCGImage(ci, from: ci.extent) else { return }
-        let image = UIImage(cgImage: cg); qrImage = image
+        let image = UIImage(cgImage: cg)
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("netease-qr-\(UUID().uuidString).png")
-        if let png = image.pngData(), (try? png.write(to: file)) != nil { qrFile = file }
+        if let png = image.pngData(), (try? png.write(to: file, options: .atomic)) != nil {
+            qr = QRPresentation(source: url, image: image, file: file)
+        } else {
+            qr = QRPresentation(source: url, image: image, file: nil)
+        }
     }
-    private func clearQRFile() { if let qrFile { try? FileManager.default.removeItem(at: qrFile) }; qrFile = nil }
+
+    private func clearQR() {
+        if let file = qr?.file { try? FileManager.default.removeItem(at: file) }
+        qr = nil
+    }
 }
 
 private struct NetEaseCookieImportView: View {
@@ -72,23 +162,49 @@ private struct NetEaseCookieImportView: View {
     @State private var cookie = ""
     @State private var importing = false
     @State private var failure: String?
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
-        Form {
-            Section("高级：Cookie 导入") {
-                SecureField("粘贴网易云 Cookie", text: $cookie).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("验证并导入") {
-                    Task {
-                        importing = true; defer { importing = false; cookie = "" }
-                        do { try await session.importCookie(cookie) } catch is CancellationError {} catch { failure = error.localizedDescription }
-                    }
-                }.disabled(importing || cookie.isEmpty)
-                Text("仅在你主动粘贴后验证。验证通过才保存到本机 Keychain，失败时会保留原来有效的登录。")
-                    .font(.footnote).foregroundStyle(.secondary)
+        SettingsPage {
+            SettingsSection("Cookie 登录") {
+                SecureField("粘贴网易云 Cookie", text: $cookie)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .privacySensitive()
+                    .settingsSurface()
+                if !cookie.isEmpty {
+                    Text("验证通过后才会替换已保存的登录。").font(.footnote).foregroundStyle(.secondary)
+                }
+                Button(action: importCookie) {
+                    SettingsActionLabel(title: "验证并导入", icon: "key", busy: importing, style: .primary)
+                }
+                .disabled(importing || cookie.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-        }.navigationTitle("高级登录方式")
+        }
+        .buttonStyle(SettingsButtonStyle())
+        .navigationTitle("高级登录方式")
         .onDisappear { cookie = "" }
         .alert("登录未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("好", role: .cancel) { failure = nil }
-        } message: { Text(failure ?? "") }
+        } message: {
+            Text(failure ?? "")
+        }
+    }
+
+    private func importCookie() {
+        guard !importing else { return }
+        importing = true
+        let input = cookie
+        Task {
+            defer { importing = false; cookie = "" }
+            do {
+                try await session.importCookie(input)
+                dismiss()
+            } catch is CancellationError {
+                return
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
     }
 }

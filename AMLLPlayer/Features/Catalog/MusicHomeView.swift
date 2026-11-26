@@ -20,9 +20,24 @@ struct MusicHomeAccountMenu: View {
             if model.currentServiceConnected { Button("player.devices", systemImage: "airplayaudio", action: devices) }
         } label: {
             Group {
-                if let url = profile?.avatarURL { CatalogArtwork(url: url, size: 40, isArtist: true) }
-                else { Image(systemName: "person.crop.circle.fill").font(.system(size: 32)).foregroundStyle(MusicProductStyle.accent) }
-            }.frame(width: 44, height: 44).contentShape(Circle())
+                if let url = profile?.avatarURL {
+                    CatalogArtwork(url: url, size: 40, isArtist: true)
+                        .overlay {
+                            Circle().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+                        }
+                } else {
+                    ZStack {
+                        Circle()
+                            .fill(MusicProductStyle.accent.opacity(0.14))
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(MusicProductStyle.accent)
+                    }
+                    .frame(width: 38, height: 38)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
         }
         .accessibilityLabel("账户与音乐来源，" + model.selectedMusicService.title)
         .accessibilityIdentifier("musicSourceMenu")
@@ -114,12 +129,48 @@ private struct MusicHomeShelf: View {
             } else if let replay = state.replay {
                 NavigationLink(value: CatalogRoute.replay) {
                     VStack(alignment: .leading, spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(.white.opacity(0.20))
+                            Image(systemName: "sparkles")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.white)
+                        }
+                        .frame(width: 44, height: 44)
+                        .accessibilityHidden(true)
+
+                        Spacer(minLength: 12)
                         Text("\(replay.year) 年度回顾").font(.title.bold())
-                        Text("重温你听过的歌曲、专辑与歌手").font(.body)
-                        Label("查看回顾", systemImage: "arrow.right").font(.headline)
-                    }.foregroundStyle(.white).padding(24).frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
-                        .background(LinearGradient(colors: [.pink, .orange, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 16))
-                }.buttonStyle(MusicContentButtonStyle()).padding(.horizontal, 20)
+                        Text("重温你听过的歌曲、专辑与歌手").font(.subheadline).foregroundStyle(.white.opacity(0.88))
+                        Label("查看回顾", systemImage: "arrow.right")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.white.opacity(0.22), in: Capsule())
+                    }
+                    .foregroundStyle(.white)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                MusicProductStyle.accent,
+                                MusicProductStyle.filledAccent,
+                                Color(red: 0.28, green: 0.04, blue: 0.10),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .strokeBorder(.white.opacity(0.16), lineWidth: 0.5)
+                    }
+                    .shadow(color: MusicProductStyle.filledAccent.opacity(0.22), radius: 14, y: 6)
+                }
+                .buttonStyle(MusicContentButtonStyle())
+                .padding(.horizontal, 20)
             } else if !state.rows.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     NavigationLink(value: CatalogRoute.home(section)) {
@@ -190,8 +241,14 @@ struct MusicHomeCard: View {
             if let category {
                 MusicHomePoster(item: row.item, category: category, width: width)
             } else {
+                let corner: CGFloat = row.item.kind == .artist ? width / 2 : 14
                 CatalogArtwork(url: row.item.artworkURL, size: width, isArtist: row.item.kind == .artist)
-                    .clipShape(RoundedRectangle(cornerRadius: row.item.kind == .artist ? width / 2 : 8))
+                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: corner, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                    }
+                    .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
                 Text(row.item.name).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(2)
                 if !row.item.subtitle.isEmpty { Text(row.item.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
             }
@@ -263,34 +320,24 @@ private struct MusicHomePoster: View {
             }
             .accessibilityHidden(true)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(.white.opacity(0.14), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
         .accessibilityElement(children: .combine)
         .task(id: "\(item.artworkURL?.absoluteString ?? ""):\(Int(width * scale))") {
             guard let url = item.artworkURL else { image = nil; tint = nil; loadedURL = nil; return }
             let pixels = Int(max(width, MusicHomeLayout.featuredHeight(for: width)) * scale)
             let artwork = await CatalogImageCache.shared.image(url, pixels: pixels)
             guard !Task.isCancelled else { return }
-            let sampledColor = artwork?.cgImage.flatMap { Self.averageColor(of: $0) }
+            let sampledColor = artwork?.cgImage.flatMap { MusicArtworkColorSampler.averageColor(of: $0) }
             withAnimation(MusicProductMotion.change) {
                 loadedURL = url
                 image = artwork
                 tint = sampledColor
             }
-        }
-    }
-
-    private static func averageColor(of image: CGImage) -> Color? {
-        var bytes = [UInt8](repeating: 0, count: 4)
-        return bytes.withUnsafeMutableBytes { buffer in
-            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-                  let context = CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
-                                          bytesPerRow: 4, space: space,
-                                          bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)
-            else { return nil }
-            context.interpolationQuality = .high
-            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-            guard buffer[3] > 0 else { return nil }
-            return Color(red: Double(buffer[0]) / 255, green: Double(buffer[1]) / 255, blue: Double(buffer[2]) / 255)
         }
     }
 }
@@ -307,7 +354,7 @@ struct MusicHomeCollectionView: View {
             if state.isLoading { ProgressView() }
             if let error = state.error { CatalogErrorView(error: error) { await home.load(section.query, more: state.next != nil, force: true) } }
             if state.loadedAt != nil && state.rows.isEmpty && state.error == nil { Text("暂无内容").foregroundStyle(.secondary) }
-        }.navigationTitle(section.title).task { await home.load(section.query) }.refreshable { await home.load(section.query, force: true) }
+        }.listStyle(.insetGrouped).navigationTitle(section.title).task { await home.load(section.query) }.refreshable { await home.load(section.query, force: true) }
     }
 }
 
@@ -329,6 +376,6 @@ struct MusicReplayView: View {
             }
             if state.isLoading { ProgressView() }
             if let error = state.error { CatalogErrorView(error: error) { await home.load(.replay, force: true) } }
-        }.navigationTitle(state.replay.map { $0.year + " 年度回顾" } ?? "年度回顾").task { await home.load(.replay) }
+        }.listStyle(.insetGrouped).navigationTitle(state.replay.map { $0.year + " 年度回顾" } ?? "年度回顾").task { await home.load(.replay) }
     }
 }

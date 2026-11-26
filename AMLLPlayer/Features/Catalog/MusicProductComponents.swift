@@ -63,22 +63,54 @@ struct MusicLoginSheet: View {
 struct MusicConnectionCard: View {
     @Bindable var model: AppModel
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(model.currentServiceConnected ? "歌曲同步已连接" : "连接你的音乐", systemImage: "music.note")
-                .font(.title3.bold())
-            Text(message).font(.subheadline).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(MusicProductStyle.accent.opacity(0.14))
+                    Image(systemName: "music.note")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(MusicProductStyle.accent)
+                }
+                .frame(width: 44, height: 44)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.currentServiceConnected ? "歌曲同步已连接" : "连接你的音乐")
+                        .font(.title3.bold())
+                        .foregroundStyle(.primary)
+                    Text(model.selectedMusicService.title)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
             NavigationLink {
                 MusicLoginDestination(model: model, service: model.selectedMusicService)
             } label: {
-                Label(model.currentServiceConnected ? "查看连接与帮助" : "连接 " + model.selectedMusicService.title,
-                      systemImage: "arrow.right")
+                HStack(spacing: 8) {
+                    Text(model.currentServiceConnected ? "查看连接与帮助" : "连接 " + model.selectedMusicService.title)
+                    Image(systemName: "arrow.right")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(
+                    MusicProductStyle.filledAccent,
+                    in: RoundedRectangle(cornerRadius: SettingsCorners.button, style: .continuous)
+                )
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(SettingsButtonStyle())
             .accessibilityIdentifier("connectCurrentMusic")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+        .padding(18)
+        .settingsCardSurface(radius: SettingsCorners.card)
     }
     private var message: String {
         if model.selectedMusicService == .appleMusic, model.currentServiceConnected {
@@ -154,8 +186,13 @@ struct MusicCatalogCard: View {
     }
     private var label: some View {
         VStack(alignment: .leading, spacing: 8) {
+            let corner = row.item.kind == .artist ? width / 2 : min(16, width / 6)
             CatalogArtwork(url: row.item.artworkURL, size: width, isArtist: row.item.kind == .artist)
-                .shadow(color: .black.opacity(libraryShelf ? 0.12 : 0), radius: 6, y: 3)
+                .overlay {
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                }
+                .shadow(color: .black.opacity(libraryShelf ? 0.12 : 0.06), radius: libraryShelf ? 8 : 5, y: 3)
             Text(row.item.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
             let subtitle = libraryShelf ? row.item.playlist?.ownerName ?? row.item.subtitle : row.item.subtitle
             if !subtitle.isEmpty {
@@ -168,17 +205,27 @@ struct MusicCatalogCard: View {
 }
 
 struct MusicSkeleton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulsing = false
+
     var body: some View {
         HStack(spacing: 12) {
-            ForEach(0..<2) { _ in
+            ForEach(0..<2, id: \.self) { _ in
                 VStack(alignment: .leading, spacing: 10) {
-                    RoundedRectangle(cornerRadius: 16).frame(height: 150)
-                    RoundedRectangle(cornerRadius: 4).frame(height: 14).padding(.trailing, 24)
-                    RoundedRectangle(cornerRadius: 4).frame(height: 10).padding(.trailing, 52)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).frame(height: 150)
+                    RoundedRectangle(cornerRadius: 5, style: .continuous).frame(height: 14).padding(.trailing, 24)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).frame(height: 10).padding(.trailing, 52)
                 }
             }
         }
         .foregroundStyle(.quaternary)
+        .opacity(pulsing ? 0.45 : 0.9)
+        .onAppear {
+            guard !reduceMotion, !pulsing else { return }
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                pulsing = true
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("正在加载音乐")
     }

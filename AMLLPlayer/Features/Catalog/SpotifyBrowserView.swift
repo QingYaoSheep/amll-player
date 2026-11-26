@@ -68,29 +68,15 @@ struct MusicBrowserView: View {
                     }
                 }
                 .toolbar {
-                    if home {
-                        if model.selectedMusicService == .netease {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                NetEaseFriendsButton(model: model)
-                            }
-                        }
+                    if home, model.selectedMusicService == .netease {
                         ToolbarItem(placement: .topBarTrailing) {
-                            MusicHomeAccountMenu(model: model, profile: model.catalog.profile) {
-                                showingDevices = true
-                                Task { await model.loadDevices() }
-                            }
+                            NetEaseFriendsButton(model: model)
                         }
-                    } else {
-                        ToolbarItem(placement: .topBarLeading) { MusicSourceMenu(model: model) }
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            if model.currentServiceConnected {
-                                Button("player.devices", systemImage: "airplayaudio") {
-                                    showingDevices = true
-                                    Task { await model.loadDevices() }
-                                }
-                            }
-                            NavigationLink { SettingsView(model: model) } label: { Label("settings.open", systemImage: "gearshape") }
-                                .accessibilityIdentifier("openSettings")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        MusicHomeAccountMenu(model: model, profile: model.catalog.profile) {
+                            showingDevices = true
+                            Task { await model.loadDevices() }
                         }
                     }
                 }

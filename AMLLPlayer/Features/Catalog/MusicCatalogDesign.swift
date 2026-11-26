@@ -12,6 +12,71 @@ enum MusicCatalogLayout {
     }
 }
 
+enum MusicArtworkColorSampler {
+    static func averageColor(of image: CGImage) -> Color? {
+        var bytes = [UInt8](repeating: 0, count: 4)
+        return bytes.withUnsafeMutableBytes { buffer in
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(
+                    data: buffer.baseAddress,
+                    width: 1,
+                    height: 1,
+                    bitsPerComponent: 8,
+                    bytesPerRow: 4,
+                    space: space,
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+                  )
+            else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            guard buffer[3] > 0 else { return nil }
+            return Color(red: Double(buffer[0]) / 255, green: Double(buffer[1]) / 255, blue: Double(buffer[2]) / 255)
+        }
+    }
+}
+
+struct MusicLiquidGlassSurface<S: InsettableShape>: ViewModifier {
+    let shape: S
+    var interactive = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(Color(uiColor: .secondarySystemBackground), in: shape)
+                .overlay { border }
+        } else if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(interactive && !reduceMotion), in: shape)
+                .overlay {
+                    if contrast == .increased {
+                        shape.strokeBorder(Color.primary.opacity(0.35), lineWidth: 1)
+                    }
+                }
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay { border }
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
+        }
+    }
+
+    private var border: some View {
+        shape.strokeBorder(
+            contrast == .increased ? Color.primary.opacity(0.35) : Color.primary.opacity(0.09),
+            lineWidth: contrast == .increased ? 1 : 0.5
+        )
+    }
+}
+
+extension View {
+    func musicLiquidGlass<S: InsettableShape>(in shape: S, interactive: Bool = false) -> some View {
+        modifier(MusicLiquidGlassSurface(shape: shape, interactive: interactive))
+    }
+}
+
 enum MusicProductMotion {
     static let feedback = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
     static let change = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.2)
@@ -66,9 +131,16 @@ struct MusicFilterPill: View {
                     } else {
                         Capsule().fill(MusicProductStyle.filledAccent)
                     }
+                } else {
+                    Capsule().fill(Color(uiColor: .secondarySystemGroupedBackground))
                 }
             }
-            .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+            .overlay {
+                if !selected {
+                    Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                }
+            }
+            .shadow(color: selected ? MusicProductStyle.filledAccent.opacity(0.22) : .clear, radius: 6, y: 2)
             .contentShape(Capsule())
         }
         .buttonStyle(MusicContentButtonStyle())
@@ -92,15 +164,22 @@ struct MusicArtworkPlaySurface: ViewModifier {
 struct MusicDetailDescription: View {
     let text: String
     @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(text).font(.subheadline).foregroundStyle(.secondary)
                 .lineLimit(expanded ? nil : 3).fixedSize(horizontal: false, vertical: true)
             // Character counts cannot predict wrapping with Dynamic Type.
-            Button(expanded ? "收起介绍" : "显示完整介绍") { expanded.toggle() }
-                .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
-                .buttonStyle(MusicContentButtonStyle())
-                .accessibilityIdentifier("catalogExpandDescription")
+            Button(expanded ? "收起介绍" : "显示完整介绍") {
+                withAnimation(reduceMotion ? nil : SettingsMotion.disclosure) {
+                    expanded.toggle()
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(MusicProductStyle.accent)
+            .frame(minHeight: 44)
+            .buttonStyle(MusicContentButtonStyle())
+            .accessibilityIdentifier("catalogExpandDescription")
         }
     }
 }

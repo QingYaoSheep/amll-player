@@ -271,7 +271,7 @@ struct LyricsSettingsView: View {
         List {
             Section {
                 Toggle(isOn: $draft.enabled.hapticSelection()) {
-                    SettingsIconToggleLabel(title: "lyrics.enabled", icon: "quote.bubble", color: .cyan)
+                    SettingsIconToggleLabel(title: "lyrics.enabled", icon: "quote.bubble", color: MusicProductStyle.accent)
                 }
                 .modifier(LyricsListRowStyle(background: rowCardFill))
 
@@ -499,7 +499,7 @@ private struct AppleLyricsSettingsView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 13)
                     SettingsDivider()
-                    SettingsTextButton(title: "lyrics.save", icon: "checkmark", iconColor: .blue, inGroup: true) {
+                    SettingsTextButton(title: "lyrics.save", icon: "checkmark", iconColor: MusicProductStyle.accent, inGroup: true) {
                         var settings = coordinator.settings; settings.storefront = storefront; settings.language = language
                         coordinator.updateSettings(settings); storefront = coordinator.settings.storefront; language = coordinator.settings.language
                     }
@@ -518,10 +518,10 @@ private struct AppleLyricsSettingsView: View {
                     SettingsInfoRow(
                         title: "media-user-token",
                         value: String(localized: hasMedia ? "lyrics.credential.saved" : "lyrics.credential.empty"),
-                        valueColor: hasMedia ? .green : .secondary
+                        valueColor: hasMedia ? MusicProductStyle.accent : .secondary
                     )
                     SettingsDivider()
-                    SettingsTextButton(title: "lyrics.credential.saveMedia", icon: "checkmark", iconColor: .blue, inGroup: true) {
+                    SettingsTextButton(title: "lyrics.credential.saveMedia", icon: "checkmark", iconColor: MusicProductStyle.accent, inGroup: true) {
                         perform { try coordinator.apple?.credentials.saveMedia(media); media = "" }
                     }
                     .disabled(media.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -541,7 +541,7 @@ private struct AppleLyricsSettingsView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                     SettingsDivider()
-                    SettingsTextButton(title: "lyrics.apple.discover", icon: "arrow.clockwise", iconColor: .blue, inGroup: true) {
+                    SettingsTextButton(title: "lyrics.apple.discover", icon: "arrow.clockwise", iconColor: MusicProductStyle.accent, inGroup: true) {
                         busy = true
                         Task {
                             defer { busy = false; refreshStatus() }
@@ -565,10 +565,10 @@ private struct AppleLyricsSettingsView: View {
                     SettingsInfoRow(
                         title: "Authorization Bearer",
                         value: String(localized: hasManual ? "lyrics.credential.saved" : "lyrics.credential.empty"),
-                        valueColor: hasManual ? .green : .secondary
+                        valueColor: hasManual ? MusicProductStyle.accent : .secondary
                     )
                     SettingsDivider()
-                    SettingsTextButton(title: "lyrics.credential.saveManual", icon: "checkmark", iconColor: .blue, inGroup: true) {
+                    SettingsTextButton(title: "lyrics.credential.saveManual", icon: "checkmark", iconColor: MusicProductStyle.accent, inGroup: true) {
                         perform { try coordinator.apple?.credentials.saveManual(manual); manual = "" }
                     }
                     .disabled(manual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -581,7 +581,7 @@ private struct AppleLyricsSettingsView: View {
 
             SettingsSection("lyrics.apple.diagnostics") {
                 SettingsGroup {
-                    SettingsTextButton(title: "lyrics.apple.testCatalog", icon: "stethoscope", iconColor: .blue, inGroup: true) {
+                    SettingsTextButton(title: "lyrics.apple.testCatalog", icon: "stethoscope", iconColor: MusicProductStyle.accent, inGroup: true) {
                         Task { await coordinator.testApple(account: false) }
                     }
                     SettingsDivider()

@@ -60,7 +60,7 @@ struct NetEaseLoginView: View {
                         SettingsRowLabel(
                             title: "重新检查状态",
                             icon: "arrow.clockwise",
-                            iconColor: .blue,
+                            iconColor: MusicProductStyle.accent,
                             busy: isCheckingAccount
                         )
                     }
@@ -73,7 +73,7 @@ struct NetEaseLoginView: View {
                         SettingsRowLabel(
                             title: "高级登录方式",
                             icon: "key",
-                            iconColor: .orange,
+                            iconColor: MusicProductStyle.accent,
                             navigates: true
                         )
                     }

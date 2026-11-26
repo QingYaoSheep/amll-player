@@ -51,7 +51,7 @@ struct LyricsAppearanceView: View {
 
             SettingsSection("appearance.quick") {
                 SettingsGroup {
-                    SettingsTextButton(title: "appearance.reading", icon: "textformat.size", iconColor: .indigo, inGroup: true) {
+                    SettingsTextButton(title: "appearance.reading", icon: "textformat.size", iconColor: MusicProductStyle.accent, inGroup: true) {
                         preferences.configuration.fontSize = 32
                         preferences.configuration.sizePreset = nil
                         preferences.configuration.bold = true
@@ -59,13 +59,13 @@ struct LyricsAppearanceView: View {
                         preferences.configuration.romanization = false
                     }
                     SettingsDivider()
-                    SettingsTextButton(title: "appearance.calm", icon: "waveform.path", iconColor: .teal, inGroup: true) {
+                    SettingsTextButton(title: "appearance.calm", icon: "waveform.path", iconColor: MusicProductStyle.accent, inGroup: true) {
                         preferences.configuration.emphasizeWords = false
                         preferences.configuration.enableScale = false
                         preferences.configuration.enableSpring = false
                     }
                     SettingsDivider()
-                    SettingsDisclosureRow(title: "appearance.compatibility", icon: "rectangle.on.rectangle", iconColor: .secondary) {
+                    SettingsDisclosureRow(title: "appearance.compatibility", icon: "rectangle.on.rectangle", iconColor: MusicProductStyle.accent) {
                         Picker("render.profile", selection: Binding(
                             get: { preferences.profile },
                             set: { preferences.activate($0) }
@@ -129,7 +129,7 @@ struct LyricsAppearanceView: View {
                         SettingsRowLabel(
                             title: "日语／韩语自动音译",
                             icon: "character.book.closed",
-                            iconColor: .orange,
+                            iconColor: MusicProductStyle.accent,
                             navigates: true
                         )
                     }
@@ -137,7 +137,7 @@ struct LyricsAppearanceView: View {
 
                     SettingsDivider(inset: 16)
 
-                    SettingsDisclosureRow(title: "appearance.textDetails", icon: "textformat", iconColor: .indigo) {
+                    SettingsDisclosureRow(title: "appearance.textDetails", icon: "textformat", iconColor: MusicProductStyle.accent) {
                         SettingsSliderRow(
                             "render.tracking",
                             valueText: String(format: "%.1f", preferences.configuration.tracking),
@@ -176,7 +176,7 @@ struct LyricsAppearanceView: View {
                         SettingsRowLabel(
                             title: "精细动画调整",
                             icon: "waveform.path",
-                            iconColor: .purple,
+                            iconColor: MusicProductStyle.accent,
                             navigates: true
                         )
                     }
@@ -198,7 +198,7 @@ struct LyricsAppearanceView: View {
                         adjustment("appearance.corner", key: \.artworkCornerRadius, fallback: 12, range: 0 ... 40, step: 2)
                     }
                     SettingsDivider(inset: 16)
-                    SettingsDisclosureRow(title: "appearance.pageDetails", icon: "rectangle.3.group", iconColor: .blue) {
+                    SettingsDisclosureRow(title: "appearance.pageDetails", icon: "rectangle.3.group", iconColor: MusicProductStyle.accent) {
                         if preferences.profile == .custom {
                             Picker("render.coverLayout", selection: $preferences.configuration.coverLayout) {
                                 ForEach(LyricsRenderConfiguration.CoverLayout.allCases, id: \.self) { layout in
@@ -243,7 +243,7 @@ struct LyricsAppearanceView: View {
                         Text("纯色").tag(LyricsRenderConfiguration.BackgroundMode.solid)
                         Text("双色渐变").tag(LyricsRenderConfiguration.BackgroundMode.gradient)
                     }
-                    .settingsPickerRow("背景模式", icon: "paintbrush", iconColor: .pink)
+                    .settingsPickerRow("背景模式", icon: "paintbrush", iconColor: MusicProductStyle.accent)
 
                     if preferences.profile == .amll {
                         SettingsDivider(inset: 16)
@@ -267,7 +267,7 @@ struct LyricsAppearanceView: View {
                         SettingsDivider(inset: 16)
                         flowingAdjustment("高斯模糊程度", key: \.blur, range: 0 ... 80, step: 5, unit: "pt")
                         SettingsDivider()
-                        SettingsTextButton(title: "恢复流动背景默认值", icon: "arrow.counterclockwise", iconColor: .pink, inGroup: true) {
+                        SettingsTextButton(title: "恢复流动背景默认值", icon: "arrow.counterclockwise", iconColor: MusicProductStyle.accent, inGroup: true) {
                             preferences.configuration.flowingBackground = .init()
                         }
                     } else if preferences.configuration.backgroundMode != .pixi {
@@ -289,7 +289,7 @@ struct LyricsAppearanceView: View {
 
             SettingsSection("高级视觉") {
                 SettingsGroup {
-                    SettingsDisclosureRow(title: "歌词内容遮罩", icon: "eye.slash", iconColor: .secondary) {
+                    SettingsDisclosureRow(title: "歌词内容遮罩", icon: "eye.slash", iconColor: MusicProductStyle.accent) {
                         Picker("标记词显示", selection: Binding(
                             get: { preferences.configuration.obsceneWordMask?.mode ?? .disabled },
                             set: { mode in
@@ -307,7 +307,7 @@ struct LyricsAppearanceView: View {
 
                     SettingsDivider()
 
-                    SettingsDisclosureRow(title: "歌词高光", icon: "sun.max.fill", iconColor: .yellow) {
+                    SettingsDisclosureRow(title: "歌词高光", icon: "sun.max.fill", iconColor: MusicProductStyle.accent) {
                         Toggle("当前句 HDR 高光", isOn: Binding(
                             get: { preferences.configuration.hdr?.enabled ?? false },
                             set: { preferences.configuration.hdr = .init(enabled: $0) }
@@ -321,7 +321,7 @@ struct LyricsAppearanceView: View {
 
                     SettingsDivider()
 
-                    SettingsDisclosureRow(title: "动态专辑封面", icon: "sparkles.rectangle.stack", iconColor: .indigo) {
+                    SettingsDisclosureRow(title: "动态专辑封面", icon: "sparkles.rectangle.stack", iconColor: MusicProductStyle.accent) {
                         Toggle("启用动态封面", isOn: Binding(
                             get: { preferences.configuration.animatedArtwork?.enabled ?? false },
                             set: { value in
@@ -456,11 +456,11 @@ private struct RomanizationSettingsView: View {
                             .padding(.vertical, 12)
                         SettingsDivider(inset: 16)
                     }
-                    SettingsTextButton(title: "重新生成当前歌词", icon: "arrow.clockwise", iconColor: .blue, inGroup: true) {
+                    SettingsTextButton(title: "重新生成当前歌词", icon: "arrow.clockwise", iconColor: MusicProductStyle.accent, inGroup: true) {
                         coordinator?.regenerateRomanization()
                     }
                     SettingsDivider()
-                    SettingsTextButton(title: "准备导出当前罗马音 TTML", icon: "doc", iconColor: .indigo, inGroup: true) {
+                    SettingsTextButton(title: "准备导出当前罗马音 TTML", icon: "doc", iconColor: MusicProductStyle.accent, inGroup: true) {
                         guard let ttml = coordinator?.document?.romanizationTTMLTrack?.ttml else {
                             message = "当前歌词没有生成的罗马音 TTML"
                             return
@@ -475,12 +475,12 @@ private struct RomanizationSettingsView: View {
                     if let exportedTTMLFile {
                         SettingsDivider()
                         ShareLink(item: exportedTTMLFile) {
-                            SettingsRowLabel(title: "分享罗马音 TTML", icon: "square.and.arrow.up", iconColor: .teal)
+                            SettingsRowLabel(title: "分享罗马音 TTML", icon: "square.and.arrow.up", iconColor: MusicProductStyle.accent)
                         }
                         .buttonStyle(SettingsRowButtonStyle())
                     }
                     SettingsDivider()
-                    SettingsTextButton(title: "清理生成缓存", icon: "trash", iconColor: .orange, inGroup: true) {
+                    SettingsTextButton(title: "清理生成缓存", icon: "trash", iconColor: MusicProductStyle.accent, inGroup: true) {
                         Task {
                             do {
                                 try await LyricsRomanizationEngine.shared.clearGeneratedCache()
@@ -494,11 +494,11 @@ private struct RomanizationSettingsView: View {
 
             SettingsSection("读音纠错") {
                 SettingsGroup {
-                    SettingsTextButton(title: "导入纠错字典", icon: "square.and.arrow.down", iconColor: .blue, inGroup: true) {
+                    SettingsTextButton(title: "导入纠错字典", icon: "square.and.arrow.down", iconColor: MusicProductStyle.accent, inGroup: true) {
                         importing = true
                     }
                     SettingsDivider()
-                    SettingsTextButton(title: "准备导出纠错字典", icon: "square.and.arrow.up", iconColor: .teal, inGroup: true) {
+                    SettingsTextButton(title: "准备导出纠错字典", icon: "square.and.arrow.up", iconColor: MusicProductStyle.accent, inGroup: true) {
                         Task {
                             do {
                                 let data = try await LyricsRomanizationEngine.shared.exportOverrides()
@@ -512,7 +512,7 @@ private struct RomanizationSettingsView: View {
                     if let exportedFile {
                         SettingsDivider()
                         ShareLink(item: exportedFile) {
-                            SettingsRowLabel(title: "分享纠错字典", icon: "square.and.arrow.up", iconColor: .teal)
+                            SettingsRowLabel(title: "分享纠错字典", icon: "square.and.arrow.up", iconColor: MusicProductStyle.accent)
                         }
                         .buttonStyle(SettingsRowButtonStyle())
                     }

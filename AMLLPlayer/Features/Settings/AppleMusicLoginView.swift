@@ -15,7 +15,7 @@ struct AppleMusicLoginView: View {
             if state.connected {
                 SettingsSection {
                     SettingsGroup {
-                        SettingsInfoRow(title: "系统歌曲同步", value: String(localized: "已启用"), valueColor: .green)
+                        SettingsInfoRow(title: "系统歌曲同步", value: String(localized: "已启用"), valueColor: MusicProductStyle.accent)
                         SettingsDivider(inset: 16)
                         SettingsInfoRow(title: "歌单与搜索", value: catalogStatus)
                         if state.capabilities.canBrowse {
@@ -56,7 +56,7 @@ struct AppleMusicLoginView: View {
 
                 SettingsGroup {
                     if let error = state.error {
-                        SettingsDisclosureRow(title: "查看连接错误", icon: "exclamationmark.triangle", iconColor: .orange) {
+                        SettingsDisclosureRow(title: "查看连接错误", icon: "exclamationmark.triangle", iconColor: MusicProductStyle.accent) {
                             Text(error.localizedDescription)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
@@ -72,7 +72,7 @@ struct AppleMusicLoginView: View {
                         SettingsRowLabel(
                             title: "重新检查状态",
                             icon: "arrow.clockwise",
-                            iconColor: .blue,
+                            iconColor: MusicProductStyle.accent,
                             busy: operation == .refresh
                         )
                     }
@@ -153,7 +153,7 @@ struct AppleMusicLoginView: View {
             .accessibilityIdentifier("appleMusicSystemSettings")
         } else {
             Button(action: openSystemSettings) {
-                SettingsRowLabel(title: "打开系统设置", icon: "gearshape", iconColor: .secondary)
+                SettingsRowLabel(title: "打开系统设置", icon: "gearshape", iconColor: MusicProductStyle.accent)
             }
             .buttonStyle(SettingsRowButtonStyle())
             .disabled(isBusy)

@@ -48,7 +48,7 @@ struct SettingsView: View {
                         SettingsRowLabel(
                             title: "歌词与外观",
                             icon: "textformat.size",
-                            iconColor: .indigo,
+                            iconColor: MusicProductStyle.accent,
                             value: appearanceSummary,
                             navigates: true
                         )
@@ -61,7 +61,7 @@ struct SettingsView: View {
                         SettingsRowLabel(
                             title: "歌词来源与匹配",
                             icon: "quote.bubble",
-                            iconColor: .cyan,
+                            iconColor: MusicProductStyle.accent,
                             value: lyricsSummary,
                             navigates: true
                         )
@@ -72,7 +72,7 @@ struct SettingsView: View {
                     SettingsDivider()
 
                     Toggle(isOn: $hapticsEnabled.hapticSelection()) {
-                        SettingsIconToggleLabel(title: "settings.haptics", icon: "hand.tap", color: .orange)
+                        SettingsIconToggleLabel(title: "settings.haptics", icon: "hand.tap", color: MusicProductStyle.accent)
                     }
                     .accessibilityIdentifier("appHapticsEnabled")
                 }
@@ -84,7 +84,7 @@ struct SettingsView: View {
                         SettingsRowLabel(
                             title: "存储与缓存",
                             icon: "internaldrive",
-                            iconColor: .blue,
+                            iconColor: MusicProductStyle.accent,
                             navigates: true
                         )
                     }
@@ -98,7 +98,7 @@ struct SettingsView: View {
                         SettingsRowLabel(
                             title: "导出所有设置",
                             icon: "square.and.arrow.up",
-                            iconColor: .teal,
+                            iconColor: MusicProductStyle.accent,
                             busy: exportingSettings
                         )
                     }
@@ -114,7 +114,7 @@ struct SettingsView: View {
                         SettingsRowLabel(
                             title: "帮助与故障排查",
                             icon: "questionmark.circle",
-                            iconColor: .blue,
+                            iconColor: MusicProductStyle.accent,
                             navigates: true
                         )
                     }
@@ -126,7 +126,7 @@ struct SettingsView: View {
                         SettingsRowLabel(
                             title: "关于 AMLL",
                             icon: "info.circle",
-                            iconColor: .secondary,
+                            iconColor: MusicProductStyle.accent,
                             value: appVersion,
                             navigates: true
                         )
@@ -135,7 +135,7 @@ struct SettingsView: View {
 
                     SettingsDivider()
 
-                    SettingsDisclosureRow(title: "开发与调试", icon: "wrench.and.screwdriver", iconColor: .purple) {
+                    SettingsDisclosureRow(title: "开发与调试", icon: "wrench.and.screwdriver", iconColor: MusicProductStyle.accent) {
                         NavigationLink {
                             ImmersiveArtworkDebugPanel(
                                 backgroundDimming: model.renderPreferences.configuration.validated().backgroundDimming ?? 0.16
@@ -144,7 +144,7 @@ struct SettingsView: View {
                             SettingsRowLabel(
                                 title: "沉浸封面层级调试（临时）",
                                 icon: "slider.horizontal.3",
-                                iconColor: .purple,
+                                iconColor: MusicProductStyle.accent,
                                 navigates: true
                             )
                         }
@@ -282,7 +282,7 @@ struct MusicPlaybackSettingsView: View {
                             SettingsRowLabel(
                                 title: "选择播放设备",
                                 icon: "airplayaudio",
-                                iconColor: .blue,
+                                iconColor: MusicProductStyle.accent,
                                 navigates: true
                             )
                         }
@@ -369,10 +369,10 @@ struct MusicStorageView: View {
 
         var color: Color {
             switch self {
-            case .lyrics: .cyan
-            case .artwork: .indigo
-            case .roman: .orange
-            case .images: .blue
+            case .lyrics: MusicProductStyle.accent
+            case .artwork: MusicProductStyle.accent.opacity(0.72)
+            case .roman: MusicProductStyle.accent.opacity(0.48)
+            case .images: MusicProductStyle.accent.opacity(0.28)
             }
         }
 
@@ -424,7 +424,7 @@ struct MusicStorageView: View {
                     ForEach(Array(Cache.allCases.enumerated()), id: \.element.id) { index, cache in
                         if index > 0 { SettingsDivider() }
                         HStack(spacing: 12) {
-                            SettingsIconBadge(systemImage: cache.icon, color: cache.color)
+                            SettingsIconBadge(systemImage: cache.icon, color: MusicProductStyle.accent)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(cache.name)
                                     .font(.body)
@@ -574,7 +574,7 @@ struct MusicHelpView: View {
                     SettingsDivider()
 
                     NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
-                        SettingsRowLabel(title: "Apple Music 连接诊断", icon: "stethoscope", iconColor: .pink, navigates: true)
+                        SettingsRowLabel(title: "Apple Music 连接诊断", icon: "stethoscope", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
 
@@ -589,14 +589,14 @@ struct MusicHelpView: View {
             SettingsSection("播放与歌词") {
                 SettingsGroup {
                     NavigationLink { LyricsSettingsView(coordinator: model.lyrics) } label: {
-                        SettingsRowLabel(title: "歌词来源与匹配", icon: "quote.bubble", iconColor: .cyan, navigates: true)
+                        SettingsRowLabel(title: "歌词来源与匹配", icon: "quote.bubble", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
 
                     SettingsDivider()
 
                     NavigationLink { PlaybackSeekDiagnosticsView() } label: {
-                        SettingsRowLabel(title: "播放跳转诊断", icon: "waveform", iconColor: .orange, navigates: true)
+                        SettingsRowLabel(title: "播放跳转诊断", icon: "waveform", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
                 }
@@ -605,7 +605,7 @@ struct MusicHelpView: View {
             SettingsSection("开发工具") {
                 SettingsGroup {
                     NavigationLink { LyricsRenderPreview() } label: {
-                        SettingsRowLabel(title: "render.debug", icon: "waveform.path", iconColor: .purple, navigates: true)
+                        SettingsRowLabel(title: "render.debug", icon: "waveform.path", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
                 }
@@ -662,21 +662,21 @@ struct MusicAboutView: View {
             SettingsSection("开源") {
                 SettingsGroup {
                     Link(destination: URL(string: root + "/blob/swiftui-native/Docs/CHANGELOG.md")!) {
-                        SettingsRowLabel(title: "更新记录", icon: "clock.arrow.circlepath", iconColor: .blue, navigates: true)
+                        SettingsRowLabel(title: "更新记录", icon: "clock.arrow.circlepath", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
 
                     SettingsDivider()
 
                     Link(destination: URL(string: root)!) {
-                        SettingsRowLabel(title: "settings.sourceCode", icon: "chevron.left.forwardslash.chevron.right", iconColor: .indigo, navigates: true)
+                        SettingsRowLabel(title: "settings.sourceCode", icon: "chevron.left.forwardslash.chevron.right", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
 
                     SettingsDivider()
 
                     Link(destination: URL(string: root + "/blob/swiftui-native/THIRD_PARTY_NOTICES.md")!) {
-                        SettingsRowLabel(title: "开源许可与来源归属", icon: "doc.text", iconColor: .secondary, navigates: true)
+                        SettingsRowLabel(title: "开源许可与来源归属", icon: "doc.text", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
                 }

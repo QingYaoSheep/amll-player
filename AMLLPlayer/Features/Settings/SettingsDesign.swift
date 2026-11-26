@@ -590,7 +590,7 @@ struct SettingsAccountHeader: View {
 
                     HStack(spacing: 5) {
                         Circle()
-                            .fill(connected ? Color.green : Color.secondary.opacity(0.5))
+                            .fill(connected ? MusicProductStyle.accent : Color.secondary.opacity(0.5))
                             .frame(width: 7, height: 7)
                         Text(status)
                             .font(.caption.weight(.medium))
@@ -601,7 +601,7 @@ struct SettingsAccountHeader: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(
-                        connected ? Color.green.opacity(0.14) : Color.primary.opacity(0.06),
+                        connected ? MusicProductStyle.accent.opacity(0.16) : Color.primary.opacity(0.06),
                         in: Capsule()
                     )
                 }
@@ -676,11 +676,7 @@ extension MusicServiceID {
     }
 
     var brandColor: Color {
-        switch self {
-        case .spotify: Color(red: 0.11, green: 0.72, blue: 0.33)
-        case .appleMusic: MusicProductStyle.accent
-        case .netease: Color(red: 0.89, green: 0.20, blue: 0.24)
-        }
+        MusicProductStyle.accent
     }
 }
 

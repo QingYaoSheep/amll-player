@@ -56,7 +56,7 @@ struct MusicWelcomeView: View {
                 }
 
                 Button(action: complete) {
-                    SettingsActionLabel(title: "稍后设置", icon: "arrow.right", iconColor: .secondary)
+                    SettingsActionLabel(title: "稍后设置", icon: "arrow.right", iconColor: MusicProductStyle.accent)
                 }
                 .buttonStyle(SettingsButtonStyle())
                 .accessibilityIdentifier("skipMusicWelcome")

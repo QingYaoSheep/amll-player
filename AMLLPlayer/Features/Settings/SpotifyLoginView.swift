@@ -153,7 +153,7 @@ struct SpotifyLoginView: View {
                     SettingsRowLabel(
                         title: "settings.login.documentation",
                         icon: "book",
-                        iconColor: .blue,
+                        iconColor: MusicProductStyle.accent,
                         navigates: true
                     )
                 }

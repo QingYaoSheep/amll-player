@@ -406,13 +406,13 @@ struct LyricsQuickSettingsPanel: View {
         VStack(spacing: 8) {
             controls {
                 appearanceButton("render.showLyrics", symbol: "text.quote", id: "toggleLyricsVisibility",
-                                 accent: .cyan, value: setting(\.showLyrics))
+                                 value: setting(\.showLyrics))
                 appearanceButton("render.translation", symbol: "character.bubble", id: "quickSettingsTranslation",
-                                 accent: .indigo, value: setting(\.translation))
+                                 value: setting(\.translation))
                 appearanceButton("render.romanization", symbol: "abc", id: "quickSettingsRomanization",
-                                 accent: .orange, value: setting(\.romanization))
+                                 value: setting(\.romanization))
                 appearanceButton("quickSettings.hdr", symbol: "sun.max.fill", id: "quickSettingsHDR",
-                                 accent: .yellow, value: Binding(
+                                 value: Binding(
                                      get: { configuration.hdr?.enabled ?? false },
                                      set: { model.renderPreferences.configuration.hdr = .init(enabled: $0) }
                                  ))
@@ -463,7 +463,7 @@ struct LyricsQuickSettingsPanel: View {
                     QuickSettingsCardToggleRow(
                         title: "appearance.autoSize",
                         symbol: "textformat.size",
-                        accent: .indigo,
+                        accent: MusicProductStyle.accent,
                         selected: isAutoSize
                     )
                 }
@@ -483,7 +483,7 @@ struct LyricsQuickSettingsPanel: View {
                             Text(LocalizedStringKey("render.size." + preset.rawValue)).tag(preset)
                         }
                     }
-                    .modifier(QuickSettingsCardPickerRow(title: "render.sizePreset", symbol: "textformat", accent: .cyan))
+                    .modifier(QuickSettingsCardPickerRow(title: "render.sizePreset", symbol: "textformat", accent: MusicProductStyle.accent))
                     .accessibilityIdentifier("quickSettingsSizePreset")
                     .accessibilityValue(Text(LocalizedStringKey("render.size." + (configuration.sizePreset ?? .medium).rawValue)))
                 } else {
@@ -497,7 +497,7 @@ struct LyricsQuickSettingsPanel: View {
                         Text("render.small").tag(26.0); Text("render.medium").tag(32.0)
                         Text("render.large").tag(40.0); Text("render.extraLarge").tag(48.0)
                     }
-                    .modifier(QuickSettingsCardPickerRow(title: "render.fontSize", symbol: "textformat", accent: .cyan))
+                    .modifier(QuickSettingsCardPickerRow(title: "render.fontSize", symbol: "textformat", accent: MusicProductStyle.accent))
                     .accessibilityIdentifier("quickSettingsFontSize")
                     .accessibilityValue(Text(String(format: "%.0f pt", configuration.fontSize)))
                 }
@@ -514,7 +514,7 @@ struct LyricsQuickSettingsPanel: View {
                     Text("纯色").tag(LyricsRenderConfiguration.BackgroundMode.solid)
                     Text("双色渐变").tag(LyricsRenderConfiguration.BackgroundMode.gradient)
                 }
-                .modifier(QuickSettingsCardPickerRow(title: "quickSettings.background", symbol: "paintbrush", accent: .pink))
+                .modifier(QuickSettingsCardPickerRow(title: "quickSettings.background", symbol: "paintbrush", accent: MusicProductStyle.accent))
                 .accessibilityIdentifier("quickSettingsBackground")
                 .accessibilityValue(Text(backgroundTitle))
             }
@@ -526,17 +526,17 @@ struct LyricsQuickSettingsPanel: View {
             VStack(spacing: 8) {
                 if model.selectedMusicService == .netease {
                     controls {
-                        route("AirPlay", symbol: "airplayaudio", accent: .blue, to: .devices)
+                        route("AirPlay", symbol: "airplayaudio", to: .devices)
                         route(model.netEasePlayback.isListeningTogether ? "一起听房间" : "与好友一起听",
-                              symbol: "person.2", accent: MusicProductStyle.accent, to: .listeningRoom)
+                              symbol: "person.2", to: .listeningRoom)
                             .accessibilityIdentifier("quickSettingsNetEaseListeningRoom")
                     }
                     if let snapshot = model.playbackSnapshot {
                         let busy = model.isPerformingAction || !model.netEasePlayback.canEditPersonalQueue
-                        route("quickSettings.queue", symbol: "list.bullet", accent: .indigo, to: .queue)
+                        route("quickSettings.queue", symbol: "list.bullet", to: .queue)
                         controls {
                             appearanceButton("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle",
-                                             accent: .purple, value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
+                                             value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                                                  Task { await model.setShuffle(enabled) }
                                              }), playsHaptic: false).disabled(busy)
                             QuickSettingsRepeatMenu(owner: ObjectIdentifier(model), service: model.selectedMusicService,
@@ -548,10 +548,10 @@ struct LyricsQuickSettingsPanel: View {
                 } else if model.selectedMusicService != .spotify, let snapshot = model.playbackSnapshot {
                     let busy = model.isPerformingAction
                     controls {
-                        route("AirPlay", symbol: "airplayaudio", accent: .blue, to: .devices)
-                        route("quickSettings.queue", symbol: "list.bullet", accent: .indigo, to: .queue)
+                        route("AirPlay", symbol: "airplayaudio", to: .devices)
+                        route("quickSettings.queue", symbol: "list.bullet", to: .queue)
                         appearanceButton("quickSettings.shuffle", symbol: "shuffle", id: "quickSettingsShuffle",
-                                         accent: .purple, value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
+                                         value: Binding(get: { snapshot.shuffleEnabled }, set: { enabled in
                                              Task { await model.setShuffle(enabled) }
                                          }), playsHaptic: false).disabled(busy)
                         QuickSettingsRepeatMenu(owner: ObjectIdentifier(model), service: model.selectedMusicService,
@@ -561,7 +561,7 @@ struct LyricsQuickSettingsPanel: View {
                     }
                 } else {
                     route(model.selectedMusicService == .spotify ? "player.devices" : "AirPlay",
-                          symbol: "airplayaudio", accent: .blue, to: .devices)
+                          symbol: "airplayaudio", to: .devices)
                 }
             }
             if model.selectedMusicService == .netease, model.netEasePlayback.isPersonalFM {
@@ -624,17 +624,17 @@ struct LyricsQuickSettingsPanel: View {
                     columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 1 : 3),
                     spacing: 8
                 ) {
-                    compactActionTile("lyrics.find", symbol: "magnifyingglass", accent: .cyan) {
+                    compactActionTile("lyrics.find", symbol: "magnifyingglass", accent: MusicProductStyle.accent) {
                         presentation.show(.lyricsSearch, reduceMotion: reduceMotion)
                     }
                     .accessibilityFocused($focusedRoute, equals: .lyricsSearch)
                     .accessibilityIdentifier("quickSettingsRoute.lyricsSearch")
 
-                    compactActionTile("lyrics.refresh", symbol: "arrow.clockwise", accent: .blue) {
+                    compactActionTile("lyrics.refresh", symbol: "arrow.clockwise", accent: MusicProductStyle.accent) {
                         model.lyrics.reload(force: true)
                     }
 
-                    compactActionTile("lyrics.automatic", symbol: "arrow.uturn.backward", accent: .orange) {
+                    compactActionTile("lyrics.automatic", symbol: "arrow.uturn.backward", accent: MusicProductStyle.accent) {
                         model.lyrics.restoreAutomatic()
                     }
                 }
@@ -684,7 +684,7 @@ struct LyricsQuickSettingsPanel: View {
                 Button {
                     presentation.show(.appearance, reduceMotion: reduceMotion)
                 } label: {
-                    QuickSettingsCardRow(title: "render.settings", symbol: "slider.horizontal.3", accent: .indigo, indicator: "chevron.forward")
+                    QuickSettingsCardRow(title: "render.settings", symbol: "slider.horizontal.3", accent: MusicProductStyle.accent, indicator: "chevron.forward")
                 }
                 .buttonStyle(QuickSettingsRowButtonStyle())
                 .accessibilityFocused($focusedRoute, equals: .appearance)
@@ -695,7 +695,7 @@ struct LyricsQuickSettingsPanel: View {
                 Button {
                     presentation.show(.lyricsSources, reduceMotion: reduceMotion)
                 } label: {
-                    QuickSettingsCardRow(title: "lyrics.settings", symbol: "text.badge.checkmark", accent: .cyan, indicator: "chevron.forward")
+                    QuickSettingsCardRow(title: "lyrics.settings", symbol: "text.badge.checkmark", accent: MusicProductStyle.accent, indicator: "chevron.forward")
                 }
                 .buttonStyle(QuickSettingsRowButtonStyle())
                 .accessibilityFocused($focusedRoute, equals: .lyricsSources)
@@ -710,7 +710,7 @@ struct LyricsQuickSettingsPanel: View {
                     QuickSettingsCardToggleRow(
                         title: "quickSettings.artworkDebugButton",
                         symbol: "rectangle.on.rectangle",
-                        accent: .orange,
+                        accent: MusicProductStyle.accent,
                         selected: artworkDebug.showsButton
                     )
                 }
@@ -734,7 +734,7 @@ struct LyricsQuickSettingsPanel: View {
                     QuickSettingsCardRow(
                         title: LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
                         symbol: compositingDiagnosticCopied ? "checkmark.circle.fill" : "doc.on.doc",
-                        accent: compositingDiagnosticCopied ? .green : .teal
+                        accent: MusicProductStyle.accent
                     )
                 }
                 .buttonStyle(QuickSettingsRowButtonStyle())
@@ -999,7 +999,7 @@ private struct QuickSettingsRepeatMenu: View, Equatable {
                 detail: mode.title,
                 indicator: "chevron.up.chevron.down",
                 selected: mode != .off,
-                accentColor: .teal
+                accentColor: MusicProductStyle.accent
             )
         }
         .disabled(busy)

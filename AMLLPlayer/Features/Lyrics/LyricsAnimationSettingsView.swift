@@ -38,7 +38,7 @@ struct LyricsAnimationSettingsView: View {
                     .pickerStyle(.menu)
                     .accessibilityIdentifier("lyricsAnimationStyle")
                     .accessibilityValue(preferences.configuration.animationStyle.title)
-                    .settingsPickerRow("逐字动画风格", icon: "wand.and.stars", iconColor: .purple)
+                    .settingsPickerRow("逐字动画风格", icon: "wand.and.stars", iconColor: MusicProductStyle.accent)
                 }
             }
 

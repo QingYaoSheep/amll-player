@@ -9,14 +9,14 @@ struct PlaybackSeekDiagnosticsView: View {
         SettingsPage {
             SettingsSection {
                 SettingsGroup {
-                    SettingsTextButton(title: "生成诊断文件", icon: "doc.badge.plus", iconColor: .blue, inGroup: true) {
+                    SettingsTextButton(title: "生成诊断文件", icon: "doc.badge.plus", iconColor: MusicProductStyle.accent, inGroup: true) {
                         do { exportURL = try PlaybackSeekDiagnostics.shared.export(); failure = nil }
                         catch { failure = "导出失败，请重试。" }
                     }
                     if let exportURL {
                         SettingsDivider()
                         ShareLink(item: exportURL) {
-                            SettingsRowLabel(title: "分享跳转诊断", icon: "square.and.arrow.up", iconColor: .teal)
+                            SettingsRowLabel(title: "分享跳转诊断", icon: "square.and.arrow.up", iconColor: MusicProductStyle.accent)
                         }
                         .buttonStyle(SettingsRowButtonStyle())
                     }

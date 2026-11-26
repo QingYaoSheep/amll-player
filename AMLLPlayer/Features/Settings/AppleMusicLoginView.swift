@@ -129,5 +129,6 @@ struct MusicSourcePicker: View {
         }
         .pickerStyle(.menu)
         .accessibilityIdentifier("musicSourcePicker")
+        .settingsPickerRow("当前音乐来源")
     }
 }

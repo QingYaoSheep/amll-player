@@ -216,6 +216,26 @@ extension View {
     func settingsSurface(prominent: Bool = false, padded: Bool = true, radius: CGFloat = 16) -> some View {
         modifier(SettingsSurface(prominent: prominent, padded: padded, radius: radius))
     }
+
+    func settingsPickerRow(_ title: LocalizedStringKey) -> some View {
+        modifier(SettingsPickerRow(title: title))
+    }
+}
+
+private struct SettingsPickerRow: ViewModifier {
+    let title: LocalizedStringKey
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    func body(content: Content) -> some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 12))
+        layout {
+            Text(title).frame(maxWidth: .infinity, alignment: .leading).accessibilityHidden(true)
+            content.labelsHidden()
+        }
+        .frame(minHeight: 44)
+    }
 }
 
 private struct SettingsSurface: ViewModifier {

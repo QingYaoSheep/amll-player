@@ -36,6 +36,7 @@ struct LyricsAnimationSettingsView: View {
                 }.pickerStyle(.menu)
                     .accessibilityIdentifier("lyricsAnimationStyle")
                     .accessibilityValue(preferences.configuration.animationStyle.title)
+                    .settingsPickerRow("逐字动画风格")
                     .settingsSurface()
             }
             if preferences.configuration.animationStyle == .appleMusic164 {
@@ -51,6 +52,7 @@ struct LyricsAnimationSettingsView: View {
                             Text(preset.title).tag(preset).disabled(preset == .custom)
                         }
                     }.accessibilityIdentifier("blossomPreset").accessibilityValue(blossom.matchedPreset.title)
+                        .settingsPickerRow("歌词和逻辑预置")
                         .settingsSurface()
                     ForEach(LyricsBlossomAnimationOptions.Control.allCases, id: \.rawValue) { control in
                         Picker(selection: blossomBinding(control)) {
@@ -58,9 +60,10 @@ struct LyricsAnimationSettingsView: View {
                                 Text(choice.title).tag(choice.value)
                             }
                         } label: {
-                            Text(control.title)
+                            Text(LocalizedStringKey(control.title))
                         }.accessibilityIdentifier("blossom." + control.rawValue)
                             .accessibilityValue(control.choices.first { $0.value == blossom[keyPath: control.key] }?.title ?? "")
+                            .settingsPickerRow(LocalizedStringKey(control.title))
                             .settingsSurface()
                     }
                     Stepper(value: Binding(get: { blossom.maximumLines }, set: { count in

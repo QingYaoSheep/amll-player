@@ -61,6 +61,7 @@ struct LyricsAppearanceView: View {
                         Text("render.profile.amll").tag(LyricsPresentationProfile.amll)
                         Text("render.profile.custom").tag(LyricsPresentationProfile.custom)
                     }
+                    .settingsPickerRow("render.profile")
                 }
                 .settingsSurface()
             }
@@ -87,6 +88,8 @@ struct LyricsAppearanceView: View {
                         Text("render.small").tag(26.0); Text("render.medium").tag(32.0)
                         Text("render.large").tag(40.0); Text("render.extraLarge").tag(48.0)
                     }
+                    .settingsPickerRow("render.fontSize")
+                    .settingsSurface()
                 } else {
                     Picker("render.sizePreset", selection: Binding(
                         get: { preferences.configuration.sizePreset },
@@ -96,6 +99,8 @@ struct LyricsAppearanceView: View {
                             Text(LocalizedStringKey("render.size." + preset.rawValue)).tag(Optional(preset))
                         }
                     }
+                    .settingsPickerRow("render.sizePreset")
+                    .settingsSurface()
                 }
                 Toggle("render.bold", isOn: $preferences.configuration.bold.hapticSelection())
                     .settingsSurface()
@@ -155,6 +160,7 @@ struct LyricsAppearanceView: View {
                                 Text(LocalizedStringKey("render.layout." + layout.rawValue)).tag(layout)
                             }
                         }
+                        .settingsPickerRow("render.coverLayout")
                     }
                     Toggle("render.showTitle", isOn: $preferences.configuration.showTitle.hapticSelection())
                     Toggle("render.showArtist", isOn: $preferences.configuration.showArtist.hapticSelection())
@@ -167,6 +173,7 @@ struct LyricsAppearanceView: View {
                                 Text(LocalizedStringKey("render.credits." + mode.rawValue)).tag(mode)
                             }
                         }
+                        .settingsPickerRow("render.credits")
                     }
                 }
                 .settingsSurface()
@@ -182,6 +189,8 @@ struct LyricsAppearanceView: View {
                     Text("纯色").tag(LyricsRenderConfiguration.BackgroundMode.solid)
                     Text("双色渐变").tag(LyricsRenderConfiguration.BackgroundMode.gradient)
                 }
+                .settingsPickerRow("背景模式")
+                .settingsSurface()
                 if preferences.profile == .amll {
                     adjustment("appearance.dimming", key: \.backgroundDimming, fallback: 0.16, range: 0 ... 0.8, step: 0.04)
                 }
@@ -214,6 +223,7 @@ struct LyricsAppearanceView: View {
                         Text("保留首尾").tag(AMLLObsceneWordMask.Mode.partial)
                         Text("全部遮罩").tag(AMLLObsceneWordMask.Mode.full)
                     }
+                    .settingsPickerRow("标记词显示")
                 }
                 .settingsSurface()
                 DisclosureGroup("歌词高光") {
@@ -252,6 +262,7 @@ struct LyricsAppearanceView: View {
                         Text("方形封面").tag(AnimatedArtworkConfiguration.Presentation.square)
                         Text("竖屏沉浸封面").tag(AnimatedArtworkConfiguration.Presentation.immersive)
                     }
+                    .settingsPickerRow("封面布局")
                     SettingsTextButton(title: "清理动态封面缓存", icon: "trash", role: .destructive) { confirmClearArtwork = true }
                 }
                 .settingsSurface()

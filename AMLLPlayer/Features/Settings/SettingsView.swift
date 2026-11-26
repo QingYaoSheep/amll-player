@@ -194,6 +194,7 @@ struct NetEaseQualityPicker: View {
             })) {
                 ForEach(NetEaseQuality.allCases) { quality in Text(quality.title).tag(quality) }
             }
+            .settingsPickerRow("播放音质")
             .settingsSurface()
             if showTiming {
                 Text("新音质从下一首开始生效。")

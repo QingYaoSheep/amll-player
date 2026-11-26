@@ -20,7 +20,7 @@ struct MusicWelcomeView: View {
                         NavigationLink {
                             MusicLoginDestination(model: model, service: service)
                                 .toolbar {
-                                    ToolbarItem(placement: .confirmationAction) { Button("完成", action: complete) }
+                                    ToolbarItem(placement: .confirmationAction) { Button("common.done", action: complete) }
                                 }
                         } label: {
                             SettingsActionLabel(title: LocalizedStringKey(service.title), icon: service.settingsIcon, navigates: true)

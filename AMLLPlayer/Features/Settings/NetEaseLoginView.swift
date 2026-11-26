@@ -187,7 +187,7 @@ private struct NetEaseCookieImportView: View {
         .navigationTitle("高级登录方式")
         .onDisappear { cookie = "" }
         .alert("登录未完成", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-            Button("好", role: .cancel) { failure = nil }
+            Button("common.ok", role: .cancel) { failure = nil }
         } message: {
             Text(failure ?? "")
         }

@@ -24,7 +24,7 @@ struct SettingsView: View {
 
             SettingsSection("播放与歌词") {
                 NavigationLink { MusicPlaybackSettingsView(model: model) } label: {
-                    SettingsActionLabel(title: "播放", icon: "play.fill", navigates: true)
+                    SettingsActionLabel(title: "settings.playbackTitle", icon: "play.fill", navigates: true)
                 }
                 NavigationLink {
                     LyricsAppearanceView(preferences: model.renderPreferences, coordinator: model.lyrics)
@@ -88,7 +88,7 @@ struct SettingsView: View {
         .alert("无法导出设置", isPresented: Binding(get: { settingsExportError != nil }, set: { showing in
             if !showing { settingsExportError = nil }
         })) {
-            Button("好", role: .cancel) { settingsExportError = nil }
+            Button("common.ok", role: .cancel) { settingsExportError = nil }
         } message: {
             Text(settingsExportError ?? "")
         }
@@ -178,7 +178,7 @@ struct MusicPlaybackSettingsView: View {
             }
         }
         .buttonStyle(SettingsButtonStyle())
-        .navigationTitle("播放")
+        .navigationTitle("settings.playbackTitle")
     }
 }
 
@@ -318,7 +318,7 @@ struct MusicHelpView: View {
         SettingsPage {
             SettingsSection("音乐账号") {
                 NavigationLink { MusicAccountsView(model: model) } label: {
-                    SettingsActionLabel(title: "管理音乐来源", icon: "person.crop.circle", navigates: true)
+                    SettingsActionLabel(title: "settings.manageSources", icon: "person.crop.circle", navigates: true)
                 }
                 NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
                     SettingsActionLabel(title: "Apple Music 连接诊断", icon: "stethoscope", navigates: true)

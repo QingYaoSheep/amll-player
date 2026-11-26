@@ -7,6 +7,7 @@ struct SpotifyLoginView: View {
     @State private var needsRetry = false
     @State private var confirmClientChange = false
     @FocusState private var isEditingClientID: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel, startsWithConfiguration: Bool = false) {
         self.model = model
@@ -48,7 +49,7 @@ struct SpotifyLoginView: View {
                 Button {
                     isEditingClientID = false
                     if showConfiguration { clientID = model.environment.configuration.spotifyClientID ?? "" }
-                    withAnimation(MusicProductMotion.change) { showConfiguration.toggle() }
+                    withAnimation(reduceMotion ? nil : MusicProductMotion.change) { showConfiguration.toggle() }
                 } label: {
                     SettingsActionLabel(title: showConfiguration ? "收起配置" : "编辑 Spotify 配置", icon: "slider.horizontal.3")
                 }

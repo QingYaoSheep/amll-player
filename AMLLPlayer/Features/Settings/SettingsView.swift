@@ -184,13 +184,14 @@ struct MusicPlaybackSettingsView: View {
 struct NetEaseQualityPicker: View {
     @Bindable var model: AppModel
     @State private var showTiming = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Picker("播放音质", selection: Binding(get: { model.netEasePlayback.quality }, set: { quality in
                 guard quality != model.netEasePlayback.quality else { return }
                 model.netEasePlayback.quality = quality
-                withAnimation(MusicProductMotion.change) { showTiming = true }
+                withAnimation(reduceMotion ? nil : MusicProductMotion.change) { showTiming = true }
             })) {
                 ForEach(NetEaseQuality.allCases) { quality in Text(quality.title).tag(quality) }
             }
@@ -229,6 +230,15 @@ struct MusicStorageView: View {
             case .images: "浏览封面缓存"
             }
         }
+
+        var clearTitle: LocalizedStringKey {
+            switch self {
+            case .lyrics: "清理歌词缓存"
+            case .artwork: "清理动态封面缓存"
+            case .roman: "清理生成音译缓存"
+            case .images: "清理浏览封面缓存"
+            }
+        }
     }
 
     var body: some View {
@@ -241,9 +251,8 @@ struct MusicStorageView: View {
             SettingsSection {
                 ForEach(Cache.allCases) { cache in
                     Button(role: .destructive) { clearing = cache } label: {
-                        SettingsActionLabel(title: cache.name, icon: "trash", style: .destructive)
+                        SettingsActionLabel(title: cache.clearTitle, icon: "trash", style: .destructive)
                     }
-                    .accessibilityHint("清理该缓存")
                 }
                 .disabled(isClearing)
                 if let failure { Text(failure).font(.footnote).foregroundStyle(.secondary) }

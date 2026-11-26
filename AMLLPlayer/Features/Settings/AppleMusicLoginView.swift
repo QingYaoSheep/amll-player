@@ -4,6 +4,7 @@ import SwiftUI
 struct AppleMusicLoginView: View {
     @Bindable var model: AppModel
     @State private var operation: Operation?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Operation { case connect, refresh }
 
@@ -68,7 +69,7 @@ struct AppleMusicLoginView: View {
             }
         }
         .buttonStyle(SettingsButtonStyle())
-        .animation(MusicProductMotion.change, value: state.connected)
+        .animation(reduceMotion ? nil : MusicProductMotion.change, value: state.connected)
         .navigationTitle("登录到 Apple Music")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.refreshAppleMusic() }

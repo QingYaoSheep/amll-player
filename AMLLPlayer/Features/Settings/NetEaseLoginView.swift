@@ -7,6 +7,7 @@ struct NetEaseLoginView: View {
     @State private var requestedQR = false
     @State private var isStartingQR = false
     @State private var isCheckingAccount = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct QRPresentation {
         let source: URL
@@ -69,7 +70,7 @@ struct NetEaseLoginView: View {
             }
         }
         .buttonStyle(SettingsButtonStyle())
-        .animation(MusicProductMotion.change, value: hasActiveQR)
+        .animation(reduceMotion ? nil : MusicProductMotion.change, value: hasActiveQR)
         .navigationTitle("登录到网易云音乐")
         .navigationBarTitleDisplayMode(.inline)
         .task { await session.refresh() }

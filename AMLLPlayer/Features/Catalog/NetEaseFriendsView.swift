@@ -523,7 +523,6 @@ struct NetEaseListenButton: View {
 
 struct NetEaseFriendRoomStatus: View {
     let actions: NetEaseFriendRoomActions
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var body: some View {
         if actions.busy || actions.status != nil {
             ViewThatFits(in: .horizontal) {
@@ -533,20 +532,8 @@ struct NetEaseFriendRoomStatus: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, minHeight: 44)
-            .background {
-                let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-                if reduceTransparency {
-                    shape.fill(Color(uiColor: .secondarySystemBackground))
-                } else {
-                    shape.fill(.ultraThinMaterial)
-                }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-            }
-            .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
-            .padding(.horizontal, 12)
+            .iMessageLiquidGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .transition(.opacity)
             .animation(MusicProductMotion.change, value: actions.status)

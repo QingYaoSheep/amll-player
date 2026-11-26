@@ -577,7 +577,6 @@ private struct NetEaseRoomChat: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var visibilityToken = UUID()
     @State private var messages: [NetEaseRoomMessage] = []
     @State private var text = ""
@@ -664,7 +663,7 @@ private struct NetEaseRoomChat: View {
             HStack(alignment: .bottom, spacing: 4) {
                 TextField("消息", text: $text, axis: .vertical)
                     .lineLimit(1...4)
-                    .padding(.leading, 14)
+                    .padding(.leading, 16)
                     .padding(.vertical, 10)
                     .frame(minHeight: 44)
                 Button {
@@ -678,7 +677,7 @@ private struct NetEaseRoomChat: View {
                             Image(systemName: "arrow.up")
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.white)
-                                .frame(width: 30, height: 30)
+                                .frame(width: 32, height: 32)
                                 .background(canSendMessage ? MusicProductStyle.filledAccent : Color.secondary.opacity(0.28), in: Circle())
                                 .scaleEffect(canSendMessage ? 1.0 : 0.94)
                                 .animation(reduceMotion ? nil : MusicProductMotion.feedback, value: canSendMessage)
@@ -691,23 +690,10 @@ private struct NetEaseRoomChat: View {
                 .accessibilityLabel("发送")
                 .disabled(!canSendMessage)
             }
-            .background(
-                Color(uiColor: .secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background {
-                if reduceTransparency { Color(uiColor: .secondarySystemBackground) }
-                else { Rectangle().fill(.ultraThinMaterial) }
-            }
-            .overlay(alignment: .top) {
-                Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
-            }
+            .iMessageLiquidGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 14)
+            .padding(.top, 6)
+            .padding(.bottom, 8)
             .disabled(!active)
         }
         .refreshable { await refresh() }

@@ -20,7 +20,6 @@ struct NetEaseConversationView: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var messages: [NetEaseDirectMessage] = []
     @State private var receipts: [Pending] = []
     @State private var unconfirmed: Pending?
@@ -270,17 +269,7 @@ struct NetEaseConversationView: View {
                     .font(.footnote.weight(.semibold))
                     .padding(.horizontal, 14)
                     .frame(minHeight: 40)
-                    .background {
-                        if reduceTransparency {
-                            Capsule().fill(Color(uiColor: .secondarySystemBackground))
-                        } else {
-                            Capsule().fill(.ultraThinMaterial)
-                        }
-                    }
-                    .overlay {
-                        Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-                    }
-                    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                    .iMessageLiquidGlass(in: Capsule(), interactive: true)
                 }
                 .padding(.bottom, 10)
             }
@@ -476,13 +465,15 @@ struct NetEaseConversationView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(MusicProductStyle.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.vertical, 8)
+                .iMessageLiquidGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             if !available {
                 Label("会话当前不可用", systemImage: "exclamationmark.circle")
                     .font(.footnote).foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .iMessageLiquidGlass(in: Capsule())
             }
             if let song {
                 HStack(spacing: 10) {
@@ -504,30 +495,36 @@ struct NetEaseConversationView: View {
                 .padding(.leading, 10)
                 .padding(.trailing, 4)
                 .padding(.vertical, 6)
-                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-                }
+                .iMessageLiquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
             HStack(alignment: .bottom, spacing: 8) {
                 Button { pickingSong = true } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, height: 36)
-                        .background(Color(uiColor: .tertiarySystemFill), in: Circle())
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.primary)
                         .frame(width: 44, height: 44)
                         .contentShape(Circle())
                 }
                 .buttonStyle(MusicContentButtonStyle())
+                .iMessageLiquidGlass(in: Circle(), interactive: true)
+                .contextMenu {
+                    Button("选择歌曲", systemImage: "music.note.list") { pickingSong = true }
+                    if let current = model.netEasePlayback.currentEntry?.item {
+                        Button("分享当前播放", systemImage: "music.note") { song = current }
+                    }
+                    if duetRoomID == nil {
+                        Button("邀请一起听", systemImage: "headphones") {
+                            Task { await actions.listen(peer) }
+                        }
+                    }
+                }
                 .accessibilityLabel("分享歌曲")
                 .accessibilityIdentifier("netEaseShareSong")
 
                 HStack(alignment: .bottom, spacing: 4) {
                     TextField("网易云私信", text: $draft, axis: .vertical)
                         .lineLimit(1...5)
-                        .padding(.leading, 14)
+                        .padding(.leading, 16)
                         .padding(.vertical, 10)
                         .frame(minHeight: 44)
                         .accessibilityIdentifier("netEaseMessageDraft")
@@ -543,7 +540,7 @@ struct NetEaseConversationView: View {
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 15, weight: .bold))
                                     .foregroundStyle(.white)
-                                    .frame(width: 30, height: 30)
+                                    .frame(width: 32, height: 32)
                                     .background(canSend ? MusicProductStyle.filledAccent : Color.secondary.opacity(0.28), in: Circle())
                                     .scaleEffect(canSend ? 1.0 : 0.94)
                                     .animation(reduceMotion ? nil : MusicProductMotion.feedback, value: canSend)
@@ -557,14 +554,7 @@ struct NetEaseConversationView: View {
                     .accessibilityIdentifier("netEaseSendMessage")
                     .disabled(!canSend)
                 }
-                .background(
-                    Color(uiColor: .secondarySystemGroupedBackground),
-                    in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.75)
-                }
+                .iMessageLiquidGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
             if trimmedDraft.utf16.count > 500 {
                 Text("单条消息最多 500 字").font(.caption).foregroundStyle(MusicProductStyle.accent)
@@ -572,14 +562,9 @@ struct NetEaseConversationView: View {
             }
         }
         .disabled(!available || sending)
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background {
-            if reduceTransparency { Color(uiColor: .secondarySystemBackground) }
-            else { Rectangle().fill(.ultraThinMaterial) }
-        }
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5)
-        }
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
     }
 
     private func refresh(more: Bool = false) async {
@@ -768,5 +753,47 @@ enum IMessageStyle {
             return "昨天 " + time
         }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+struct IMessageLiquidGlass<S: InsettableShape>: ViewModifier {
+    let shape: S
+    var interactive = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(Color(uiColor: .secondarySystemBackground), in: shape)
+                .overlay { border }
+        } else if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(interactive && !reduceMotion), in: shape)
+                .overlay {
+                    if contrast == .increased {
+                        shape.strokeBorder(Color.primary.opacity(0.35), lineWidth: 1)
+                    }
+                }
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay { border }
+                .shadow(color: .black.opacity(0.10), radius: 10, y: 4)
+        }
+    }
+
+    private var border: some View {
+        shape.strokeBorder(
+            contrast == .increased ? Color.primary.opacity(0.35) : Color.primary.opacity(0.10),
+            lineWidth: contrast == .increased ? 1 : 0.5
+        )
+    }
+}
+
+extension View {
+    func iMessageLiquidGlass<S: InsettableShape>(in shape: S, interactive: Bool = false) -> some View {
+        modifier(IMessageLiquidGlass(shape: shape, interactive: interactive))
     }
 }

@@ -14,7 +14,7 @@ struct MusicWelcomeView: View {
                         .accessibilityHidden(true)
                     Text("连接音乐服务").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                 }
-                .settingsSurface(radius: 24)
+                .settingsSurface(radius: SettingsCorners.card)
                 SettingsSection {
                     ForEach(MusicServiceID.allCases) { service in
                         NavigationLink {

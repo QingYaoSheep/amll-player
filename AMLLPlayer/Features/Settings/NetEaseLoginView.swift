@@ -93,7 +93,8 @@ struct NetEaseLoginView: View {
             if let qr, qr.source == session.qrURL {
                 Image(uiImage: qr.image)
                     .interpolation(.none).resizable().scaledToFit().frame(maxWidth: 220)
-                    .padding(12).background(.white, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(12)
+                    .background(.white, in: RoundedRectangle(cornerRadius: SettingsCorners.inset, style: .continuous))
                     .accessibilityLabel("网易云音乐登录二维码")
                 Text("用网易云音乐 App 扫码确认").font(.subheadline.weight(.semibold))
                 if let file = qr.file {
@@ -114,7 +115,7 @@ struct NetEaseLoginView: View {
         }
         .frame(maxWidth: .infinity)
         .multilineTextAlignment(.center)
-        .settingsSurface(radius: 24)
+        .settingsSurface(radius: SettingsCorners.card)
     }
 
     private func startQR() {

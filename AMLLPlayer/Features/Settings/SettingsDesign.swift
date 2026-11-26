@@ -1,5 +1,12 @@
 import SwiftUI
 
+enum SettingsCorners {
+    static let row: CGFloat = 26
+    static let primary: CGFloat = 30
+    static let card: CGFloat = 38
+    static let inset: CGFloat = 20
+}
+
 struct SettingsPage<Content: View>: View {
     @Environment(\.lyricsQuickSettingsNavigation) private var quickSettingsNavigation
     @ViewBuilder var content: Content
@@ -83,7 +90,7 @@ struct SettingsActionLabel: View {
             }
         }
         .foregroundStyle(style == .primary ? Color.white : style == .destructive ? Color.red : Color.primary)
-        .settingsSurface(prominent: style == .primary)
+        .settingsSurface(prominent: style == .primary, radius: style == .primary ? SettingsCorners.primary : SettingsCorners.row)
     }
 
     private var iconColor: Color {
@@ -165,7 +172,7 @@ struct SettingsAccountHeader: View {
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(MusicProductStyle.accent)
                     .frame(width: 52, height: 52)
-                    .background(MusicProductStyle.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 17))
+                    .background(MusicProductStyle.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: SettingsCorners.inset, style: .continuous))
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -189,7 +196,7 @@ struct SettingsAccountHeader: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .settingsSurface(padded: false, radius: 24)
+        .settingsSurface(padded: false, radius: SettingsCorners.card)
     }
 }
 
@@ -213,7 +220,7 @@ extension AppModel {
 }
 
 extension View {
-    func settingsSurface(prominent: Bool = false, padded: Bool = true, radius: CGFloat = 16) -> some View {
+    func settingsSurface(prominent: Bool = false, padded: Bool = true, radius: CGFloat = SettingsCorners.row) -> some View {
         modifier(SettingsSurface(prominent: prominent, padded: padded, radius: radius))
     }
 
@@ -250,7 +257,7 @@ private struct SettingsSurface: ViewModifier {
         content
             .padding(.horizontal, padded ? 14 : 0)
             .padding(.vertical, padded ? 10 : 0)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: prominent ? 60 : 52, alignment: .leading)
             .background(fill, in: shape)
             .contentShape(shape)
     }

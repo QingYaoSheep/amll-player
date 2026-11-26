@@ -356,7 +356,7 @@ struct MusicAboutView: View {
                 Label("AMLL", systemImage: "music.note").font(.title2.bold())
                 LabeledContent("settings.version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
             }
-            .settingsSurface(radius: 24)
+            .settingsSurface(radius: SettingsCorners.card)
             SettingsSection("开源") {
                 Link(destination: URL(string: root + "/blob/swiftui-native/Docs/CHANGELOG.md")!) {
                     SettingsActionLabel(title: "更新记录", icon: "clock.arrow.circlepath", navigates: true)

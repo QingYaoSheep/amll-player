@@ -134,9 +134,8 @@ final class DesktopLyricsController: NSObject {
         sourceView.install(frames.layer)
         pip.delegate = self
         possibility = pip.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
-            Task { @MainActor in
-                guard let self else { return }
-                startWhenPossible()
+            Task { @MainActor [weak self] in
+                self?.startWhenPossible()
             }
         }
     }
@@ -198,6 +197,7 @@ final class DesktopLyricsController: NSObject {
         var frame = model.lyricsPlaybackFrame()
         // PiP always follows the confirmed playback timeline.
         frame.progressDraft = nil
+        frame.legacySeekPosition = nil
         updateTimebase(frame)
         producer.render(model: model, frame: frame, immersive: immersive,
                         animates: state != .stopped)

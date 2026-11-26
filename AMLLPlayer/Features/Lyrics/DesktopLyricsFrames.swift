@@ -70,7 +70,7 @@ final class DesktopLyricsFrames {
     func render(model: AppModel, frame: LyricsPlaybackFrame, immersive: Bool, animates: Bool) {
         guard let item = frame.snapshot?.item, let pool else {
             if submitted != nil {
-                layer.flushAndRemoveImage()
+                layer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
                 submitted = nil
             }
             isAnimating = false
@@ -103,7 +103,7 @@ final class DesktopLyricsFrames {
                            reduceMotion: reduceMotion, reduceTransparency: reduceTransparency)
         let renderer = layer.sampleBufferRenderer
         if renderer.requiresFlushToResumeDecoding || renderer.status == .failed {
-            layer.flush()
+            renderer.flush()
             submitted = nil
         }
         guard submitted != key || (animates && isAnimating), renderer.isReadyForMoreMediaData else { return }

@@ -357,8 +357,7 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View>: View {
                     LyricsVolumeControl(model: model, device: device, volume: volume,
                                         tabletTrackThickness: layout.progressTrackThickness, showsIcons: false)
                 } else {
-                    SystemMusicVolumeView().frame(height: 44)
-                        .accessibilityLabel(Text("render.volume"))
+                    LyricsSystemVolumeControl(tabletTrackThickness: layout.progressTrackThickness)
                 }
             }
             speaker("speaker.fill", x: track.minX - 15 * layout.scale, y: track.midY, glyph: 13)

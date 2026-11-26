@@ -55,9 +55,10 @@ struct AMLLLyricsPlayer: View {
         GeometryReader { geometry in
             let room = model.selectedMusicService == .netease ? model.netEasePlayback.listeningRoom : nil
             let metrics = pageMetrics(size: geometry.size, roomIsActive: room != nil, roomSafeTop: roomSafeTop)
+            let tabletTopInset = max(roomSafeTop, metrics.handleTop + 24)
             let tabletLayout = usesTabletLyricsLayout ? TabletLyricsLayout(size: geometry.size,
                 showsLyrics: configuration.showLyrics, showsControls: configuration.showControls,
-                topInset: max(roomSafeTop, metrics.handleTop + 24), bottomInset: tabletSafeBottom) : nil
+                topInset: tabletTopInset, bottomInset: tabletSafeBottom) : nil
             let drag = dismissalTransform(height: geometry.size.height)
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
             let canvasLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom, retainingHidden: true)
@@ -74,7 +75,7 @@ struct AMLLLyricsPlayer: View {
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: canvasLayout,
-                               tabletLayout: tabletLayout, bottomInset: tabletSafeBottom)
+                               tabletLayout: tabletLayout, tabletTopInset: tabletTopInset, bottomInset: tabletSafeBottom)
                     } else {
                         ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                     }
@@ -146,29 +147,18 @@ struct AMLLLyricsPlayer: View {
 
     @ViewBuilder
     private func player(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics, size: CGSize,
-                        lyricLayout: ImmersiveLyricsLayout?, tabletLayout: TabletLyricsLayout?, bottomInset: CGFloat) -> some View {
+                        lyricLayout: ImmersiveLyricsLayout?, tabletLayout: TabletLyricsLayout?, tabletTopInset: CGFloat,
+                        bottomInset: CGFloat) -> some View {
         if let tabletLayout {
             TabletLyricsPlayer(model: model, snapshot: snapshot, item: item, layout: tabletLayout,
-                               size: size, bottomInset: bottomInset, configuration: configuration,
-                               showsLyrics: presentation.mode.showsLyrics) {
+                               size: size, topInset: tabletTopInset, bottomInset: bottomInset,
+                               configuration: configuration, showsLyrics: presentation.mode.showsLyrics,
+                               quickSettings: quickSettings,
+                               onDevices: { devices = true; Task { await model.loadDevices() } },
+                               onSearch: { search = true }) {
                 artwork(item, side: tabletLayout.cover.width, radius: 14, recordsFrame: false)
             } canvas: { renderConfiguration in
                 lyricCanvas(snapshot, renderConfiguration: renderConfiguration)
-            } actions: {
-                Button { devices = true; Task { await model.loadDevices() } } label: {
-                    Label("player.devices", systemImage: "airplayaudio").modifier(TabletLyricsActionTarget())
-                }
-                Button { search = true } label: {
-                    Label("lyrics.find", systemImage: "magnifyingglass").modifier(TabletLyricsActionTarget())
-                }
-                if model.selectedMusicService == .appleMusic {
-                    AppleMusicCurrentFavorite(model: model).modifier(TabletLyricsActionTarget())
-                } else if model.selectedMusicService == .netease {
-                    NetEaseCurrentFavorite(model: model).modifier(TabletLyricsActionTarget())
-                }
-                LyricsQuickSettingsButton(presentation: quickSettings, systemImage: "ellipsis.circle")
-                    .modifier(TabletLyricsActionTarget())
-                    .accessibilityIdentifier("tabletLyricsSettings")
             }
         } else if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
             tabletPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)

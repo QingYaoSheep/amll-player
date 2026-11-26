@@ -21,7 +21,7 @@ struct TabletLyricsLayout: Equatable {
 
     var progressTrackThickness: CGFloat {
         switch mode {
-        case .wide: 7.5 * scale
+        case .wide: 6.0 * scale
         case .narrow: 11.25 * scale
         case .mini: 7.5
         }
@@ -51,29 +51,42 @@ struct TabletLyricsLayout: Equatable {
 
         switch mode {
         case .wide:
-            let column = 0.55 * h
-            let x = showsLyrics ? 0.04 * w : (w - column) / 2
-            let y = max(usableTop, 0.10 * h)
-            let side = max(1, min(column, 0.85 * h - 314.45 * s - (y - 0.10 * h)))
+            let column = min(0.585 * h, 0.415 * w)
+            let x = showsLyrics ? 0.038 * w : (w - column) / 2
+            let y = max(usableTop, 0.068 * h)
+            let coverMetadataGap = 0.030 * h
+            let metadataProgressGap = 12 * s
+            let progressHeight = 20 * s
+            let progressTransportGap = 42 * s
+            let transportVolumeGap = 52 * s
+            let volumeHeight = 20 * s
+            let lowerBlockHeight = coverMetadataGap + metadataHeight + metadataProgressGap
+                + progressHeight + progressTransportGap + transportVolumeGap + volumeHeight / 2
+            let maxCoverSide = max(1, footer - y - lowerBlockHeight - 16 * s)
+            let side = max(1, min(column, maxCoverSide))
             cover = CGRect(x: x + (column - side) / 2, y: y, width: side, height: side)
-            let lowerY = y + side + 0.05 * h
-            let lowerHeight = max(0, h - lowerY - 85 * s)
+            let lowerY = y + side + coverMetadataGap
             metadata = CGRect(x: x, y: lowerY, width: column, height: metadataHeight)
-            progress = CGRect(x: x, y: lowerY + 20 + 45 * s, width: column, height: 20 * s)
+            progress = CGRect(x: x, y: metadata.maxY + metadataProgressGap, width: column, height: progressHeight)
             buttonSize = max(44, 68 * s)
             transportWidth = column
-            transportSpacing = 95 * s
-            transportCenter = CGPoint(x: x + column / 2 + s, y: lowerY + lowerHeight / 2 + 24 * s)
+            transportSpacing = min(104 * s, max(buttonSize, (column - buttonSize) * 0.27))
+            let rawTransportY = progress.maxY + progressTransportGap
+            let maxTransportY = max(progress.maxY + buttonSize / 2, footer - 16 * s - transportVolumeGap)
+            transportCenter = CGPoint(x: x + column / 2, y: min(rawTransportY, maxTransportY))
             glyphSize = 36 * s
-            volume = CGRect(x: x + 30 * s, y: lowerY + lowerHeight - 40 * s, width: max(1, column - 70 * s), height: 20 * s)
-            let left = max(0, w / 2 - 18)
+            let volumeMidY = min(footer - 16 * s, transportCenter.y + transportVolumeGap)
+            volume = CGRect(x: x + 22 * s, y: volumeMidY - volumeHeight / 2,
+                            width: max(1, column - 44 * s), height: volumeHeight)
+            let left = (0.038 * w + column) + max(28, 0.040 * w)
+            let rightInset = max(64, 0.068 * w)
             let availableHeight = max(1, h - bottomInset)
-            lyrics = CGRect(x: left, y: 0, width: max(1, 0.96 * w - left), height: availableHeight)
-            anchor = cover.midY + 1.25 * 48 * d
-            fadeTop = max(usableTop, 60 * d)
-            fadeTopWidth = 50 * d
-            fadeBottom = min(availableHeight, h - 70 * d)
-            fadeBottomWidth = 100 * d
+            lyrics = CGRect(x: left, y: 0, width: max(1, w - left - rightInset), height: availableHeight)
+            anchor = 0.32 * h
+            fadeTop = max(usableTop, 42 * d)
+            fadeTopWidth = 48 * d
+            fadeBottom = min(availableHeight, h - 68 * d)
+            fadeBottomWidth = 96 * d
 
         case .narrow:
             let margin = min(w * 0.25, max(0.08 * w, 40))

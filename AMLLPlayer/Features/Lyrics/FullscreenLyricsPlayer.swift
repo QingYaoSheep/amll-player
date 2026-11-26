@@ -102,12 +102,16 @@ struct FullscreenLyricsPlayer: View {
                     }
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item,
                        UIDevice.current.userInterfaceIdiom == .pad {
+                        let tabletTopInset = max(44, geometry.safeAreaInsets.top)
                         let tabletLayout = TabletLyricsLayout(size: geometry.size, showsLyrics: configuration.showLyrics,
-                            showsControls: configuration.showControls, topInset: max(44, geometry.safeAreaInsets.top),
+                            showsControls: configuration.showControls, topInset: tabletTopInset,
                             bottomInset: geometry.safeAreaInsets.bottom)
                         TabletLyricsPlayer(model: model, snapshot: snapshot, item: item, layout: tabletLayout,
-                                           size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom,
-                                           configuration: configuration, showsLyrics: presentation.mode.showsLyrics) {
+                                           size: geometry.size, topInset: tabletTopInset, bottomInset: geometry.safeAreaInsets.bottom,
+                                           configuration: configuration, showsLyrics: presentation.mode.showsLyrics,
+                                           quickSettings: quickSettings,
+                                           onDevices: { devices = true; Task { await model.loadDevices() } },
+                                           onSearch: { search = true }) {
                             LyricsTrackTransition(item: item) { displayed in
                                 PlaybackArtworkImage(url: displayed.artworkURL) { image in image.resizable().scaledToFit() }
                                     placeholder: { Color.white.opacity(0.1).overlay { Image(systemName: "music.note").font(.largeTitle) } }
@@ -116,16 +120,6 @@ struct FullscreenLyricsPlayer: View {
                             }
                         } canvas: { renderConfiguration in
                             lyricContent(snapshot, tabletConfiguration: renderConfiguration)
-                        } actions: {
-                            Button { devices = true; Task { await model.loadDevices() } } label: {
-                                Label("player.devices", systemImage: "airplayaudio").modifier(TabletLyricsActionTarget())
-                            }
-                            Button { search = true } label: {
-                                Label("lyrics.find", systemImage: "magnifyingglass").modifier(TabletLyricsActionTarget())
-                            }
-                            LyricsQuickSettingsButton(presentation: quickSettings, systemImage: "ellipsis.circle")
-                                .modifier(TabletLyricsActionTarget())
-                                .accessibilityIdentifier("tabletLyricsSettings")
                         }
                         .offset(y: reduceMotion ? 0 : drag)
                         .overlay(alignment: .top) { dismissalHandle(room: room) }

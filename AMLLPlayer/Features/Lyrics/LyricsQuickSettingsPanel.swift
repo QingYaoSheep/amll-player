@@ -49,6 +49,11 @@ final class LyricsQuickSettingsPresentation {
         present(.listeningRoom, reduceMotion: reduceMotion)
     }
 
+    func openQueue(reduceMotion: Bool) {
+        guard !isPresented else { return }
+        present(.queue, reduceMotion: reduceMotion)
+    }
+
     private func present(_ target: Destination?, reduceMotion: Bool) {
         revision += 1
         returnsToSettings = false

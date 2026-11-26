@@ -345,9 +345,15 @@ struct DevicePickerView: View {
                                         close()
                                     }
                                 } label: {
-                                    HStack {
-                                        VStack(alignment: .leading) {
+                                    HStack(spacing: 12) {
+                                        SettingsIconBadge(
+                                            systemImage: deviceIcon(for: device.type),
+                                            color: device.isActive ? MusicProductStyle.accent : .secondary
+                                        )
+                                        VStack(alignment: .leading, spacing: 2) {
                                             Text(device.name)
+                                                .font(.body.weight(device.isActive ? .semibold : .regular))
+                                                .foregroundStyle(.primary)
                                             Text(device.type)
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
@@ -355,7 +361,7 @@ struct DevicePickerView: View {
                                         Spacer()
                                         if device.isActive {
                                             Image(systemName: "checkmark.circle.fill")
-                                                .foregroundStyle(quickSettingsNavigation == nil ? .green : MusicProductStyle.accent)
+                                                .foregroundStyle(MusicProductStyle.accent)
                                                 .accessibilityLabel("Active device")
                                         }
                                         if device.isRestricted {
@@ -363,9 +369,11 @@ struct DevicePickerView: View {
                                                 .foregroundStyle(.orange)
                                         }
                                     }
+                                    .frame(minHeight: 46)
                                 }
                                 .disabled(device.isRestricted || model.isPerformingAction)
                             }
+                            .listStyle(.insetGrouped)
                             .refreshable { await model.loadDevices() }
                         }
                     case let .failed(error):
@@ -396,5 +404,16 @@ struct DevicePickerView: View {
     private func close() {
         if let quickSettingsNavigation { quickSettingsNavigation.close() }
         else { dismiss() }
+    }
+
+    private func deviceIcon(for type: String) -> String {
+        switch type.lowercased() {
+        case let value where value.contains("phone"): "iphone"
+        case let value where value.contains("tablet"), let value where value.contains("ipad"): "ipad"
+        case let value where value.contains("computer"), let value where value.contains("mac"): "laptopcomputer"
+        case let value where value.contains("speaker"): "hifispeaker"
+        case let value where value.contains("tv"): "tv"
+        default: "airplayaudio"
+        }
     }
 }

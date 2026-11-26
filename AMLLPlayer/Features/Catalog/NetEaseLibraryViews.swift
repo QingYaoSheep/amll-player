@@ -52,17 +52,46 @@ struct NetEasePlaylistChooser: View {
             List {
 
                 ForEach(state.rows) { row in
-                    Button(row.item.name) {
+                    Button {
                         Task {
                             busy = true; defer { busy = false }
                             do { try await model.mutateNetEase { try await $0.append(item, to: row.item) }; dismiss() }
                             catch is CancellationError {} catch { failure = error.localizedDescription }
                         }
-                    }.disabled(busy || !row.item.libraryWritable)
+                    } label: {
+                        HStack(spacing: 12) {
+                            CatalogArtwork(url: row.item.artworkURL, size: 46)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.item.name)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                if let total = row.item.playlist?.total {
+                                    Text("\(total.formatted()) 首歌曲")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else if !row.item.subtitle.isEmpty {
+                                    Text(row.item.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(row.item.libraryWritable ? MusicProductStyle.accent : Color.secondary.opacity(0.35))
+                        }
+                        .frame(minHeight: 50)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(MusicContentButtonStyle())
+                    .disabled(busy || !row.item.libraryWritable)
                 }
                 CatalogPageFooter(state: state) { more, force in await state.load(query: .collection(.playlists), provider: model.netEaseCatalog, more: more, force: force) }
                 if let failure { Text(failure).foregroundStyle(.secondary) }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("添加到歌单")
             .toolbar { Button("完成") { dismiss() } }
             .task { await state.load(query: .collection(.playlists), provider: model.netEaseCatalog) }
@@ -91,13 +120,60 @@ struct NetEasePlaylistEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("名称", text: $name)
-                TextField("描述", text: $description, axis: .vertical)
-                Button("保存") { perform {
-                    if let playlist { try await model.mutateNetEase { try await $0.editPlaylist(playlist, name: name, description: description, entries: nil) } }
-                    else { try await model.mutateNetEase { _ = try await $0.createPlaylist(name: name, description: description) } }
-                } }.disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
-                if let playlist, playlist.editablePlaylist { Button("删除歌单", role: .destructive) { deleting = true } }
+                Section {
+                    VStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [MusicProductStyle.accent.opacity(0.24), MusicProductStyle.accent.opacity(0.10)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                            Image(systemName: "music.note.list")
+                                .font(.title.weight(.semibold))
+                                .foregroundStyle(MusicProductStyle.accent)
+                        }
+                        .frame(width: 64, height: 64)
+                        .accessibilityHidden(true)
+
+                        let previewTitle = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        Text(previewTitle.isEmpty ? (playlist == nil ? "新建歌单" : playlist?.name ?? "") : previewTitle)
+                            .font(.headline)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .listRowBackground(Color.clear)
+
+                Section("歌单信息") {
+                    TextField("名称", text: $name)
+                    TextField("描述", text: $description, axis: .vertical)
+                }
+
+                Section {
+                    Button {
+                        perform {
+                            if let playlist { try await model.mutateNetEase { try await $0.editPlaylist(playlist, name: name, description: description, entries: nil) } }
+                            else { try await model.mutateNetEase { _ = try await $0.createPlaylist(name: name, description: description) } }
+                        }
+                    } label: {
+                        HStack {
+                            if busy { ProgressView().controlSize(.small) }
+                            Text("保存")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    if let playlist, playlist.editablePlaylist {
+                        Button("删除歌单", role: .destructive) { deleting = true }
+                            .frame(maxWidth: .infinity)
+                    }
+                }
                 if let failure { Text(failure).foregroundStyle(.secondary) }
             }.navigationTitle(playlist == nil ? "新建歌单" : "编辑歌单")
                 .toolbar { Button("取消") { dismiss() } }
@@ -155,7 +231,20 @@ struct NetEaseQueueView: View {
                 }
             }
             if let failure = model.netEasePlayback.failure { Text(failure).foregroundStyle(.secondary) }
-            if !model.netEasePlayback.actualQuality.isEmpty { Text("实际音质：\(model.netEasePlayback.actualQuality)") }
+            if !model.netEasePlayback.actualQuality.isEmpty {
+                HStack(spacing: 8) {
+                    Label("实际音质", systemImage: "hifispeaker")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(model.netEasePlayback.actualQuality)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MusicProductStyle.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(MusicProductStyle.accent.opacity(0.12), in: Capsule())
+                }
+            }
             let entries = model.netEasePlayback.displayedEntries
             if editMode.isEditing {
                 Section("播放顺序") { queueRows(entries[...], canMove: true) }
@@ -177,6 +266,7 @@ struct NetEaseQueueView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+            .listStyle(.insetGrouped)
             .lyricsQuickSettingsDestination("网易云播放队列", showsEditButton: !model.netEasePlayback.isPersonalFM)
             .environment(\.editMode, $editMode)
             .onChange(of: model.netEasePlayback.isPersonalFM) { editMode = .inactive }
@@ -188,6 +278,7 @@ struct NetEaseQueueView: View {
     private func queueRows(_ entries: ArraySlice<NetEaseQueueEntry>, canMove: Bool = false) -> some View {
         let playback = model.netEasePlayback
         return ForEach(entries) { entry in
+            let isCurrent = entry.id == playback.queue.currentID
             Button {
                 Task {
                     do { try await playback.selectEntry(entry.id) } catch { failure = error.localizedDescription }
@@ -195,6 +286,7 @@ struct NetEaseQueueView: View {
             } label: {
                 queueRow(entry)
             }
+            .listRowBackground(isCurrent ? MusicProductStyle.accent.opacity(0.08) : nil)
         }
         .onDelete { offsets in
             let removed = Set(offsets.compactMap { offset in
@@ -212,18 +304,24 @@ struct NetEaseQueueView: View {
     private func queueRow(_ entry: NetEaseQueueEntry) -> some View {
         let current = entry.id == model.netEasePlayback.queue.currentID
         return HStack(spacing: 12) {
-            CatalogArtwork(url: entry.item.artworkURL, size: 40).accessibilityHidden(true)
+            CatalogArtwork(url: entry.item.artworkURL, size: 44).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.item.name).font(.subheadline.weight(current ? .semibold : .regular))
+                Text(entry.item.name)
+                    .font(.subheadline.weight(current ? .semibold : .regular))
+                    .foregroundStyle(current ? MusicProductStyle.accent : .primary)
                 Text(entry.item.subtitle).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             if current {
-                Image(systemName: "waveform").foregroundStyle(MusicProductStyle.accent)
+                Image(systemName: "waveform")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MusicProductStyle.accent)
+                    .frame(width: 28, height: 28)
+                    .background(MusicProductStyle.accent.opacity(0.12), in: Circle())
                     .accessibilityLabel("正在播放")
             }
         }
-        .frame(minHeight: 44, alignment: .leading)
+        .frame(minHeight: 46, alignment: .leading)
         .foregroundStyle(.primary)
     }
 }

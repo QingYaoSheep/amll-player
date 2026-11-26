@@ -75,7 +75,7 @@ struct AppleMusicPlaylistChooser: View {
         NavigationStack {
             List {
                 ForEach(state.rows) { row in
-                    Button(row.item.name) { Task {
+                    Button { Task {
                         busy = true
                         defer { busy = false }
                         do {
@@ -83,7 +83,35 @@ struct AppleMusicPlaylistChooser: View {
                             dismiss()
                         } catch is CancellationError {}
                         catch { failure = error.localizedDescription }
-                    } }
+                    } } label: {
+                        let writable = row.item.libraryWritable || row.item.editablePlaylist
+                        HStack(spacing: 12) {
+                            CatalogArtwork(url: row.item.artworkURL, size: 46)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.item.name)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                if let total = row.item.playlist?.total {
+                                    Text("\(total.formatted()) 首歌曲")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else if !row.item.subtitle.isEmpty {
+                                    Text(row.item.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(writable ? MusicProductStyle.accent : Color.secondary.opacity(0.35))
+                        }
+                        .frame(minHeight: 50)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(MusicContentButtonStyle())
                     .disabled(busy || !(row.item.libraryWritable || row.item.editablePlaylist))
                 }
                 CatalogPageFooter(state: state) { more, force in
@@ -93,6 +121,7 @@ struct AppleMusicPlaylistChooser: View {
                     Text(failure).foregroundStyle(.secondary)
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("添加到歌单")
             .toolbar { Button("common.done") { dismiss() } }
             .task { await state.load(query: .collection(.playlists), provider: model.appleCatalog) }
@@ -134,16 +163,48 @@ struct AppleMusicPlaylistEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("名称", text: $name)
-                TextField("说明", text: $description, axis: .vertical)
+                Section {
+                    VStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [MusicProductStyle.accent.opacity(0.24), MusicProductStyle.accent.opacity(0.10)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                            Image(systemName: "music.note.list")
+                                .font(.title.weight(.semibold))
+                                .foregroundStyle(MusicProductStyle.accent)
+                        }
+                        .frame(width: 64, height: 64)
+                        .accessibilityHidden(true)
+
+                        let previewTitle = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        Text(previewTitle.isEmpty ? (playlist == nil ? "新建歌单" : playlist?.name ?? "") : previewTitle)
+                            .font(.headline)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .listRowBackground(Color.clear)
+
+                Section("歌单信息") {
+                    TextField("名称", text: $name)
+                    TextField("说明", text: $description, axis: .vertical)
+                }
                 if playlist != nil {
-                    Toggle("编辑歌曲顺序和条目", isOn: $editEntries.hapticSelection())
-                        .disabled(busy)
-                    if editEntries {
-                        ForEach(entryState.entries) { row in Text(row.item.name) }
-                            .onDelete { entryState.entries.remove(atOffsets: $0) }
-                            .onMove { entryState.entries.move(fromOffsets: $0, toOffset: $1) }
-                            .disabled(busy || !entryState.isLoaded)
+                    Section {
+                        Toggle("编辑歌曲顺序和条目", isOn: $editEntries.hapticSelection())
+                            .disabled(busy)
+                        if editEntries {
+                            ForEach(entryState.entries) { row in Text(row.item.name) }
+                                .onDelete { entryState.entries.remove(atOffsets: $0) }
+                                .onMove { entryState.entries.move(fromOffsets: $0, toOffset: $1) }
+                                .disabled(busy || !entryState.isLoaded)
+                        }
                     }
                 }
                 if busy || entryState.isLoading {
@@ -240,20 +301,43 @@ struct AppleMusicQueueView: View {
             if let item = model.playbackSnapshot?.item {
                 Section("正在播放") {
                     HStack(spacing: 12) {
-                        CatalogArtwork(url: item.artworkURL, size: 44).accessibilityHidden(true)
+                        CatalogArtwork(url: item.artworkURL, size: 48).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.title).font(.headline)
                             Text(item.artistLine).font(.subheadline).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
-                        Image(systemName: "waveform").foregroundStyle(MusicProductStyle.accent)
+                        Image(systemName: "waveform")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(MusicProductStyle.accent)
+                            .frame(width: 28, height: 28)
+                            .background(MusicProductStyle.accent.opacity(0.12), in: Circle())
                             .accessibilityHidden(true)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+            Section {
+                Text("这里显示系统音乐 App 的当前曲目。请到系统音乐 App 查看完整队列。AMLL 无法读取或调整那部分队列。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Link(destination: URL(string: "music://")!) {
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(systemImage: "music.note", color: MusicProductStyle.accent)
+                        Text("打开音乐")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
-            Section { Text("这里显示系统音乐 App 的当前曲目。请到系统音乐 App 查看完整队列。AMLL 无法读取或调整那部分队列。") }
-            Link("打开音乐", destination: URL(string: "music://")!)
         }
+        .listStyle(.insetGrouped)
     }
 }
 

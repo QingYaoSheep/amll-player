@@ -6,11 +6,50 @@ import UIKit
 
 struct SystemMusicRoutesView: View {
     var body: some View {
-        VStack(spacing: 24) {
-            Text("当前音乐来源使用系统 AirPlay 和音量控制。")
-            SystemAirPlayButton().frame(width: 60, height: 60)
-            SystemMusicVolumeView().frame(height: 44)
-        }.padding()
+        SettingsPage {
+            SettingsGroup(radius: SettingsCorners.hero) {
+                VStack(spacing: 14) {
+                    ZStack {
+                        SystemAirPlayButton()
+                            .frame(width: 60, height: 60)
+                    }
+                    .frame(width: 76, height: 76)
+                    .musicLiquidGlass(in: Circle(), interactive: true)
+
+                    VStack(spacing: 4) {
+                        Text("音频输出与隔空播放")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text("选择蓝牙耳机、HomePod 或其他隔空播放设备")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 24)
+            }
+
+            SettingsSection("系统音量") {
+                SettingsGroup {
+                    HStack(spacing: 12) {
+                        Image(systemName: "speaker.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        SystemMusicVolumeView()
+                            .frame(height: 44)
+                        Image(systemName: "speaker.wave.3.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                }
+            }
+        }
     }
 }
 

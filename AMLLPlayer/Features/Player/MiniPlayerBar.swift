@@ -33,7 +33,11 @@ struct TabMusicAccessory: View {
                         Color.secondary.opacity(0.2).overlay { Image(systemName: "music.note") }
                     }
                     .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                    }
                     VStack(alignment: .leading, spacing: 1) {
                         Text(snapshot.item?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
                         Text(snapshot.item?.artistLine ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -48,13 +52,13 @@ struct TabMusicAccessory: View {
                 Label(snapshot.isPlaying ? "player.pause" : "player.play", systemImage: snapshot.isPlaying ? "pause.fill" : "play.fill")
                     .labelStyle(.iconOnly).frame(width: 44, height: 44)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(MusicContentButtonStyle())
             .disabled(model.isPerformingAction || (snapshot.isPlaying ? !snapshot.restrictions.canPause : !snapshot.restrictions.canResume))
             if placement != .inline {
                 Button { Task { await model.skipNext() } } label: {
                     Label("player.next", systemImage: "forward.fill").labelStyle(.iconOnly).frame(width: 44, height: 44)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(MusicContentButtonStyle())
                 .disabled(model.isPerformingAction || !snapshot.restrictions.canSkipNext)
             }
         }
@@ -131,7 +135,7 @@ struct MiniPlayerBar: View {
                         .fill(.quaternary)
                         .overlay(alignment: .leading) {
                             Capsule()
-                                .fill(.primary.opacity(0.55))
+                                .fill(MusicProductStyle.filledAccent)
                                 .frame(width: proxy.size.width * CGFloat(progress))
                         }
                 }
@@ -154,7 +158,11 @@ struct MiniPlayerBar: View {
                 artworkPlaceholder
             }
             .frame(width: 48, height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
         } else {
             artworkPlaceholder
                 .frame(width: 48, height: 48)
@@ -162,7 +170,7 @@ struct MiniPlayerBar: View {
     }
 
     private var artworkPlaceholder: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(.quaternary)
             .overlay {
                 Image(systemName: "music.note")
@@ -192,7 +200,7 @@ struct MiniPlayerBar: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MusicContentButtonStyle())
         .disabled(disabled)
     }
 }

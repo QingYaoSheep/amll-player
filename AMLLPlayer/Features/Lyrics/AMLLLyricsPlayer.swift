@@ -46,17 +46,18 @@ struct AMLLLyricsPlayer: View {
 
     var body: some View {
         GeometryReader { safeArea in
-            playerPage(roomSafeTop: max(safeArea.safeAreaInsets.top, safeArea.frame(in: .global).minY))
+            playerPage(roomSafeTop: max(safeArea.safeAreaInsets.top, safeArea.frame(in: .global).minY),
+                       tabletSafeBottom: safeArea.safeAreaInsets.bottom)
         }
     }
 
-    private func playerPage(roomSafeTop: CGFloat) -> some View {
+    private func playerPage(roomSafeTop: CGFloat, tabletSafeBottom: CGFloat) -> some View {
         GeometryReader { geometry in
             let room = model.selectedMusicService == .netease ? model.netEasePlayback.listeningRoom : nil
             let metrics = pageMetrics(size: geometry.size, roomIsActive: room != nil, roomSafeTop: roomSafeTop)
             let tabletLayout = usesTabletLyricsLayout ? TabletLyricsLayout(size: geometry.size,
                 showsLyrics: configuration.showLyrics, showsControls: configuration.showControls,
-                topInset: max(roomSafeTop, metrics.handleTop + 24), bottomInset: geometry.safeAreaInsets.bottom) : nil
+                topInset: max(roomSafeTop, metrics.handleTop + 24), bottomInset: tabletSafeBottom) : nil
             let drag = dismissalTransform(height: geometry.size.height)
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
             let canvasLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom, retainingHidden: true)
@@ -73,7 +74,7 @@ struct AMLLLyricsPlayer: View {
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: canvasLayout,
-                               tabletLayout: tabletLayout, bottomInset: geometry.safeAreaInsets.bottom)
+                               tabletLayout: tabletLayout, bottomInset: tabletSafeBottom)
                     } else {
                         ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                     }

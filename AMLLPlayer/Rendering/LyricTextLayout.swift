@@ -189,7 +189,6 @@ final class LyricRowView: UIView {
         presentationContent.addSublayer(base); presentationContent.addSublayer(auxiliaryNear)
         presentationContent.addSublayer(auxiliaryFar); presentationContent.addSublayer(highlight)
         base.addSublayer(baseBody); highlight.addSublayer(highlightBody)
-        baseBody.addSublayer(tabletSharp); baseBody.addSublayer(tabletNear); baseBody.addSublayer(tabletFar)
         isAccessibilityElement = true
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
     }
@@ -231,9 +230,14 @@ final class LyricRowView: UIView {
                 source: .raster(sharp, scale: scale, regions: auxiliaryRegions), size: layout.size, fade: blur ? auxiliaryFade : nil)
         }
         base.frame = CGRect(origin: .zero, size: layout.size); baseBody.frame = base.bounds; baseBody.contents = softNear
-        tabletSharp.frame = baseBody.bounds; tabletSharp.contents = sharp; tabletSharp.opacity = 0
-        tabletNear.frame = baseBody.bounds; tabletNear.contents = softNear; tabletNear.opacity = 0
-        tabletFar.frame = baseBody.bounds; tabletFar.contents = softFar; tabletFar.opacity = 0
+        if configuration.tabletTypography != nil {
+            for (plane, image) in [(tabletSharp, sharp), (tabletNear, softNear), (tabletFar, softFar)] {
+                if plane.superlayer == nil { baseBody.addSublayer(plane) }
+                plane.frame = baseBody.bounds
+                plane.contents = image
+                plane.opacity = 0
+            }
+        }
         highlight.frame = base.frame; highlightBody.frame = highlight.bounds; highlightBody.contents = sharp; highlight.opacity = 0
         for (kind, regions) in auxiliaryRegions {
             auxiliaryPlanes[kind] = [base, highlight].map { parent in

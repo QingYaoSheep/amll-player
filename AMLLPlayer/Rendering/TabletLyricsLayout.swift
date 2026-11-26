@@ -19,6 +19,14 @@ struct TabletLyricsLayout: Equatable {
     let typography: TabletLyricTypography
     let scale: CGFloat
 
+    var progressTrackThickness: CGFloat {
+        switch mode {
+        case .wide: 7.5 * scale
+        case .narrow: 11.25 * scale
+        case .mini: 7.5
+        }
+    }
+
     init(size: CGSize, showsLyrics: Bool, showsControls: Bool = true,
          topInset: CGFloat = 0, bottomInset: CGFloat = 0, actionHeight: CGFloat = 44)
     {

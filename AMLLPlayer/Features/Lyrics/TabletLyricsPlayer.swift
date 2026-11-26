@@ -36,10 +36,12 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View, Actions: View>: View {
             Group {
                 place(layout.metadata, alignment: .leading) { metadata }
                     .opacity(layout.mode != .mini || !showsLyrics ? 1 : 0)
+                    .environment(\.lyricsPageControlsEnabled, layout.mode != .mini || !configuration.showLyrics)
+                    .allowsHitTesting(layout.mode != .mini || !configuration.showLyrics)
                     .accessibilityHidden(layout.mode == .mini && configuration.showLyrics)
 
                 place(layout.progress, alignment: .top) {
-                    LyricsProgressControl(model: model, snapshot: snapshot, tabletTrackThickness: 7.5 * layout.scale)
+                    LyricsProgressControl(model: model, snapshot: snapshot, tabletTrackThickness: layout.progressTrackThickness)
                         .offset(y: (layout.progress.height - 44) / 2)
                 }
                 .environment(\.lyricsPageControlsEnabled, controlsVisible)
@@ -109,7 +111,7 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View, Actions: View>: View {
 
     private var transport: some View {
         let side = min(layout.buttonSize, max(44, (layout.transportWidth - 8) / 3))
-        let step = min(layout.transportSpacing, max(side, (layout.transportWidth - side) / 2))
+        let step = max(side, min(layout.transportSpacing, (layout.transportWidth - side) / 2))
         return ZStack {
             transportButton("player.previous", image: "backward.fill", side: side, available: snapshot.restrictions.canSkipPrevious) {
                 await model.skipPrevious()

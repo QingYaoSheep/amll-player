@@ -703,9 +703,10 @@ final class AMLLNativeCanvas: UIView {
             let inset = configuration.tabletTypography?.inset(width: bounds.width, duet: hasDuet,
                 background: false, custom: configuration.horizontalPadding) ?? self.inset
             let width = layouts[row.lineIndex]?.original.size.width ?? max(1, bounds.width - rowInset(line) * 2)
-            let anchor = CGPoint(x: line.isDuet ? 1 : 0, y: 0.5)
+            let trailing = line.isDuet || (configuration.tabletTypography != nil && line.isRTL)
+            let anchor = CGPoint(x: trailing ? 1 : 0, y: 0.5)
             let rowBounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
-            let rowPosition = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
+            let rowPosition = CGPoint(x: trailing ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
             let rowTransform = CGAffineTransform(scaleX: row.scale, y: row.scale)
             if view.layer.anchorPoint != anchor { view.layer.anchorPoint = anchor }
             if view.bounds != rowBounds { view.bounds = rowBounds }

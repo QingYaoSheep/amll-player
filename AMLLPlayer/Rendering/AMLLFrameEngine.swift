@@ -34,6 +34,7 @@ struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     var enableBlur = true
     /// Absent in older engine replays, whose blur targets capped at 5 pt.
     var lyricBlurMaximum: Double?
+    var tabletTypography: TabletLyricTypography?
     var hidePassedLines = false
     var alwaysPostpositionBackground = false
     var advance = 0.3
@@ -1138,8 +1139,9 @@ struct AMLLFrameEngine {
         let selectedSinging: Set<Int>? = if let blossom, blossom.limitsSelection {
             Set(motions.indices.filter { motions[$0].mainSinging }.prefix(blossom.maximumLines))
         } else { nil }
+        let spacing = environment.tabletTypography?.paragraphGap ?? environment.fontSize * 0.8
         let groupHeights = document.groups.enumerated().map { index, group in
-            height(group.main) + environment.fontSize * 0.8
+            height(group.main) + spacing
                 + (active[index] || !playing ? group.background.map { height($0) } ?? 0 : 0)
         }
         let preceding = groupHeights.prefix(timeline.focus).reduce(0, +)
@@ -1152,9 +1154,12 @@ struct AMLLFrameEngine {
         scrollMinimum = -preceding
         var y = -scrollOffset - preceding + environment.height * environment.alignPosition
         if let interlude, interlude.anchor != -1 {
-            y -= environment.dotHeight + environment.fontSize * 0.8
+            y -= environment.dotHeight + spacing
         }
         if groupHeights.indices.contains(timeline.focus) {
+            if let typography = environment.tabletTypography {
+                y -= typography.focusOffset(contentHeight: height(document.groups[timeline.focus].main))
+            }
             switch environment.alignAnchor {
             case .top: break
             case .center: y -= groupHeights[timeline.focus] / 2
@@ -1209,7 +1214,9 @@ struct AMLLFrameEngine {
                 ? 0.0001 : (active[index] || focused ? 0.85 : (nonDynamic ? 0.2 : 1))
             let distance = index - appearanceFocus
             let blurs = environment.enableBlur && !environment.reduceMotion && !browsing
-            let distanceBlur = if environment.lyricBlurMaximum == nil {
+            let distanceBlur = if environment.tabletTypography != nil {
+                TabletLyricTypography.blur(distance: distance, maximum: blurMaximum)
+            } else if environment.lyricBlurMaximum == nil {
                 // Retain the raw transition endpoints of recorded legacy environments.
                 Double(distance < 0 ? 2 - distance : distance) * (compactBlur ? 0.8 : 1)
             } else {
@@ -1293,7 +1300,8 @@ struct AMLLFrameEngine {
                 motions[index].mainScale.setPosition(mainScale)
                 motions[index].backgroundScale.setPosition(bgScale)
                 motions[index].opacityTransition.setTarget(motions[index].opacity, duration: 0.4)
-                motions[index].blurTransition.setTarget(blur, duration: 0.4)
+                motions[index].blurTransition.setTarget(blur, duration: environment.tabletTypography == nil ? 0.4 : 0.12,
+                                                       usesTabletBlurCurve: environment.tabletTypography != nil)
             } else {
                 if !immediatePosition {
                     motions[index].y.setTarget(y, startTime: frameStart + delay, at: frameStart, revision: positionRevision)
@@ -1308,7 +1316,8 @@ struct AMLLFrameEngine {
                 motions[index].mainScaleTransition.setPosition(mainScale)
                 motions[index].backgroundScaleTransition.setPosition(bgScale)
                 motions[index].opacityTransition.setTarget(motions[index].opacity, duration: 0.4)
-                motions[index].blurTransition.setTarget(blur, duration: 0.4)
+                motions[index].blurTransition.setTarget(blur, duration: environment.tabletTypography == nil ? 0.4 : 0.12,
+                                                       usesTabletBlurCurve: environment.tabletTypography != nil)
             }
             if browsing {
                 motions[index].blurTransition.setPosition(0)

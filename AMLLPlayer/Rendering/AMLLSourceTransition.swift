@@ -11,6 +11,7 @@ struct AMLLSourceTransition: Sendable {
     private var duration = 0.32
     private var initialVelocity: Double?
     var requiresDuration = false
+    private var usesTabletBlurCurve = false
 
     init(_ value: Double = 0) {
         self.value = value
@@ -41,13 +42,15 @@ struct AMLLSourceTransition: Sendable {
         initialVelocity = nil
     }
 
-    mutating func setTarget(_ value: Double, duration: Double = 0.32, initialVelocity: Double? = nil) {
+    mutating func setTarget(_ value: Double, duration: Double = 0.32, initialVelocity: Double? = nil,
+                            usesTabletBlurCurve: Bool = false) {
         guard value.isFinite else { return }
         guard abs(value - target) > 0.001 else { return }
         from = self.value
         target = value
         elapsed = 0
         self.duration = max(0.001, duration)
+        self.usesTabletBlurCurve = usesTabletBlurCurve
         self.initialVelocity = initialVelocity?.isFinite == true ? initialVelocity : nil
     }
 
@@ -69,7 +72,9 @@ struct AMLLSourceTransition: Sendable {
             value = from + (target - from) * progress * progress * (3 - 2 * progress)
                 + initialVelocity * duration * progress * (1 - progress) * (1 - progress)
         } else {
-            let eased = 1 - pow(1 - progress, 3)
+            let eased = usesTabletBlurCurve
+                ? AMLLWordMotion.cubicBezier(progress, x1: 0.33, y1: 0, x2: 0.20, y2: 0.10)
+                : 1 - pow(1 - progress, 3)
             value = from + (target - from) * eased
         }
         if progress >= 1 {

@@ -570,7 +570,11 @@ final class AMLLCoreTextLayout {
         // gap, without an additional inset from the group layout.
         let backgroundPadding = line.isBackground ? font.pointSize * 0.4 : 0
         var y: CGFloat = backgroundPadding
-        let mainHeight = max(font.lineHeight, font.pointSize * 1.2)
+        let mainHeight = if let typography = configuration.tabletTypography {
+            max(font.lineHeight, font.pointSize + typography.visualLineLeading)
+        } else {
+            max(font.lineHeight, font.pointSize * 1.2)
+        }
         // Segmentation can split one provider word into several atoms.
         // Without an explicit correspondence, keep the provider's line fallback
         // instead of repeating the same pronunciation under every atom.

@@ -292,6 +292,10 @@ final class AMLLNativeCanvas: UIView {
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
         let configurationChanged = self.configuration != configuration
+        if self.configuration.tabletTypography?.fade != configuration.tabletTypography?.fade {
+            fadeSize = .zero
+            setNeedsLayout()
+        }
         if self.configuration.lyricBlurLevel != configuration.lyricBlurLevel {
             blurLevelChangedAt = CACurrentMediaTime()
         }
@@ -394,6 +398,7 @@ final class AMLLNativeCanvas: UIView {
         var tracking: Double
         var horizontalPadding: Double?
         var paragraphSpacing: Double?
+        var tabletDensity: Double?
         var auxiliaryScale: Double?
         var animatedRomanization: Bool
     }
@@ -428,7 +433,8 @@ final class AMLLNativeCanvas: UIView {
               romanizationFirst: value.romanizationFirst, fontSize: value.fontSize,
               sizePreset: value.sizePreset, bold: value.bold, tracking: value.tracking,
               horizontalPadding: value.horizontalPadding,
-              paragraphSpacing: value.paragraphSpacing, auxiliaryScale: value.auxiliaryScale,
+              paragraphSpacing: value.paragraphSpacing, tabletDensity: value.tabletTypography?.density,
+              auxiliaryScale: value.auxiliaryScale,
               animatedRomanization: value.romanization && value.animationStyle == .appleMusic164)
     }
 
@@ -436,6 +442,15 @@ final class AMLLNativeCanvas: UIView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
+        if let tablet = configuration.tabletTypography {
+            viewportFade.frame = bounds
+            viewportFade.startPoint = CGPoint(x: 0.5, y: 0)
+            viewportFade.endPoint = CGPoint(x: 0.5, y: 1)
+            viewportFade.colors = [UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor]
+            viewportFade.locations = tablet.fade.map { NSNumber(value: $0) }
+            layer.mask = viewportFade
+            return
+        }
         guard let fadeTop, bounds.height > 0 else { layer.mask = nil; return }
         let stops: [(CGFloat, CGFloat)] = [
             (0, 0), (min(0.8, max(0, fadeTop) / bounds.height), 0),
@@ -472,6 +487,7 @@ final class AMLLNativeCanvas: UIView {
         environment.localeIdentifier = Locale.current.identifier
         environment.layoutDirection = direction
         environment.alignPosition = configuration.anchor
+        environment.tabletTypography = configuration.tabletTypography
         environment.reduceMotion = reduceMotion
         environment.reduceTransparency = reduceTransparency || reduceTransparencyEnabled
         environment.boldText = traits.legibilityWeight == .bold
@@ -493,6 +509,11 @@ final class AMLLNativeCanvas: UIView {
 
     private var inset: CGFloat {
         configuration.horizontalPadding ?? ((window?.bounds.width ?? bounds.width) <= 500 ? 20 : resolvedPointSize)
+    }
+
+    private func rowInset(_ line: LyricLine) -> CGFloat {
+        configuration.tabletTypography?.inset(width: bounds.width, duet: hasDuet,
+            background: line.isBackground, custom: configuration.horizontalPadding) ?? inset
     }
 
     private var resolvedPointSize: CGFloat {
@@ -519,7 +540,8 @@ final class AMLLNativeCanvas: UIView {
         // Applying UIFontMetrics.scaledFont here would scale the same value a
         // second time at accessibility text sizes.
         let font = AMLLLyricsFont.make(pointSize: size, weight: configuration.bold || traitCollection.legibilityWeight == .bold ? .bold : .regular)
-        let width = max(1, bounds.width - inset * 2) * (hasDuet ? 0.85 : 1)
+        let width = max(1, bounds.width - rowInset(line) * 2)
+            * (configuration.tabletTypography == nil && hasDuet ? 0.85 : 1)
         let cue = configuration.romanization ? romanizationCues[index] : nil
         let animateRomanization = configuration.animationStyle == .appleMusic164
         if let cue, !cue.tokens.isEmpty, line.precision == .word {
@@ -678,7 +700,9 @@ final class AMLLNativeCanvas: UIView {
                 if installedAt[row.lineIndex] == nil { installedAt[row.lineIndex] = state.animationTime }
             #endif
             let line = display.lines[row.lineIndex]
-            let width = layouts[row.lineIndex]?.original.size.width ?? bounds.width - inset * 2
+            let inset = configuration.tabletTypography?.inset(width: bounds.width, duet: hasDuet,
+                background: false, custom: configuration.horizontalPadding) ?? self.inset
+            let width = layouts[row.lineIndex]?.original.size.width ?? max(1, bounds.width - rowInset(line) * 2)
             let anchor = CGPoint(x: line.isDuet ? 1 : 0, y: 0.5)
             let rowBounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
             let rowPosition = CGPoint(x: line.isDuet ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
@@ -756,8 +780,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private var lyricBlurMaximum: Double {
-        LyricsAnimationBlur.maximum(LyricsAnimationBlur.level(configuration.lyricBlurLevel,
-                                                              isPad: UIDevice.current.userInterfaceIdiom == .pad))
+        configuration.resolvedLyricBlurMaximum(isPad: UIDevice.current.userInterfaceIdiom == .pad)
     }
 
     private var requestsBlurImages: Bool {
@@ -1335,8 +1358,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     {
         if let (blur, romanBlur, overlayBlur) = pendingBlur {
             pendingBlur = nil
-            let level = LyricsAnimationBlur.level(configuration.lyricBlurLevel, isPad: UIDevice.current.userInterfaceIdiom == .pad)
-            if blur.maximum == LyricsAnimationBlur.maximum(level) {
+            if blur.maximum == configuration.resolvedLyricBlurMaximum(isPad: UIDevice.current.userInterfaceIdiom == .pad) {
                 // Replace the textures and compute the new weights in the same frame.
                 original.installBlur(blur)
                 if let romanBlur { romanization?.installBlur(romanBlur) }

@@ -100,7 +100,36 @@ struct FullscreenLyricsPlayer: View {
                                 if source.trackID == model.playbackSnapshot?.item?.uri { immersiveArtworkSource = source }
                             }, frames: artworkReflectionFrames)
                     }
-                    if let snapshot = model.playbackSnapshot, let item = snapshot.item {
+                    if let snapshot = model.playbackSnapshot, let item = snapshot.item,
+                       UIDevice.current.userInterfaceIdiom == .pad {
+                        let tabletLayout = TabletLyricsLayout(size: geometry.size, showsLyrics: configuration.showLyrics,
+                            showsControls: configuration.showControls, topInset: max(44, geometry.safeAreaInsets.top),
+                            bottomInset: geometry.safeAreaInsets.bottom)
+                        TabletLyricsPlayer(model: model, snapshot: snapshot, item: item, layout: tabletLayout,
+                                           size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom,
+                                           configuration: configuration, showsLyrics: presentation.mode.showsLyrics) {
+                            LyricsTrackTransition(item: item) { displayed in
+                                PlaybackArtworkImage(url: displayed.artworkURL) { image in image.resizable().scaledToFit() }
+                                    placeholder: { Color.white.opacity(0.1).overlay { Image(systemName: "music.note").font(.largeTitle) } }
+                                    .frame(width: tabletLayout.cover.width, height: tabletLayout.cover.height)
+                                    .clipShape(RoundedRectangle(cornerRadius: configuration.artworkCornerRadius ?? 14))
+                            }
+                        } canvas: { renderConfiguration in
+                            lyricContent(snapshot, tabletConfiguration: renderConfiguration)
+                        } actions: {
+                            Button { devices = true; Task { await model.loadDevices() } } label: {
+                                Label("player.devices", systemImage: "airplayaudio").modifier(TabletLyricsActionTarget())
+                            }
+                            Button { search = true } label: {
+                                Label("lyrics.find", systemImage: "magnifyingglass").modifier(TabletLyricsActionTarget())
+                            }
+                            LyricsQuickSettingsButton(presentation: quickSettings, systemImage: "ellipsis.circle")
+                                .modifier(TabletLyricsActionTarget())
+                                .accessibilityIdentifier("tabletLyricsSettings")
+                        }
+                        .offset(y: reduceMotion ? 0 : drag)
+                        .overlay(alignment: .top) { dismissalHandle(room: room) }
+                    } else if let snapshot = model.playbackSnapshot, let item = snapshot.item {
                         let columns = geometry.size.width >= 700 || (geometry.size.width > geometry.size.height && geometry.size.width >= 550)
                         VStack(spacing: layout == nil ? 8 : 0) {
                             dismissalHandle(room: room).padding(.top, roomTopPadding)
@@ -317,8 +346,9 @@ struct FullscreenLyricsPlayer: View {
         .padding(.horizontal, 24)
     }
 
-    @ViewBuilder private func lyricContent(_ snapshot: PlaybackSnapshot, immersiveLayout: ImmersiveLyricsLayout? = nil) -> some View {
-        let renderConfiguration = compatibilityConfiguration(layout: immersiveLayout)
+    @ViewBuilder private func lyricContent(_ snapshot: PlaybackSnapshot, immersiveLayout: ImmersiveLyricsLayout? = nil,
+                                           tabletConfiguration: LyricsRenderConfiguration? = nil) -> some View {
+        let renderConfiguration = tabletConfiguration ?? compatibilityConfiguration(layout: immersiveLayout)
         if let document = model.lyrics.document, !document.lines.isEmpty {
             VStack(spacing: 0) {
                 NativeLyricsView(document: document, configuration: renderConfiguration, offset: model.lyrics.effectiveOffset,
@@ -329,19 +359,27 @@ struct FullscreenLyricsPlayer: View {
                                  playbackFrame: { model.lyricsPlaybackFrame() },
                                  fadeTop: immersiveLayout != nil ? 0 : nil)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if immersiveLayout == nil {
+                if immersiveLayout == nil && tabletConfiguration == nil {
                     returnCurrentButton
                     credits
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .bottom) {
-                if immersiveLayout != nil, browsing { returnCurrentButton }
+                if tabletConfiguration != nil {
+                    VStack(spacing: 0) {
+                        if browsing { returnCurrentButton }
+                        credits
+                    }
+                    .padding(.bottom, 18)
+                } else if immersiveLayout != nil, browsing {
+                    returnCurrentButton
+                }
             }
             .opacity(presentation.mode.showsLyrics ? 1 : 0)
             .allowsHitTesting(configuration.showLyrics).accessibilityHidden(!configuration.showLyrics)
             .overlay {
-                if !configuration.showLyrics {
+                if tabletConfiguration == nil, !configuration.showLyrics {
                     Button("render.showLyrics") { model.renderPreferences.configuration.showLyrics = true }
                 }
             }
@@ -413,6 +451,7 @@ struct FullscreenLyricsPlayer: View {
 struct LyricsProgressControl: View {
     @Bindable var model: AppModel
     let snapshot: PlaybackSnapshot
+    var tabletTrackThickness: CGFloat? = nil
     @State private var draft = 0.0
     @State private var editing = false
     @State private var editingTrackURI: String?
@@ -421,7 +460,7 @@ struct LyricsProgressControl: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.25, paused: !controlsEnabled || !snapshot.isPlaying || scenePhase != .active)) { _ in
             VStack(spacing: 0) {
-                LyricsCapsuleSlider(value: Binding(get: { editing ? draft : model.progress() }, set: { draft = $0; if editing { model.previewLyricsProgress($0, track: editingTrackURI) } }), maximum: max(1, snapshot.duration)) { value in
+                LyricsCapsuleSlider(value: Binding(get: { editing ? draft : model.progress() }, set: { draft = $0; if editing { model.previewLyricsProgress($0, track: editingTrackURI) } }), maximum: max(1, snapshot.duration), trackThickness: tabletTrackThickness) { value in
                     if value {
                         draft = model.progress(); editingTrackURI = snapshot.item?.uri; editing = true
                         model.previewLyricsProgress(draft, track: editingTrackURI)
@@ -468,12 +507,13 @@ struct LyricsVolumeControl: View {
     @Bindable var model: AppModel
     let device: PlaybackDevice
     let volume: Int
+    var tabletTrackThickness: CGFloat? = nil
     @State private var editing = false
     @State private var draft = 0.0
     var body: some View {
         HStack {
             Image(systemName: "speaker.fill")
-            LyricsCapsuleSlider(value: Binding(get: { editing ? draft : Double(volume) }, set: { draft = $0 }), maximum: 100) { value in
+            LyricsCapsuleSlider(value: Binding(get: { editing ? draft : Double(volume) }, set: { draft = $0 }), maximum: 100, trackThickness: tabletTrackThickness) { value in
                 if value {
                     draft = Double(volume); editing = true
                 } else {
@@ -489,6 +529,7 @@ struct LyricsVolumeControl: View {
 struct LyricsCapsuleSlider: View {
     @Binding var value: Double
     var maximum: Double
+    var trackThickness: CGFloat? = nil
     var editingChanged: (Bool) -> Void
     @State private var dragging = false
     @Environment(\.isEnabled) private var enabled
@@ -501,7 +542,7 @@ struct LyricsCapsuleSlider: View {
                     Rectangle().fill(.white.opacity(0.55)).frame(width: geometry.size.width * fraction)
                 }
                 .clipShape(Capsule())
-                .frame(height: dragging ? 10 : 7)
+                .frame(height: dragging ? max(10, (trackThickness ?? 7) * 1.35) : trackThickness ?? 7)
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0)

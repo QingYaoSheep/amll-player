@@ -43,20 +43,22 @@ final class LyricTextLayout {
         let font = UIFontMetrics(forTextStyle: .title1).scaledFont(
             for: AMLLLyricsFont.make(pointSize: baseSize, weight: configuration.bold ? .bold : .medium), compatibleWith: traits
         )
-        auxiliaryPointSize = font.pointSize * AMLLMotionMetrics.auxiliaryLineScale
-        paragraph.minimumLineHeight = font.pointSize * 1.2
-        paragraph.maximumLineHeight = font.pointSize * 1.2
+        let auxiliaryScale = configuration.tabletTypography != nil ? configuration.auxiliaryScale ?? 0.55 : AMLLMotionMetrics.auxiliaryLineScale
+        auxiliaryPointSize = font.pointSize * auxiliaryScale
+        let visualHeight = configuration.tabletTypography.map { max(font.lineHeight, font.pointSize + $0.visualLineLeading) } ?? font.pointSize * 1.2
+        paragraph.minimumLineHeight = visualHeight
+        paragraph.maximumLineHeight = visualHeight
         let attributed = NSMutableAttributedString(string: line.text, attributes: [
             .font: font, .foregroundColor: UIColor.white, .kern: configuration.tracking, .paragraphStyle: paragraph,
         ])
         var auxiliaryRanges: [(LyricsAuxiliaryKind, NSRange)] = []
         for entry in configuration.auxiliaryEntries(for: line) {
             guard let auxiliaryParagraph = paragraph.mutableCopy() as? NSMutableParagraphStyle else { continue }
-            auxiliaryParagraph.minimumLineHeight = font.pointSize * AMLLMotionMetrics.auxiliaryLineScale * 1.5
-            auxiliaryParagraph.maximumLineHeight = font.pointSize * AMLLMotionMetrics.auxiliaryLineScale * 1.5
+            auxiliaryParagraph.minimumLineHeight = auxiliaryPointSize * 1.5
+            auxiliaryParagraph.maximumLineHeight = auxiliaryPointSize * 1.5
             let start = attributed.length + 1
             attributed.append(NSAttributedString(string: "\n" + entry.text, attributes: [
-                .font: font.withSize(font.pointSize * AMLLMotionMetrics.auxiliaryLineScale),
+                .font: font.withSize(auxiliaryPointSize),
                 .foregroundColor: UIColor.white.withAlphaComponent(AMLLMotionMetrics.auxiliaryLineOpacity),
                 .paragraphStyle: auxiliaryParagraph,
             ]))
@@ -69,7 +71,8 @@ final class LyricTextLayout {
         storage.addLayoutManager(manager)
         manager.addTextContainer(container)
         manager.ensureLayout(for: container)
-        size = CGSize(width: max(1, width), height: ceil(manager.usedRect(for: container).maxY) + 8)
+        let padding = configuration.tabletTypography == nil ? 8 : configuration.paragraphSpacing ?? 0
+        size = CGSize(width: max(1, width), height: max(1, ceil(manager.usedRect(for: container).maxY) + padding))
         var regions: [LyricsAuxiliaryKind: [CGRect]] = [:]
         for (kind, range) in auxiliaryRanges {
             let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
@@ -144,6 +147,10 @@ final class LyricTextLayout {
 final class LyricRowView: UIView {
     private let presentationContent = CALayer()
     private let baseBody = CALayer(), highlightBody = CALayer()
+    private let tabletSharp = CALayer(), tabletNear = CALayer(), tabletFar = CALayer()
+    private var tabletBlur = AMLLSourceTransition()
+    private var startsTabletBlur = true
+    var isTabletBlurAnimating: Bool { !tabletBlur.arrived }
     private var auxiliaryPlanes: [LyricsAuxiliaryKind: [CALayer]] = [:]
     private var auxiliaryDistance: CGFloat = 0
     private var auxiliarySlotOffsets: [LyricsAuxiliaryKind: CGFloat] = [:]
@@ -182,6 +189,7 @@ final class LyricRowView: UIView {
         presentationContent.addSublayer(base); presentationContent.addSublayer(auxiliaryNear)
         presentationContent.addSublayer(auxiliaryFar); presentationContent.addSublayer(highlight)
         base.addSublayer(baseBody); highlight.addSublayer(highlightBody)
+        baseBody.addSublayer(tabletSharp); baseBody.addSublayer(tabletNear); baseBody.addSublayer(tabletFar)
         isAccessibilityElement = true
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
     }
@@ -211,14 +219,21 @@ final class LyricRowView: UIView {
         accessibilityCustomActions = [UIAccessibilityCustomAction(name: NSLocalizedString("render.returnCurrent", comment: ""), target: self, selector: #selector(resume))]
         pieces.forEach { $0.0.removeFromSuperlayer() }; pieces.removeAll()
         sharp = layout.image(scale: scale).cgImage
-        softNear = blur ? layout.image(scale: scale, blurRadius: 2).cgImage : sharp
-        softFar = blur ? layout.image(scale: scale, blurRadius: 5).cgImage : softNear
+        let maximum = configuration.tabletTypography != nil ? configuration.resolvedLyricBlurMaximum(isPad: true) : 5
+        let nearRadius = configuration.tabletTypography != nil ? LyricsAnimationBlur.near(maximum) : 2
+        startsTabletBlur = true
+        tabletBlur.setPosition(0)
+        softNear = blur ? layout.image(scale: scale, blurRadius: nearRadius).cgImage : sharp
+        softFar = blur ? layout.image(scale: scale, blurRadius: maximum).cgImage : softNear
         if let near = softNear, let far = softFar, let sharp {
-            auxiliaryBlur.install(.init(maximum: 5, near: UIImage(cgImage: near, scale: scale, orientation: .up),
+            auxiliaryBlur.install(.init(maximum: maximum, near: UIImage(cgImage: near, scale: scale, orientation: .up),
                 far: UIImage(cgImage: far, scale: scale, orientation: .up)),
                 source: .raster(sharp, scale: scale, regions: auxiliaryRegions), size: layout.size, fade: blur ? auxiliaryFade : nil)
         }
         base.frame = CGRect(origin: .zero, size: layout.size); baseBody.frame = base.bounds; baseBody.contents = softNear
+        tabletSharp.frame = baseBody.bounds; tabletSharp.contents = sharp; tabletSharp.opacity = 0
+        tabletNear.frame = baseBody.bounds; tabletNear.contents = softNear; tabletNear.opacity = 0
+        tabletFar.frame = baseBody.bounds; tabletFar.contents = softFar; tabletFar.opacity = 0
         highlight.frame = base.frame; highlightBody.frame = highlight.bounds; highlightBody.contents = sharp; highlight.opacity = 0
         for (kind, regions) in auxiliaryRegions {
             auxiliaryPlanes[kind] = [base, highlight].map { parent in
@@ -304,15 +319,34 @@ final class LyricRowView: UIView {
     }
 
     func update(time: Double, active: Bool, configuration: LyricsRenderConfiguration, policy: RenderQualityPolicy,
-                reduceMotion: Bool, delta: TimeInterval = 1.0 / 60.0, blurLevel: Double = 0)
+                reduceMotion: Bool, delta: TimeInterval = 1.0 / 60.0, blurLevel: Double = 0,
+                clearsTabletBlur: Bool = false)
     {
         guard let line else { return }
+        let usesTablet = configuration.tabletTypography != nil
         isUsingBlur = !(active || !policy.blur || !configuration.blurInactive)
-        lastBlurLevel = blurLevel
+        let maximum = configuration.resolvedLyricBlurMaximum(isPad: usesTablet)
+        if usesTablet {
+            if clearsTabletBlur || !policy.blur || !configuration.blurInactive || startsTabletBlur {
+                tabletBlur.setPosition(clearsTabletBlur || !isUsingBlur ? 0 : blurLevel)
+            } else {
+                tabletBlur.setTarget(isUsingBlur ? blurLevel : 0, duration: 0.12, usesTabletBlurCurve: true)
+                tabletBlur.update(delta)
+            }
+            startsTabletBlur = false
+            isUsingBlur = tabletBlur.value > 0.1
+        }
+        lastBlurLevel = usesTablet ? tabletBlur.value : blurLevel
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let separated = isUsingBlur && auxiliaryBlur.isSeparated
         let waiting = isUsingBlur && auxiliaryBlur.isPreparing && !auxiliaryBlur.isSeparated
-        if !isUsingBlur || waiting {
+        if usesTablet {
+            let weights = LyricsAnimationBlur.weights(radius: waiting ? 0 : lastBlurLevel, maximum: maximum)
+            baseBody.contents = nil
+            tabletSharp.opacity = weights.sharp
+            tabletNear.opacity = weights.near
+            tabletFar.opacity = weights.far
+        } else if !isUsingBlur || waiting {
             baseBody.contents = sharp
         } else {
             baseBody.contents = blurLevel >= 3.5 ? softFar : softNear
@@ -320,8 +354,17 @@ final class LyricRowView: UIView {
         let lineOpacity = line.isBackground ? AMLLMotionMetrics.backgroundLineOpacity : 1
         let alpha = Float((active ? 0.4 : 0.2) * lineOpacity)
         base.opacity = separated ? 0 : alpha
-        auxiliaryNear.opacity = separated && blurLevel < 3.5 ? alpha : 0
-        auxiliaryFar.opacity = separated && blurLevel >= 3.5 ? alpha : 0
+        if usesTablet, separated {
+            let weights = LyricsAnimationBlur.weights(radius: lastBlurLevel, maximum: maximum)
+            base.opacity = alpha * weights.sharp
+            baseBody.contents = sharp
+            tabletSharp.opacity = 0; tabletNear.opacity = 0; tabletFar.opacity = 0
+            auxiliaryNear.opacity = weights.near * alpha
+            auxiliaryFar.opacity = weights.far * alpha
+        } else {
+            auxiliaryNear.opacity = separated && blurLevel < 3.5 ? alpha : 0
+            auxiliaryFar.opacity = separated && blurLevel >= 3.5 ? alpha : 0
+        }
         // LRC is a genuine line-level highlight; never manufacture word progress.
         highlight.opacity = pieces.isEmpty && active ? Float(lineOpacity) : 0
         for (piece, mask, fragment) in pieces {

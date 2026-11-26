@@ -274,7 +274,7 @@ enum AMLLWordMotion {
     }
 
     /// Solves CSS cubic-bezier y for a normalized x.
-    private static func cubicBezier(_ x: Double, x1: Double, y1: Double, x2: Double, y2: Double) -> Double {
+    static func cubicBezier(_ x: Double, x1: Double, y1: Double, x2: Double, y2: Double) -> Double {
         let target = min(1, max(0, x))
         var parameter = target
         for _ in 0 ..< 8 {

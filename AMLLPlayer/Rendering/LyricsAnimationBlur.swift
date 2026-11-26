@@ -1,5 +1,12 @@
 import Foundation
 
+extension LyricsRenderConfiguration {
+    func resolvedLyricBlurMaximum(isPad: Bool) -> Double {
+        if tabletTypography != nil { return TabletLyricTypography.maximumBlur(level: lyricBlurLevel) }
+        return LyricsAnimationBlur.maximum(LyricsAnimationBlur.level(lyricBlurLevel, isPad: isPad))
+    }
+}
+
 enum LyricsAnimationBlur {
     static func level(_ saved: Int?, isPad: Bool) -> Int {
         min(10, max(1, saved ?? (isPad ? 3 : 5)))

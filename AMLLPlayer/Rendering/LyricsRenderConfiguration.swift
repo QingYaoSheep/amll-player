@@ -131,6 +131,8 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
     // Optional additions retain decoding compatibility with installed v2 preferences.
     var horizontalPadding: Double?
     var paragraphSpacing: Double?
+    /// Window-derived values exist only on a renderer configuration copy.
+    var tabletTypography: TabletLyricTypography?
     var auxiliaryScale: Double?
     var backgroundDimming: Double?
     var artworkCornerRadius: Double?
@@ -215,12 +217,14 @@ struct LyricsRenderConfiguration: Codable, Equatable, Sendable {
 
     func validated() -> Self {
         var copy = self
-        copy.fontSize = fontSize.isFinite ? min(52, max(24, fontSize)) : 32
+        copy.fontSize = fontSize.isFinite
+            ? (tabletTypography == nil ? min(52, max(24, fontSize)) : max(10, fontSize)) : 32
         copy.tracking = tracking.isFinite ? min(3, max(-1, tracking)) : 0
         copy.gradientWidth = gradientWidth.isFinite
             ? min(1, max(0, gradientWidth)) : AMLLMotionMetrics.wordFadeWidthInEms
         let minimumAnchor = immersiveLyrics == true ? ImmersiveLyricsLayout.focusAnchor : 0.2
-        copy.anchor = anchor.isFinite ? min(0.7, max(minimumAnchor, anchor)) : 0.28
+        copy.anchor = anchor.isFinite
+            ? (tabletTypography == nil ? min(0.7, max(minimumAnchor, anchor)) : min(0.92, max(0.08, anchor))) : 0.28
         copy.advance = advance.isFinite ? min(1, max(0, advance)) : 0.3
         copy.appleMusicAnimation = appleMusicAnimation?.validated()
         copy.lyricBlurLevel = lyricBlurLevel.map { LyricsAnimationBlur.level($0, isPad: false) }

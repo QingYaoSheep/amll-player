@@ -38,6 +38,8 @@ struct AMLLLyricsPlayer: View {
         _presentation = State(initialValue: LyricsPagePresentationCoordinator(showsLyrics: model.renderPreferences.configuration.showLyrics))
     }
 
+    private var usesTabletLyricsLayout: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
     private var configuration: LyricsRenderConfiguration {
         model.renderPreferences.configuration.validated()
     }
@@ -52,6 +54,9 @@ struct AMLLLyricsPlayer: View {
         GeometryReader { geometry in
             let room = model.selectedMusicService == .netease ? model.netEasePlayback.listeningRoom : nil
             let metrics = pageMetrics(size: geometry.size, roomIsActive: room != nil, roomSafeTop: roomSafeTop)
+            let tabletLayout = usesTabletLyricsLayout ? TabletLyricsLayout(size: geometry.size,
+                showsLyrics: configuration.showLyrics, showsControls: configuration.showControls,
+                topInset: max(roomSafeTop, metrics.handleTop + 24), bottomInset: geometry.safeAreaInsets.bottom) : nil
             let drag = dismissalTransform(height: geometry.size.height)
             let lyricLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom)
             let canvasLayout = immersiveLyricsLayout(size: geometry.size, bottomInset: geometry.safeAreaInsets.bottom, retainingHidden: true)
@@ -60,14 +65,15 @@ struct AMLLLyricsPlayer: View {
                 ZStack {
                     Color(white: 0.08)
                     if let item = model.playbackSnapshot?.item {
-                        mediaBackdrop(item, layout: lyricLayout, immersive: immersive, size: geometry.size, metrics: metrics)
+                        mediaBackdrop(item, layout: lyricLayout, immersive: immersive, size: geometry.size, metrics: metrics, tabletCover: tabletLayout?.cover)
                     }
                 }
                 // A stable sibling, not an overlay whose identity inherits
                 // the conditional background's identity.
                 Group {
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item {
-                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: canvasLayout)
+                        player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: canvasLayout,
+                               tabletLayout: tabletLayout, bottomInset: geometry.safeAreaInsets.bottom)
                     } else {
                         ContentUnavailableView("player.noPlayback", systemImage: "music.note")
                     }
@@ -139,8 +145,31 @@ struct AMLLLyricsPlayer: View {
 
     @ViewBuilder
     private func player(snapshot: PlaybackSnapshot, item: PlaybackItem, metrics: AppleMusicLyricsLayoutMetrics, size: CGSize,
-                        lyricLayout: ImmersiveLyricsLayout?) -> some View {
-        if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
+                        lyricLayout: ImmersiveLyricsLayout?, tabletLayout: TabletLyricsLayout?, bottomInset: CGFloat) -> some View {
+        if let tabletLayout {
+            TabletLyricsPlayer(model: model, snapshot: snapshot, item: item, layout: tabletLayout,
+                               size: size, bottomInset: bottomInset, configuration: configuration,
+                               showsLyrics: presentation.mode.showsLyrics) {
+                artwork(item, side: tabletLayout.cover.width, radius: 14, recordsFrame: false)
+            } canvas: { renderConfiguration in
+                lyricCanvas(snapshot, renderConfiguration: renderConfiguration)
+            } actions: {
+                Button { devices = true; Task { await model.loadDevices() } } label: {
+                    Label("player.devices", systemImage: "airplayaudio").modifier(TabletLyricsActionTarget())
+                }
+                Button { search = true } label: {
+                    Label("lyrics.find", systemImage: "magnifyingglass").modifier(TabletLyricsActionTarget())
+                }
+                if model.selectedMusicService == .appleMusic {
+                    AppleMusicCurrentFavorite(model: model).modifier(TabletLyricsActionTarget())
+                } else if model.selectedMusicService == .netease {
+                    NetEaseCurrentFavorite(model: model).modifier(TabletLyricsActionTarget())
+                }
+                LyricsQuickSettingsButton(presentation: quickSettings, systemImage: "ellipsis.circle")
+                    .modifier(TabletLyricsActionTarget())
+                    .accessibilityIdentifier("tabletLyricsSettings")
+            }
+        } else if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
             tabletPlayer(snapshot: snapshot, item: item, metrics: metrics, size: size)
         } else {
             ZStack(alignment: .topLeading) {
@@ -488,10 +517,12 @@ struct AMLLLyricsPlayer: View {
     }
 
     private func mediaBackdrop(_ item: PlaybackItem, layout: ImmersiveLyricsLayout?, immersive: Bool, size: CGSize,
-                               metrics: AppleMusicLyricsLayoutMetrics) -> some View {
+                               metrics: AppleMusicLyricsLayoutMetrics, tabletCover: CGRect?) -> some View {
         let canKeepVideo = immersiveLyricsHasVideo
         let inlineFrame: CGRect
-        if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
+        if let tabletCover {
+            inlineFrame = tabletCover
+        } else if AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size) {
             inlineFrame = artworkFrame ?? CGRect(x: 0, y: 0, width: 1, height: 1)
         } else if configuration.showLyrics {
             inlineFrame = CGRect(x: metrics.horizontalInset, y: metrics.compactArtworkTop,
@@ -500,7 +531,7 @@ struct AMLLLyricsPlayer: View {
             let side = min(size.width - metrics.expandedArtworkInset * 2, size.height * 0.405)
             inlineFrame = CGRect(x: (size.width - side) / 2, y: metrics.expandedArtworkTop, width: side, height: side)
         }
-        let showsInlineCover = !configuration.showLyrics || (configuration.showMetadata ?? true)
+        let showsInlineCover = tabletCover != nil || !configuration.showLyrics || (configuration.showMetadata ?? true)
             || AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size)
         let cover = layout?.cover ?? AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
         let mediaLayout: ImmersiveArtworkMedia.Layout = immersive
@@ -510,7 +541,7 @@ struct AMLLLyricsPlayer: View {
             : .inline(frame: inlineFrame,
                 visible: showsInlineCover && (currentStillFrame != nil || showsInlineVideo),
                 presentsFrame: showsInlineVideo && artworkLoader.hasPresentedFrame,
-                radius: configuration.artworkCornerRadius ?? (AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size)
+                radius: configuration.artworkCornerRadius ?? (tabletCover != nil || AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size)
                     ? 14 : configuration.showLyrics ? 11 : 12), dimming: configuration.backgroundDimming ?? 0.16)
         var video = canKeepVideo ? immersiveVideo(item) : nil
         if !immersive && !showsInlineVideo { video?.active = false }

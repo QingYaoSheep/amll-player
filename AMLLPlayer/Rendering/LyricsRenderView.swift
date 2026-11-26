@@ -16,6 +16,7 @@ struct NativeLyricsView: UIViewRepresentable {
     var playbackFrame: (() -> LyricsPlaybackFrame)? = nil
     var fadeTop: CGFloat? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeUIView(context _: Context) -> LyricsRenderView {
         LyricsRenderView()
@@ -25,7 +26,9 @@ struct NativeLyricsView: UIViewRepresentable {
         view.position = position; view.seek = seek; view.browsing = browsing
         view.playbackFrame = playbackFrame
         view.fadeTop = fadeTop
-        view.update(document: document, configuration: configuration.validated(), offset: offset, duration: duration,
+        var renderConfiguration = configuration.validated()
+        if configuration.tabletTypography != nil, reduceTransparency { renderConfiguration.blurInactive = false }
+        view.update(document: document, configuration: renderConfiguration, offset: offset, duration: duration,
                     playing: playing, active: active, canSeek: canSeek, reduceMotion: reduceMotion, resumeToken: resumeToken)
     }
 
@@ -49,6 +52,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     private let scroll = LyricsScrollView()
     private let dots = AMLLInterludeDotsView()
     private var timeline = LyricsTimeline(lines: [])
+    private var containsDuet = false
     private var document: LyricsDocument?
     private var configuration = LyricsRenderConfiguration()
     private var builtAuxiliary: (Bool, Bool)?
@@ -153,6 +157,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         else { auxiliaryFade.update(configuration, animated: active && window != nil, reduceMotion: reduceMotion) }
         if self.document != document {
             self.document = document; timeline = LyricsTimeline(lines: document.lines)
+            containsDuet = document.lines.contains(where: \.isDuet)
             builtAuxiliary = (configuration.translation, configuration.romanization)
             auxiliaryBlurStarters.removeAll()
             follow.reset(); motion = LyricsMotionModel(); previousTime = nil; lastFocus = nil; lastActive = []; needsRebuild = true
@@ -166,6 +171,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             }
             needsRebuild = true
         }
+        if self.configuration.tabletTypography?.fade != configuration.tabletTypography?.fade { fadeSize = .zero }
         self.configuration = configuration; self.offset = offset; self.duration = duration
         self.playing = playing; self.active = active; self.canSeek = canSeek; self.reduceMotion = reduceMotion
         for row in rows.values {
@@ -198,7 +204,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             builtAuxiliary = (effective.translation, effective.romanization)
             rows.values.forEach { $0.removeFromSuperview() }; rows.removeAll(); pool.removeAll()
             layouts.removeAll(); layoutOrder.removeAll(); frames.removeAll()
-            if resized, configuration.immersiveLyrics != true, !preserveNextResize {
+            if resized, configuration.tabletTypography == nil, configuration.immersiveLyrics != true, !preserveNextResize {
                 follow.reset(); previousTime = nil
                 scroll.setContentOffset(scroll.contentOffset, animated: false)
                 DispatchQueue.main.async { [weak self] in self?.browsing(false) }
@@ -208,13 +214,19 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             targetAuxiliarySlots.removeAll()
             for index in timeline.lines.indices {
                 let layout = makeLayout(index)
-                let inset = lineInset(background: timeline.lines[index].isBackground)
+                let line = timeline.lines[index]
+                let inset = lineInset(background: line.isBackground)
                 let target = effective.translation != configuration.translation || effective.romanization != configuration.romanization
                     ? LyricTextLayout(line: timeline.lines[index], width: bounds.width - inset * 2, configuration: configuration, traits: traitCollection)
                     : layout
                 targetAuxiliarySlots[index] = target.auxiliaryRegions.compactMapValues { $0.map(\.minY).min() }
-                frames.append(CGRect(x: inset, y: y, width: bounds.width - inset * 2, height: target.size.height))
-                y += target.size.height + (timeline.lines[index].isBackground ? 14 : 28)
+                let width = max(1, bounds.width - inset * 2)
+                let mainInset = lineInset(background: false)
+                let x = configuration.tabletTypography != nil && line.isBackground
+                    ? (line.isDuet || line.isRTL ? bounds.width - mainInset - width : mainInset) : inset
+                frames.append(CGRect(x: x, y: y, width: width, height: target.size.height))
+                let gap = configuration.tabletTypography?.paragraphGap ?? (timeline.lines[index].isBackground ? 14 : 28)
+                y += target.size.height + gap
             }
             scroll.contentSize = CGSize(width: bounds.width, height: y + bounds.height * (1 - configuration.anchor))
         }
@@ -228,14 +240,19 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
     }
 
     private func updateViewportFade() {
-        guard let fadeTop, bounds.height > 0 else { layer.mask = nil; return }
+        guard bounds.height > 0, fadeTop != nil || configuration.tabletTypography != nil else { layer.mask = nil; return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         viewportFade.frame = bounds
         viewportFade.startPoint = CGPoint(x: 0.5, y: 0)
         viewportFade.endPoint = CGPoint(x: 0.5, y: 1)
-        viewportFade.colors = [UIColor.clear.cgColor, UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.white.cgColor]
-        viewportFade.locations = [0, NSNumber(value: Double(min(0.8, max(0, fadeTop) / bounds.height))),
-            NSNumber(value: Double(min(0.9, max(0, fadeTop + 64) / bounds.height))), 1]
+        if let tablet = configuration.tabletTypography {
+            viewportFade.colors = [UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor]
+            viewportFade.locations = tablet.fade.map { NSNumber(value: $0) }
+        } else if let fadeTop {
+            viewportFade.colors = [UIColor.clear.cgColor, UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.white.cgColor]
+            viewportFade.locations = [0, NSNumber(value: Double(min(0.8, max(0, fadeTop) / bounds.height))),
+                NSNumber(value: Double(min(0.9, max(0, fadeTop + 64) / bounds.height))), 1]
+        }
         layer.mask = viewportFade
         CATransaction.commit()
     }
@@ -315,7 +332,9 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
         }
         var settled = true
         if let focus = state.focus, frames.indices.contains(focus), follow.following, !scroll.isDragging, !scroll.isDecelerating {
-            let target = min(max(0, scroll.contentSize.height - bounds.height), max(0, frames[focus].minY - bounds.height * configuration.anchor))
+            let focusOffset = configuration.tabletTypography?.focusOffset(contentHeight: frames[focus].height) ?? 0
+            let anchor = bounds.height * configuration.anchor
+            let target = min(max(0, scroll.contentSize.height - bounds.height), max(0, frames[focus].minY + focusOffset - anchor))
             let value = follow.step(target: target, dt: dt, immediate: reduceMotion || jumped || auxiliaryReflow.hasPending)
             scroll.contentOffset.y = value
             settled = follow.isSettled(at: target)
@@ -368,12 +387,16 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
                 .compactMap(\.self).joined(separator: ", ")
             // Do not post announcements on every word or steal VoiceOver focus while the user browses.
         }
-        if !playing, settled, motion.mode != .browsing, !auxiliaryFade.isAnimating, !auxiliaryReflow.isAnimating, !auxiliarySlotReflow.isAnimating {
+        if !playing, settled, !rows.values.contains(where: \.isTabletBlurAnimating), motion.mode != .browsing, !auxiliaryFade.isAnimating, !auxiliaryReflow.isAnimating, !auxiliarySlotReflow.isAnimating {
             displayLink?.isPaused = true; previousTick = 0
         }
     }
 
     private func lineInset(background: Bool) -> CGFloat {
+        if let tablet = configuration.tabletTypography {
+            return tablet.inset(width: bounds.width, duet: containsDuet,
+                background: background, custom: configuration.horizontalPadding)
+        }
         if configuration.immersiveLyrics == true {
             return CGFloat(configuration.horizontalPadding ?? 30) + (background ? 12 : 0)
         }
@@ -460,13 +483,18 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             let policy = RenderQualityPolicy.resolve(maximumFPS: 60, reduceMotion: reduceMotion)
             for (index, row) in rows {
                 row.update(time: time, active: timeline.lines[index].start <= time && time < timeline.lines[index].end,
-                           configuration: configuration, policy: policy, reduceMotion: reduceMotion)
+                           configuration: configuration, policy: policy, reduceMotion: reduceMotion, clearsTabletBlur: true)
             }
         }
     }
 
     private func lineBlur(index: Int, state: LyricsRenderState, active: Bool) -> Double {
         guard configuration.blurInactive, !reduceMotion, follow.following, !active else { return 0 }
+        if configuration.tabletTypography != nil {
+            guard let focus = state.focus else { return 0 }
+            return TabletLyricTypography.blur(distance: index - focus,
+                maximum: configuration.resolvedLyricBlurMaximum(isPad: true))
+        }
         let latest = state.active.max() ?? state.focus ?? index
         let focus = state.focus ?? latest
         let distance = index < focus ? abs(focus - index) + 1 : abs(index - max(focus, latest))

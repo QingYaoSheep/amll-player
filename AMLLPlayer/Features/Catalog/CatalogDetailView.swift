@@ -21,10 +21,12 @@ private struct CatalogDetailContent: View {
     @Bindable var state: MusicCatalogDetailState
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var playlistChoice: MusicCatalogItem?
     @State private var editingPlaylist: MusicCatalogItem?
     @State private var failure: String?
     @State private var width: CGFloat = 320
+    @State private var heroTint: Color?
 
     var body: some View {
         ScrollView {
@@ -32,23 +34,40 @@ private struct CatalogDetailContent: View {
                 if let detail = state.value {
                     hero(detail).id(detail.item.id)
                     if !detail.highlights.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("热门歌曲").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("热门歌曲")
+                                .font(.title2.bold())
+                                .padding(.horizontal, 6)
+                                .accessibilityAddTraits(.isHeader)
                             VStack(spacing: 0) {
-                                ForEach(detail.highlights) { row in
+                                ForEach(Array(detail.highlights.enumerated()), id: \.element.id) { index, row in
+                                    if index > 0 {
+                                        Rectangle()
+                                            .fill(Color.primary.opacity(0.08))
+                                            .frame(height: 0.5)
+                                            .padding(.leading, 56)
+                                    }
                                     CatalogRowView(model: model, row: row, tapToPlay: true, compact: true)
-                                    Divider()
                                 }
                             }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .settingsCardSurface(radius: SettingsCorners.card)
                         }
                     }
                     if let query = detail.children {
                         CatalogDetailChildren(model: model, store: store, query: query, state: store.page(query), parent: detail.item)
                     }
                     if let about = MusicCatalogText.description(detail.about) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("关于这位歌手").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("关于这位歌手")
+                                .font(.title2.bold())
+                                .padding(.horizontal, 6)
+                                .accessibilityAddTraits(.isHeader)
                             MusicDetailDescription(text: about)
+                                .padding(18)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .settingsCardSurface(radius: SettingsCorners.card)
                         }
                     }
                     relatedResources(detail)
@@ -65,8 +84,33 @@ private struct CatalogDetailContent: View {
             }
             .padding(20).frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background {
+            ZStack(alignment: .top) {
+                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+                let glow = heroTint ?? MusicProductStyle.accent
+                LinearGradient(
+                    colors: [
+                        glow.opacity(colorScheme == .dark ? 0.34 : 0.18),
+                        glow.opacity(colorScheme == .dark ? 0.10 : 0.05),
+                        .clear,
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 360)
+                .ignoresSafeArea(edges: .top)
+            }
+        }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
+        .task(id: state.value?.item.artworkURL) {
+            guard let url = state.value?.item.artworkURL else { heroTint = nil; return }
+            let image = await CatalogImageCache.shared.image(url, pixels: 120)
+            guard !Task.isCancelled else { return }
+            let sampled = image?.cgImage.flatMap { MusicArtworkColorSampler.averageColor(of: $0) }
+            withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
+                heroTint = sampled
+            }
+        }
         .navigationTitle(state.value?.item.name ?? kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("catalogDetail")
@@ -112,44 +156,75 @@ private struct CatalogDetailContent: View {
         if width >= 700, !typeSize.isAccessibilitySize {
             HStack(alignment: .center, spacing: 32) {
                 cover(detail, size: min(300, width * 0.3))
-                information(detail)
+                information(detail, centered: false)
             }.padding(.vertical, 12)
         } else {
-            VStack(alignment: .leading, spacing: 20) {
-                cover(detail, size: min(max(1, width - 64), kind == .artist ? 232 : 272)).frame(maxWidth: .infinity)
-                information(detail)
+            VStack(alignment: .center, spacing: 20) {
+                cover(detail, size: min(max(1, width - 88), kind == .artist ? 220 : 256))
+                    .frame(maxWidth: .infinity)
+                information(detail, centered: !typeSize.isAccessibilitySize)
             }.padding(.top, 12)
         }
     }
 
     private func cover(_ detail: MusicCatalogDetail, size: CGFloat) -> some View {
         CatalogArtwork(url: detail.item.artworkURL, size: size, isArtist: kind == .artist)
-            .shadow(color: .black.opacity(kind == .artist ? 0.05 : 0.12), radius: 18, y: 8)
+            .shadow(
+                color: (heroTint ?? .black).opacity(colorScheme == .dark ? 0.45 : (kind == .artist ? 0.10 : 0.22)),
+                radius: 22,
+                y: 12
+            )
     }
 
-    private func information(_ detail: MusicCatalogDetail) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(kind.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(detail.item.name).font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+    private func information(_ detail: MusicCatalogDetail, centered: Bool) -> some View {
+        VStack(alignment: centered ? .center : .leading, spacing: 10) {
+            Text(kind.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(Color.primary.opacity(0.06), in: Capsule())
+
+            Text(detail.item.name)
+                .font(.largeTitle.bold())
+                .multilineTextAlignment(centered ? .center : .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+
             if kind != .artist, let artist = detail.item.artists.first {
-                NavigationLink(artist.name, value: related(.artist, artist.id)).font(.title3)
-                    .frame(minHeight: 44).accessibilityIdentifier("catalogPrimaryArtist")
+                NavigationLink(artist.name, value: related(.artist, artist.id))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(MusicProductStyle.accent)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("catalogPrimaryArtist")
             } else if !detail.item.subtitle.isEmpty {
-                Text(detail.item.subtitle).font(.title3).foregroundStyle(.secondary)
+                Text(detail.item.subtitle)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(centered ? .center : .leading)
             }
+
             metadata(detail.item)
-            if let description = MusicCatalogText.description(detail.item.playlist?.description) { MusicDetailDescription(text: description) }
+                .multilineTextAlignment(centered ? .center : .leading)
+
+            if let description = MusicCatalogText.description(detail.item.playlist?.description) {
+                MusicDetailDescription(text: description)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             if detail.item.canPlay, detail.availability == .available {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) { playback(detail.item) }
-                    VStack(alignment: .leading, spacing: 12) { playback(detail.item) }
-                }.padding(.top, 4)
+                    VStack(alignment: centered ? .center : .leading, spacing: 12) { playback(detail.item) }
+                }
+                .padding(.top, 6)
             } else if detail.availability == .metadataOnly || detail.availability == .restricted {
                 Label(LocalizedStringKey(detail.availability == .metadataOnly ? "catalog.metadataOnly" : "catalog.restricted"),
                       systemImage: "info.circle").font(.subheadline).foregroundStyle(.secondary)
                 CatalogExternalLink(item: detail.item).frame(minHeight: 44)
             }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
     }
 
     @ViewBuilder private func metadata(_ item: MusicCatalogItem) -> some View {
@@ -163,38 +238,71 @@ private struct CatalogDetailContent: View {
 
     @ViewBuilder private func playback(_ item: MusicCatalogItem) -> some View {
         CatalogPlayButton(model: model, item: item, compact: false)
-            .frame(minWidth: 120, minHeight: 48).padding(.horizontal, 16)
-            .foregroundStyle(.white).background(MusicProductStyle.filledAccent, in: Capsule())
+            .font(.body.weight(.semibold))
+            .frame(minWidth: 132, minHeight: 48)
+            .padding(.horizontal, 18)
+            .foregroundStyle(.white)
+            .background(MusicProductStyle.filledAccent, in: Capsule())
+            .shadow(color: MusicProductStyle.filledAccent.opacity(0.25), radius: 8, y: 3)
         if [.appleMusic, .netease].contains(item.service), [.album, .playlist].contains(item.kind) {
             Button {
                 Task {
                     do { try await model.playCatalog(item, shuffled: true) }
                     catch is CancellationError {} catch { failure = error.localizedDescription }
                 }
-            } label: { Label("随机播放", systemImage: "shuffle").frame(minWidth: 120, minHeight: 48).padding(.horizontal, 16) }
-                .buttonStyle(MusicContentButtonStyle()).disabled(model.isPerformingAction)
-                .background(MusicProductStyle.accent.opacity(0.1), in: Capsule())
-                .accessibilityIdentifier("catalogShuffleCollection")
+            } label: {
+                Label("随机播放", systemImage: "shuffle")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(MusicProductStyle.accent)
+                    .frame(minWidth: 132, minHeight: 48)
+                    .padding(.horizontal, 18)
+            }
+            .buttonStyle(MusicContentButtonStyle()).disabled(model.isPerformingAction)
+            .background(MusicProductStyle.accent.opacity(0.12), in: Capsule())
+            .overlay { Capsule().strokeBorder(MusicProductStyle.accent.opacity(0.20), lineWidth: 0.5) }
+            .accessibilityIdentifier("catalogShuffleCollection")
         }
     }
 
     @ViewBuilder private func relatedResources(_ detail: MusicCatalogDetail) -> some View {
         if let album = detail.item.track?.album {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("收录专辑").font(.headline).accessibilityAddTraits(.isHeader)
-                NavigationLink(album.name, value: related(.album, album.id)).frame(minHeight: 44)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("收录专辑").font(.headline).padding(.horizontal, 6).accessibilityAddTraits(.isHeader)
+                SettingsGroup {
+                    NavigationLink(value: related(.album, album.id)) {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemImage: "opticaldisc", color: MusicProductStyle.accent)
+                            Text(album.name).font(.body).foregroundStyle(.primary).lineLimit(1)
+                            Spacer()
+                            Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 54)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+                }
             }
         }
         if !detail.item.artists.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("catalog.artists").font(.headline).accessibilityAddTraits(.isHeader)
-                ForEach(detail.item.artists, id: \.id) { artist in
-                    NavigationLink(value: related(.artist, artist.id)) {
-                        HStack {
-                            Label(artist.name, systemImage: "person.crop.circle")
-                            Spacer(); Image(systemName: "chevron.right").font(.caption)
-                        }.frame(minHeight: 44).contentShape(Rectangle())
-                    }.buttonStyle(MusicContentButtonStyle())
+            VStack(alignment: .leading, spacing: 10) {
+                Text("catalog.artists").font(.headline).padding(.horizontal, 6).accessibilityAddTraits(.isHeader)
+                SettingsGroup {
+                    ForEach(Array(detail.item.artists.enumerated()), id: \.element.id) { index, artist in
+                        if index > 0 { SettingsDivider() }
+                        NavigationLink(value: related(.artist, artist.id)) {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemImage: "person.fill", color: MusicProductStyle.accent)
+                                Text(artist.name).font(.body).foregroundStyle(.primary).lineLimit(1)
+                                Spacer()
+                                Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 54)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+                    }
                 }
             }
         }
@@ -218,23 +326,38 @@ private struct CatalogDetailChildren: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(parent.kind == .artist ? String(localized: "catalog.albums") : String(localized: "catalog.tracks"))
-                    .font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                    .font(.title2.bold())
+                    .padding(.horizontal, 6)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if state.next != nil, let total = state.total {
-                    Text("已加载 \(state.rows.count) / \(total)").font(.caption).foregroundStyle(.secondary)
+                    Text("已加载 \(state.rows.count) / \(total)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
                 }
             }
             if parent.kind == .artist {
                 MusicCatalogGrid(model: model, rows: state.rows)
             } else {
                 LazyVStack(spacing: 0) {
-                    ForEach(state.rows) { row in
+                    ForEach(Array(state.rows.enumerated()), id: \.element.id) { index, row in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.08))
+                                .frame(height: 0.5)
+                                .padding(.leading, 76)
+                        }
                         CatalogRowView(model: model, row: row, contextURI: query.preservesPositions ? parent.uri : nil,
                             tapToPlay: true, parentPlaylist: parent.service == .netease ? parent : nil,
                             showsPosition: true, compact: true)
-                        Divider()
                     }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .settingsCardSurface(radius: SettingsCorners.card)
             }
             if state.error == .forbidden || state.error == .unavailable {
                 Text("catalog.metadataOnly").foregroundStyle(.secondary)

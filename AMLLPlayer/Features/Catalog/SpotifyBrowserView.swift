@@ -309,24 +309,36 @@ struct CatalogSearchView: View {
                 }
                 if store.searchHistory.isEmpty {
                     Text("暂无搜索记录").font(.subheadline).foregroundStyle(.secondary)
-                }
-                VStack(spacing: 0) {
-                    ForEach(store.searchHistory, id: \.self) { term in
-                        HStack(spacing: 0) {
-                            Button { store.searchText = term; store.rememberSearch(term) } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "clock").foregroundStyle(.secondary)
-                                        .frame(width: 24).accessibilityHidden(true)
-                                    Text(term).foregroundStyle(.primary)
-                                }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                } else {
+                    SettingsGroup(radius: 24) {
+                        ForEach(Array(store.searchHistory.enumerated()), id: \.element) { index, term in
+                            if index > 0 { SettingsDivider(inset: 44) }
+                            HStack(spacing: 0) {
+                                Button { store.searchText = term; store.rememberSearch(term) } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "clock")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 24)
+                                            .accessibilityHidden(true)
+                                        Text(term).foregroundStyle(.primary)
+                                    }
+                                    .padding(.leading, 14)
+                                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                                     .contentShape(Rectangle())
-                            }.buttonStyle(MusicContentButtonStyle())
-                            Button { store.removeSearch(term) } label: {
-                                Image(systemName: "xmark").font(.caption.weight(.semibold)).frame(width: 44, height: 44)
-                            }.buttonStyle(MusicContentButtonStyle())
-                                .accessibilityLabel("删除搜索记录 " + term).foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(SettingsRowButtonStyle())
+
+                                Button { store.removeSearch(term) } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.caption.weight(.semibold))
+                                        .frame(width: 44, height: 48)
+                                }
+                                .buttonStyle(MusicContentButtonStyle())
+                                .accessibilityLabel("删除搜索记录 " + term)
+                                .foregroundStyle(.secondary)
+                            }
                         }
-                        Divider().padding(.leading, 34)
                     }
                 }
             }.padding(20).frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
@@ -336,7 +348,7 @@ struct CatalogSearchView: View {
     private var searchCategories: some View {
         let kinds = store.searchLibrary ? [MusicCatalogKind.track, .album, .artist, .playlist] : store.provider.searchKinds
         let columns = typeSize.isAccessibilitySize
-            ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 128, maximum: 265), spacing: 10)]
+            ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 136, maximum: 265), spacing: 10)]
         return LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
             ForEach(kinds, id: \.self) { kind in
                 let selected = kind == store.searchFilter
@@ -345,23 +357,29 @@ struct CatalogSearchView: View {
                     searchPresented = true
                 } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: kind.symbol)
-                            .font(.body.weight(.semibold))
-                            .frame(width: 34, height: 34)
-                            .foregroundStyle(MusicProductStyle.accent)
-                            .background(MusicProductStyle.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-                            .accessibilityHidden(true)
-                        Text(kind.title).font(.subheadline.weight(.semibold))
+                        SettingsIconBadge(systemImage: kind.symbol, color: MusicProductStyle.accent)
+                        Text(kind.title)
+                            .font(.subheadline.weight(.semibold))
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
-                        Image(systemName: "chevron.forward").font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary).accessibilityHidden(true)
+                        Image(systemName: "chevron.forward")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
-                    .padding(10).frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
                     .foregroundStyle(.primary)
-                    .background(selected ? MusicProductStyle.accent.opacity(0.1) : Color(uiColor: .secondarySystemGroupedBackground),
-                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(
+                        selected ? MusicProductStyle.accent.opacity(0.12) : Color(uiColor: .secondarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .strokeBorder(selected ? MusicProductStyle.accent.opacity(0.35) : Color.primary.opacity(0.07), lineWidth: 0.5)
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
                 .buttonStyle(MusicContentButtonStyle())
                 .accessibilityAddTraits(selected ? .isSelected : [])
@@ -392,13 +410,22 @@ private struct MusicSearchGroup: View {
             }
             if [.artist, .album, .playlist].contains(kind), !state.rows.isEmpty {
                 MusicCatalogGrid(model: model, rows: Array(state.rows.prefix(preview ? 4 : state.rows.count)), onSelect: onSelect)
-            } else {
+            } else if !state.rows.isEmpty {
+                let displayed = Array(state.rows.prefix(preview ? 4 : state.rows.count))
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(state.rows.prefix(preview ? 4 : state.rows.count))) { row in
+                    ForEach(Array(displayed.enumerated()), id: \.element.id) { index, row in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.08))
+                                .frame(height: 0.5)
+                                .padding(.leading, 56)
+                        }
                         CatalogRowView(model: model, row: row, tapToPlay: true, onSelect: onSelect, compact: true)
-                        Divider()
                     }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .settingsCardSurface(radius: SettingsCorners.card)
             }
             if let error = state.error {
                 CatalogErrorView(error: error) { await state.load(query: query, provider: store.provider, force: true) }
@@ -426,15 +453,23 @@ struct CatalogRowsScrollView: View {
                 Group {
                     if libraryShelf || (!state.rows.isEmpty && state.rows.allSatisfy({ [.album, .playlist, .artist].contains($0.item.kind) })) {
                         MusicCatalogGrid(model: model, rows: state.rows, libraryShelf: libraryShelf)
-                    } else {
+                    } else if !state.rows.isEmpty {
                         LazyVStack(spacing: 0) {
-                            ForEach(state.rows) { row in
+                            ForEach(Array(state.rows.enumerated()), id: \.element.id) { index, row in
                                 VStack(spacing: 0) {
+                                    if index > 0 {
+                                        Rectangle()
+                                            .fill(Color.primary.opacity(0.08))
+                                            .frame(height: 0.5)
+                                            .padding(.leading, compact ? 56 : 64)
+                                    }
                                     CatalogRowView(model: model, row: row, tapToPlay: true, compact: compact)
-                                    Divider()
                                 }.id(row.id)
                             }
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .settingsCardSurface(radius: SettingsCorners.card)
                     }
                 }
                 .scrollTargetLayout()

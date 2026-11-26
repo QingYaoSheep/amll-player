@@ -19,8 +19,10 @@ struct CatalogArtwork: View {
     @State private var loadedURL: URL?
 
     var body: some View {
+        let corner = isArtist ? size / 2 : min(16, size / 6)
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
         ZStack {
-            RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+            shape.fill(.quaternary)
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
                     .transition(.opacity)
@@ -29,7 +31,10 @@ struct CatalogArtwork: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: isArtist ? size / 2 : min(16, size / 6)))
+        .clipShape(shape)
+        .overlay {
+            shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+        }
         .accessibilityHidden(true)
         .task(id: "\(url?.absoluteString ?? ""):\(Int(size * displayScale))") {
             if loadedURL != url { image = nil; loadedURL = url }
@@ -153,19 +158,40 @@ struct CatalogErrorView: View {
     let error: MusicCatalogError
     let retry: () async -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(message, systemImage: "exclamationmark.triangle")
-                .font(.subheadline).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(MusicProductStyle.accent)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             if case .rateLimited = error {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in retryButton }
             } else { retryButton }
             DisclosureGroup("查看技术详情") {
                 Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }.font(.caption)
-        }.accessibilityIdentifier("catalogError")
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+        }
+        .accessibilityIdentifier("catalogError")
     }
     @ViewBuilder private var retryButton: some View {
-        if error.allowsRetry { Button("player.tryAgain") { Task { await retry() } }.frame(minHeight: 44) }
+        if error.allowsRetry {
+            Button("player.tryAgain") { Task { await retry() } }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(MusicProductStyle.accent)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .background(MusicProductStyle.accent.opacity(0.12), in: Capsule())
+        }
     }
     private var message: String {
         switch error {
@@ -186,6 +212,7 @@ struct CatalogPlayButton: View {
     var contextURI: String?
     var position: Int?
     var compact = true
+    var tintedPill = false
     @State private var failure: String?
     @State private var showingLogin = false
 
@@ -199,8 +226,19 @@ struct CatalogPlayButton: View {
             }
         } label: {
             if compact {
-                Image(systemName: "play.fill").frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
+                Group {
+                    if tintedPill {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(MusicProductStyle.accent)
+                            .frame(width: 32, height: 32)
+                            .background(MusicProductStyle.accent.opacity(0.11), in: Circle())
+                    } else {
+                        Image(systemName: "play.fill")
+                    }
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
             } else {
                 Label("player.play", systemImage: "play.fill").frame(minHeight: 44)
                     .contentShape(Rectangle())
@@ -260,7 +298,7 @@ struct CatalogRowView: View {
                 label
             }
             if row.item.canPlay {
-                CatalogPlayButton(model: model, item: row.item, contextURI: contextURI, position: row.position)
+                CatalogPlayButton(model: model, item: row.item, contextURI: contextURI, position: row.position, tintedPill: true)
             }
         }
         .contextMenu {
@@ -344,6 +382,11 @@ struct CatalogPageFooter: View {
             ContentUnavailableView("catalog.empty", systemImage: "music.note.list")
         } else if state.next != nil {
             Button("catalog.loadMore") { Task { await load(true, false) } }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(MusicProductStyle.accent)
+                .padding(.horizontal, 20)
+                .frame(minHeight: 44)
+                .background(MusicProductStyle.accent.opacity(0.12), in: Capsule())
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("catalogLoadMore")
         }

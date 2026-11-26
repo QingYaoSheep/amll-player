@@ -17,6 +17,8 @@ final class DesktopLyricsController: NSObject {
     @ObservationIgnored private weak var model: AppModel?
     @ObservationIgnored private weak var sourceView: DesktopLyricsSourceView?
     @ObservationIgnored private var restorePlayer: (() -> Void)?
+    @ObservationIgnored private var restoreCompletion: ((Bool) -> Void)?
+    @ObservationIgnored private var restoreTimeout: Task<Void, Never>?
     @ObservationIgnored private var controller: AVPictureInPictureController?
     @ObservationIgnored private var possibility: NSKeyValueObservation?
     @ObservationIgnored private var producer: DesktopLyricsFrames?
@@ -46,6 +48,7 @@ final class DesktopLyricsController: NSObject {
         self.model = model
         restorePlayer = restore
         if let layer = producer?.layer { view.install(layer) }
+        completeRestore(restored: true)
     }
 
     func detach(_ view: DesktopLyricsSourceView) {
@@ -53,7 +56,10 @@ final class DesktopLyricsController: NSObject {
         sourceView = nil
         autoStart = false
         controller?.canStartPictureInPictureAutomaticallyFromInline = false
-        if state == .stopped { restorePlayer = nil; releaseIfIdle() }
+        if state == .stopped {
+            restorePlayer = nil
+            releaseIfIdle()
+        }
     }
 
     func update(_ view: DesktopLyricsSourceView, phase: ScenePhase, autoStart: Bool,
@@ -71,7 +77,6 @@ final class DesktopLyricsController: NSObject {
         if phase == .background, previous != .background, armed, state == .stopped,
            UIApplication.shared.applicationState == .background
         {
-            model?.setDesktopLyricsRunning(true)
             requestStart(automatic: true)
         }
     }
@@ -113,6 +118,7 @@ final class DesktopLyricsController: NSObject {
 
     private func prepare() {
         guard controller == nil, let sourceView, isSupported else { return }
+        do { try MusicAudioSession.preparePictureInPicture() } catch { return }
         let frames = DesktopLyricsFrames()
         let content = AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer: frames.layer,
                                                                  playbackDelegate: self)
@@ -142,6 +148,8 @@ final class DesktopLyricsController: NSObject {
         }
         prepare()
         automaticAttempt = automatic
+        guard controller != nil else { finish(failed: true); return }
+        do { try MusicAudioSession.activatePictureInPicture() } catch { finish(failed: true); return }
         state = .starting
         if automatic { model?.setDesktopLyricsRunning(true) }
         _ = renderNextFrame()
@@ -225,11 +233,19 @@ final class DesktopLyricsController: NSObject {
         tearDown()
     }
 
+    private func completeRestore(restored: Bool) {
+        let completion = restoreCompletion
+        restoreCompletion = nil
+        restoreTimeout?.cancel(); restoreTimeout = nil
+        completion?(restored)
+    }
+
     private func releaseIfIdle() {
         if state == .stopped && !armed { tearDown() }
     }
 
     private func tearDown() {
+        MusicAudioSession.releasePictureInPicture()
         state = .stopped
         startRequested = false
         automaticAttempt = false
@@ -251,9 +267,11 @@ extension DesktopLyricsController: @preconcurrency AVPictureInPictureControllerD
         guard controller === pictureInPictureController else { return }
         if state == .stopping { return }
         if state == .stopped { automaticAttempt = true }
+        try? MusicAudioSession.activatePictureInPicture()
         state = .starting
         startRequested = true
         model?.setDesktopLyricsRunning(true)
+        _ = renderNextFrame()
         waitForCallback()
     }
 
@@ -280,8 +298,14 @@ extension DesktopLyricsController: @preconcurrency AVPictureInPictureControllerD
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
                                     restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         guard controller === pictureInPictureController, let restorePlayer else { completionHandler(false); return }
+        if sourceView?.window != nil { completionHandler(true); return }
+        completeRestore(restored: false)
+        restoreCompletion = completionHandler
         restorePlayer()
-        completionHandler(true)
+        restoreTimeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            self?.completeRestore(restored: false)
+        }
     }
 }
 

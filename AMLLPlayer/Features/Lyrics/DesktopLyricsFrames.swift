@@ -98,7 +98,7 @@ final class DesktopLyricsFrames {
         let lyrics = model.lyrics.document
         let offset = model.lyrics.effectiveOffset
         let key = FrameKey(item: item, size: pixelSize, revision: model.lyrics.documentRevision,
-                           seekRevision: frame.seekRevision, position: animates ? frame.position : 0, offset: offset,
+                           seekRevision: frame.seekRevision, position: animates ? frame.position : (frame.position * 2).rounded(.down) / 2, offset: offset,
                            playing: advancing, configuration: configuration, backgroundRevision: background.revision,
                            reduceMotion: reduceMotion, reduceTransparency: reduceTransparency)
         let renderer = layer.sampleBufferRenderer

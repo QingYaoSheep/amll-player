@@ -304,6 +304,60 @@ final class DesktopLyricsTests: XCTestCase {
         XCTAssertEqual(moved.word, original.word)
     }
 
+    @MainActor
+    func testScrollingViewportKeepsOverlappingMainAndBackgroundVoices() throws {
+        let lines = [
+            LyricLine(id: "lead", text: "Lead", start: 0, end: 6),
+            LyricLine(id: "response", text: "Response", start: 2, end: 5, isBackground: true),
+            LyricLine(id: "overlap", text: "Second lead", start: 3, end: 8)
+        ]
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "duet", title: "", artists: []),
+                                      lines: lines, language: "en", selectionReason: "Overlapping voices")
+        let bounds = CGRect(x: 0, y: 0, width: 320, height: 240)
+        let canvas = AMLLNativeCanvas(frame: bounds)
+        canvas.drivesFramesExternally = true
+        let settings = DesktopLyricsSettings()
+        canvas.configure(document: document, configuration: settings.rendererConfiguration(.init()),
+                         input: .init(position: 3.5, playing: true), active: true,
+                         reduceMotion: true, canSeek: false, desktopSettings: settings)
+        let sample = LyricsPlaybackFrame(snapshot: nil, position: 3.5, playing: true, seekRevision: 0,
+                                         pending: nil, confirmation: nil, legacySeekPosition: nil)
+        _ = canvas.advanceExportFrame(sample: sample, delta: 0)
+        let state = try XCTUnwrap(canvas.frameState)
+        XCTAssertEqual(Set(state.rows.filter { $0.active && !$0.hidden }.map(\.lineIndex)), [0, 1, 2])
+        XCTAssertEqual(canvas.visibleRowCount, 3)
+        XCTAssertGreaterThan(canvas.exportScrollingBounds.height, 50)
+    }
+
+    @MainActor
+    func testNativeInterludeDrawsInSingleLineExport() throws {
+        let lines = [
+            LyricLine(id: "before", text: "Before", start: 0, end: 1),
+            LyricLine(id: "after", text: "After", start: 10, end: 11)
+        ]
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "gap", title: "", artists: []),
+                                      lines: lines, language: "en", selectionReason: "Interlude")
+        let canvas = AMLLNativeCanvas(frame: CGRect(x: 0, y: 0, width: 320, height: 128))
+        canvas.drivesFramesExternally = true
+        var settings = DesktopLyricsSettings()
+        settings.mode = .singleLine
+        settings.alignment = .centered
+        canvas.configure(document: document, configuration: settings.rendererConfiguration(.init()),
+                         input: .init(position: 2, playing: true), active: true,
+                         reduceMotion: false, canSeek: false, desktopSettings: settings)
+        var sample = LyricsPlaybackFrame(snapshot: nil, position: 2, playing: true, seekRevision: 0,
+                                         pending: nil, confirmation: nil, legacySeekPosition: nil)
+        _ = canvas.advanceExportFrame(sample: sample, delta: 0)
+        sample.position = 3
+        _ = canvas.advanceExportFrame(sample: sample, delta: 1 / 60)
+        XCTAssertNotNil(canvas.frameState?.interlude)
+        XCTAssertEqual(canvas.visibleRowCount, 0)
+        let dots = canvas.exportScrollingBounds
+        XCTAssertFalse(dots.isNull)
+        XCTAssertEqual(dots.midX, canvas.bounds.midX, accuracy: 1)
+        XCTAssertEqual(dots.midY, canvas.bounds.midY, accuracy: 1)
+    }
+
     private func singleLineFixture() -> LyricsDocument {
         let lines = [
             LyricLine(id: "opening", text: "Opening", start: 0, end: 6,

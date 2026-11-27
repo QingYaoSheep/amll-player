@@ -1175,7 +1175,7 @@ final class AMLLNativeCanvas: UIView {
 
     private static func exportFocuses(_ row: AMLLFrameState.Row, groups: Set<Int>) -> Bool {
         !row.hidden && (groups.contains(row.groupIndex) || row.active || row.visualFocus == .current
-            || row.visualFocus == .holding || row.visualFocus == .preparing)
+            || row.visualFocus == .holding || row.visualFocus == .preparing || (row.retirement?.progress ?? 1) < 1)
     }
 
     var exportScrollingBounds: CGRect {

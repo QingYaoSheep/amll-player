@@ -22,6 +22,8 @@ struct AppSettingsExport: Codable {
     let autoDesktopLyrics: Bool?
     let desktopLyrics: DesktopLyricsSettings?
     let lockScreenLyrics: Bool?
+    let lockScreenLyricsTranslation: Bool?
+    let lockScreenLyricsRomanization: Bool?
     let music: Music
     let lyrics: LyricsSettings
     let appearance: Appearance
@@ -41,6 +43,8 @@ struct AppSettingsExport: Codable {
         autoDesktopLyrics = UserDefaults.standard.bool(forKey: DesktopLyricsController.autoStartKey)
         desktopLyrics = model.desktopLyricsPreferences.settings
         lockScreenLyrics = model.lockScreenLyricsEnabled
+        lockScreenLyricsTranslation = model.lockScreenLyricsShowsTranslation
+        lockScreenLyricsRomanization = model.lockScreenLyricsShowsRomanization
         music = Music(source: model.selectedMusicService,
                       spotifyClientID: model.environment.configuration.spotifyClientID.flatMap(SpotifyClientIDStore.normalized),
                       netEaseQuality: playback.quality, netEaseShuffle: modes.shuffle, netEaseRepeat: modes.repeatMode,

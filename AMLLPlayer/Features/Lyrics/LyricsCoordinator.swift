@@ -45,6 +45,7 @@ final class LyricsCoordinator {
     @ObservationIgnored private var previewTrackID: String?
     @ObservationIgnored private var foreground = true
     @ObservationIgnored private var backgroundAudioLoading = false
+    @ObservationIgnored private var backgroundRomanization = false
     private var canLoadLyrics: Bool { foreground || backgroundAudioLoading }
 
     init(providers: [any LyricsProvider], cache: any LyricsCacheProviding, settingsStore: LyricsSettingsStore = LyricsSettingsStore(), apple: AppleLyricsProvider? = nil) {
@@ -99,12 +100,19 @@ final class LyricsCoordinator {
         }
     }
 
-    func setBackgroundAudioLoading(_ value: Bool) {
-        guard backgroundAudioLoading != value else { return }
+    func setBackgroundAudioLoading(_ value: Bool, romanization: Bool = false) {
+        let generate = value && romanization
+        guard backgroundAudioLoading != value || backgroundRomanization != generate else { return }
+        let startGenerating = generate && !backgroundRomanization
         backgroundAudioLoading = value
+        backgroundRomanization = generate
         guard !foreground else { return }
         if value {
-            if document == nil { reload() }
+            if document == nil {
+                if !isLoading { reload() }
+            } else if startGenerating, let document, let track, document.romanizationTTMLTrack == nil {
+                startRomanization(for: document, trackID: track.spotifyID)
+            }
         } else {
             cancelLoad()
             apple?.invalidateDiscovery()
@@ -224,7 +232,7 @@ final class LyricsCoordinator {
     }
 
     private func startRomanization(for base: LyricsDocument, trackID: String, force: Bool = false) {
-        guard foreground else { return }
+        guard foreground || backgroundRomanization else { return }
         romanizationTask?.cancel()
         romanizationEpoch = UUID()
         let ticket = romanizationEpoch

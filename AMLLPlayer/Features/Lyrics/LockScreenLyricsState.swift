@@ -6,20 +6,26 @@ struct LockScreenLyricsTimeline {
         var row: LockScreenLyricsAttributes.Row
         var start: Double
         var end: Double
+        var translation: String?
+        var romanization: String?
     }
 
     private let cues: [Cue]
 
     init(document: LyricsDocument) {
         guard !document.isInstrumental else { cues = []; return }
+        let generated = Dictionary(document.romanizationTTMLTrack?.cues.map { ($0.sourceLineIndex, $0.line) } ?? [],
+                                   uniquingKeysWith: { _, latest in latest })
+        let auxiliary = LyricsRenderConfiguration(translation: true, romanization: true)
         let sorted = document.lines.enumerated().compactMap { index, line -> Cue? in
             guard !line.isBackground else { return nil }
             let start = line.words.first?.start ?? line.start
             let end = line.words.last?.end ?? line.end
-            let text = line.text.isEmpty ? line.words.map(\.text).joined() : line.text
-            let display = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-            guard start.isFinite, end.isFinite, start >= 0, end > start, !display.isEmpty else { return nil }
-            return Cue(row: .init(id: index, text: display), start: start, end: end)
+            guard start.isFinite, end.isFinite, start >= 0, end > start, let display = Self.text(of: line) else { return nil }
+            let fallback = auxiliary.auxiliaryEntries(for: line).first { $0.kind == .romanization }?.text
+            return Cue(row: .init(id: index, text: display), start: start, end: end,
+                       translation: Self.normalized(line.translation),
+                       romanization: generated[index].flatMap(Self.text(of:)) ?? Self.normalized(fallback))
         }.sorted { lhs, rhs in
             lhs.start == rhs.start ? lhs.row.id < rhs.row.id : lhs.start < rhs.start
         }
@@ -29,6 +35,26 @@ struct LockScreenLyricsTimeline {
     }
 
     var isEmpty: Bool { cues.isEmpty }
+
+    private static func text(of line: LyricLine) -> String? {
+        normalized(line.text.isEmpty ? line.words.map(\.text).joined() : line.text)
+    }
+
+    private static func normalized(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let compact = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return compact.isEmpty ? nil : compact
+    }
+
+    private func putAuxiliary(_ cue: Cue?, into state: inout State) {
+        state.translation = cue?.translation
+        state.romanization = cue?.romanization
+    }
+
+    func updateFrozenAuxiliary(_ state: inout State) {
+        guard let current = state.current else { return }
+        putAuxiliary(cues.first { $0.row == current }, into: &state)
+    }
 
     func update(_ state: inout State, position: Double, offset: Double) -> Double? {
         guard position.isFinite, offset.isFinite else { return nil }
@@ -45,10 +71,12 @@ struct LockScreenLyricsTimeline {
         state.previous = low >= 2 ? cues[low - 2].row : nil
         state.current = latest?.row
         state.next = next?.row
+        putAuxiliary(latest, into: &state)
         if let latest, let next, next.start - 0.25 - latest.end >= 4 {
             if time < latest.end { return latest.end + offset }
             state.previous = latest.row
             state.current = nil
+            putAuxiliary(nil, into: &state)
         }
         return next.map { $0.start + offset }
     }
@@ -78,6 +106,9 @@ enum LockScreenLyricsState {
                 state.previous = previous.previous
                 state.current = previous.current
                 state.next = previous.next
+                state.translation = previous.translation
+                state.romanization = previous.romanization
+                timeline?.updateFrozenAuxiliary(&state)
             }
             state.status = .outOfSync
             return nil
@@ -87,22 +118,31 @@ enum LockScreenLyricsState {
         return timeline.update(&state, position: position, offset: offset)
     }
 
+    static func applyAuxiliaryPreferences(_ state: inout State, translation: Bool, romanization: Bool) {
+        if !translation { state.translation = nil }
+        if !romanization { state.romanization = nil }
+    }
+
     static func fitted(_ source: State) -> State {
         var state = source
         state.title = prefix(state.title, bytes: 192)
         state.previous = state.previous.map { shortened($0, to: 480) }
         state.current = state.current.map { shortened($0, to: 960) }
         state.next = state.next.map { shortened($0, to: 480) }
+        state.translation = state.translation.map { prefix($0, bytes: 480) }
+        state.romanization = state.romanization.map { prefix($0, bytes: 480) }
         let encoder = JSONEncoder()
         func fits(_ value: State) -> Bool { ((try? encoder.encode(value))?.count ?? .max) <= 3_800 }
         if fits(state) { return state }
         state.backdrop = nil
         if fits(state) { return state }
         // Quotes and control characters can take more space once encoded.
-        state.title = prefix(state.title, bytes: 120)
-        state.previous = state.previous.map { shortened($0, to: 120) }
-        state.next = state.next.map { shortened($0, to: 120) }
-        state.current = state.current.map { shortened($0, to: 200) }
+        state.title = prefix(state.title, bytes: 100)
+        state.previous = state.previous.map { shortened($0, to: 90) }
+        state.next = state.next.map { shortened($0, to: 90) }
+        state.current = state.current.map { shortened($0, to: 155) }
+        state.translation = state.translation.map { prefix($0, bytes: 60) }
+        state.romanization = state.romanization.map { prefix($0, bytes: 60) }
         return state
     }
 

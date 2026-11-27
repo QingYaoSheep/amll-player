@@ -89,6 +89,21 @@ struct SettingsView: View {
                                                 color: MusicProductStyle.accent)
                     }
                     .accessibilityIdentifier("lockScreenLyricsEnabled")
+                    if model.lockScreenLyricsEnabled {
+                        SettingsDivider()
+                        Toggle(isOn: $model.lockScreenLyricsShowsTranslation.hapticSelection()) {
+                            SettingsIconToggleLabel(title: "lockScreenLyrics.translation", icon: "translate",
+                                                    color: MusicProductStyle.accent)
+                        }
+                        .accessibilityIdentifier("lockScreenLyricsTranslation")
+
+                        SettingsDivider()
+                        Toggle(isOn: $model.lockScreenLyricsShowsRomanization.hapticSelection()) {
+                            SettingsIconToggleLabel(title: "lockScreenLyrics.romanization", icon: "textformat",
+                                                    color: MusicProductStyle.accent)
+                        }
+                        .accessibilityIdentifier("lockScreenLyricsRomanization")
+                    }
 
                     SettingsDivider()
 

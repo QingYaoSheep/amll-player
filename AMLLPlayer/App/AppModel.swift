@@ -81,6 +81,21 @@ final class AppModel {
             refreshLockScreenLyricsLoading()
         }
     }
+    var lockScreenLyricsShowsTranslation = UserDefaults.standard.object(forKey: LockScreenLyricsController.translationKey) as? Bool ?? true {
+        didSet {
+            guard lockScreenLyricsShowsTranslation != oldValue else { return }
+            UserDefaults.standard.set(lockScreenLyricsShowsTranslation, forKey: LockScreenLyricsController.translationKey)
+            lockScreenLyrics.synchronize(self)
+        }
+    }
+    var lockScreenLyricsShowsRomanization = UserDefaults.standard.object(forKey: LockScreenLyricsController.romanizationKey) as? Bool ?? true {
+        didSet {
+            guard lockScreenLyricsShowsRomanization != oldValue else { return }
+            UserDefaults.standard.set(lockScreenLyricsShowsRomanization, forKey: LockScreenLyricsController.romanizationKey)
+            refreshLockScreenLyricsLoading()
+            lockScreenLyrics.synchronize(self)
+        }
+    }
     private(set) var selectedDeviceID: String?
     private(set) var isBrowserLoginInProgress = false
 
@@ -256,7 +271,7 @@ final class AppModel {
         let canLoad = !isForeground && lockScreenLyricsEnabled && lockScreenLyrics.needsBackgroundLyrics
             && selectedMusicService == .netease && playbackSnapshot?.source == .nativeAudio
             && playbackSnapshot?.isPlaying == true && MusicAudioSession.ownsPlayback
-        lyrics.setBackgroundAudioLoading(canLoad)
+        lyrics.setBackgroundAudioLoading(canLoad, romanization: lockScreenLyricsShowsRomanization)
     }
 
     private func suspendForegroundPlayback() {

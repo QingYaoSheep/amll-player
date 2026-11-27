@@ -23,6 +23,39 @@ final class LockScreenLyricsTests: XCTestCase {
         XCTAssertEqual(state.previous?.text, "Second line")
         XCTAssertNil(state.current)
         XCTAssertEqual(state.next?.text, "Third line")
+        XCTAssertNil(state.translation)
+        XCTAssertNil(state.romanization)
+    }
+
+    func testUsesCurrentTranslationAndGeneratedProviderOrWordRomanization() {
+        var state = State(track: 1, title: "Song", status: .playing)
+        let timeline = fixture()
+        _ = timeline.update(&state, position: 1.1, offset: 0)
+        XCTAssertEqual(state.translation, "译文一")
+        XCTAssertEqual(state.romanization, "Provider first")
+        _ = timeline.update(&state, position: 5.1, offset: 0)
+        XCTAssertEqual(state.translation, "译文二")
+        XCTAssertEqual(state.romanization, "Generated second")
+        _ = timeline.update(&state, position: 16.0, offset: 0)
+        XCTAssertNil(state.translation)
+        XCTAssertEqual(state.romanization, "Word fallback")
+    }
+
+    func testAuxiliaryTogglesAreIndependentAndFollowTheFrozenLine() {
+        let timeline = fixture()
+        var playing = State(track: 1, title: "Song", status: .playing)
+        _ = timeline.update(&playing, position: 5.2, offset: 0)
+        LockScreenLyricsState.applyAuxiliaryPreferences(&playing, translation: true, romanization: false)
+        XCTAssertEqual(playing.translation, "译文二")
+        XCTAssertNil(playing.romanization)
+
+        var frozen = State(track: 1, title: "Song", status: .loading)
+        _ = LockScreenLyricsState.project(&frozen, timeline: timeline, position: 16, offset: 0,
+                                          playing: true, trusted: false, previous: playing)
+        LockScreenLyricsState.applyAuxiliaryPreferences(&frozen, translation: false, romanization: true)
+        XCTAssertEqual(frozen.current?.id, playing.current?.id)
+        XCTAssertNil(frozen.translation)
+        XCTAssertEqual(frozen.romanization, "Generated second")
     }
 
     func testNormalHandoffScrollsButConfirmedJumpsSnapInEitherDirection() {
@@ -86,11 +119,13 @@ final class LockScreenLyricsTests: XCTestCase {
         let state = State(track: 4, title: long,
                           previous: .init(id: 2, text: long), current: .init(id: 3, text: long),
                           next: .init(id: 4, text: long), status: .playing,
-                          backdrop: Data(repeating: 0, count: 4096))
+                          backdrop: Data(repeating: 0, count: 4096), translation: long, romanization: long)
         let fitted = LockScreenLyricsState.fitted(state)
         XCTAssertLessThan(try JSONEncoder().encode(fitted).count, 4_096)
         XCTAssertEqual(fitted.rows.map(\.id), [2, 3, 4])
         XCTAssertTrue(fitted.current?.text.hasPrefix("👩🏽‍🎤") == true)
+        XCTAssertTrue(fitted.translation?.hasPrefix("👩🏽‍🎤") == true)
+        XCTAssertTrue(fitted.romanization?.hasPrefix("👩🏽‍🎤") == true)
         XCTAssertNil(fitted.backdrop)
     }
 
@@ -107,12 +142,15 @@ final class LockScreenLyricsTests: XCTestCase {
 
     private func fixture() -> LockScreenLyricsTimeline {
         let lines = [
-            LyricLine(id: "1", text: "First\nline", start: 1, end: 4),
+            LyricLine(id: "1", text: "First\nline", start: 1, end: 4, translation: "译文一", romanization: "Provider first"),
             LyricLine(id: "background", text: "Background", start: 3, end: 4, isBackground: true),
-            LyricLine(id: "2", text: "Second line", start: 5, end: 6),
-            LyricLine(id: "3", text: "Third line", start: 15, end: 19),
+            LyricLine(id: "2", text: "Second line", start: 5, end: 6, translation: "译文二", romanization: "Provider second"),
+            LyricLine(id: "3", text: "Third line", start: 15, end: 19,
+                      words: [.init(text: "Third line", start: 15, end: 19, romanWord: "Word fallback")]),
         ]
+        let generated = LyricLine(id: "romanized", text: "Generated second", start: 5, end: 6)
         return .init(document: .init(candidate: .init(source: .qq, sourceID: "test", title: "Song", artists: []),
-                                     lines: lines, language: "en", selectionReason: "fixture"))
+                                     lines: lines, language: "en", selectionReason: "fixture",
+                                     romanizationTTMLTrack: .init(ttml: "", cues: [.init(sourceLineIndex: 2, line: generated, tokens: [])])))
     }
 }

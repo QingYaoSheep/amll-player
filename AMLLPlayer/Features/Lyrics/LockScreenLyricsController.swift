@@ -4,6 +4,8 @@ import UIKit
 
 @MainActor final class LockScreenLyricsController {
     static let preferenceKey = "lockScreenLyrics.enabled"
+    static let translationKey = "lockScreenLyrics.translation"
+    static let romanizationKey = "lockScreenLyrics.romanization"
     private typealias Attributes = LockScreenLyricsAttributes
     private typealias State = Attributes.ContentState
     private typealias LyricsActivity = Activity<Attributes>
@@ -112,8 +114,6 @@ import UIKit
         resetTrack(identity.spotifyID)
         let foreground = model.lockScreenLyricsInForeground
         let trusted = LockScreenLyricsState.canFollow(snapshot, externalSampleAfter: externalSampleAfter, uptime: uptime)
-        if trusted, let pendingSeek = frame.pending, pendingSeek.trackURI == item.uri,
-           (pending?.state ?? sent)?.track == trackNumber { return }
         let coordinator = model.lyrics
         let document = coordinator.track?.spotifyID == identity.spotifyID ? coordinator.document : nil
         let revision = document == nil ? nil : coordinator.documentRevision
@@ -125,22 +125,30 @@ import UIKit
 
         if activity == nil {
             guard endingTask == nil, uptime >= retryAfter, frame.pending == nil,
-                  session.canStart(foreground: foreground, playing: snapshot.isPlaying,
-                                   synchronized: trusted && timeline?.isEmpty == false) else { return }
-        }
-        if timeline?.isEmpty == true || [.disabled, .instrumental, .notFound, .failed].contains(coordinator.status) && document == nil {
-            endActivity()
-            return
+                  session.canStart(foreground: foreground, playing: snapshot.isPlaying, synchronized: trusted) else { return }
         }
 
         loadArtwork(item.artworkURL)
-        let displayed = pending?.state ?? sent
-        var state = State(track: trackNumber, title: item.title, status: .loading, backdrop: backdrop)
+        let displayed = lastCandidate
+        let lyricsUnavailable = timeline?.isEmpty == true || (document == nil && [.instrumental, .notFound, .failed].contains(coordinator.status))
+        var state = State(track: trackNumber, title: item.title, status: lyricsUnavailable ? .unavailable : .loading, backdrop: backdrop)
         let offset = coordinator.effectiveOffset
-        let reanchored = trusted && timeline != nil && (lastSeekRevision != frame.seekRevision || lastOffset != offset)
-        let nextCue = LockScreenLyricsState.project(&state, timeline: timeline, position: frame.position, offset: offset,
+        let holdingSeek = frame.pending?.trackURI == item.uri && displayed?.track == trackNumber
+        let readyTimeline = lyricsUnavailable ? nil : timeline
+        let reanchored = trusted && !holdingSeek && readyTimeline != nil && (lastSeekRevision != frame.seekRevision || lastOffset != offset)
+        let nextCue: Double?
+        if holdingSeek, trusted, let displayed {
+            state = displayed
+            state.backdrop = backdrop
+            readyTimeline?.updateFrozenAuxiliary(&state)
+            nextCue = nil
+        } else {
+            nextCue = LockScreenLyricsState.project(&state, timeline: readyTimeline, position: frame.position, offset: offset,
                                                     playing: snapshot.isPlaying, trusted: trusted, previous: displayed)
-        if trusted && timeline != nil {
+        }
+        LockScreenLyricsState.applyAuxiliaryPreferences(&state, translation: model.lockScreenLyricsShowsTranslation,
+                                                        romanization: model.lockScreenLyricsShowsRomanization)
+        if trusted && !holdingSeek && readyTimeline != nil {
             lastSeekRevision = frame.seekRevision
             lastOffset = offset
         }
@@ -150,7 +158,7 @@ import UIKit
         let fitted = LockScreenLyricsState.fitted(state)
         // Keep an honest snapshot if the app is suspended before the next expected cue.
         let boundary = nextCue ?? (snapshot.duration > frame.position ? snapshot.duration : frame.position + 15)
-        let staleDate: Date? = if state.status == .playing || state.status == .loading {
+        let staleDate: Date? = if state.status == .playing || state.status == .loading || state.status == .unavailable {
             Date().addingTimeInterval(state.status == .loading ? 20 : max(0, boundary - frame.position) / max(0.1, snapshot.playbackRate) + 2)
         } else { nil }
         let content = ActivityContent(state: fitted, staleDate: staleDate)

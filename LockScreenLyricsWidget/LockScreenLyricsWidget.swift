@@ -13,18 +13,18 @@ struct LockScreenLyricsWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) { lyricsIcon }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.state.current?.text ?? context.state.next?.text ?? context.state.title)
-                        .font(.headline)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(context.state.current?.text ?? context.state.next?.text ?? context.state.title)
+                            .font(.headline)
+                            .lineLimit(2)
+                        LockScreenLyricsSupplementaryText(state: context.state)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } compactLeading: {
                 lyricsIcon
             } compactTrailing: {
-                if context.state.status == .paused {
-                    Image(systemName: "pause.fill")
-                        .accessibilityLabel(Text("lockScreenLyrics.paused"))
-                }
+                islandStatus(context.isStale ? .outOfSync : context.state.status)
             } minimal: {
                 lyricsIcon
             }
@@ -35,6 +35,40 @@ struct LockScreenLyricsWidget: Widget {
     private var lyricsIcon: some View {
         Image(systemName: "music.note.list")
             .accessibilityLabel(Text("lockScreenLyrics.title"))
+    }
+
+    private func islandStatus(_ status: LockScreenLyricsAttributes.Status) -> some View {
+        let (icon, label): (String, LocalizedStringKey) = switch status {
+        case .playing: ("waveform", "lockScreenLyrics.playing")
+        case .paused: ("pause.fill", "lockScreenLyrics.paused")
+        case .outOfSync: ("pause.circle", "lockScreenLyrics.outOfSync")
+        case .loading: ("ellipsis", "lockScreenLyrics.loading")
+        case .unavailable: ("music.note", "lockScreenLyrics.unavailable")
+        }
+        return Image(systemName: icon).accessibilityLabel(Text(label))
+    }
+}
+
+private struct LockScreenLyricsSupplementaryText: View {
+    var state: LockScreenLyricsAttributes.ContentState
+
+    var body: some View {
+        if state.current != nil, state.romanization != nil || state.translation != nil {
+            VStack(alignment: .leading, spacing: 1) {
+                if let romanization = state.romanization {
+                    Text(romanization)
+                        .accessibilityLabel(Text("lockScreenLyrics.romanizationAccess \(romanization)"))
+                }
+                if let translation = state.translation {
+                    Text(translation)
+                        .accessibilityLabel(Text("lockScreenLyrics.translationAccess \(translation)"))
+                }
+            }
+            .font(.footnote.weight(.medium))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .opacity(0.82)
+        }
     }
 }
 
@@ -74,10 +108,10 @@ private struct LockScreenLyricsCard: View {
             .font(.caption.weight(.semibold))
             .opacity(0.75)
 
-            if state.status != .loading {
+            if !state.rows.isEmpty {
                 ViewThatFits(in: .vertical) {
                     lyrics(state.rows)
-                    lyrics([state.current, state.next].compactMap { $0 })
+                    lyrics([state.current, state.next].compactMap { $0 }, currentLineLimit: 1)
                     lyrics([state.current ?? state.next].compactMap { $0 }, currentLineLimit: 1)
                 }
                 .id(state.track)
@@ -90,7 +124,7 @@ private struct LockScreenLyricsCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 17)
         .padding(.vertical, 10)
-        .frame(height: 134)
+        .frame(height: state.rows.isEmpty ? 68 : 154)
     }
 
     private var status: LocalizedStringKey? {
@@ -98,6 +132,7 @@ private struct LockScreenLyricsCard: View {
         switch state.status {
         case .paused: return "lockScreenLyrics.paused"
         case .loading: return "lockScreenLyrics.loading"
+        case .unavailable: return "lockScreenLyrics.unavailable"
         case .playing, .outOfSync: return nil
         }
     }
@@ -106,14 +141,20 @@ private struct LockScreenLyricsCard: View {
         VStack(alignment: .leading, spacing: 3) {
             ForEach(rows) { row in
                 let focused = row.id == state.current?.id
-                Text(row.text)
-                    .font(focused ? .title3.weight(.bold) : .subheadline.weight(.medium))
-                    .lineLimit(focused ? currentLineLimit : 1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .opacity(focused ? 1 : 0.66)
-                    .contentTransition(.identity)
-                    .accessibilityAddTraits(focused ? .isSelected : [])
-                    .transition(rowTransition)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.text)
+                        .font(focused ? .title3.weight(.bold) : .subheadline.weight(.medium))
+                        .lineLimit(focused ? currentLineLimit : 1)
+                        .minimumScaleFactor(0.72)
+                        .opacity(focused ? 1 : 0.66)
+                        .contentTransition(.identity)
+                        .accessibilityAddTraits(focused ? .isSelected : [])
+                    if focused {
+                        LockScreenLyricsSupplementaryText(state: state)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(rowTransition)
             }
         }
         .fixedSize(horizontal: false, vertical: true)

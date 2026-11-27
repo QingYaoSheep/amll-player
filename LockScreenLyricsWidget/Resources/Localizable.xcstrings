@@ -4,6 +4,10 @@
     "lockScreenLyrics.loading" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Loading lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在载入歌词"}}}},
     "lockScreenLyrics.outOfSync" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync paused"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"同步暂停"}}}},
     "lockScreenLyrics.paused" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Paused"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"已暂停"}}}},
+    "lockScreenLyrics.playing" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Playing"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"播放中"}}}},
+    "lockScreenLyrics.unavailable" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No synced lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"暂无同步歌词"}}}},
+    "lockScreenLyrics.romanizationAccess %@" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Romanization, %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"音译，%@"}}}},
+    "lockScreenLyrics.translationAccess %@" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Translation, %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"翻译，%@"}}}},
     "lockScreenLyrics.title" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Lock Screen Lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"锁屏歌词"}}}}
   },
   "version" : "1.0"

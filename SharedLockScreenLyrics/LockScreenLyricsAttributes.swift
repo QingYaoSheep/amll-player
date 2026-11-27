@@ -8,7 +8,7 @@ struct LockScreenLyricsAttributes: ActivityAttributes {
     }
 
     enum Status: String, Codable, Hashable, Sendable {
-        case playing, paused, outOfSync, loading
+        case playing, paused, outOfSync, loading, unavailable
     }
 
     struct ContentState: Codable, Hashable, Sendable {
@@ -20,6 +20,8 @@ struct LockScreenLyricsAttributes: ActivityAttributes {
         var status: Status
         var scrollsForward = false
         var backdrop: Data?
+        var translation: String?
+        var romanization: String?
 
         var rows: [Row] { [previous, current, next].compactMap { $0 } }
     }

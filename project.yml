@@ -44,6 +44,10 @@ targets:
           - Resources
       - path: AMLLPlayer/Resources
         buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
+      - path: Licenses
+        buildPhase: resources
       - path: SharedLockScreenLyrics
     configFiles:
       Debug: Configuration/Base.xcconfig
@@ -60,7 +64,7 @@ targets:
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/Frameworks"
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 1.0.0
         SUPPORTS_MACCATALYST: NO
     info:
       path: Generated/AMLLPlayer-Info.plist
@@ -93,7 +97,10 @@ targets:
         SpotifyRedirectURI: $(SPOTIFY_REDIRECT_URI)
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchMark
+          UIImageRespectsSafeAreaInsets: true
     dependencies:
       - target: LockScreenLyricsWidget
         embed: true
@@ -119,7 +126,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.stevexmh.amllplayer.lockscreenlyrics
         PRODUCT_NAME: LockScreenLyricsWidget
         CURRENT_PROJECT_VERSION: 1
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 1.0.0
         APPLICATION_EXTENSION_API_ONLY: YES
         PROVISIONING_PROFILE_SPECIFIER: $(AMLL_LOCK_SCREEN_LYRICS_PROFILE)
         LD_RUNPATH_SEARCH_PATHS:

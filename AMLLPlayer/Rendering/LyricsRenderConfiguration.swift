@@ -353,6 +353,17 @@ final class LyricsRenderPreferences {
         persist()
     }
 
+    func restore(profile newProfile: LyricsPresentationProfile,
+                 current: LyricsRenderConfiguration,
+                 savedCustom: LyricsRenderConfiguration?) {
+        switchingProfile = true
+        profile = newProfile
+        configuration = current.validated()
+        migratedCustomConfiguration = savedCustom?.validated() ?? (newProfile == .custom ? current.validated() : nil)
+        switchingProfile = false
+        persist()
+    }
+
     private func persist() {
         guard let data = try? JSONEncoder().encode(Stored(version: 2, profile: profile,
                                                           configuration: configuration.validated(),

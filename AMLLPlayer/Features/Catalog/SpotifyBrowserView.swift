@@ -219,18 +219,36 @@ struct CatalogSearchView: View {
                 else {
                     filters
                     if displayedRequest == request {
+                        let queries = request.queries(supported: store.provider.searchKinds)
+                        let allEmpty = store.searchFilter == nil && !queries.isEmpty && queries.allSatisfy { q in
+                            let state = store.page(q)
+                            return !state.isLoading && state.error == nil && state.loadedAt != nil && state.rows.isEmpty
+                        }
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 28) {
-                                ForEach(request.queries(supported: store.provider.searchKinds), id: \.self) { query in
-                                    MusicSearchGroup(model: model, store: store, query: query,
-                                        state: store.page(query), preview: store.searchFilter == nil,
-                                        onSelect: { store.rememberSearch(request.term) },
-                                        seeAll: { kind in store.rememberSearch(request.term); store.searchFilter = kind })
-                                }
-                            }.padding(.horizontal, 20).padding(.vertical, 12)
-                                .frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
+                            if allEmpty {
+                                ContentUnavailableView.search(text: request.term)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, 48)
+                            } else {
+                                LazyVStack(alignment: .leading, spacing: 28) {
+                                    ForEach(queries, id: \.self) { query in
+                                        MusicSearchGroup(model: model, store: store, query: query,
+                                            state: store.page(query), preview: store.searchFilter == nil,
+                                            onSelect: { store.rememberSearch(request.term) },
+                                            seeAll: { kind in store.rememberSearch(request.term); store.searchFilter = kind })
+                                    }
+                                }.padding(.horizontal, 20).padding(.vertical, 12)
+                                    .frame(maxWidth: MusicCatalogLayout.maximumWidth).frame(maxWidth: .infinity)
+                            }
                         }
                         .scrollDismissesKeyboard(.interactively)
+                        .refreshable {
+                            await withTaskGroup(of: Void.self) { group in
+                                for query in queries {
+                                    group.addTask { await store.load(query, force: true) }
+                                }
+                            }
+                        }
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                             .padding(.top, 16)
@@ -283,7 +301,7 @@ struct CatalogSearchView: View {
     private var filters: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
-                filter("综合", kind: nil)
+                filter(String(localized: "综合"), kind: nil)
                 ForEach(store.searchLibrary ? [.track, .album, .artist, .playlist] : store.provider.searchKinds, id: \.self) { kind in
                     filter(kind.title, kind: kind)
                 }
@@ -297,7 +315,7 @@ struct CatalogSearchView: View {
     private var history: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("搜索 " + model.selectedMusicService.title).font(.title3.weight(.semibold))
+                Text("搜索 \(model.selectedMusicService.title)").font(.title3.weight(.semibold))
                 searchCategories
                 HStack {
                     Text("最近搜索").font(.title2.bold())
@@ -335,7 +353,7 @@ struct CatalogSearchView: View {
                                         .frame(width: 44, height: 48)
                                 }
                                 .buttonStyle(MusicContentButtonStyle())
-                                .accessibilityLabel("删除搜索记录 " + term)
+                                .accessibilityLabel(Text("删除搜索记录 \(term)"))
                                 .foregroundStyle(.secondary)
                             }
                         }
@@ -432,7 +450,7 @@ private struct MusicSearchGroup: View {
             } else if state.isLoading || state.loadedAt == nil {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 44)
             } else if state.rows.isEmpty {
-                Text("没有找到相关" + kind.title + "，试试其他关键词。").font(.subheadline).foregroundStyle(.secondary)
+                Text("没有找到相关\(kind.title)，试试其他关键词。").font(.subheadline).foregroundStyle(.secondary)
             } else if !preview, state.next != nil {
                 CatalogPageFooter(state: state) { more, force in
                     await state.load(query: query, provider: store.provider, more: more, force: force)

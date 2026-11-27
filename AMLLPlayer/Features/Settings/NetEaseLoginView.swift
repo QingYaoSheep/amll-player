@@ -30,7 +30,7 @@ struct NetEaseLoginView: View {
                 if hasActiveQR {
                     qrCard
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-                } else if requestedQR, session.currentState.error == nil, !isGenerating, session.qrStatus != "登录成功" {
+                } else if requestedQR, session.currentState.error == nil, !isGenerating, session.qrPhase != .authorized {
                     Text(LocalizedStringKey(session.qrStatus))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -120,7 +120,7 @@ struct NetEaseLoginView: View {
 
     private var qrButtonTitle: LocalizedStringKey {
         if isGenerating { return "正在生成二维码" }
-        if hasActiveQR || (requestedQR && session.qrStatus != "登录成功") { return "刷新二维码" }
+        if hasActiveQR || (requestedQR && session.qrPhase != .authorized) { return "刷新二维码" }
         return connected ? "重新扫码登录" : "扫码登录"
     }
 

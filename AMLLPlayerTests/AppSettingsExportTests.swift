@@ -66,4 +66,81 @@ import XCTest
         XCTAssertNil(legacySettings.desktopLyrics)
         XCTAssertNil(legacySettings.lockScreenLyricsKeepAlive)
     }
+
+    func testApplyRestoresPreferencesSelectionsAndPlaybackModes() async throws {
+        let suite = "settings-import-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let selected = MusicSourcePreferences(defaults: defaults)
+        selected.selected = .spotify
+        let appearances = LyricsRenderPreferences(defaults: defaults)
+        let settingsStore = LyricsSettingsStore(defaults: defaults)
+        let cache = try SwiftDataLyricsCache(inMemory: true)
+        let lyrics = LyricsCoordinator(providers: [], cache: cache, settingsStore: settingsStore)
+        let desktop = DesktopLyricsPreferences(defaults: defaults)
+        let model = AppModel(environment: .make(configuration: .preview), lyrics: lyrics,
+                             renderPreferences: appearances, desktopLyricsPreferences: desktop, musicPreferences: selected)
+        let haptics = AppHaptics(defaults: defaults)
+
+        var renderConfig = LyricsRenderConfiguration()
+        renderConfig.fontSize = 44
+        renderConfig.bold = false
+        var lyricSettings = LyricsSettings()
+        lyricSettings.globalDelay = 1.25
+        var desktopSettings = DesktopLyricsSettings()
+        desktopSettings.aspect = .tall
+        desktopSettings.plusLighter = false
+
+        let candidate = LyricCandidate(source: .netease, sourceID: "456", title: "Imported Track", artists: ["Tester"])
+        let exported = AppSettingsExport(
+            version: 1,
+            exportedAt: Date(),
+            music: .init(source: .netease, spotifyClientID: nil, netEaseQuality: .lossless, netEaseShuffle: true, netEaseRepeat: .one),
+            lyrics: lyricSettings,
+            appearance: .init(profile: .custom, current: renderConfig, savedCustom: renderConfig),
+            trackLyrics: ["netease:456": .init(candidate: candidate, offset: -0.75)],
+            pronunciationOverrides: [:],
+            lockScreenLyrics: true,
+            lockScreenLyricsTranslation: false,
+            lockScreenLyricsRomanization: true,
+            lockScreenLyricsKeepAlive: false,
+            autoDesktopLyrics: nil,
+            desktopLyrics: desktopSettings,
+            hapticsEnabled: false
+        )
+
+        let savedLockScreen = model.lockScreenLyricsEnabled
+        let savedTranslation = model.lockScreenLyricsShowsTranslation
+        let savedRomanization = model.lockScreenLyricsShowsRomanization
+        let savedKeepAlive = model.lockScreenLyricsKeepAliveEnabled
+        defer {
+            model.lockScreenLyricsEnabled = savedLockScreen
+            model.lockScreenLyricsShowsTranslation = savedTranslation
+            model.lockScreenLyricsShowsRomanization = savedRomanization
+            model.lockScreenLyricsKeepAliveEnabled = savedKeepAlive
+        }
+
+        try await exported.apply(to: model, haptics: haptics)
+
+        XCTAssertFalse(haptics.isEnabled)
+        XCTAssertEqual(model.selectedMusicService, .netease)
+        XCTAssertEqual(model.netEasePlayback.quality, .lossless)
+        XCTAssertEqual(model.lyrics.settings.globalDelay, 1.25)
+        XCTAssertEqual(model.renderPreferences.profile, .custom)
+        XCTAssertEqual(model.renderPreferences.configuration.fontSize, 44)
+        XCTAssertFalse(model.renderPreferences.configuration.bold)
+        XCTAssertEqual(model.desktopLyricsPreferences.settings.aspect, .tall)
+        XCTAssertEqual(model.desktopLyricsPreferences.settings.plusLighter, false)
+        XCTAssertEqual(try cache.selection(for: "netease:456"), .init(candidate: candidate, offset: -0.75))
+
+        var invalid = exported
+        invalid.version = 999
+        do {
+            try await invalid.apply(to: model, haptics: haptics)
+            XCTFail("Expected unsupported settings version to throw")
+        } catch let error as CocoaError {
+            XCTAssertEqual(error.code, .fileReadCorruptFile)
+        }
+    }
 }

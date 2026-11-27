@@ -32,7 +32,7 @@ import Foundation
     func addToLibrary(_ item: MusicCatalogItem) async throws { try await favorite(item) }
     func createPlaylist(name: String, description: String) async throws -> MusicCatalogItem {
         let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, title.count <= 100 else { throw MusicServiceError.musicFailure("请输入 1–100 字的歌单名称。") }
+        guard !title.isEmpty, title.count <= 100 else { throw MusicServiceError.musicFailure(String(localized: "请输入 1–100 字的歌单名称。")) }
         let context = session.currentState.contextID
         let before = try await ownedPlaylists(); try check(context)
         let r: [String: Any]
@@ -42,7 +42,7 @@ import Foundation
             let after = try await ownedPlaylists()
             let old = Set(before.map(\.spotifyID))
             let candidates = after.filter { !old.contains($0.spotifyID) && $0.name == title }
-            guard candidates.count == 1 else { throw MusicServiceError.musicFailure("创建结果尚未确认，请刷新我的歌单后核对，避免重复创建。") }
+            guard candidates.count == 1 else { throw MusicServiceError.musicFailure(String(localized: "创建结果尚未确认，请刷新我的歌单后核对，避免重复创建。")) }
             try check(context)
             if !description.isEmpty { try await editPlaylist(candidates[0], name: title, description: description, entries: nil) }
             return candidates[0]
@@ -109,7 +109,7 @@ import Foundation
         let p = try await catalog.playlist(item.spotifyID, force: true)
         let creator = p["creator"] as? [String: Any] ?? [:]
         guard NetEaseDecoder.id(creator["userId"]) == session.profile?.id, p["specialType"] as? Int != 5 else {
-            throw MusicServiceError.musicFailure("此歌单不能由当前账号编辑。")
+            throw MusicServiceError.musicFailure(String(localized: "此歌单不能由当前账号编辑。"))
         }
     }
     private func ownedPlaylists() async throws -> [MusicCatalogItem] {

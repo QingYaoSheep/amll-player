@@ -8,10 +8,15 @@ struct NetEaseProfile: Equatable {
     var vipType: Int?
 }
 @MainActor @Observable final class NetEaseSession: MusicSessionProviding {
+    enum QRPhase: Equatable {
+        case idle, generating, waiting, scanned, expired, networkPaused, authorized
+    }
+
     private(set) var currentState = MusicConnectionState()
     private(set) var profile: NetEaseProfile?
     private(set) var qrURL: URL?
-    private(set) var qrStatus = "未登录"
+    private(set) var qrPhase: QRPhase = .idle
+    private(set) var qrStatus = String(localized: "未登录")
     private(set) var qrExpires: Date?
     @ObservationIgnored let connectionStates: AsyncStream<MusicConnectionState>
     @ObservationIgnored private let continuation: AsyncStream<MusicConnectionState>.Continuation
@@ -88,14 +93,14 @@ struct NetEaseProfile: Equatable {
     }
     func beginQR() async {
         cancelQR(); generation = UUID(); let epoch = generation
-        currentState.requesting = true; currentState.error = nil; qrStatus = "正在生成二维码"; publish()
+        currentState.requesting = true; currentState.error = nil; qrPhase = .generating; qrStatus = String(localized: "正在生成二维码"); publish()
         do {
             let r = try await api.send("/login/qrcode/unikey", ["type": 1], cookie: nil)
             guard epoch == generation, !Task.isCancelled else { return }
             guard let key = r.object["unikey"] as? String, !key.isEmpty else { throw NetEaseError.invalidResponse }
             var url = URLComponents(string: "https://music.163.com/login")!
             url.queryItems = [URLQueryItem(name: "codekey", value: key)]
-            qrURL = url.url; qrExpires = Date().addingTimeInterval(180); qrStatus = "等待扫码"
+            qrURL = url.url; qrExpires = Date().addingTimeInterval(180); qrPhase = .waiting; qrStatus = String(localized: "等待扫码")
             polling = Task { [weak self] in
                 guard let self else { return }
                 var confirmedCookie: String?
@@ -108,18 +113,18 @@ struct NetEaseProfile: Equatable {
                             guard epoch == generation, !Task.isCancelled else { return }
                             let p = try Self.decodeProfile(account.object)
                             try store.save(Data(value.utf8)); cookie = value; currentState.contextID = UUID()
-                            qrStatus = "登录成功"; install(profile: p); finishQR(); return
+                            qrPhase = .authorized; qrStatus = String(localized: "登录成功"); install(profile: p); finishQR(); return
                         }
                         let check = try await api.send("/login/qrcode/client/login", ["key": key, "type": 1], cookie: nil)
                         guard epoch == generation, !Task.isCancelled else { return }
                         switch check.object["code"] as? Int {
-                        case 800: qrStatus = "二维码已过期，请刷新"; finishQR(); return
-                        case 802: qrStatus = "已扫码，等待确认"
+                        case 800: qrPhase = .expired; qrStatus = String(localized: "二维码已过期，请刷新"); finishQR(); return
+                        case 802: qrPhase = .scanned; qrStatus = String(localized: "已扫码，等待确认")
                         case 803:
                             guard let raw = check.cookie else { throw NetEaseError.invalidCookie }
                             confirmedCookie = try NetEaseCookie.normalized(raw)
                             continue
-                        default: qrStatus = "等待扫码"
+                        default: qrPhase = .waiting; qrStatus = String(localized: "等待扫码")
                         }
                     } catch {
                         guard epoch == generation, !Task.isCancelled else { return }
@@ -128,14 +133,15 @@ struct NetEaseProfile: Equatable {
                         }
                         // A suspended URLSession request is not a rejected login.
                         // The original QR expiry bounds retries; do not create a new key.
-                        qrStatus = foreground ? "网络暂时中断，二维码仍有效，正在等待恢复" : "请完成扫码后返回 AMLL"
+                        qrPhase = .networkPaused
+                        qrStatus = foreground ? String(localized: "网络暂时中断，二维码仍有效，正在等待恢复") : String(localized: "请完成扫码后返回 AMLL")
                         currentState.error = nil; publish()
                     }
                     if !foreground { continue }
                     do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 }
                 guard epoch == generation, !Task.isCancelled else { return }
-                qrStatus = "二维码已过期，请刷新"; finishQR()
+                qrPhase = .expired; qrStatus = String(localized: "二维码已过期，请刷新"); finishQR()
             }
         } catch {
             guard epoch == generation else { return }

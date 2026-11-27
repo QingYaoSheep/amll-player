@@ -162,18 +162,25 @@ import Observation
         }
         var result = [ordinary(.recent)].compactMap { $0 }
         let specialized = provider is any MusicHomeProviding
-        if specialized, provider.service == .netease { result.append(.init(id: "new-albums", title: "新碟上架", query: .newAlbums)) }
+        if specialized, provider.service == .netease { result.append(.init(id: "new-albums", title: String(localized: "新碟上架"), query: .newAlbums)) }
         result += [.playlists, .dailySongs, .recentlyAdded].compactMap(ordinary)
         if specialized, provider.service == .appleMusic {
-            result += [.init(id: "recommendations", title: "为你推荐", query: .recommendations),
-                       .init(id: "personal-station", title: "你的专属电台", query: .personalStation),
-                       .init(id: "live-stations", title: "Apple Music 电台", query: .liveStations)]
+            result += [.init(id: "recommendations", title: String(localized: "为你推荐"), query: .recommendations),
+                       .init(id: "personal-station", title: String(localized: "你的专属电台"), query: .personalStation),
+                       .init(id: "live-stations", title: String(localized: "Apple Music 电台"), query: .liveStations)]
         } else if let recommendations = ordinary(.recommendations) { result.append(recommendations) }
         if specialized, provider.service == .netease {
-            for mood in ["放松", "快乐", "伤感"] { result.append(.init(id: "mood-" + mood, title: mood + "时刻", subtitle: "分类歌单", query: .mood(mood))) }
+            let moodTitles: [(String, String)] = [
+                ("放松", String(localized: "放松时刻")),
+                ("快乐", String(localized: "快乐时刻")),
+                ("伤感", String(localized: "伤感时刻")),
+            ]
+            for (mood, title) in moodTitles {
+                result.append(.init(id: "mood-" + mood, title: title, subtitle: String(localized: "分类歌单"), query: .mood(mood)))
+            }
         }
         result += [.topTracks, .savedTracks, .savedAlbums, .followedArtists].compactMap(ordinary)
-        if specialized, provider.service == .appleMusic { result.append(.init(id: "replay", title: "你的年度回顾", query: .replay)) }
+        if specialized, provider.service == .appleMusic { result.append(.init(id: "replay", title: String(localized: "你的年度回顾"), query: .replay)) }
         if let charts = ordinary(.charts) { result.append(charts) }
         return result
     }

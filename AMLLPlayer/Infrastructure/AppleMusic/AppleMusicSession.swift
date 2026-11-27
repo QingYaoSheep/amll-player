@@ -116,7 +116,7 @@ final class AppleMusicSession: MusicSessionProviding {
         guard currentState.connected else { throw MusicCatalogError.signInRequired }
         guard currentState.capabilities.canBrowse else {
             throw currentState.error ?? MusicServiceError.musicFailure(
-                currentState.catalogChecking ? "正在检查 Apple Music 目录服务，请稍后重试。" : "Apple Music 目录服务尚未验证。系统歌曲同步仍可使用。"
+                currentState.catalogChecking ? String(localized: "正在检查 Apple Music 目录服务，请稍后重试。") : String(localized: "Apple Music 目录服务尚未验证。系统歌曲同步仍可使用。")
             )
         }
     }

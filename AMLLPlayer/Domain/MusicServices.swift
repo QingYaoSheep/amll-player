@@ -74,7 +74,11 @@ protocol MusicSessionProviding: AnyObject {
 enum MusicRepeatMode: String, CaseIterable, Codable, Sendable {
     case off, all, one
     var title: String {
-        switch self { case .off: "关闭"; case .all: "全部循环"; case .one: "单曲循环" }
+        switch self {
+        case .off: String(localized: "关闭")
+        case .all: String(localized: "全部循环")
+        case .one: String(localized: "单曲循环")
+        }
     }
 }
 

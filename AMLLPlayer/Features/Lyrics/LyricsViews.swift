@@ -148,7 +148,9 @@ struct LyricsSearchView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(candidate.title).foregroundStyle(.primary)
                                     Text(candidate.artists.joined(separator: ", ") + " · " + candidate.album).font(.caption).foregroundStyle(.secondary)
-                                    Text("\(candidate.score)% · " + candidate.evidence.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary)
+                                    if AppDiagnosticsVisibility.shared.isUnlocked {
+                                        Text("\(candidate.score)% · " + candidate.evidence.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
@@ -202,7 +204,7 @@ private struct LyricsSearchField: ViewModifier {
                             .submitLabel(.search)
                             .accessibilityIdentifier("quickSettingsLyricsSearchField")
                         if !query.isEmpty {
-                            Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
+                            Button("lyrics.clearSearch", systemImage: "xmark.circle.fill") { query = "" }
                                 .labelStyle(.iconOnly)
                                 .frame(width: 44, height: 44)
                                 .buttonStyle(MusicContentButtonStyle())
@@ -239,7 +241,19 @@ private struct LyricsPreviewView: View {
                     if preview.isInstrumental {
                         Text("lyrics.status.instrumental")
                     }
-                    ForEach(preview.lines) { line in LyricDiagnosticRow(line: line) }
+                    ForEach(preview.lines) { line in
+                        if AppDiagnosticsVisibility.shared.isUnlocked {
+                            LyricDiagnosticRow(line: line)
+                        } else {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(line.text)
+                                if let translation = line.translation, !translation.isEmpty {
+                                    Text(translation).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
                 }
             }
             .navigationTitle("lyrics.preview")

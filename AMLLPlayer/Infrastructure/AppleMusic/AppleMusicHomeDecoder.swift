@@ -27,7 +27,7 @@ enum AppleMusicHomeDecoder {
             var groups: [MusicHomeSection] = [], pages: [String: MusicHomePage] = [:]
             for value in values {
                 guard let id = value["id"] as? String, let a = value["attributes"] as? [String: Any] else { continue }
-                let title = display(a["title"]) ?? "推荐"
+                let title = display(a["title"]) ?? String(localized: "推荐")
                 groups.append(.init(id: id, title: title, subtitle: display(a["reason"]), query: .recommendation(id)))
                 if let relations = value["relationships"] as? [String: Any],
                    let content = relations["contents"] as? [String: Any], let items = content["data"] as? [[String: Any]] {
@@ -43,7 +43,7 @@ enum AppleMusicHomeDecoder {
             }
             let views = summary["views"] as? [String: Any] ?? [:]
             var sections: [MusicReplaySection] = []
-            for (key, relationship, title) in [("top-songs", "song", "年度歌曲"), ("top-albums", "album", "年度专辑"), ("top-artists", "artist", "年度歌手")] {
+            for (key, relationship, title) in [("top-songs", "song", String(localized: "年度歌曲")), ("top-albums", "album", String(localized: "年度专辑")), ("top-artists", "artist", String(localized: "年度歌手"))] {
                 guard let view = views[key] as? [String: Any], let entries = view["data"] as? [[String: Any]] else { continue }
                 let decoded = replayRows(entries, relationship: relationship, prefix: "replay:\(year):\(key)")
                 let cursor = try AppleMusicAPI.next(view["next"] as? String, from: url)

@@ -29,7 +29,9 @@ final class MusicCatalogDesignUITests: XCTestCase {
                 let inbox = app.buttons["netEaseRoomInbox"]
                 XCTAssertTrue(inbox.isHittable)
                 inbox.tap()
-                XCTAssertTrue(app.staticTexts["收到的邀请"].waitForExistence(timeout: 5))
+                let inboxTitle = app.staticTexts.matching(NSPredicate(
+                    format: "label == 'Received Invitations' OR label == '收到的邀请'")).firstMatch
+                XCTAssertTrue(inboxTitle.waitForExistence(timeout: 5))
                 app.buttons["backLyricsQuickSettingsChild"].tap()
                 XCTAssertTrue(inbox.waitForExistence(timeout: 5))
             }
@@ -119,13 +121,13 @@ final class MusicCatalogDesignUITests: XCTestCase {
         let song = app.buttons["netEasePickSong:42"]
         XCTAssertTrue(song.waitForExistence(timeout: 5))
         song.tap()
-        XCTAssertTrue(app.staticTexts["你添加了《Fixture Song》"].firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["You added \"Fixture Song\""].firstMatch.waitForExistence(timeout: 8))
         let headerY = header.frame.minY
         let roomContent = app.descendants(matching: .any)["netEaseRoomContent"].firstMatch
         XCTAssertTrue(roomContent.exists)
         roomContent.swipeUp()
         XCTAssertEqual(header.frame.minY, headerY, accuracy: 2)
-        XCTAssertFalse(app.navigationBars["与好友一起听"].isHittable)
+        XCTAssertFalse(app.navigationBars["Listen Together"].isHittable)
         capture(app, "NetEase-room-detail-scrolled")
         app.buttons["closeLyricsQuickSettingsDestination"].tap()
         XCTAssertTrue(capsule.waitForExistence(timeout: 5))
@@ -161,7 +163,7 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertTrue(send.waitForExistence(timeout: 3))
         XCTAssertTrue(send.isEnabled)
         send.tap()
-        XCTAssertTrue(app.buttons["播放歌曲"].firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Play Song"].firstMatch.waitForExistence(timeout: 8))
         let draft = app.descendants(matching: .any)["netEaseMessageDraft"].firstMatch
         XCTAssertTrue(draft.exists)
         draft.tap()
@@ -179,7 +181,7 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertFalse(app.buttons["catalogPlay-track:song0"].exists, "Home cards must not carry an overlapping play button")
         capture(app, "AppleStyle-home-posters")
         card.press(forDuration: 0.8)
-        XCTAssertTrue(app.buttons["播放"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 3))
         capture(app, "AppleStyle-home-context-menu")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.1)).tap()
         app.buttons["musicSourceMenu"].tap()
@@ -204,7 +206,7 @@ final class MusicCatalogDesignUITests: XCTestCase {
         let expand = app.buttons["catalogExpandDescription"]
         reveal(expand, app)
         expand.tap()
-        XCTAssertEqual(expand.label, "收起介绍")
+        XCTAssertEqual(expand.label, "Show Less")
         let duplicate = app.buttons.matching(identifier: "catalogPlay-track:repeated")
         reveal(duplicate.firstMatch, app)
         XCTAssertEqual(duplicate.count, 2, "Duplicate playlist entries must retain their independent positions")
@@ -250,7 +252,7 @@ final class MusicCatalogDesignUITests: XCTestCase {
         XCTAssertFalse(shuffle.isEnabled, "FM must keep random playback disabled")
         capture(app, "AppleStyle-FM-queue-route-before-open")
         XCTAssertTrue(queue.isHittable, "Target: \(queue.debugDescription), viewport: \(panel.frame)"); queue.tap()
-        XCTAssertTrue(app.navigationBars["网易云播放队列"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["NetEase Queue"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["FM Song 100"].exists)
         XCTAssertFalse(app.buttons["Edit"].exists)
         capture(app, "AppleStyle-personal-FM-queue")
@@ -327,7 +329,7 @@ final class MusicCatalogDesignUITests: XCTestCase {
         let expand = app.buttons["catalogExpandDescription"]
         reveal(expand, app)
         expand.tap()
-        XCTAssertEqual(expand.label, "收起介绍")
+        XCTAssertEqual(expand.label, "Show Less")
         reveal(app.buttons["catalogPlay-playlist:list1"], app)
         XCTAssertTrue(app.buttons["catalogPlay-playlist:list1"].isHittable)
         capture(app, "WWDC-playlist-accessibility-text")
@@ -340,7 +342,7 @@ final class MusicCatalogDesignUITests: XCTestCase {
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
         app.launch()
         XCTAssertTrue(app.buttons["musicSourceMenu"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["为 Test Listener 精选"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Featured for Test Listener"].waitForExistence(timeout: 5))
         return app
     }
 

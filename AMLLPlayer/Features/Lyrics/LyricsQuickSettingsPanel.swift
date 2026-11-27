@@ -730,28 +730,30 @@ struct LyricsQuickSettingsPanel: View {
                 .accessibilityFocused($focusedRoute, equals: .lyricsSources)
                 .accessibilityIdentifier("quickSettingsRoute.lyricsSources")
 
-                QuickSettingsDivider(inset: 56)
+                if AppDiagnosticsVisibility.shared.isUnlocked {
+                    QuickSettingsDivider(inset: 56)
 
-                Button {
-                    UIPasteboard.general.string = LyricsCompositingDiagnostics.text(
-                        configuration: configuration,
-                        profile: model.renderPreferences.profile
-                    )
-                    withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
-                        compositingDiagnosticCopied = true
+                    Button {
+                        UIPasteboard.general.string = LyricsCompositingDiagnostics.text(
+                            configuration: configuration,
+                            profile: model.renderPreferences.profile
+                        )
+                        withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
+                            compositingDiagnosticCopied = true
+                        }
+                    } label: {
+                        QuickSettingsCardRow(
+                            title: LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
+                            symbol: compositingDiagnosticCopied ? "checkmark.circle.fill" : "doc.on.doc",
+                            accent: MusicProductStyle.accent
+                        )
                     }
-                } label: {
-                    QuickSettingsCardRow(
-                        title: LocalizedStringKey(compositingDiagnosticCopied ? "quickSettings.diagnosticCopied" : "quickSettings.copyCompositingDiagnostics"),
-                        symbol: compositingDiagnosticCopied ? "checkmark.circle.fill" : "doc.on.doc",
-                        accent: MusicProductStyle.accent
-                    )
+                    .buttonStyle(QuickSettingsRowButtonStyle())
+                    .accessibilityIdentifier("quickSettingsCopyCompositingDiagnostics")
                 }
-                .buttonStyle(QuickSettingsRowButtonStyle())
-                .accessibilityIdentifier("quickSettingsCopyCompositingDiagnostics")
             }
 
-            if let artworkStatus {
+            if AppDiagnosticsVisibility.shared.isUnlocked, let artworkStatus, !artworkStatus.isEmpty {
                 Text(artworkStatus)
                     .font(.footnote)
                     .foregroundStyle(.white.opacity(0.60))
@@ -775,12 +777,12 @@ struct LyricsQuickSettingsPanel: View {
 
     private var backgroundTitle: String {
         switch configuration.backgroundMode ?? .mesh {
-        case .mesh: "Mesh 网格"
-        case .meshColorMode2: "Mesh网格（取色模式2）"
-        case .pixi: "Pixi 流动封面"
-        case .flowing: "流动背景"
-        case .solid: "纯色"
-        case .gradient: "双色渐变"
+        case .mesh: String(localized: "Mesh 网格")
+        case .meshColorMode2: String(localized: "Mesh网格（取色模式2）")
+        case .pixi: String(localized: "Pixi 流动封面")
+        case .flowing: String(localized: "流动背景")
+        case .solid: String(localized: "纯色")
+        case .gradient: String(localized: "双色渐变")
         }
     }
 

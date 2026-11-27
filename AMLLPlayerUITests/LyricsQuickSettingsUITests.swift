@@ -57,7 +57,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         maximum.buttons["blossom.maximum-Increment"].tap()
         XCTAssertEqual(maximum.value as? String, "3")
         revealSetting(app.buttons["blossomPreset"], towardTop: true)
-        XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "自定义")
+        XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "Custom")
         capture(app, name: "Lyrics-animation-version-controls")
         let scale = app.switches["animationStyleScale"]
         revealSetting(scale)
@@ -78,7 +78,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         app.terminate()
         openAnimationSettings()
         XCTAssertEqual(app.buttons["lyricsAnimationStyle"].value as? String, "Apple Music 16.4")
-        XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "自定义")
+        XCTAssertEqual(app.buttons["blossomPreset"].value as? String, "Custom")
         revealSetting(selection)
         XCTAssertEqual(selection.value as? String, "16.4 advance")
         XCTAssertTrue(maximum.isEnabled)
@@ -335,10 +335,10 @@ final class LyricsQuickSettingsUITests: XCTestCase {
         let selector = app.descendants(matching: .any)["quickSettingsBackground"].firstMatch
         reveal(selector, in: app)
         selector.tap()
-        app.buttons["Mesh网格（取色模式2）"].tap()
+        app.buttons["Mesh (Color Mode 2)"].tap()
         XCTAssertTrue(panel(app).exists)
         let background = app.descendants(matching: .any)["quickSettingsBackground"].firstMatch
-        XCTAssertTrue(displayedText(background).contains("取色模式2"))
+        XCTAssertTrue(displayedText(background).contains("Color Mode 2"))
         let scroll = app.scrollViews["lyricsQuickSettingsScroll"]
         let offset = app.buttons["quickSettingsOffsetPlus"]
         reveal(offset, in: app)
@@ -373,7 +373,7 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             // identify the UIKit action when an identifier resolves to a
             // separate, non-hittable SwiftUI menu description.
             let options = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@",
-                "quickSettingsRepeatOption.one", "单曲循环"))
+                "quickSettingsRepeatOption.one", "Repeat One"))
             var visibleOption: XCUIElement?
             let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
                 visibleOption = options.allElementsBoundByIndex.first { $0.isHittable }
@@ -388,12 +388,12 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [menuClosed], timeout: 4), .completed)
             XCTAssertTrue(panel(app).exists)
             let repeatAcknowledged = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "value == %@", "单曲循环"), object: repeatPicker)
+                predicate: NSPredicate(format: "value == %@", "Repeat One"), object: repeatPicker)
             XCTAssertEqual(XCTWaiter.wait(for: [repeatAcknowledged], timeout: 4), .completed)
             let queue = app.buttons["quickSettingsRoute.queue"]
             reveal(queue, in: app)
             queue.tap()
-            let title = service == "netease" ? "网易云播放队列" : "系统播放队列"
+            let title = service == "netease" ? "NetEase Queue" : "System Queue"
             let header = app.staticTexts["lyricsQuickSettingsDestinationTitle"]
             XCTAssertTrue(header.waitForExistence(timeout: 4))
             XCTAssertEqual(header.label, title)

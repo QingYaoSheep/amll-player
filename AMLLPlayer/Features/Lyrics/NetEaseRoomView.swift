@@ -83,7 +83,7 @@ struct NetEaseRoomView: View {
             }
         }
         .sheet(isPresented: $pickingSong) {
-            NetEaseSongPicker(model: model, title: "添加到房间") { item in
+            NetEaseSongPicker(model: model, title: String(localized: "添加到房间")) { item in
                 pickingSong = false
                 run("正在添加歌曲…") { try await playback.recommendRoomSong(item) }
             }

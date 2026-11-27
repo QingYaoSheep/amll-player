@@ -39,11 +39,11 @@ struct LyricsHDRStatusView: UIViewRepresentable {
         func refresh() {
             guard let screen = window?.screen else { return }
             if UIAccessibility.isReduceTransparencyEnabled {
-                text = "已开启「减少透明度」，歌词使用普通亮度（SDR）。"
+                text = String(localized: "已开启「减少透明度」，歌词使用普通亮度（SDR）。")
             } else if screen.potentialEDRHeadroom <= 1 || screen.currentEDRHeadroom <= 1 {
-                text = "这块屏幕当前没有可用的扩展亮度，歌词使用普通亮度（SDR）。"
+                text = String(localized: "这块屏幕当前没有可用的扩展亮度，歌词使用普通亮度（SDR）。")
             } else {
-                text = String(format: "HDR 可用：当前高光上限 %.2f× SDR 白", min(LyricsHDRConfiguration.targetBrightness, screen.currentEDRHeadroom))
+                text = String(format: String(localized: "HDR 可用：当前高光上限 %.2f× SDR 白"), min(LyricsHDRConfiguration.targetBrightness, screen.currentEDRHeadroom))
             }
         }
     }

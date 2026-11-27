@@ -148,10 +148,10 @@ final class NetEaseRoomActivity {
         let oldMembers = Set(old.map(\.id))
         let members = Set(snapshot.members.map(\.id))
         for member in snapshot.members where member.id != room.account && !oldMembers.contains(member.id) {
-            publish(.init(text: "\(member.name) 加入了房间", symbol: "person.badge.plus", destination: room))
+            publish(.init(text: String(localized: "\(member.name) 加入了房间"), symbol: "person.badge.plus", destination: room))
         }
         for member in old where member.id != room.account && !members.contains(member.id) {
-            publish(.init(text: "\(member.name) 离开了房间", symbol: "person.badge.minus", destination: room))
+            publish(.init(text: String(localized: "\(member.name) 离开了房间"), symbol: "person.badge.minus", destination: room))
         }
     }
 
@@ -164,10 +164,25 @@ final class NetEaseRoomActivity {
         for group in Dictionary(grouping: additions, by: { $0.recommenderID ?? "" }).values
             .sorted(by: { ($0.first?.recommenderID ?? "") < ($1.first?.recommenderID ?? "") }) {
             let titles = group.compactMap { names[$0.id] }
-            let subject = snapshot.members.first { $0.id == group.first?.recommenderID }
-                .map { $0.id == room.account ? "你添加了" : "\($0.name) 添加了" } ?? "队列新增"
-            let song = group.count == 1 && titles.count == 1 ? "《\(titles[0])》" : "\(group.count) 首歌曲"
-            publish(.init(text: "\(subject)\(song)", symbol: "music.note.list", destination: room))
+            let recommender = snapshot.members.first { $0.id == group.first?.recommenderID }
+            let text: String
+            if group.count == 1, titles.count == 1 {
+                let title = titles[0]
+                if let recommender {
+                    text = recommender.id == room.account
+                        ? String(localized: "你添加了《\(title)》")
+                        : String(localized: "\(recommender.name) 添加了《\(title)》")
+                } else {
+                    text = String(localized: "队列新增《\(title)》")
+                }
+            } else if let recommender {
+                text = recommender.id == room.account
+                    ? String(localized: "你添加了 \(group.count) 首歌曲")
+                    : String(localized: "\(recommender.name) 添加了 \(group.count) 首歌曲")
+            } else {
+                text = String(localized: "队列新增 \(group.count) 首歌曲")
+            }
+            publish(.init(text: text, symbol: "music.note.list", destination: room))
         }
     }
 
@@ -194,7 +209,7 @@ final class NetEaseRoomActivity {
     func addedLocally(_ item: MusicCatalogItem, now: TimeInterval, alreadyQueued: Bool) {
         guard let room else { return }
         if !alreadyQueued { localAdds[item.spotifyID, default: []].append(now + 120) }
-        let text = alreadyQueued ? "《\(item.name)》已在房间队列中" : "你添加了《\(item.name)》"
+        let text = alreadyQueued ? String(localized: "《\(item.name)》已在房间队列中") : String(localized: "你添加了《\(item.name)》")
         publish(.init(text: text, symbol: "checkmark.circle", destination: room,
                       feedback: alreadyQueued ? .selection : .success),
                 system: false)
@@ -230,7 +245,7 @@ final class NetEaseRoomActivity {
         // Keep IDs tied at the watermark, including partial results on retry.
         chatBaseline = (peer, max(latest, baseline.time), latest > baseline.time ? ids : baseline.ids.union(ids))
         guard let last = incoming.last else { return }
-        let text = incoming.count == 1 ? "\(last.sender) 发来消息" : "收到 \(incoming.count) 条新消息"
+        let text = incoming.count == 1 ? String(localized: "\(last.sender) 发来消息") : String(localized: "收到 \(incoming.count) 条新消息")
         let age = receivedAt.timeIntervalSince1970 - Double(last.time) / 1_000
         let reading = visibleChats.values.contains(destination)
         let freshAfterResume = receivedAt.timeIntervalSince(resumedAt) >= 2 ||
@@ -296,7 +311,7 @@ final class NetEaseRoomActivity {
             }
         } else if phase == .background, system, systemAlertsEnabled {
             let content = UNMutableNotificationContent()
-            content.title = "与好友一起听"
+            content.title = String(localized: "与好友一起听")
             content.body = event.text
             content.userInfo = event.destination?.userInfo ?? [:]
             let request = UNNotificationRequest(identifier: event.id.uuidString, content: content, trigger: nil)

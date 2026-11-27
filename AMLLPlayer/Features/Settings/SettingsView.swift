@@ -5,9 +5,12 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     @AppStorage(AppHaptics.preferenceKey) private var hapticsEnabled = true
     @State private var exportingSettings = false
+    @State private var importingSettings = false
     @State private var showingSettingsExporter = false
+    @State private var showingSettingsImporter = false
     @State private var settingsDocument: AppSettingsDocument?
     @State private var settingsExportError: String?
+    @State private var showingImportSuccess = false
 
     var body: some View {
         SettingsPage {
@@ -156,8 +159,24 @@ struct SettingsView: View {
                         )
                     }
                     .buttonStyle(SettingsRowButtonStyle())
-                    .disabled(exportingSettings)
+                    .disabled(exportingSettings || importingSettings)
                     .accessibilityIdentifier("exportAllSettings")
+
+                    SettingsDivider()
+
+                    Button {
+                        showingSettingsImporter = true
+                    } label: {
+                        SettingsRowLabel(
+                            title: "settings.import",
+                            icon: "square.and.arrow.down",
+                            iconColor: MusicProductStyle.accent,
+                            busy: importingSettings
+                        )
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+                    .disabled(exportingSettings || importingSettings)
+                    .accessibilityIdentifier("importAllSettings")
                 }
             }
 
@@ -191,8 +210,16 @@ struct SettingsView: View {
         .navigationTitle("tab.settings")
         .navigationBarTitleDisplayMode(.large)
         .fileExporter(isPresented: $showingSettingsExporter, document: settingsDocument, contentType: .json,
-                      defaultFilename: "AMLL-设置") { result in
+                      defaultFilename: String(localized: "settings.exportFilename")) { result in
             if case .failure(let error) = result { settingsExportError = error.localizedDescription }
+        }
+        .fileImporter(isPresented: $showingSettingsImporter, allowedContentTypes: [.json]) { result in
+            switch result {
+            case let .success(url):
+                Task { await importSettings(from: url) }
+            case let .failure(error):
+                settingsExportError = error.localizedDescription
+            }
         }
         .onChange(of: showingSettingsExporter) { _, showing in
             if !showing { settingsDocument = nil }
@@ -203,6 +230,11 @@ struct SettingsView: View {
             Button("common.ok", role: .cancel) { settingsExportError = nil }
         } message: {
             Text(settingsExportError ?? "")
+        }
+        .alert("settings.importSuccessTitle", isPresented: $showingImportSuccess) {
+            Button("common.ok", role: .cancel) {}
+        } message: {
+            Text("settings.importSuccessMessage")
         }
     }
 
@@ -254,6 +286,23 @@ struct SettingsView: View {
             showingSettingsExporter = true
         } catch {
             settingsExportError = error.localizedDescription
+        }
+    }
+
+    private func importSettings(from url: URL) async {
+        guard !importingSettings else { return }
+        importingSettings = true
+        defer { importingSettings = false }
+        do {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: url)
+            let imported = try JSONDecoder().decode(AppSettingsExport.self, from: data)
+            try await imported.apply(to: model)
+            AppHaptics.shared.play(.success)
+            showingImportSuccess = true
+        } catch {
+            settingsExportError = String(localized: "settings.importErrorMessage") + "\n" + error.localizedDescription
         }
     }
 }
@@ -596,6 +645,12 @@ struct MusicStorageView: View {
 
 struct MusicHelpView: View {
     @Bindable var model: AppModel
+    @State private var exportingDiagnostics = false
+    @State private var diagnosticsURL: URL?
+
+    private var diagnosticsUnlocked: Bool {
+        AppDiagnosticsVisibility.shared.isUnlocked
+    }
 
     var body: some View {
         SettingsPage {
@@ -608,17 +663,19 @@ struct MusicHelpView: View {
 
                     SettingsDivider()
 
-                    NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
-                        SettingsRowLabel(title: "Apple Music 连接诊断", icon: "stethoscope", iconColor: MusicProductStyle.accent, navigates: true)
-                    }
-                    .buttonStyle(SettingsRowButtonStyle())
-
-                    SettingsDivider()
-
                     NavigationLink { SpotifyLoginView(model: model, startsWithConfiguration: true) } label: {
                         SettingsRowLabel(title: "Spotify 配置帮助", icon: "gearshape", iconColor: MusicServiceID.spotify.brandColor, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
+
+                    if diagnosticsUnlocked {
+                        SettingsDivider()
+
+                        NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
+                            SettingsRowLabel(title: "Apple Music 连接诊断", icon: "stethoscope", iconColor: MusicProductStyle.accent, navigates: true)
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+                    }
                 }
             }
             SettingsSection("播放与歌词") {
@@ -628,24 +685,49 @@ struct MusicHelpView: View {
                     }
                     .buttonStyle(SettingsRowButtonStyle())
 
-                    SettingsDivider()
+                    if diagnosticsUnlocked {
+                        SettingsDivider()
 
-                    NavigationLink { PlaybackSeekDiagnosticsView() } label: {
-                        SettingsRowLabel(title: "播放跳转诊断", icon: "waveform", iconColor: MusicProductStyle.accent, navigates: true)
+                        NavigationLink { PlaybackSeekDiagnosticsView() } label: {
+                            SettingsRowLabel(title: "播放跳转诊断", icon: "waveform", iconColor: MusicProductStyle.accent, navigates: true)
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
                     }
-                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
-            #if DEBUG
-            SettingsSection("开发工具") {
-                SettingsGroup {
-                    NavigationLink { LyricsRenderPreview() } label: {
-                        SettingsRowLabel(title: "render.debug", icon: "waveform.path", iconColor: MusicProductStyle.accent, navigates: true)
+            if diagnosticsUnlocked {
+                SettingsSection("开发工具") {
+                    SettingsGroup {
+                        #if DEBUG
+                        NavigationLink { LyricsRenderPreview() } label: {
+                            SettingsRowLabel(title: "render.debug", icon: "waveform.path", iconColor: MusicProductStyle.accent, navigates: true)
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+
+                        SettingsDivider()
+                        #endif
+
+                        if let diagnosticsURL {
+                            ShareLink(item: diagnosticsURL) {
+                                SettingsRowLabel(title: "diagnostics.shareExported", icon: "square.and.arrow.up", iconColor: MusicProductStyle.accent)
+                            }
+                            .buttonStyle(SettingsRowButtonStyle())
+                        } else {
+                            Button {
+                                Task {
+                                    exportingDiagnostics = true
+                                    diagnosticsURL = try? await model.environment.diagnostics.exportDiagnostics()
+                                    exportingDiagnostics = false
+                                }
+                            } label: {
+                                SettingsRowLabel(title: "diagnostics.exportSanitized", icon: "doc.text.magnifyingglass", iconColor: MusicProductStyle.accent, busy: exportingDiagnostics)
+                            }
+                            .buttonStyle(SettingsRowButtonStyle())
+                            .disabled(exportingDiagnostics)
+                        }
                     }
-                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
-            #endif
         }
         .navigationTitle("帮助与故障排查")
     }
@@ -653,26 +735,23 @@ struct MusicHelpView: View {
 
 struct MusicAboutView: View {
     private let root = "https://github.com/QingYaoSheep/amll-player"
+    @State private var versionTapCount = 0
+    @State private var diagnosticStatusMessage: String?
 
     var body: some View {
         SettingsPage {
             SettingsGroup(radius: SettingsCorners.hero) {
                 HStack(spacing: 14) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [MusicProductStyle.accent.opacity(0.28), MusicProductStyle.accent.opacity(0.10)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        Image(systemName: "music.note")
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(MusicProductStyle.accent)
-                    }
-                    .frame(width: 58, height: 58)
-                    .accessibilityHidden(true)
+                    Image("LaunchMark")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 58, height: 58)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                        }
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("AMLL")
@@ -688,16 +767,52 @@ struct MusicAboutView: View {
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
                         }
+                        if let diagnosticStatusMessage {
+                            Text(LocalizedStringKey(diagnosticStatusMessage))
+                                .font(.caption2)
+                                .foregroundStyle(MusicProductStyle.accent)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(18)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    versionTapCount += 1
+                    if versionTapCount >= 5 {
+                        versionTapCount = 0
+                        let unlocked = AppDiagnosticsVisibility.shared.toggle()
+                        AppHaptics.shared.play(.success)
+                        diagnosticStatusMessage = unlocked ? "about.diagnosticsUnlocked" : "about.diagnosticsLocked"
+                    }
+                }
             }
 
             SettingsSection("开源") {
                 SettingsGroup {
-                    Link(destination: URL(string: root + "/blob/swiftui-native/Docs/CHANGELOG.md")!) {
+                    NavigationLink { MusicOfflineLicensesView() } label: {
+                        SettingsRowLabel(title: "开源许可与来源归属", icon: "doc.text", iconColor: MusicProductStyle.accent, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    NavigationLink { MusicPrivacySummaryView() } label: {
+                        SettingsRowLabel(title: "about.privacySummary", icon: "hand.raised", iconColor: MusicProductStyle.accent, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    Link(destination: URL(string: root + "/releases")!) {
                         SettingsRowLabel(title: "更新记录", icon: "clock.arrow.circlepath", iconColor: MusicProductStyle.accent, navigates: true)
+                    }
+                    .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    Link(destination: URL(string: root + "/issues")!) {
+                        SettingsRowLabel(title: "about.feedback", icon: "exclamationmark.bubble", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
 
@@ -707,13 +822,6 @@ struct MusicAboutView: View {
                         SettingsRowLabel(title: "settings.sourceCode", icon: "chevron.left.forwardslash.chevron.right", iconColor: MusicProductStyle.accent, navigates: true)
                     }
                     .buttonStyle(SettingsRowButtonStyle())
-
-                    SettingsDivider()
-
-                    Link(destination: URL(string: root + "/blob/swiftui-native/THIRD_PARTY_NOTICES.md")!) {
-                        SettingsRowLabel(title: "开源许可与来源归属", icon: "doc.text", iconColor: MusicProductStyle.accent, navigates: true)
-                    }
-                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
         }
@@ -721,6 +829,84 @@ struct MusicAboutView: View {
     }
 
     private var versionString: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        if let build, !build.isEmpty, build != short {
+            return "\(short) (\(build))"
+        }
+        return short
+    }
+}
+
+private struct MusicOfflineLicensesView: View {
+    private let noticesText: String = {
+        if let url = Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md"),
+           let text = try? String(contentsOf: url, encoding: .utf8) {
+            return text
+        }
+        return ""
+    }()
+
+    private let licenseFiles: [(name: String, body: String)] = {
+        let urls = Bundle.main.urls(forResourcesWithExtension: "txt", subdirectory: "Licenses")
+            ?? Bundle.main.urls(forResourcesWithExtension: "txt", subdirectory: nil)
+            ?? []
+        return urls
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .compactMap { url in
+                guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                return (url.deletingPathExtension().lastPathComponent, content)
+            }
+    }()
+
+    var body: some View {
+        SettingsPage {
+            if !noticesText.isEmpty {
+                SettingsSection("about.thirdPartyNotices") {
+                    SettingsGroup {
+                        Text(noticesText)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                            .padding(16)
+                    }
+                }
+            }
+            ForEach(licenseFiles, id: \.name) { license in
+                SettingsSection {
+                    SettingsGroup {
+                        DisclosureGroup(license.name) {
+                            Text(license.body)
+                                .font(.caption2.monospaced())
+                                .textSelection(.enabled)
+                                .padding(.top, 8)
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+        }
+        .navigationTitle("开源许可与来源归属")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct MusicPrivacySummaryView: View {
+    var body: some View {
+        SettingsPage {
+            SettingsSection {
+                SettingsGroup {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("about.privacyLocalHeadline")
+                            .font(.headline)
+                        Text("about.privacyLocalBody")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(18)
+                }
+            }
+        }
+        .navigationTitle("about.privacySummary")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

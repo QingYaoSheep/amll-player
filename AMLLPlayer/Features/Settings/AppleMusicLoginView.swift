@@ -102,16 +102,18 @@ struct AppleMusicLoginView: View {
             SettingsSection {
                 SettingsGroup {
                     MusicSourcePicker(model: model)
-                    SettingsDivider()
-                    NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
-                        SettingsRowLabel(
-                            title: "Apple Music 连接诊断",
-                            icon: "stethoscope",
-                            iconColor: MusicServiceID.appleMusic.brandColor,
-                            navigates: true
-                        )
+                    if AppDiagnosticsVisibility.shared.isUnlocked {
+                        SettingsDivider()
+                        NavigationLink { AppleMusicDiagnosticsView(model: model) } label: {
+                            SettingsRowLabel(
+                                title: "Apple Music 连接诊断",
+                                icon: "stethoscope",
+                                iconColor: MusicServiceID.appleMusic.brandColor,
+                                navigates: true
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
                     }
-                    .buttonStyle(SettingsRowButtonStyle())
                 }
             }
         }

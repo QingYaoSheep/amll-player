@@ -51,17 +51,17 @@ enum MusicServiceError: Error, Equatable, LocalizedError, Sendable {
         case .transport:
             String(localized: "error.spotifyTransport")
         case .musicConfiguration:
-            "Apple Music 服务不可用。请确认重签后的 Bundle ID 对应已启用 MusicKit 的 App ID，再重新检查。"
+            String(localized: "Apple Music 服务不可用。请确认重签后的 Bundle ID 对应已启用 MusicKit 的 App ID，再重新检查。")
         case .musicPermissionDenied:
-            "Apple Music 权限未允许，请在系统设置中允许音乐与媒体资料库访问。"
+            String(localized: "Apple Music 权限未允许，请在系统设置中允许音乐与媒体资料库访问。")
         case .musicPermissionRestricted:
-            "此设备的音乐访问受到系统限制。"
+            String(localized: "此设备的音乐访问受到系统限制。")
         case .musicSubscriptionRequired:
-            "当前账号无法播放 Apple Music 订阅内容。"
+            String(localized: "当前账号无法播放 Apple Music 订阅内容。")
         case .cloudLibraryRequired:
-            "请在系统音乐设置中启用同步资料库后重试。"
+            String(localized: "请在系统音乐设置中启用同步资料库后重试。")
         case .unsupportedOperation:
-            "此音乐服务或当前内容不支持该操作。"
+            String(localized: "此音乐服务或当前内容不支持该操作。")
         case let .musicFailure(message):
             message
         }

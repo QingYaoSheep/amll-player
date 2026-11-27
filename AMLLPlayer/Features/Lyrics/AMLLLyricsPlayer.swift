@@ -74,7 +74,8 @@ struct AMLLLyricsPlayer: View {
                         player(snapshot: snapshot, item: item, metrics: metrics, size: geometry.size, lyricLayout: canvasLayout,
                                tabletLayout: tabletLayout, tabletTopInset: tabletTopInset, bottomInset: tabletSafeBottom)
                     } else {
-                        ContentUnavailableView("player.noPlayback", systemImage: "music.note")
+                        ContentUnavailableView("player.noPlayback", systemImage: "music.note",
+                                               description: Text("player.noPlaybackSubtitle"))
                     }
                 }
                 .opacity(immersive ? drag.opacity : 1)
@@ -324,7 +325,13 @@ struct AMLLLyricsPlayer: View {
                 }
                 Image(systemName: model.lyrics.document?.isInstrumental == true ? "pianokeys" : "text.quote").font(.largeTitle)
                 Text(LocalizedStringKey("lyrics.status." + model.lyrics.status.rawValue)).multilineTextAlignment(.center)
-                Button("lyrics.find") { search = true }
+                HStack(spacing: 16) {
+                    if model.lyrics.status == .failed || model.lyrics.status == .notFound {
+                        Button("player.tryAgain") { model.lyrics.reload(force: true) }
+                            .buttonStyle(.bordered)
+                    }
+                    Button("lyrics.find") { search = true }
+                }
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -618,7 +625,7 @@ struct AMLLLyricsPlayer: View {
             .modifier(LyricsPageControlVisibility())
             Spacer()
             Button { search = true } label: {
-                Label("lyrics.find", systemImage: "list.bullet")
+                Label("lyrics.find", systemImage: "text.magnifyingglass")
             }
             .modifier(LyricsPageControlVisibility())
         }
@@ -634,35 +641,36 @@ struct AMLLLyricsPlayer: View {
     }
 
     private var artworkStatus: String {
+        guard AppDiagnosticsVisibility.shared.isUnlocked else { return "" }
         if phoneLyricsUsesStaticArtwork {
-            return "动态封面：歌词模式使用静态封面"
+            return String(localized: "动态封面：歌词模式使用静态封面")
         }
         if reduceMotion {
-            return "动态封面：减少动态效果，使用静态图"
+            return String(localized: "动态封面：减少动态效果，使用静态图")
         }
         if !artworkNetwork.permits(allowCellular: configuration.animatedArtwork?.allowCellular ?? false) {
-            return "动态封面：等待允许的网络，使用静态图"
+            return String(localized: "动态封面：等待允许的网络，使用静态图")
         }
         switch artworkLoader.status {
-        case .idle: return "动态封面：静态图"
-        case .loading: return "动态封面：加载中"
+        case .idle: return String(localized: "动态封面：静态图")
+        case .loading: return String(localized: "动态封面：加载中")
         case .streaming:
             return artworkLoader.failureCode == nil
-                ? "动态封面：" + artworkPlaybackDescription + "，静默缓存中"
-                : "动态封面：使用在线资源，缓存未完成（\(artworkLoader.failureCode ?? "")）"
-        case .ready: return "动态封面：已缓存，" + artworkPlaybackDescription
-        case .unavailable: return "动态封面：无匹配布局的视频，使用静态图"
-        case .failed: return "动态封面：加载失败，使用静态图（\(artworkLoader.failureCode ?? "未知错误")）"
+                ? String(localized: "动态封面：\(artworkPlaybackDescription)，静默缓存中")
+                : String(localized: "动态封面：使用在线资源，缓存未完成（\(artworkLoader.failureCode ?? "")）")
+        case .ready: return String(localized: "动态封面：已缓存，\(artworkPlaybackDescription)")
+        case .unavailable: return String(localized: "动态封面：无匹配布局的视频，使用静态图")
+        case .failed: return String(localized: "动态封面：加载失败，使用静态图（\(artworkLoader.failureCode ?? String(localized: "未知错误"))）")
         }
     }
 
     private var artworkPlaybackDescription: String {
         switch artworkLoader.playbackState {
-        case .preparing: "准备首帧"
-        case .displayed: "无声播放中"
-        case .buffering: "缓冲中"
-        case .paused: "已暂停"
-        case .failed: "播放失败，使用静态图"
+        case .preparing: String(localized: "准备首帧")
+        case .displayed: String(localized: "无声播放中")
+        case .buffering: String(localized: "缓冲中")
+        case .paused: String(localized: "已暂停")
+        case .failed: String(localized: "播放失败，使用静态图")
         }
     }
 

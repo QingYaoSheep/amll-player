@@ -3,7 +3,7 @@ import Foundation
 enum NetEaseRoomKind: String, CaseIterable, Identifiable, Sendable {
     case duet, group
     var id: Self { self }
-    var title: String { self == .duet ? "双人房" : "多人好友房" }
+    var title: String { self == .duet ? String(localized: "双人房") : String(localized: "多人好友房") }
 }
 
 struct NetEaseRoomInvite: Identifiable, Equatable {
@@ -102,7 +102,7 @@ struct NetEaseRoomMember: Identifiable, Hashable {
     init?(_ object: [String: Any]) {
         guard let id = NetEaseRoomInvite.numericID(object["uid"] ?? object["userId"]) else { return nil }
         self.id = id
-        name = object["nickname"] as? String ?? "听友"
+        name = object["nickname"] as? String ?? String(localized: "听友")
         if let address = (object["avatarUrl"] ?? object["avatar"]) as? String, var url = URLComponents(string: address),
            let host = url.host, host.hasSuffix(".music.126.net"),
            url.user == nil, url.password == nil, url.port == nil,
@@ -165,12 +165,12 @@ enum NetEaseRoomError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidInvite: "无法识别此网易云一起听邀请。"
-        case .selectSong: "请先选择一首可以完整播放的歌曲。"
-        case .ended: "好友已离开或房间已结束。"
-        case .controlsUnavailable: "当前房间不支持此操作。"
-        case .roomChanged: "房间状态已变化，请刷新后重试。"
-        case .verificationUnavailable: "无法取得网易云操作校验，请稍后重试。"
+        case .invalidInvite: String(localized: "无法识别此网易云一起听邀请。")
+        case .selectSong: String(localized: "请先选择一首可以完整播放的歌曲。")
+        case .ended: String(localized: "好友已离开或房间已结束。")
+        case .controlsUnavailable: String(localized: "当前房间不支持此操作。")
+        case .roomChanged: String(localized: "房间状态已变化，请刷新后重试。")
+        case .verificationUnavailable: String(localized: "无法取得网易云操作校验，请稍后重试。")
         }
     }
 }
@@ -365,11 +365,11 @@ enum NetEaseRoomError: LocalizedError {
             guard message.content != .unsupported else { return nil }
             let text: String
             switch message.content {
-            case .invitation(let invite): text = "邀请你一起听歌\n" + invite.url.absoluteString
+            case .invitation(let invite): text = String(localized: "邀请你一起听歌") + "\n" + invite.url.absoluteString
             case .song(let id): text = "https://music.163.com/song?id=" + id
             default: text = message.preview
             }
-            return .init(id: message.id, sender: message.outgoing ? "我" : peer.name,
+            return .init(id: message.id, sender: message.outgoing ? String(localized: "我") : peer.name,
                          text: String(text.prefix(1000)), time: message.time, outgoing: message.outgoing)
         }.sorted { $0.time < $1.time }
     }
@@ -415,7 +415,7 @@ enum NetEaseRoomError: LocalizedError {
                   let text = (body["text"] ?? body["msg"]) as? String, !text.isEmpty else { return nil }
             let id = NetEaseRoomInvite.numericID(row["msgId"] ?? row["id"]) ?? "\(sender):\(time):\(text)"
             guard seen.insert(id).inserted else { return nil }
-            return .init(id: id, sender: row["nickname"] as? String ?? "听友",
+            return .init(id: id, sender: row["nickname"] as? String ?? String(localized: "听友"),
                          text: String(text.prefix(1000)), time: time, outgoing: sender == viewer)
         }.sorted { $0.time < $1.time }
     }

@@ -58,8 +58,8 @@ extension AppModel {
     }
     func connectionSummary(_ service: MusicServiceID) -> String {
         if service == .appleMusic, appleMusicState.connected, !appleMusicState.capabilities.canBrowse {
-            return "已连接 · 系统歌曲同步"
+            return String(localized: "已连接 · 系统歌曲同步")
         }
-        return isConnected(to: service) ? "已连接" : "未连接"
+        return isConnected(to: service) ? String(localized: "已连接") : String(localized: "未连接")
     }
 }

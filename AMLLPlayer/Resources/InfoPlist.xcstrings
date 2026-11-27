@@ -1,0 +1,23 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSAppleMusicUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow AMLL to access your Apple Music library and synchronize system music playback and lyrics."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许 AMLL 访问 Apple Music 资料库并同步系统音乐播放与歌词。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

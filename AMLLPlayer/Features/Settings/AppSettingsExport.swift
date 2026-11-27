@@ -61,6 +61,48 @@ struct AppSettingsExport: Codable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(self)
     }
+
+    @MainActor
+    func apply(to model: AppModel, haptics: AppHaptics = .shared) async throws {
+        guard version == 1 else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        if let hapticsEnabled {
+            haptics.isEnabled = hapticsEnabled
+        }
+        if let autoDesktopLyrics {
+            UserDefaults.standard.set(autoDesktopLyrics, forKey: DesktopLyricsController.autoStartKey)
+        }
+        if let desktopLyrics {
+            model.desktopLyricsPreferences.settings = desktopLyrics
+        }
+        if let lockScreenLyrics {
+            model.lockScreenLyricsEnabled = lockScreenLyrics
+        }
+        if let lockScreenLyricsTranslation {
+            model.lockScreenLyricsShowsTranslation = lockScreenLyricsTranslation
+        }
+        if let lockScreenLyricsRomanization {
+            model.lockScreenLyricsShowsRomanization = lockScreenLyricsRomanization
+        }
+        if let lockScreenLyricsKeepAlive, AMLLBuildCapabilities.supportsSilentBackgroundKeepAlive {
+            model.lockScreenLyricsKeepAliveEnabled = lockScreenLyricsKeepAlive
+        }
+        model.selectMusicService(music.source)
+        if let clientID = music.spotifyClientID.flatMap(SpotifyClientIDStore.normalized),
+           clientID != model.environment.configuration.spotifyClientID {
+            try model.configureSpotify(clientID: clientID)
+        }
+        model.netEasePlayback.quality = music.netEaseQuality
+        model.netEasePlayback.restorePlaybackModes(shuffle: music.netEaseShuffle, repeatMode: music.netEaseRepeat)
+        model.lyrics.updateSettings(lyrics)
+        model.renderPreferences.restore(profile: appearance.profile,
+                                        current: appearance.current,
+                                        savedCustom: appearance.savedCustom)
+        try model.lyrics.restoreSelections(trackLyrics)
+        let overridesData = try JSONEncoder().encode(pronunciationOverrides)
+        try await LyricsRomanizationEngine.shared.importOverrides(overridesData)
+    }
 }
 
 struct AppSettingsDocument: FileDocument {

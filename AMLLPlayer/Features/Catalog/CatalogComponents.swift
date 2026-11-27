@@ -148,7 +148,7 @@ struct CatalogExternalLink: View {
                     }
                 }
             } label: {
-                Label(item.service == .spotify ? String(localized: "catalog.openSpotify") : "在 \(item.service.title) 打开", systemImage: "arrow.up.right.square")
+                Label(item.service == .spotify ? String(localized: "catalog.openSpotify") : String(localized: "在 \(item.service.title) 打开"), systemImage: "arrow.up.right.square")
             }
         }
     }
@@ -170,9 +170,11 @@ struct CatalogErrorView: View {
             if case .rateLimited = error {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in retryButton }
             } else { retryButton }
-            DisclosureGroup("查看技术详情") {
-                Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            }.font(.caption)
+            if AppDiagnosticsVisibility.shared.isUnlocked {
+                DisclosureGroup("查看技术详情") {
+                    Text(error.localizedDescription).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }.font(.caption)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -195,13 +197,13 @@ struct CatalogErrorView: View {
     }
     private var message: String {
         switch error {
-        case .offline: "网络暂时不可用。检查网络后重试，已加载的内容会保留。"
-        case .signInRequired: "请先连接当前音乐服务，再查看个人内容。"
-        case .forbidden: "当前账号暂时看不了这项内容。请检查账号在该服务中的权限。"
-        case .unavailable: "这项内容暂时打不开。可以返回继续浏览音乐。"
-        case .quotaExceeded, .rateLimited: "请求较频繁，请稍后重试。"
-        case let .service(_, retry): retry ? "内容暂时未能加载，请检查连接后重试。" : "当前服务权限或配置未就绪，请前往音乐来源检查连接。"
-        case .invalidResponse: "服务返回异常，请稍后重试。"
+        case .offline: String(localized: "网络暂时不可用。检查网络后重试，已加载的内容会保留。")
+        case .signInRequired: String(localized: "请先连接当前音乐服务，再查看个人内容。")
+        case .forbidden: String(localized: "当前账号暂时看不了这项内容。请检查账号在该服务中的权限。")
+        case .unavailable: String(localized: "这项内容暂时打不开。可以返回继续浏览音乐。")
+        case .quotaExceeded, .rateLimited: String(localized: "请求较频繁，请稍后重试。")
+        case let .service(_, retry): retry ? String(localized: "内容暂时未能加载，请检查连接后重试。") : String(localized: "当前服务权限或配置未就绪，请前往音乐来源检查连接。")
+        case .invalidResponse: String(localized: "服务返回异常，请稍后重试。")
         }
     }
 }
@@ -254,7 +256,7 @@ struct CatalogPlayButton: View {
             }
         })) {
             if let url = item.externalURL {
-                Button(item.service == .spotify ? String(localized: "catalog.openSpotify") : "在 \(item.service.title) 打开") { UIApplication.shared.open(url) }
+                Button(item.service == .spotify ? String(localized: "catalog.openSpotify") : String(localized: "在 \(item.service.title) 打开")) { UIApplication.shared.open(url) }
             }
             Button("common.ok", role: .cancel) { failure = nil }
         } message: { Text(failure ?? "") }

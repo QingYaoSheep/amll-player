@@ -28,11 +28,11 @@ struct LyricsBlossomAnimationOptions: Codable, Equatable, Sendable {
 
         var help: String {
             switch self {
-            case .background: "背景人声随主歌词进入焦点时的呈现方式。"
-            case .word: "逐词歌词点亮与取消时的外观过渡。"
-            case .scale: "保留版本选择；目前两版共用已核实的模板弹簧，次级缩放差异尚待适配。"
-            case .emphasis: "长音、强调词及其结束阶段的动画。"
-            case .selection: "选择句子的规则；27 逻辑不限制同时高亮行数。"
+            case .background: String(localized: "背景人声随主歌词进入焦点时的呈现方式。")
+            case .word: String(localized: "逐词歌词点亮与取消时的外观过渡。")
+            case .scale: String(localized: "保留版本选择；目前两版共用已核实的模板弹簧，次级缩放差异尚待适配。")
+            case .emphasis: String(localized: "长音、强调词及其结束阶段的动画。")
+            case .selection: String(localized: "选择句子的规则；27 逻辑不限制同时高亮行数。")
             }
         }
 
@@ -56,7 +56,7 @@ struct LyricsBlossomAnimationOptions: Codable, Equatable, Sendable {
             case .advance: "16.4 advance"
             case .appleMusic264: "26.4"
             case .appleMusic27: "27"
-            case .custom: "自定义"
+            case .custom: String(localized: "自定义")
             }
         }
     }

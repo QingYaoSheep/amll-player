@@ -157,7 +157,8 @@ struct FullscreenLyricsPlayer: View {
                         }
                         .offset(y: reduceMotion ? 0 : drag)
                     } else {
-                        ContentUnavailableView("player.noPlayback", systemImage: "music.note")
+                        ContentUnavailableView("player.noPlayback", systemImage: "music.note",
+                                               description: Text("player.noPlaybackSubtitle"))
                     }
                 }
                 .onChange(of: layout != nil, initial: true) { _, enabled in immersiveViewport = enabled }
@@ -370,7 +371,13 @@ struct FullscreenLyricsPlayer: View {
                 }
                 Image(systemName: model.lyrics.document?.isInstrumental == true ? "pianokeys" : "text.quote").font(.largeTitle)
                 Text(LocalizedStringKey("lyrics.status." + model.lyrics.status.rawValue)).multilineTextAlignment(.center)
-                Button("lyrics.find") { search = true }
+                HStack(spacing: 16) {
+                    if model.lyrics.status == .failed || model.lyrics.status == .notFound {
+                        Button("player.tryAgain") { model.lyrics.reload(force: true) }
+                            .buttonStyle(.bordered)
+                    }
+                    Button("lyrics.find") { search = true }
+                }
                 Spacer()
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }

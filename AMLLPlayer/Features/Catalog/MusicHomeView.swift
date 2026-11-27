@@ -39,7 +39,7 @@ struct MusicHomeAccountMenu: View {
             .frame(width: 44, height: 44)
             .contentShape(Circle())
         }
-        .accessibilityLabel("账户与音乐来源，" + model.selectedMusicService.title)
+        .accessibilityLabel(Text("账户与音乐来源，\(model.selectedMusicService.title)"))
         .accessibilityIdentifier("musicSourceMenu")
     }
 }
@@ -58,7 +58,7 @@ struct CatalogHomeView: View {
                         MusicConnectionCard(model: model).padding(.horizontal, 20)
                     }
                     if model.currentServiceConnected && !model.canBrowseCurrentService, let item = model.playbackSnapshot?.item {
-                        Button(action: openPlayer) { Label("打开 " + item.title + " 的歌词", systemImage: "quote.bubble").frame(minHeight: 44) }
+                        Button(action: openPlayer) { Label("打开 \(item.title) 的歌词", systemImage: "quote.bubble").frame(minHeight: 44) }
                             .padding(.horizontal, 20)
                     }
                     if model.canBrowseCurrentService {
@@ -90,7 +90,7 @@ struct CatalogHomeView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("为你精选").font(.title2.bold()).accessibilityAddTraits(.isHeader).padding(.horizontal, 20)
                 if let name = store.profile?.displayName {
-                    Text("为 " + name + " 精选").font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 20)
+                    Text("为 \(name) 精选").font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 20)
                 }
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 12) {
@@ -256,7 +256,7 @@ struct MusicHomeCard: View {
     }
     private func play(shuffled: Bool = false) {
         guard model.isConnected(to: row.item.service) else { login = true; return }
-        guard row.item.canPlay else { failure = "暂时无法播放。可以试试在官方 App 中打开。"; return }
+        guard row.item.canPlay else { failure = String(localized: "暂时无法播放。可以试试在官方 App 中打开。"); return }
         Task { do { try await model.playCatalog(row.item, shuffled: shuffled) }
             catch is CancellationError {} catch { failure = error.localizedDescription } }
     }
@@ -376,6 +376,9 @@ struct MusicReplayView: View {
             }
             if state.isLoading { ProgressView() }
             if let error = state.error { CatalogErrorView(error: error) { await home.load(.replay, force: true) } }
-        }.listStyle(.insetGrouped).navigationTitle(state.replay.map { $0.year + " 年度回顾" } ?? "年度回顾").task { await home.load(.replay) }
+            if state.loadedAt != nil && state.replay == nil && !state.isLoading && state.error == nil {
+                ContentUnavailableView("home.replayEmpty", systemImage: "music.note.list")
+            }
+        }.listStyle(.insetGrouped).navigationTitle(state.replay.map { String(localized: "\($0.year) 年度回顾") } ?? String(localized: "年度回顾")).task { await home.load(.replay) }.refreshable { await home.load(.replay, force: true) }
     }
 }

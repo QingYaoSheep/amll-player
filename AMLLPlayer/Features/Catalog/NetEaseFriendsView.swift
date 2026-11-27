@@ -123,7 +123,7 @@ private struct NetEaseFriendsLogin: View {
         if sentInvites.values.contains(where: { $0 != invite.room }) { sentInvites.removeAll() }
         sentInvites[peer.id] = invite.room
         pendingInvite = nil
-        status = "已向 \(peer.name) 发送一起听邀请"
+        status = String(localized: "已向 \(peer.name) 发送一起听邀请")
     }
 
     func checkInvite() async {

@@ -8,14 +8,14 @@ enum NetEaseError: Error, LocalizedError, Equatable {
     case request(Int)
     var errorDescription: String? {
         switch self {
-        case .expired: "网易云登录已过期，请重新登录。"
-        case .invalidCookie: "Cookie 无效，当前有效登录已保留。"
-        case .invalidResponse: "网易云返回的数据无法识别。"
-        case .restricted: "当前账号没有此歌曲的播放权限，或歌曲在当前地区不可用。"
-        case .trialOnly: "此歌曲仅提供试听，无法播放完整歌曲。"
-        case .unavailable: "此歌曲暂无可用音源。"
-        case .rateLimited: "网易云请求频繁，请稍后重试。"
-        case let .request(code): "网易云请求失败（\(code)），请稍后重试。"
+        case .expired: String(localized: "网易云登录已过期，请重新登录。")
+        case .invalidCookie: String(localized: "Cookie 无效，当前有效登录已保留。")
+        case .invalidResponse: String(localized: "网易云返回的数据无法识别。")
+        case .restricted: String(localized: "当前账号没有此歌曲的播放权限，或歌曲在当前地区不可用。")
+        case .trialOnly: String(localized: "此歌曲仅提供试听，无法播放完整歌曲。")
+        case .unavailable: String(localized: "此歌曲暂无可用音源。")
+        case .rateLimited: String(localized: "网易云请求频繁，请稍后重试。")
+        case let .request(code): String(localized: "网易云请求失败（\(code)），请稍后重试。")
         }
     }
 }

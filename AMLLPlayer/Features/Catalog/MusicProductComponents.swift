@@ -29,7 +29,7 @@ struct MusicSourceMenu: View {
             .font(.subheadline.weight(.semibold))
             .frame(minHeight: 44)
         }
-        .accessibilityLabel("当前音乐来源，" + model.selectedMusicService.title)
+        .accessibilityLabel(Text("当前音乐来源，\(model.selectedMusicService.title)"))
         .accessibilityIdentifier("musicSourceMenu")
     }
 }
@@ -93,7 +93,7 @@ struct MusicConnectionCard: View {
                 MusicLoginDestination(model: model, service: model.selectedMusicService)
             } label: {
                 HStack(spacing: 8) {
-                    Text(model.currentServiceConnected ? "查看连接与帮助" : "连接 " + model.selectedMusicService.title)
+                    Text(model.currentServiceConnected ? String(localized: "查看连接与帮助") : String(localized: "连接 \(model.selectedMusicService.title)"))
                     Image(systemName: "arrow.right")
                         .font(.subheadline.weight(.semibold))
                 }
@@ -114,12 +114,12 @@ struct MusicConnectionCard: View {
     }
     private var message: String {
         if model.selectedMusicService == .appleMusic, model.currentServiceConnected {
-            return "可以同步系统音乐 App 的歌曲和歌词。歌单和搜索暂不可用，请检查 Apple Music 的连接设置。"
+            return String(localized: "可以同步系统音乐 App 的歌曲和歌词。歌单和搜索暂不可用，请检查 Apple Music 的连接设置。")
         }
         switch model.selectedMusicService {
-        case .spotify: return "连接 Spotify 后，可以查看自己的歌单。也可以控制正在播放的设备并查看同步歌词。"
-        case .appleMusic: return "授权后，AMLL 会同步系统音乐 App 的歌曲和歌词。歌单和搜索能否使用，取决于当前安装版本的配置。"
-        case .netease: return "先浏览推荐与排行榜，登录后解锁个人歌单与每日推荐。"
+        case .spotify: return String(localized: "连接 Spotify 后，可以查看自己的歌单。也可以控制正在播放的设备并查看同步歌词。")
+        case .appleMusic: return String(localized: "授权后，AMLL 会同步系统音乐 App 的歌曲和歌词。歌单和搜索能否使用，取决于当前安装版本的配置。")
+        case .netease: return String(localized: "先浏览推荐与排行榜，登录后解锁个人歌单与每日推荐。")
         }
     }
 }

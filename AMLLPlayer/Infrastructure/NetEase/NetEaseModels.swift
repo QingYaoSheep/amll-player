@@ -34,7 +34,7 @@ enum NetEaseDecoder {
                      editablePlaylist: own && (value["specialType"] as? Int != 5), libraryWritable: own && (value["specialType"] as? Int != 5))
     }
     static func missingTrack(_ id: String) -> MusicCatalogItem {
-        .init(spotifyID: id, kind: .track, name: "不可用歌曲", subtitle: "", artworkURL: nil,
+        .init(spotifyID: id, kind: .track, name: String(localized: "不可用歌曲"), subtitle: "", artworkURL: nil,
               availability: .restricted, service: .netease, catalogID: id)
     }
 }
@@ -42,7 +42,7 @@ enum NetEaseDecoder {
 enum NetEaseQuality: String, CaseIterable, Codable, Identifiable {
     case standard, exhigh, lossless
     var id: String { rawValue }
-    var title: String { switch self { case .standard: "标准"; case .exhigh: "高品质"; case .lossless: "无损" } }
+    var title: String { switch self { case .standard: String(localized: "标准"); case .exhigh: String(localized: "高品质"); case .lossless: String(localized: "无损") } }
 }
 struct NetEaseAudioSource {
     var url: URL

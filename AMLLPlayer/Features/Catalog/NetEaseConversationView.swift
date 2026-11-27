@@ -735,7 +735,7 @@ enum IMessageStyle {
             return date.formatted(date: .omitted, time: .shortened)
         }
         if calendar.isDateInYesterday(date) {
-            return "昨天"
+            return String(localized: "昨天")
         }
         if let weekAgo = calendar.date(byAdding: .day, value: -6, to: Date()), date >= weekAgo {
             return date.formatted(.dateTime.weekday(.abbreviated))
@@ -747,10 +747,10 @@ enum IMessageStyle {
         let calendar = Calendar.current
         let time = date.formatted(date: .omitted, time: .shortened)
         if calendar.isDateInToday(date) {
-            return "今天 " + time
+            return String(localized: "今天 \(time)")
         }
         if calendar.isDateInYesterday(date) {
-            return "昨天 " + time
+            return String(localized: "昨天 \(time)")
         }
         return date.formatted(date: .abbreviated, time: .shortened)
     }

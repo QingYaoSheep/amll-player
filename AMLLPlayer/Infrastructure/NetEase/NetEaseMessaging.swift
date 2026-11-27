@@ -29,9 +29,9 @@ extension NetEaseDirectMessage.Content {
     var preview: String {
         switch self {
         case .text(let text): text
-        case .song: "分享了歌曲"
-        case .invitation: "邀请一起听"
-        case .unsupported: "在网易云音乐查看此消息"
+        case .song: String(localized: "分享了歌曲")
+        case .invitation: String(localized: "邀请一起听")
+        case .unsupported: String(localized: "在网易云音乐查看此消息")
         }
     }
 }
@@ -47,9 +47,9 @@ enum NetEaseMessageError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidRecipient: "无法向此用户发送网易云私信。"
-        case .invalidText: "请输入 1–500 字的消息。"
-        case .deliveryUnknown: "尚未确认是否发送成功，请检查会话记录。"
+        case .invalidRecipient: String(localized: "无法向此用户发送网易云私信。")
+        case .invalidText: String(localized: "请输入 1–500 字的消息。")
+        case .deliveryUnknown: String(localized: "尚未确认是否发送成功，请检查会话记录。")
         }
     }
 

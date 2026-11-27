@@ -36,9 +36,9 @@ enum NetEaseRadioError: LocalizedError {
     case modesUnavailable, noRecommendations, unavailableBatch
     var errorDescription: String? {
         switch self {
-        case .modesUnavailable: "私人 FM 会自动补充待播歌曲。退出后可以开启随机或循环播放，也可以编辑播放队列。"
-        case .noRecommendations: "暂时没有新的私人 FM 推荐，请稍后重试，或退出 FM 恢复普通队列。"
-        case .unavailableBatch: "连续五首推荐暂时无法播放，请重试或退出私人 FM。"
+        case .modesUnavailable: String(localized: "私人 FM 会自动补充待播歌曲。退出后可以开启随机或循环播放，也可以编辑播放队列。")
+        case .noRecommendations: String(localized: "暂时没有新的私人 FM 推荐，请稍后重试，或退出 FM 恢复普通队列。")
+        case .unavailableBatch: String(localized: "连续五首推荐暂时无法播放，请重试或退出私人 FM。")
         }
     }
 }

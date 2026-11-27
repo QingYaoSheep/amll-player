@@ -20,8 +20,8 @@ enum MusicCatalogKind: String, CaseIterable, Hashable, Codable, Sendable {
         case .album: String(localized: "catalog.albums")
         case .artist: String(localized: "catalog.artists")
         case .playlist: String(localized: "catalog.playlists")
-        case .station: "电台"
-        case .musicVideo: "音乐视频"
+        case .station: String(localized: "电台")
+        case .musicVideo: String(localized: "音乐视频")
         }
     }
 }
@@ -129,17 +129,17 @@ enum MusicLibrarySection: String, CaseIterable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .dailySongs: "每日推荐歌曲"
+        case .dailySongs: String(localized: "每日推荐歌曲")
         case .playlists: String(localized: "catalog.myPlaylists")
         case .savedTracks: String(localized: "catalog.savedTracks")
         case .savedAlbums: String(localized: "catalog.savedAlbums")
         case .followedArtists: String(localized: "catalog.followedArtists")
         case .recent: String(localized: "catalog.recent")
         case .topTracks: String(localized: "catalog.topTracks")
-        case .recentlyAdded: "最近添加"
-        case .recommendations: "为你推荐"
-        case .charts: "排行榜"
-        case .downloaded: "已下载歌曲"
+        case .recentlyAdded: String(localized: "最近添加")
+        case .recommendations: String(localized: "为你推荐")
+        case .charts: String(localized: "排行榜")
+        case .downloaded: String(localized: "已下载歌曲")
         }
     }
 
@@ -235,8 +235,8 @@ enum MusicCatalogError: Error, Equatable, LocalizedError, Sendable {
         guard service == .appleMusic else { return error }
         switch error {
         case .signInRequired: return .service(.musicPermissionDenied, retry: false)
-        case .forbidden: return .service(.musicFailure("Apple Music 拒绝访问，请检查系统授权、订阅和同步资料库状态。"), retry: false)
-        case .invalidResponse: return .service(.musicFailure("Apple Music 返回了无法识别的响应。"), retry: true)
+        case .forbidden: return .service(.musicFailure(String(localized: "Apple Music 拒绝访问，请检查系统授权、订阅和同步资料库状态。")), retry: false)
+        case .invalidResponse: return .service(.musicFailure(String(localized: "Apple Music 返回了无法识别的响应。")), retry: true)
         default: return error
         }
     }

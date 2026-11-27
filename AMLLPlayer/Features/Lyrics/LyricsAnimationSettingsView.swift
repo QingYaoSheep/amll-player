@@ -97,7 +97,7 @@ struct LyricsAnimationSettingsView: View {
                     SettingsDivider(inset: 16)
                     SettingsSliderRow(
                         "歌词模糊程度",
-                        valueText: "\(Int(blurLevel.wrappedValue)) 级",
+                        valueText: String(localized: "\(Int(blurLevel.wrappedValue)) 级"),
                         value: blurLevel,
                         in: 1 ... 10,
                         step: 1,

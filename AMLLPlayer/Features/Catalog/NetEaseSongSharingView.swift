@@ -2,7 +2,7 @@ import SwiftUI
 
 struct NetEaseSongPicker: View {
     let model: AppModel
-    var title = "分享歌曲"
+    var title = String(localized: "分享歌曲")
     let select: (MusicCatalogItem) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
@@ -22,7 +22,7 @@ struct NetEaseSongPicker: View {
                         }
                         Section("音乐库") {
                             NavigationLink {
-                                songs(.collection(.savedTracks), title: "我喜欢的音乐")
+                                songs(.collection(.savedTracks), title: String(localized: "我喜欢的音乐"))
                             } label: {
                                 HStack(spacing: 12) {
                                     SettingsIconBadge(systemImage: "heart.fill", color: MusicProductStyle.accent)
@@ -31,7 +31,7 @@ struct NetEaseSongPicker: View {
                             }
                             NavigationLink {
                                 NetEaseSongPickerList(catalog: model.netEaseCatalog, query: .collection(.playlists),
-                                                      title: "个人歌单") { item in
+                                                      title: String(localized: "个人歌单")) { item in
                                     NavigationLink {
                                         songs(.playlistItems(item.spotifyID), title: item.name)
                                     } label: {

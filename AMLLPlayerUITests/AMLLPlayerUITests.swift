@@ -194,7 +194,7 @@ final class AMLLPlayerUITests: XCTestCase {
 
     @MainActor func testProductPagesAndSearchHistory() {
         let app = catalogApp()
-        XCTAssertTrue(app.staticTexts["为 Test Listener 精选"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Featured for Test Listener"].waitForExistence(timeout: 5))
         capture(app, name: "Product-home")
         openHomeSettings(app)
         XCTAssertTrue(app.buttons["musicAccountsLink"].waitForExistence(timeout: 3))
@@ -235,7 +235,7 @@ final class AMLLPlayerUITests: XCTestCase {
 
     @MainActor func testCatalogNavigationAndMetadataOnlyPlaylist() {
         let app = catalogApp()
-        XCTAssertTrue(app.staticTexts["为 Test Listener 精选"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Featured for Test Listener"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Library"].tap()
         XCTAssertTrue(app.staticTexts["Test Playlist"].waitForExistence(timeout: 3))
         app.staticTexts["Test Playlist"].firstMatch.tap()

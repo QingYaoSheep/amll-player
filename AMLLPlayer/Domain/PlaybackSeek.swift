@@ -46,9 +46,9 @@ enum PlaybackSeekError: Error, LocalizedError {
     case timedOut, interrupted, inaccurate
     var errorDescription: String? {
         switch self {
-        case .timedOut: "跳转等待超过 10 秒，已恢复实际播放进度。请重试。"
-        case .interrupted: "此次跳转未完成，已恢复实际播放进度。请重试。"
-        case .inaccurate: "没能跳到指定位置，已回到播放器的实际进度。请重试。"
+        case .timedOut: String(localized: "跳转等待超过 10 秒，已恢复实际播放进度。请重试。")
+        case .interrupted: String(localized: "此次跳转未完成，已恢复实际播放进度。请重试。")
+        case .inaccurate: String(localized: "没能跳到指定位置，已回到播放器的实际进度。请重试。")
         }
     }
 }

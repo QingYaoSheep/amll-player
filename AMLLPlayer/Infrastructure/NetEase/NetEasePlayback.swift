@@ -149,7 +149,7 @@ struct NetEaseQueueState: Codable {
                 if intentPlaying, player.currentItem != nil {
                     if abs(p - lastPosition) < 0.005 { stallSeconds += 1 } else { stallSeconds = 0 }
                     if stallSeconds >= 120 {
-                        failure = "音源持续缓冲超过 30 秒，请重新播放。"
+                        failure = String(localized: "音源持续缓冲超过 30 秒，请重新播放。")
                         if isListeningTogether { pauseRoomLocally() }
                         else { try? await pause() }
                     }
@@ -333,6 +333,28 @@ struct NetEaseQueueState: Codable {
         guard !isListeningTogether else { throw NetEaseRoomError.controlsUnavailable }
         guard !isPersonalFM else { throw NetEaseRadioError.modesUnavailable }
         queue.repeatMode = mode; save(); publish()
+    }
+
+    func restorePlaybackModes(shuffle: Bool, repeatMode: MusicRepeatMode) {
+        if var ordinary = ordinaryBeforeRoom {
+            ordinary.shuffle = shuffle
+            ordinary.repeatMode = repeatMode
+            ordinaryBeforeRoom = ordinary
+            save()
+            return
+        }
+        if var currentRadio = radio {
+            currentRadio.ordinary.shuffle = shuffle
+            currentRadio.ordinary.repeatMode = repeatMode
+            radio = currentRadio
+            save()
+            return
+        }
+        queue.shuffle = shuffle
+        queue.repeatMode = repeatMode
+        rebuildShuffleOrder()
+        save()
+        publish()
     }
     func enqueue(_ item: MusicCatalogItem, next: Bool) async throws {
         if isListeningTogether { try await recommendRoomSong(item); return }
@@ -568,8 +590,10 @@ struct NetEaseQueueState: Codable {
                     }
                 }
             }
-            actualQuality = source.level.isEmpty ? "音质未知" : (NetEaseQuality(rawValue: source.level)?.title ?? source.level)
-            if !source.level.isEmpty, source.level != quality.rawValue { actualQuality += "（请求\(quality.title)，服务返回较低或不同音质）" }
+            actualQuality = source.level.isEmpty ? String(localized: "音质未知") : (NetEaseQuality(rawValue: source.level)?.title ?? source.level)
+            if !source.level.isEmpty, source.level != quality.rawValue {
+                actualQuality += String(localized: "（请求\(quality.title)，服务返回较低或不同音质）")
+            }
             if requested > 0 {
                 let waiter = NativeSeekAwaiter(); seekWaiter = waiter
                 let finished = try await waiter.wait(seconds: seekTimeout) {
@@ -624,7 +648,7 @@ struct NetEaseQueueState: Codable {
         }
         queue.currentID = entries[index].id
         try await pause()
-        if automatic, !indices.isEmpty { failure = "队列中没有可播放的歌曲。" }
+        if automatic, !indices.isEmpty { failure = String(localized: "队列中没有可播放的歌曲。") }
         publish()
     }
     private func rebuildShuffleOrder() {
@@ -876,7 +900,7 @@ extension NetEasePlayback {
         try await withRoomOperation {
             if try await self.recoverRoom() { return }
             try await self.startNewRoom(kind)
-            self.roomActivity.status("已创建\(kind.title)", symbol: "checkmark.circle")
+            self.roomActivity.status(String(localized: "已创建\(kind.title)"), symbol: "checkmark.circle")
         }
         await synchronizeRoom()
     }
@@ -948,7 +972,7 @@ extension NetEasePlayback {
             let joined = try await self.roomAPI.join(invite)
             try self.checkRoomContext()
             self.enterRoom(joined)
-            self.roomActivity.status("已加入\(joined.kind.title)", symbol: "checkmark.circle")
+            self.roomActivity.status(String(localized: "已加入\(joined.kind.title)"), symbol: "checkmark.circle")
         }
         await synchronizeRoom()
     }
@@ -965,7 +989,7 @@ extension NetEasePlayback {
             catch NetEaseError.request(488) {}
             try self.checkRoomContext()
             self.restoreOrdinaryPlayback(forgetRoom: true)
-            self.roomActivity.end(text: "你已离开房间")
+            self.roomActivity.end(text: String(localized: "你已离开房间"))
         }
     }
 
@@ -1139,12 +1163,12 @@ extension NetEasePlayback {
             guard !Task.isCancelled else { return }
             restoreOrdinaryPlayback(forgetRoom: true)
             roomNotice = NetEaseRoomError.ended.localizedDescription
-            roomActivity.end(text: "一起听房间已结束")
+            roomActivity.end(text: String(localized: "一起听房间已结束"))
         } catch NetEaseError.request(488) {
             guard !Task.isCancelled else { return }
             restoreOrdinaryPlayback(forgetRoom: true)
             roomNotice = NetEaseRoomError.ended.localizedDescription
-            roomActivity.end(text: "一起听房间已结束")
+            roomActivity.end(text: String(localized: "一起听房间已结束"))
         } catch {
             if !Task.isCancelled {
                 if !receivedRoomSnapshot { roomActivity.connectionInterrupted() }

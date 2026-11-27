@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LyricsAppearanceView: View {
-    private func flowingAdjustment(_ title: String, key: WritableKeyPath<FlowingBackgroundConfiguration, Double>,
+    private func flowingAdjustment(_ title: LocalizedStringKey, key: WritableKeyPath<FlowingBackgroundConfiguration, Double>,
                                    range: ClosedRange<Double>, step: Double, unit: String) -> some View {
         let binding = Binding(get: { (preferences.configuration.flowingBackground ?? .init())[keyPath: key] }, set: { value in
             var settings = preferences.configuration.flowingBackground ?? .init()
@@ -10,7 +10,7 @@ struct LyricsAppearanceView: View {
             preferences.configuration.flowingBackground = settings.validated()
         })
         return SettingsSliderRow(
-            verbatim: title,
+            title,
             valueText: String(format: "%.2g %@", binding.wrappedValue, unit),
             value: binding,
             in: range,
@@ -261,7 +261,7 @@ struct LyricsAppearanceView: View {
                         )
                     } else if preferences.configuration.backgroundMode == .flowing {
                         SettingsDivider(inset: 16)
-                        flowingAdjustment("旋转速度", key: \.rotationSpeed, range: 0 ... 6, step: 0.25, unit: "°/秒")
+                        flowingAdjustment("旋转速度", key: \.rotationSpeed, range: 0 ... 6, step: 0.25, unit: String(localized: "°/秒"))
                         SettingsDivider(inset: 16)
                         flowingAdjustment("扭曲强度", key: \.distortion, range: 0 ... 8, step: 0.5, unit: "%")
                         SettingsDivider(inset: 16)
@@ -462,15 +462,15 @@ private struct RomanizationSettingsView: View {
                     SettingsDivider()
                     SettingsTextButton(title: "准备导出当前罗马音 TTML", icon: "doc", iconColor: MusicProductStyle.accent, inGroup: true) {
                         guard let ttml = coordinator?.document?.romanizationTTMLTrack?.ttml else {
-                            message = "当前歌词没有生成的罗马音 TTML"
+                            message = String(localized: "当前歌词没有生成的罗马音 TTML")
                             return
                         }
                         do {
                             let url = FileManager.default.temporaryDirectory.appendingPathComponent("romanization.ttml")
                             try Data(ttml.utf8).write(to: url, options: .atomic)
                             exportedTTMLFile = url
-                            message = "罗马音 TTML 已准备好导出"
-                        } catch { message = "TTML 导出失败" }
+                            message = String(localized: "罗马音 TTML 已准备好导出")
+                        } catch { message = String(localized: "TTML 导出失败") }
                     }
                     if let exportedTTMLFile {
                         SettingsDivider()
@@ -485,8 +485,8 @@ private struct RomanizationSettingsView: View {
                             do {
                                 try await LyricsRomanizationEngine.shared.clearGeneratedCache()
                                 coordinator?.regenerateRomanization()
-                                message = "生成缓存已清理"
-                            } catch { message = "缓存清理失败" }
+                                message = String(localized: "生成缓存已清理")
+                            } catch { message = String(localized: "缓存清理失败") }
                         }
                     }
                 }
@@ -505,8 +505,8 @@ private struct RomanizationSettingsView: View {
                                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("romanization-overrides.json")
                                 try data.write(to: url, options: .atomic)
                                 exportedFile = url
-                                message = "纠错字典已准备好导出"
-                            } catch { message = "导出失败" }
+                                message = String(localized: "纠错字典已准备好导出")
+                            } catch { message = String(localized: "导出失败") }
                         }
                     }
                     if let exportedFile {
@@ -537,13 +537,13 @@ private struct RomanizationSettingsView: View {
                     do {
                         try await LyricsRomanizationEngine.shared.resetOverrides()
                         coordinator?.regenerateRomanization()
-                        message = "纠错字典已重置"
-                    } catch { message = "重置失败" }
+                        message = String(localized: "纠错字典已重置")
+                    } catch { message = String(localized: "重置失败") }
                 }
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { selection in
-            guard case let .success(url) = selection else { message = "导入已取消"; return }
+            guard case let .success(url) = selection else { message = String(localized: "导入已取消"); return }
             Task {
                 let accessed = url.startAccessingSecurityScopedResource()
                 defer { if accessed { url.stopAccessingSecurityScopedResource() } }
@@ -551,8 +551,8 @@ private struct RomanizationSettingsView: View {
                     let data = try Data(contentsOf: url)
                     try await LyricsRomanizationEngine.shared.importOverrides(data)
                     coordinator?.regenerateRomanization()
-                    message = "纠错字典已导入"
-                } catch { message = "字典格式错误，现有纠错保留" }
+                    message = String(localized: "纠错字典已导入")
+                } catch { message = String(localized: "字典格式错误，现有纠错保留") }
             }
         }
     }

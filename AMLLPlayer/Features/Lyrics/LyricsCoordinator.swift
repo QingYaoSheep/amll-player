@@ -130,6 +130,16 @@ final class LyricsCoordinator {
 
     func savedSelections() throws -> [String: LyricsSelection] { try cache.savedSelections() }
 
+    func restoreSelections(_ selections: [String: LyricsSelection]) throws {
+        for (trackID, value) in selections {
+            try cache.saveSelection(value.validated(), for: trackID)
+            if track?.spotifyID == trackID {
+                selection = value.validated()
+            }
+        }
+        reload()
+    }
+
     func updateSettings(_ value: LyricsSettings) {
         let value = value.validated()
         guard value != settings else { return }
@@ -246,7 +256,7 @@ final class LyricsCoordinator {
         romanizationEpoch = UUID()
         let ticket = romanizationEpoch
         guard !base.isInstrumental, !base.lines.isEmpty else { romanizationStatus = ""; return }
-        romanizationStatus = "正在生成日语／韩语音译"
+        romanizationStatus = String(localized: "正在生成日语／韩语音译")
         romanizationTask = Task { [weak self] in
             let result = await LyricsRomanizationEngine.shared.generateCached(document: base, force: force)
             guard !Task.isCancelled else { return }
@@ -257,7 +267,7 @@ final class LyricsCoordinator {
                   track?.spotifyID == trackID else { return }
             document = withRomanization
             romanizationStatus = withRomanization.romanizationTTMLTrack == nil
-                ? "无可生成的日语／韩语音译" : "已生成独立罗马音 TTML 时间轴"
+                ? String(localized: "无可生成的日语／韩语音译") : String(localized: "已生成独立罗马音 TTML 时间轴")
         }
     }
 

@@ -173,8 +173,13 @@ final class DesktopLyricsFrames {
             renderer.flush()
             submitted = nil
         }
-        guard needsResubmission || submitted != key || (animates && isAnimating),
-              renderer.isReadyForMoreMediaData else { return }
+        let isSingleLine = presentation.mode == .singleLine
+        let remeasure = isSingleLine && presentation.fitsContent
+            && configuredCanvas?.settings.fontSize != presentation.fontSize
+        // The video layer can briefly stop accepting samples while its format
+        // changes. A newer font size must still supersede the pending geometry.
+        guard remeasure || needsResubmission || submitted != key || (animates && isAnimating),
+              renderer.isReadyForMoreMediaData || remeasure else { return }
 
         let changedTrack = displayedTrack != item.uri
         if changedTrack {
@@ -187,8 +192,7 @@ final class DesktopLyricsFrames {
         let content = prepareContent(document: document, frame: frame, key: key, delta: delta, now: now, animates: animates)
         lastFrameTime = now
         let previousSettings = submitted?.canvas.settings
-        let isSingleLine = presentation.mode == .singleLine
-        let resizeImmediately = changedTrack || previousSettings?.fitsContent != true
+        let resizeImmediately = changedTrack || previousSettings?.fitsContent != true || remeasure
             || (isSingleLine && previousSettings?.fontSize != presentation.fontSize)
         let height = presentation.fitsContent
             ? adaptiveHeight.update(contentHeight: content.height, at: now, reset: resizeImmediately, singleLine: isSingleLine)
@@ -197,7 +201,7 @@ final class DesktopLyricsFrames {
         updatePool(height: height)
 
         var output: CVPixelBuffer?
-        guard let pool,
+        guard renderer.isReadyForMoreMediaData, let pool,
               CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool, bufferLimit, &output) == kCVReturnSuccess,
               let output, draw(output, content: content, height: height, key: key) else { return }
         if let sample = sample(for: output, at: now) {

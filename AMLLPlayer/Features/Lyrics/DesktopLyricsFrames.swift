@@ -20,6 +20,11 @@ final class DesktopLyricsFrames {
     private var lastFrameTime: Double?
     private var submitted: FrameKey?
     private var displayedTrack: String?
+    private var singleLineTimeline: DesktopLyricsSingleLineTimeline?
+    private var singleLineRevision: Int?
+    private var singleLineTransition = DesktopLyricsSingleLineTransition()
+    private var outgoingLine: UIImage?
+    private lazy var transitionBlurContext = CIContext(options: [.useSoftwareRenderer: true, .cacheIntermediates: false])
     private(set) var isAnimating = false
 
     private struct FrameKey: Equatable {
@@ -27,6 +32,8 @@ final class DesktopLyricsFrames {
         var size: CGSize
         var revision: Int
         var seekRevision: Int
+        var pendingSeek: UUID?
+        var confirmedSeek: UUID?
         var position: Double
         var offset: Double
         var playing: Bool
@@ -106,7 +113,8 @@ final class DesktopLyricsFrames {
         let advancing = frame.playing && (duration <= 0 || frame.position < duration)
         let bounds = CGRect(origin: .zero, size: aspect.canvasSize)
         var presentation = settings
-        presentation.aspect = aspect
+        presentation.mode = aspect == .singleLine ? .singleLine : .scrolling
+        if aspect != .singleLine { presentation.aspect = aspect }
         let configuration = presentation.rendererConfiguration(source)
         let reduceMotion = UIAccessibility.isReduceMotionEnabled
         let reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
@@ -116,7 +124,8 @@ final class DesktopLyricsFrames {
 
         let scale = pixelSize.width / bounds.width
         let key = FrameKey(item: item, size: pixelSize, revision: revision,
-                           seekRevision: frame.seekRevision, position: animates ? frame.position : (frame.position * 2).rounded(.down) / 2, offset: offset,
+                           seekRevision: frame.seekRevision, pendingSeek: frame.pending?.id,
+                           confirmedSeek: frame.confirmation?.requestID, position: animates ? frame.position : (frame.position * 2).rounded(.down) / 2, offset: offset,
                            playing: advancing, configuration: configuration, settings: presentation, backgroundRevision: background.revision,
                            reduceMotion: reduceMotion, reduceTransparency: reduceTransparency)
         let renderer = layer.sampleBufferRenderer
@@ -131,13 +140,15 @@ final class DesktopLyricsFrames {
 
         if displayedTrack != item.uri {
             displayedTrack = item.uri
+            singleLineRevision = nil
             isAnimating = false
             lastFrameTime = nil
         }
         let delta = lastFrameTime.map { min(0.1, max(0, now - $0)) } ?? 0
         guard draw(output, bounds: bounds, scale: scale, item: item, document: lyrics, configuration: configuration, settings: presentation,
                    frame: frame, revision: key.revision, offset: offset, delta: delta,
-                   reduceMotion: reduceMotion, reduceTransparency: reduceTransparency) else { return }
+                   reduceMotion: reduceMotion, reduceTransparency: reduceTransparency,
+                   key: key, now: now, animates: animates) else { return }
         if let sample = sample(for: output, at: now) {
             renderer.enqueue(sample)
             submitted = key
@@ -148,7 +159,7 @@ final class DesktopLyricsFrames {
     private func draw(_ buffer: CVPixelBuffer, bounds: CGRect, scale: CGFloat, item: PlaybackItem,
                       document: LyricsDocument?, configuration: LyricsRenderConfiguration, settings: DesktopLyricsSettings,
                       frame: LyricsPlaybackFrame, revision: Int, offset: Double, delta: Double,
-                      reduceMotion: Bool, reduceTransparency: Bool) -> Bool
+                      reduceMotion: Bool, reduceTransparency: Bool, key: FrameKey, now: Double, animates: Bool) -> Bool
     {
         guard CVPixelBufferLockBaseAddress(buffer, []) == kCVReturnSuccess else { return false }
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
@@ -175,13 +186,73 @@ final class DesktopLyricsFrames {
             canvas.configure(document: document, documentVersion: revision, configuration: configuration,
                              input: input, active: true, reduceMotion: reduceMotion,
                              reduceTransparency: reduceTransparency, canSeek: false, desktopSettings: settings)
-            isAnimating = canvas.drawExportFrame(in: context, sample: frame, delta: delta,
-                                                  additive: !reduceTransparency)
+            if settings.mode == .singleLine {
+                drawSingleLine(in: context, document: document, frame: frame, key: key, delta: delta,
+                               now: now, animates: animates)
+            } else {
+                isAnimating = canvas.drawExportFrame(in: context, sample: frame, delta: delta,
+                                                      additive: !reduceTransparency)
+            }
         } else {
+            outgoingLine = nil
+            singleLineTimeline = nil
+            singleLineRevision = nil
             isAnimating = false
             drawMetadata(item, bounds: bounds)
         }
         return true
+    }
+
+    private func drawSingleLine(in context: CGContext, document: LyricsDocument, frame: LyricsPlaybackFrame,
+                                key: FrameKey, delta: Double, now: Double, animates: Bool) {
+        if singleLineRevision != key.revision {
+            singleLineTimeline = DesktopLyricsSingleLineTimeline(document: document)
+            singleLineRevision = key.revision
+        }
+        let time = DesktopLyricsSingleLineTimeline.lyricTime(position: frame.position, offset: key.offset)
+        let target = singleLineTimeline?.line(at: time)
+        let immediate = !animates || singleLineNeedsRebase(to: key)
+        let presentation = singleLineTransition.frame(target: target?.index, now: now, immediate: immediate,
+                                                       blurs: !key.reduceMotion && !key.reduceTransparency)
+        if let capture = presentation.capture {
+            // Keep only the old transparent lyric pixels. The shared engine
+            // advances the incoming lyric below, even while it remains hidden.
+            outgoingLine = canvas.snapshotExportLine(capture)
+        }
+        let moving = canvas.advanceExportFrame(sample: frame, delta: delta, singleLine: target)
+        switch presentation.layer {
+        case .empty:
+            outgoingLine = nil
+        case let .live(index, alpha):
+            outgoingLine = nil
+            canvas.drawExportLine(index, in: context, opacity: alpha, additive: !key.reduceTransparency)
+        case let .outgoing(alpha, blur):
+            drawOutgoingLine(in: canvas.bounds, alpha: alpha, blur: blur, additive: !key.reduceTransparency)
+        }
+        isAnimating = moving || singleLineTransition.isAnimating
+    }
+
+    private func singleLineNeedsRebase(to frame: FrameKey) -> Bool {
+        guard let previous = submitted else { return true }
+        return frame.item.uri != previous.item.uri || frame.revision != previous.revision
+            || frame.offset != previous.offset || frame.position < previous.position - 0.5
+            || frame.settings != previous.settings || frame.configuration != previous.configuration
+            || (frame.pendingSeek == nil && (frame.seekRevision != previous.seekRevision
+                    || frame.confirmedSeek != previous.confirmedSeek || previous.pendingSeek != nil))
+    }
+
+    private func drawOutgoingLine(in bounds: CGRect, alpha: Double, blur: Double, additive: Bool) {
+        guard alpha > 0, let outgoingLine else { return }
+        let bitmap: UIImage
+        if blur > 0, let pixels = outgoingLine.cgImage {
+            let input = CIImage(cgImage: pixels)
+            let softened = input.applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: blur * outgoingLine.scale])
+            bitmap = transitionBlurContext.createCGImage(softened, from: input.extent)
+                .map { UIImage(cgImage: $0, scale: outgoingLine.scale, orientation: .up) } ?? outgoingLine
+        } else {
+            bitmap = outgoingLine
+        }
+        bitmap.draw(in: bounds, blendMode: additive ? .plusLighter : .normal, alpha: alpha)
     }
 
     private func drawMetadata(_ item: PlaybackItem, bounds: CGRect) {

@@ -553,7 +553,7 @@ final class AMLLNativeCanvas: UIView {
         let width = max(1, bounds.width - rowInset(line) * 2)
             * (configuration.tabletTypography == nil && hasDuet ? 0.85 : 1)
         let cue = configuration.romanization ? romanizationCues[index] : nil
-        let animateRomanization = configuration.animationStyle == .appleMusic164
+        let animateRomanization = configuration.animationStyle == .appleMusic164 || desktopSettings?.mode == .singleLine
         if let cue, !cue.tokens.isEmpty, line.precision == .word {
             var placement = line
             placement.generatedRomanization = cue.tokens
@@ -600,7 +600,8 @@ final class AMLLNativeCanvas: UIView {
         sampledConfirmation = frame.confirmation
     }
 
-    private func draw(delta: Double, playbackSample: LyricsPlaybackFrame? = nil) {
+    private func draw(delta: Double, playbackSample: LyricsPlaybackFrame? = nil,
+                      singleLine: DesktopLyricsSingleLineTimeline.Line? = nil) {
         guard !dirty, engine != nil, let display else { return }
         let frameStarted = performanceRecordingEnabled ? CACurrentMediaTime() : 0
         if let sample = playbackSample ?? playbackFrame?() { applyPlaybackFrame(sample) }
@@ -647,7 +648,9 @@ final class AMLLNativeCanvas: UIView {
         lastHeadroom = capabilities.headroom
         let sourceClipping = configuration.animationStyle == .appleMusic164
         let margin = sourceClipping ? 50 : bounds.height * 0.5
+        let isSingleLine = desktopSettings?.mode == .singleLine
         let visible = state.rows.filter {
+            if isSingleLine { return $0.lineIndex == singleLine?.index && !$0.hidden }
             let extent = heights[$0.lineIndex] * (sourceClipping ? $0.scale : 1)
             return !$0.hidden && $0.y + extent >= -margin && $0.y <= bounds.height + margin
         }
@@ -678,7 +681,15 @@ final class AMLLNativeCanvas: UIView {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let usesApple164Appearance = configuration.usesCalibratedApple164Appearance
         for var row in visible {
-            if desktopSettings != nil {
+            if isSingleLine {
+                // The strip owns departure alpha and blur. Keep the native
+                // word clock and mask even when the scroll engine retires Y.
+                row.opacity = 1
+                row.blur = 0
+                row.retirement = nil
+                row.blossomWordExit = nil
+                if let singleLine, state.lyricTime >= singleLine.end { row.visualFocus = .holding }
+            } else if desktopSettings != nil {
                 row.blur = requestsBlurImages ? min(row.blur, lyricBlurMaximum) : 0
             }
             let view: AMLLCompositeRow
@@ -750,7 +761,8 @@ final class AMLLNativeCanvas: UIView {
                                gain: gain, hdrBrightness: brightness, hdrTime: actualTime,
                                lyricTime: state.lyricTime, runStore: engine!.runStore,
                                row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords,
-                               blurMaximum: lyricBlurMaximum, wordHighlight: desktopSettings?.wordHighlight ?? true)
+                               blurMaximum: lyricBlurMaximum, wordHighlight: desktopSettings?.wordHighlight ?? true,
+                               independentlyTimedRomanization: isSingleLine)
             if !requestsBlurImages || row.blur == 0 { view.releaseAuxiliarySourceWait() }
             view.updateAuxiliaryVisibility(auxiliaryFade)
             if view.needsHDRRetry { needsFrame = true }
@@ -767,7 +779,7 @@ final class AMLLNativeCanvas: UIView {
             auxiliaryLayoutPreparation = nil
             auxiliaryFade.finishPreparation(token)
         }
-        if let interlude = state.interlude,
+        if !isSingleLine, let interlude = state.interlude,
            let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
         {
             let height = renderEnvironment().dotHeight
@@ -1123,13 +1135,20 @@ final class AMLLNativeCanvas: UIView {
     }
 
     /// Evaluate model layers offscreen and draw them into the PiP sample.
-    func drawExportFrame(in context: CGContext, sample: LyricsPlaybackFrame, delta: Double, additive: Bool) -> Bool {
+    func advanceExportFrame(sample: LyricsPlaybackFrame, delta: Double,
+                            singleLine: DesktopLyricsSingleLineTimeline.Line? = nil) -> Bool {
         if dirty || lastLayoutKey != currentLayoutKey() || fadeSize != bounds.size {
             setNeedsLayout()
             layoutIfNeeded()
             if dirty || lastLayoutKey != currentLayoutKey() { layoutSubviews() }
         }
-        draw(delta: delta, playbackSample: sample)
+        draw(delta: delta, playbackSample: sample, singleLine: singleLine)
+        return needsFrame || blurRefreshInFlight || !preparingRows.isEmpty || auxiliaryFade.isAnimating
+            || auxiliaryReflow.isAnimating || auxiliarySlotReflow.isAnimating || frameState?.settled == false
+    }
+
+    func drawExportFrame(in context: CGContext, sample: LyricsPlaybackFrame, delta: Double, additive: Bool) -> Bool {
+        let animating = advanceExportFrame(sample: sample, delta: delta)
         context.saveGState()
         context.clip(to: bounds)
         let focused = frameState?.rows.filter {
@@ -1152,8 +1171,39 @@ final class AMLLNativeCanvas: UIView {
         layer.render(in: context)
         if additive { context.endTransparencyLayer() }
         context.restoreGState()
-        return needsFrame || blurRefreshInFlight || !preparingRows.isEmpty || auxiliaryFade.isAnimating
-            || auxiliaryReflow.isAnimating || auxiliarySlotReflow.isAnimating || frameState?.settled == false
+        return animating
+    }
+
+    func drawExportLine(_ index: Int, in context: CGContext, opacity: Double, additive: Bool) {
+        guard opacity > 0, let row = rowViews[index], let layout = layouts[index],
+              row.bounds.width > 0, row.bounds.height > 0 else { return }
+        let originalInk = layout.original.horizontalInkBounds
+        let pronunciationInk = layout.romanization?.horizontalInkBounds ?? .null
+        let ink = originalInk.union(pronunciationInk)
+        let contentWidth = ink.isNull ? row.bounds.width : ink.width
+        let centerX = ink.isNull ? row.bounds.midX : ink.midX
+        let fit = min(1, (bounds.width - 32) / max(1, contentWidth), (bounds.height - 20) / row.bounds.height)
+        guard fit > 0 else { return }
+
+        context.saveGState()
+        context.clip(to: bounds)
+        context.setAlpha(opacity)
+        if additive { context.setBlendMode(.plusLighter) }
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.translateBy(x: bounds.midX - centerX * fit, y: bounds.midY - row.bounds.midY * fit)
+        context.scaleBy(x: fit, y: fit)
+        row.layer.render(in: context)
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
+
+    func snapshotExportLine(_ index: Int) -> UIImage? {
+        guard rowViews[index] != nil, !bounds.isEmpty else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = exportRasterScale
+        return UIGraphicsImageRenderer(size: bounds.size, format: format).image { output in
+            drawExportLine(index, in: output.cgContext, opacity: 1, additive: false)
+        }
     }
 
     func handleInteraction(_ interaction: AMLLInteraction) {
@@ -1410,7 +1460,7 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, hdrBrightness: Double, hdrTime: Double,
                        lyricTime: Double, runStore: LyricsBlossomRunStore,
                        row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool,
-                       blurMaximum: Double, wordHighlight: Bool)
+                       blurMaximum: Double, wordHighlight: Bool, independentlyTimedRomanization: Bool)
     {
         if let (blur, romanBlur, overlayBlur) = pendingBlur {
             pendingBlur = nil
@@ -1426,7 +1476,8 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
                                wordHighlight: wordHighlight)
         alignedRomanization?.update(row: row, lyricTime: lyricTime, configuration: configuration, wordHighlight: wordHighlight)
         guard let cue = romanizationCue, let romanization else { return }
-        let timing = configuration.animationStyle == .appleMusic164 && cue.precision == .word ? pronunciationTiming : nil
+        let animatedStyle = configuration.animationStyle == .appleMusic164 || independentlyTimedRomanization
+        let timing = animatedStyle && cue.precision == .word ? pronunciationTiming : nil
         let animated = timing != nil
         let time = animated ? runStore.draftTime ?? lyricTime : lyricTime
         let start = timing?.lowerBound ?? cue.start

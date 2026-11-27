@@ -41,7 +41,7 @@ struct RootView: View {
                         .accessibilityHidden(true)
                     }
                 }
-                .onChange(of: model.desktopLyricsPreferences.settings.aspect) {
+                .onChange(of: model.desktopLyricsPreferences.settings.outputAspect) {
                     model.desktopLyrics.playbackChanged()
                 }
                 .modifier(PlayerZoomTransition(namespace: playerNamespace, enabled: !reduceMotion))

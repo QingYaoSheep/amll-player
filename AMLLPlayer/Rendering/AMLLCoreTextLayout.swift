@@ -78,6 +78,12 @@ struct AMLLCoreTextRasterSnapshot: @unchecked Sendable {
 /// Core Text shapes glyphs; the pinned AMLL cost function chooses the line breaks.
 @MainActor
 final class AMLLCoreTextLayout {
+    lazy var horizontalInkBounds: CGRect = rows.reduce(.null) { union, row in
+        let ink = CTLineGetBoundsWithOptions(row.line, .useGlyphPathBounds)
+        guard !ink.isEmpty else { return union }
+        return union.union(CGRect(x: row.origin.x + ink.minX, y: 0, width: ink.width, height: 1))
+    }
+
     var mainOrigin: CGPoint { rows.first(where: { !$0.auxiliary && !$0.ruby && !$0.romanization })?.origin ?? .zero }
     var auxiliaryRegions: [LyricsAuxiliaryKind: [CGRect]] {
         var result: [LyricsAuxiliaryKind: [CGRect]] = [:]

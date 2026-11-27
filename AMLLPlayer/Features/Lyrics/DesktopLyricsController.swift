@@ -118,7 +118,7 @@ final class DesktopLyricsController: NSObject {
 
     private func prepare() {
         guard let model, let sourceView, isSupported else { return }
-        let aspect = model.desktopLyricsPreferences.settings.aspect
+        let aspect = model.desktopLyricsPreferences.settings.outputAspect
         if state == .stopped, let producer, producer.aspect != aspect { tearDown() }
         guard controller == nil else { return }
         do { try MusicAudioSession.preparePictureInPicture() } catch { return }

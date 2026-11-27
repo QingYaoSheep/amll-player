@@ -18,33 +18,52 @@ struct DesktopLyricsSettingsView: View {
 
             SettingsSection("desktopLyrics.appearance", footer: "desktopLyrics.aspect.help") {
                 SettingsGroup {
-                    Picker("desktopLyrics.aspect", selection: $preferences.settings.aspect.hapticSelection()) {
-                        ForEach(DesktopLyricsSettings.Aspect.allCases, id: \.self) { aspect in
-                            Text(LocalizedStringKey(aspect.label)).tag(aspect)
+                    Picker("desktopLyrics.mode", selection: $preferences.settings.mode.hapticSelection()) {
+                        ForEach(DesktopLyricsSettings.DisplayMode.allCases, id: \.self) { mode in
+                            Text(LocalizedStringKey(mode.label)).tag(mode)
                         }
                     }
-                    .accessibilityIdentifier("desktopLyricsAspect")
+                    .accessibilityIdentifier("desktopLyricsMode")
                     SettingsDivider(inset: 16)
+                    if settings.mode == .scrolling {
+                        Picker("desktopLyrics.aspect", selection: $preferences.settings.aspect.hapticSelection()) {
+                            ForEach(DesktopLyricsSettings.Aspect.scrollingOptions, id: \.self) { aspect in
+                                Text(LocalizedStringKey(aspect.label)).tag(aspect)
+                            }
+                        }
+                        .accessibilityIdentifier("desktopLyricsAspect")
+                        SettingsDivider(inset: 16)
+                    }
                     SettingsSliderRow("desktopLyrics.fontSize", valueText: "\(Int(settings.fontSize)) pt",
                                       value: $preferences.settings.fontSize, in: DesktopLyricsSettings.fontRange,
                                       sliderIdentifier: "desktopLyricsFontSize")
+                    if settings.mode == .singleLine {
+                        SettingsDivider(inset: 16)
+                        Toggle("render.translation", isOn: $preferences.settings.singleLineTranslation.hapticSelection())
+                            .accessibilityIdentifier("desktopLyricsSingleLineTranslation")
+                        SettingsDivider(inset: 16)
+                        Toggle("render.romanization", isOn: $preferences.settings.singleLineRomanization.hapticSelection())
+                            .accessibilityIdentifier("desktopLyricsSingleLineRomanization")
+                    }
                 }
             }
 
             SettingsSection("desktopLyrics.motion") {
                 SettingsGroup {
-                    Picker("desktopLyrics.transition", selection: $preferences.settings.transition.hapticSelection()) {
-                        ForEach(DesktopLyricsSettings.Transition.allCases, id: \.self) { transition in
-                            Text(LocalizedStringKey(transition.label)).tag(transition)
+                    if settings.mode == .scrolling {
+                        Picker("desktopLyrics.transition", selection: $preferences.settings.transition.hapticSelection()) {
+                            ForEach(DesktopLyricsSettings.Transition.allCases, id: \.self) { transition in
+                                Text(LocalizedStringKey(transition.label)).tag(transition)
+                            }
                         }
+                        .accessibilityIdentifier("desktopLyricsTransition")
+                        SettingsDivider(inset: 16)
+                        SettingsSliderRow("desktopLyrics.blur", valueText: settings.blurStrength.formatted(.number.precision(.fractionLength(0 ... 1))),
+                                          value: $preferences.settings.blurStrength, in: DesktopLyricsSettings.blurRange,
+                                          step: 0.5, disabled: settings.transition != .blur,
+                                          sliderIdentifier: "desktopLyricsBlurStrength")
+                        SettingsDivider(inset: 16)
                     }
-                    .accessibilityIdentifier("desktopLyricsTransition")
-                    SettingsDivider(inset: 16)
-                    SettingsSliderRow("desktopLyrics.blur", valueText: settings.blurStrength.formatted(.number.precision(.fractionLength(0 ... 1))),
-                                      value: $preferences.settings.blurStrength, in: DesktopLyricsSettings.blurRange,
-                                      step: 0.5, disabled: settings.transition != .blur,
-                                      sliderIdentifier: "desktopLyricsBlurStrength")
-                    SettingsDivider(inset: 16)
                     Toggle("desktopLyrics.wordHighlight", isOn: $preferences.settings.wordHighlight.hapticSelection())
                         .accessibilityIdentifier("desktopLyricsWordHighlight")
                 }
@@ -83,9 +102,9 @@ private struct DesktopLyricsPreview: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: phase != .active)) { timeline in
             let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
             DesktopLyricsPreviewSurface(configuration: configuration, settings: settings, elapsed: elapsed, playing: phase == .active)
-                .id(settings.aspect)
+                .id(settings.outputAspect)
         }
-        .aspectRatio(settings.aspect.ratio, contentMode: .fit)
+        .aspectRatio(settings.outputAspect.ratio, contentMode: .fit)
         .background(Color(white: 0.075))
     }
 }
@@ -96,7 +115,7 @@ private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
     let elapsed: Double
     let playing: Bool
 
-    func makeCoordinator() -> DesktopLyricsFrames { .init(aspect: settings.aspect) }
+    func makeCoordinator() -> DesktopLyricsFrames { .init(aspect: settings.outputAspect) }
 
     func makeUIView(context: Context) -> DesktopLyricsSourceView {
         let view = DesktopLyricsSourceView()
@@ -127,9 +146,9 @@ private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
                                           albumTitle: nil, duration: duration, isEpisode: false, isAdvertisement: false)
     private static let document: LyricsDocument = {
         let samples = [
-            (["風が ", "そっと ", "歌う"], "风轻轻地唱", "Kaze ga sotto utau"),
-            (["月が ", "道を ", "照らす"], "月光照亮路途", "Tsuki ga michi o terasu"),
-            (["波が ", "夜に ", "溶ける"], "海浪融进夜色", "Nami ga yoru ni tokeru")
+            (["風が ", "そっと ", "歌う"], "风轻轻地唱", ["Kaze ga ", "sotto ", "utau"]),
+            (["月が ", "道を ", "照らす"], "月光照亮路途", ["Tsuki ga ", "michi o ", "terasu"]),
+            (["波が ", "夜に ", "溶ける"], "海浪融进夜色", ["Nami ga ", "yoru ni ", "tokeru"])
         ]
         let lines = samples.enumerated().map { index, sample in
             let start = Double(index) * 4
@@ -137,9 +156,20 @@ private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
                 LyricWord(text: text, start: start + Double(syllable), end: start + Double(syllable == 2 ? 4 : syllable + 1))
             }
             return LyricLine(id: "desktop-preview-\(index)", text: sample.0.joined(), start: start, end: start + 4,
-                             words: words, translation: sample.1, romanization: sample.2, precision: .word)
+                             words: words, translation: sample.1, romanization: sample.2.joined(), precision: .word)
+        }
+        let cues = zip(lines, samples).enumerated().map { index, pair -> RomanizationTTMLTrack.Cue in
+            let (body, sample) = pair
+            let start = body.start + 0.2
+            let words = sample.2.enumerated().map { syllable, text in
+                LyricWord(text: text, start: start + Double(syllable), end: syllable == 2 ? body.end : start + Double(syllable + 1))
+            }
+            let line = LyricLine(id: body.id + "-roman", text: sample.2.joined(), start: start, end: body.end,
+                                 words: words, precision: .word)
+            return .init(sourceLineIndex: index, line: line, tokens: [])
         }
         return LyricsDocument(candidate: .init(source: .apple, sourceID: "desktop-preview", title: "", artists: []),
-                              lines: lines, language: "ja", selectionReason: "preview")
+                              lines: lines, language: "ja", selectionReason: "preview",
+                              romanizationTTMLTrack: .init(ttml: "", cues: cues))
     }()
 }

@@ -2,8 +2,16 @@ import Foundation
 import Observation
 
 struct DesktopLyricsSettings: Codable, Equatable, Sendable {
+    enum DisplayMode: String, CaseIterable, Codable, Sendable {
+        case scrolling, singleLine
+
+        var label: String { "desktopLyrics.mode." + rawValue }
+    }
+
     enum Aspect: String, CaseIterable, Codable, Sendable {
-        case wide, standard, tall
+        case wide, standard, tall, singleLine
+
+        static let scrollingOptions: [Self] = [.wide, .standard, .tall]
 
         var label: String { "desktopLyrics.aspect." + rawValue }
 
@@ -12,13 +20,19 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
             case .wide: 2
             case .standard: 16.0 / 9
             case .tall: 4.0 / 3
+            case .singleLine: 2.5
             }
         }
 
         var canvasSize: CGSize { CGSize(width: 320, height: 320 / ratio) }
 
         var pixelSizes: [CGSize] {
-            let widths = self == .tall ? [960, 1104] : [960, 1152, 1280]
+            let widths: [Int]
+            switch self {
+            case .tall: widths = [960, 1104]
+            case .singleLine: widths = [960, 1120, 1280]
+            default: widths = [960, 1152, 1280]
+            }
             return widths.map { CGSize(width: Double($0), height: (Double($0) / ratio).rounded()) }
         }
 
@@ -43,13 +57,19 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
     var wordHighlight = true
     var aspect: Aspect = .standard
     var transition: Transition = .blur
+    var mode: DisplayMode = .scrolling
+    var singleLineTranslation = true
+    var singleLineRomanization = true
 
-    var blurMaximum: Double { transition == .blur ? blurStrength : 0 }
-    var snapsLines: Bool { transition == .instant }
+    var outputAspect: Aspect { mode == .singleLine ? .singleLine : aspect }
+
+    var blurMaximum: Double { mode == .scrolling && transition == .blur ? blurStrength : 0 }
+    var snapsLines: Bool { mode == .scrolling && transition == .instant }
 
     func validated() -> Self {
         var value = self
         let defaults = Self()
+        if value.aspect == .singleLine { value.aspect = defaults.aspect }
         value.fontSize = fontSize.isFinite ? min(Self.fontRange.upperBound, max(Self.fontRange.lowerBound, fontSize.rounded())) : defaults.fontSize
         value.blurStrength = blurStrength.isFinite
             ? min(Self.blurRange.upperBound, max(Self.blurRange.lowerBound, (blurStrength * 2).rounded() / 2))
@@ -66,13 +86,17 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
         configuration.tabletTypography = nil
         configuration.hdr = nil
         configuration.blurInactive = blurMaximum > 0
+        if mode == .singleLine {
+            configuration.translation = singleLineTranslation
+            configuration.romanization = singleLineRomanization
+        }
         return configuration
     }
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case fontSize, blurStrength, wordHighlight, aspect, transition
+        case fontSize, blurStrength, wordHighlight, aspect, transition, mode, singleLineTranslation, singleLineRomanization
     }
 
     init(from decoder: any Decoder) throws {
@@ -82,6 +106,9 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
         wordHighlight = (try? values.decode(Bool.self, forKey: .wordHighlight)) ?? wordHighlight
         aspect = (try? values.decode(Aspect.self, forKey: .aspect)) ?? aspect
         transition = (try? values.decode(Transition.self, forKey: .transition)) ?? transition
+        mode = (try? values.decode(DisplayMode.self, forKey: .mode)) ?? mode
+        singleLineTranslation = (try? values.decode(Bool.self, forKey: .singleLineTranslation)) ?? singleLineTranslation
+        singleLineRomanization = (try? values.decode(Bool.self, forKey: .singleLineRomanization)) ?? singleLineRomanization
         self = validated()
     }
 }

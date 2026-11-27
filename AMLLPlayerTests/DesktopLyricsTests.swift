@@ -108,6 +108,113 @@ final class DesktopLyricsTests: XCTestCase {
         XCTAssertEqual(source.fontSize, 32)
     }
 
+    func testSingleLineSettingsKeepSavedScrollingOptionsAndSeparateAuxiliaries() throws {
+        let data = Data(#"{"aspect":"tall","transition":"fade"}"#.utf8)
+        var settings = try JSONDecoder().decode(DesktopLyricsSettings.self, from: data)
+        XCTAssertEqual(settings.mode, .scrolling)
+        XCTAssertTrue(settings.singleLineTranslation)
+        XCTAssertTrue(settings.singleLineRomanization)
+        settings.mode = .singleLine
+        settings.singleLineTranslation = false
+        var source = LyricsRenderConfiguration()
+        source.romanization = false
+        XCTAssertEqual(settings.outputAspect, .singleLine)
+        XCTAssertEqual(settings.outputAspect.pixelSizes, [
+            CGSize(width: 960, height: 384), CGSize(width: 1120, height: 448), CGSize(width: 1280, height: 512)
+        ])
+        XCTAssertFalse(settings.rendererConfiguration(source).translation)
+        XCTAssertTrue(settings.rendererConfiguration(source).romanization)
+        let decoded = try JSONDecoder().decode(DesktopLyricsSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(decoded, settings)
+
+        settings.mode = .scrolling
+        XCTAssertEqual(settings.outputAspect, .tall)
+        XCTAssertEqual(settings.transition, .fade)
+        XCTAssertFalse(settings.rendererConfiguration(source).romanization)
+    }
+
+    func testSingleLineSelectionUsesSourceOnsetsAndHoldsThroughGaps() {
+        let document = singleLineFixture()
+        let timeline = DesktopLyricsSingleLineTimeline(document: document)
+        XCTAssertNil(timeline.line(at: 0.99))
+        XCTAssertEqual(timeline.line(at: 1)?.index, 0)
+        XCTAssertEqual(timeline.line(at: 2)?.index, 0) // A background voice enters.
+        XCTAssertEqual(timeline.line(at: 3)?.index, 2) // New main voice wins the overlap and the tie.
+        XCTAssertEqual(timeline.line(at: 5.5)?.index, 2) // No return to the earlier overlap.
+        XCTAssertEqual(timeline.line(at: 7)?.index, 2)
+        XCTAssertEqual(timeline.line(at: 8)?.index, 4)
+        XCTAssertEqual(timeline.line(at: 1.1)?.index, 0) // Seek back.
+        XCTAssertEqual(timeline.line(at: DesktopLyricsSingleLineTimeline.lyricTime(position: 3.2, offset: 0.2))?.index, 2)
+    }
+
+    func testSingleLineTransitionFinishesExitBeforeShowingNewestTarget() {
+        var transition = DesktopLyricsSingleLineTransition()
+        XCTAssertEqual(transition.frame(target: 0, now: 0, immediate: true, blurs: true).layer, .live(index: 0, alpha: 1))
+        let handoff = transition.frame(target: 1, now: 1, immediate: false, blurs: true)
+        XCTAssertEqual(handoff.capture, 0)
+        XCTAssertEqual(handoff.layer, .outgoing(alpha: 1, blur: 0))
+
+        let interrupted = transition.frame(target: 2, now: 1.06, immediate: false, blurs: true)
+        XCTAssertNil(interrupted.capture)
+        guard case let .outgoing(alpha, blur) = interrupted.layer else { return XCTFail("The newer lyric drew during the exit") }
+        XCTAssertLessThan(alpha, 1)
+        XCTAssertGreaterThan(blur, 0)
+        XCTAssertTrue(transition.isAnimating)
+
+        let boundary = 1 + DesktopLyricsSingleLineTransition.duration
+        XCTAssertEqual(transition.frame(target: 2, now: boundary, immediate: false, blurs: true).layer, .live(index: 2, alpha: 0))
+        let completed = transition.frame(target: 2, now: boundary + 0.2, immediate: false, blurs: true)
+        XCTAssertEqual(completed.layer, .live(index: 2, alpha: 1))
+        XCTAssertFalse(transition.isAnimating)
+    }
+
+    func testSingleLineReducedMotionAndConfirmedSeekClearWithoutStaleLayers() {
+        var transition = DesktopLyricsSingleLineTransition()
+        _ = transition.frame(target: 0, now: 0, immediate: true, blurs: false)
+        _ = transition.frame(target: 1, now: 1, immediate: false, blurs: false)
+        let fade = transition.frame(target: 1, now: 1.04, immediate: false, blurs: false)
+        guard case let .outgoing(alpha, radius) = fade.layer else { return XCTFail("Missing pure fade") }
+        XCTAssertLessThan(alpha, 1)
+        XCTAssertEqual(radius, 0)
+        let seek = transition.frame(target: 4, now: 1.05, immediate: true, blurs: false)
+        XCTAssertEqual(seek.layer, .live(index: 4, alpha: 1))
+        XCTAssertNil(seek.capture)
+        XCTAssertFalse(transition.isAnimating)
+        XCTAssertEqual(transition.frame(target: nil, now: 2, immediate: true, blurs: true).layer, .empty)
+    }
+
+    @MainActor
+    func testSingleLineCanvasInstallsOnlyTheSelectedNativeRow() {
+        let document = singleLineFixture()
+        let timeline = DesktopLyricsSingleLineTimeline(document: document)
+        var settings = DesktopLyricsSettings()
+        settings.mode = .singleLine
+        let canvas = AMLLNativeCanvas(frame: CGRect(origin: .zero, size: settings.outputAspect.canvasSize))
+        canvas.drivesFramesExternally = true
+        canvas.configure(document: document, configuration: settings.rendererConfiguration(.init()),
+                         input: .init(position: 3.2, playing: true), active: true,
+                         reduceMotion: false, canSeek: false, desktopSettings: settings)
+        let sample = LyricsPlaybackFrame(snapshot: nil, position: 3.2, playing: true, seekRevision: 0,
+                                         pending: nil, confirmation: nil, legacySeekPosition: nil)
+        _ = canvas.advanceExportFrame(sample: sample, delta: 0, singleLine: timeline.line(at: 3.2))
+        XCTAssertEqual(canvas.visibleRowCount, 1)
+        XCTAssertNil(canvas.snapshotExportLine(0))
+        XCTAssertNotNil(canvas.snapshotExportLine(2))
+    }
+
+    private func singleLineFixture() -> LyricsDocument {
+        let lines = [
+            LyricLine(id: "opening", text: "Opening", start: 0, end: 6,
+                      words: [.init(text: "Opening", start: 1, end: 6)], precision: .word),
+            LyricLine(id: "bg", text: "Background", start: 2, end: 3, isBackground: true),
+            LyricLine(id: "overlap", text: "Overlap", start: 3, end: 4, translation: "Translation", romanization: "Romanization"),
+            LyricLine(id: "same", text: "Same onset", start: 3, end: 5),
+            LyricLine(id: "late", text: "After interlude", start: 8, end: 9)
+        ]
+        return .init(candidate: .init(source: .apple, sourceID: "single-line", title: "", artists: []),
+                     lines: lines, language: "en", selectionReason: "test")
+    }
+
     @MainActor
     func testOffscreenLayerRenderingRespectsTheWordGradientAlphaMask() throws {
         let bounds = CGRect(x: 0, y: 0, width: 32, height: 8)

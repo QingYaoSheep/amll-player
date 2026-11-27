@@ -40,23 +40,43 @@ struct DesktopLyricsSingleLineTimeline {
         return low > 0 ? lines[low - 1] : nil
     }
 
-    static func lyricTime(position: Double, offset: Double) -> Double {
-        let position = position.isFinite ? position : 0
-        let offset = offset.isFinite ? offset : 0
-        return floor((position - offset) * 1000 + 0.5) / 1000
+    func line(sourceIndex: Int) -> Line? {
+        lines.first { $0.index == sourceIndex }
     }
 }
 
-struct DesktopLyricsDeparture {
-    static let duration = 0.20
+struct DesktopLyricsSingleLineHandoff {
+    let catching: [Int]
+    let leaving: [Int]
+    let upcoming: Int?
+    let selected: Int?
 
-    let opacity: Double
-    let softness: Double
+    func successor(after index: Int) -> Int? {
+        if leaving.contains(index) { return selected ?? upcoming }
+        if catching.contains(index) { return upcoming }
+        return nil
+    }
+}
 
-    init(elapsed: Double) {
-        let progress = min(1, max(0, elapsed / Self.duration))
-        opacity = 1 - progress * progress * (3 - 2 * progress)
-        softness = AMLLWordMotion.cubicBezier(progress, x1: 0.23, y1: 1, x2: 0.32, y2: 1)
+struct DesktopLyricsSingleLineSelection {
+    private var selected: DesktopLyricsSingleLineTimeline.Line?
+
+    mutating func update(timeline: DesktopLyricsSingleLineTimeline?, at time: Double,
+                         handoff: DesktopLyricsSingleLineHandoff?, interlude: Bool, reset: Bool)
+        -> (line: DesktopLyricsSingleLineTimeline.Line?, advancesEarly: Bool)
+    {
+        if reset || interlude { selected = nil }
+        guard !interlude else { return (nil, false) }
+        let timed = timeline?.line(at: time)
+        if !reset, let current = selected ?? timed, let index = handoff?.successor(after: current.index),
+           let next = timeline?.line(sourceIndex: index), next.start > current.start {
+            selected = (timed?.start ?? -.infinity) > next.start ? timed : next
+            return (selected, true)
+        }
+        if selected == nil || (timed?.start ?? -.infinity) > (selected?.start ?? -.infinity) {
+            selected = timed
+        }
+        return (selected, false)
     }
 }
 
@@ -73,7 +93,7 @@ struct DesktopLyricsSingleLineTransition {
     }
 
     static let duration = 0.12
-    static let exitDuration = DesktopLyricsDeparture.duration
+    static let exitDuration = 0.20
     static let blurMaximum = 2.0
 
     private enum Phase {
@@ -93,7 +113,7 @@ struct DesktopLyricsSingleLineTransition {
         }
     }
 
-    mutating func frame(target: Int?, now: Double, immediate: Bool, blurs: Bool) -> Frame {
+    mutating func frame(target: Int?, now: Double, immediate: Bool, blurs: Bool, earlyDelta: Double = 0) -> Frame {
         if immediate {
             phase = target.map { .showing($0) } ?? .empty
         }
@@ -105,20 +125,29 @@ struct DesktopLyricsSingleLineTransition {
                 lastVisibleAlpha = 1
                 return .init(layer: .live(index: index, alpha: 1))
             }
-            phase = .exiting(since: now, alpha: lastVisibleAlpha)
-            return .init(layer: .outgoing(alpha: lastVisibleAlpha, blur: 0), capture: index)
+            return startExit(index, now: now, earlyDelta: earlyDelta, blurs: blurs)
         case let .exiting(since, alpha):
             let boundary = since + Self.exitDuration
             if now >= boundary { return enter(target, since: boundary, now: now) }
-            let departure = DesktopLyricsDeparture(elapsed: now - since)
-            return .init(layer: .outgoing(alpha: alpha * departure.opacity,
-                                          blur: blurs ? Self.blurMaximum * departure.softness : 0))
+            return .init(layer: outgoing(elapsed: now - since, alpha: alpha, blurs: blurs))
         case let .entering(index, since):
             if index == target { return enter(index, since: since, now: now) }
             guard lastVisibleAlpha > 0 else { return enter(target, since: now, now: now) }
-            phase = .exiting(since: now, alpha: lastVisibleAlpha)
-            return .init(layer: .outgoing(alpha: lastVisibleAlpha, blur: 0), capture: index)
+            return startExit(index, now: now, earlyDelta: earlyDelta, blurs: blurs)
         }
+    }
+
+    private mutating func startExit(_ index: Int, now: Double, earlyDelta: Double, blurs: Bool) -> Frame {
+        let elapsed = min(max(0, earlyDelta), 1.0 / 60)
+        phase = .exiting(since: now - elapsed, alpha: lastVisibleAlpha)
+        return .init(layer: outgoing(elapsed: elapsed, alpha: lastVisibleAlpha, blurs: blurs), capture: index)
+    }
+
+    private func outgoing(elapsed: Double, alpha: Double, blurs: Bool) -> Layer {
+        let progress = min(1, max(0, elapsed / Self.exitDuration))
+        let opacity = 1 - progress * progress * (3 - 2 * progress)
+        let softness = easing(progress * Self.duration)
+        return .outgoing(alpha: alpha * opacity, blur: blurs ? Self.blurMaximum * softness : 0)
     }
 
     private mutating func enter(_ index: Int?, since: Double, now: Double) -> Frame {

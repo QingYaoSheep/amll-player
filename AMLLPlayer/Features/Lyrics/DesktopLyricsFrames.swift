@@ -22,6 +22,7 @@ final class DesktopLyricsFrames {
     private var displayedTrack: String?
     private var singleLineTimeline: DesktopLyricsSingleLineTimeline?
     private var singleLineRevision: Int?
+    private var singleLineSelection = DesktopLyricsSingleLineSelection()
     private var singleLineTransition = DesktopLyricsSingleLineTransition()
     private var outgoingLine: UIImage?
     private var outgoingHeight: CGFloat = 0
@@ -186,10 +187,11 @@ final class DesktopLyricsFrames {
         let content = prepareContent(document: document, frame: frame, key: key, delta: delta, now: now, animates: animates)
         lastFrameTime = now
         let previousSettings = submitted?.canvas.settings
+        let isSingleLine = presentation.mode == .singleLine
         let resizeImmediately = changedTrack || previousSettings?.fitsContent != true
-            || previousSettings?.fontSize != presentation.fontSize
+            || (isSingleLine && previousSettings?.fontSize != presentation.fontSize)
         let height = presentation.fitsContent
-            ? adaptiveHeight.update(contentHeight: content.height, at: now, reset: resizeImmediately)
+            ? adaptiveHeight.update(contentHeight: content.height, at: now, reset: resizeImmediately, singleLine: isSingleLine)
             : aspect.canvasSize.height
         isAnimating = isAnimating || (presentation.fitsContent && adaptiveHeight.isSettling)
         updatePool(height: height)
@@ -241,29 +243,32 @@ final class DesktopLyricsFrames {
             singleLineTimeline = DesktopLyricsSingleLineTimeline(document: document)
             singleLineRevision = appearance.revision
         }
-        let time = DesktopLyricsSingleLineTimeline.lyricTime(position: frame.position, offset: appearance.offset)
         let immediate = !animates || singleLineNeedsRebase(to: key)
-        let sameDocument = submitted?.item.uri == key.item.uri && submitted?.canvas.revision == appearance.revision
-        let interlude = sameDocument ? canvas.frameState?.interlude : nil
-        let inInterlude = interlude.map { time >= $0.start && time < $0.end } == true
-        let target = inInterlude ? nil : singleLineTimeline?.line(at: time)
-        let presentation = singleLineTransition.frame(target: target?.index, now: now, immediate: immediate,
-                                                       blurs: !appearance.reduceMotion && !appearance.reduceTransparency)
-        if let capture = presentation.capture {
-            outgoingHeight = canvas.exportSingleLineHeight(capture)
-            outgoingLine = canvas.snapshotExportLine(capture)
+        var layer = DesktopLyricsSingleLineTransition.Layer.empty
+        let moving = canvas.advanceExportFrame(sample: frame, delta: delta) { [self] state, handoff, reanchored in
+            let reset = immediate || reanchored
+            let selection = singleLineSelection.update(timeline: singleLineTimeline, at: state.lyricTime,
+                                                       handoff: handoff, interlude: state.interlude != nil, reset: reset)
+            let presentation = singleLineTransition.frame(target: selection.line?.index, now: now, immediate: reset,
+                                                           blurs: !appearance.reduceMotion && !appearance.reduceTransparency,
+                                                           earlyDelta: selection.advancesEarly ? delta : 0)
+            if let capture = presentation.capture {
+                outgoingHeight = canvas.exportSingleLineHeight(capture)
+                outgoingLine = canvas.snapshotExportLine(capture)
+            }
+            layer = presentation.layer
+            return selection.line
         }
-        let moving = canvas.advanceExportFrame(sample: frame, delta: delta, singleLine: target)
         isAnimating = moving || singleLineTransition.isAnimating
-        switch presentation.layer {
+        switch layer {
         case .empty:
             outgoingLine = nil
             return .singleLine(.empty, height: 0)
         case let .live(index, _):
             outgoingLine = nil
-            return .singleLine(presentation.layer, height: canvas.exportSingleLineHeight(index))
+            return .singleLine(layer, height: canvas.exportSingleLineHeight(index))
         case .outgoing:
-            return .singleLine(presentation.layer, height: outgoingHeight)
+            return .singleLine(layer, height: outgoingHeight)
         }
     }
 

@@ -1072,21 +1072,30 @@ struct AMLLFrameEngine {
         )
     }
 
-    /// PiP reads the very same catch-up and cutoff decisions as the lyric page.
-    var desktopHandoff: DesktopLyricsScrollHandoff.Selection {
-        guard let schedule = blossomSchedule else { return .init() }
-        return Self.desktopHandoff(for: schedule, groupCount: document.groups.count)
+    /// PiP uses the same selection and preview events as the lyric page.
+    var desktopHandoff: (selected: [Int], pending: Int?, previewsPending: Bool) {
+        guard let schedule = blossomSchedule else { return ([], nil, false) }
+        let previews = !schedule.catchUp.isEmpty || schedule.takeover || (!schedule.left.isEmpty && schedule.entered.isEmpty)
+        return (schedule.selected.filter(document.groups.indices.contains),
+                schedule.pending.flatMap { document.groups.indices.contains($0) ? $0 : nil }, previews)
     }
 
-    static func desktopHandoff(for schedule: LyricsBlossomSelectionSchedule.Output,
-                               groupCount: Int) -> DesktopLyricsScrollHandoff.Selection {
-        let real = 0 ..< groupCount
-        let pending = schedule.pending.flatMap { real.contains($0) ? $0 : nil }
-        let next = schedule.enterIndex ?? pending
-        let departures = schedule.catchUp.filter { key in next.map { key < $0 } == true } + schedule.left
-        let early = schedule.enterIndex == nil && (!schedule.catchUp.isEmpty || schedule.takeover) ? pending : nil
-        return .init(selected: schedule.selected.filter(real.contains), pending: pending,
-                     early: early, departing: departures.filter(real.contains))
+    var desktopSingleLineHandoff: DesktopLyricsSingleLineHandoff? {
+        guard let schedule = blossomSchedule else { return nil }
+        return Self.desktopSingleLineHandoff(schedule, groups: document.groups)
+    }
+
+    static func desktopSingleLineHandoff(_ schedule: LyricsBlossomSelectionSchedule.Output,
+                                         groups: [AMLLDisplayDocument.Group]) -> DesktopLyricsSingleLineHandoff? {
+        guard !schedule.catchUp.isEmpty || !schedule.left.isEmpty else { return nil }
+        func sourceIndex(_ key: Int) -> Int? {
+            groups.indices.contains(key) ? groups[key].main : nil
+        }
+        let entered = schedule.enterIndex.flatMap(sourceIndex)
+        return .init(catching: schedule.catchUp.compactMap(sourceIndex),
+                     leaving: schedule.left.compactMap(sourceIndex),
+                     upcoming: (schedule.enterIndex ?? schedule.pending).flatMap(sourceIndex),
+                     selected: entered ?? schedule.selected.reversed().lazy.compactMap(sourceIndex).first)
     }
 
     private func height(_ index: Int) -> Double {

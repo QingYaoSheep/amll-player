@@ -118,9 +118,13 @@ private struct DesktopLyricsPreview: View {
                                         elapsed: elapsed, playing: phase == .active, adaptiveRatio: $adaptiveRatio)
                 .id(settings.outputAspect)
         }
-        .aspectRatio(settings.fitsContent ? adaptiveRatio ?? (320 / DesktopLyricsAdaptiveHeight.minimum)
+        .aspectRatio(settings.fitsContent ? adaptiveRatio ?? (320 / minimumAdaptiveHeight)
                      : CGFloat(settings.outputAspect.ratio), contentMode: .fit)
         .background(Color(white: 0.075))
+    }
+
+    private var minimumAdaptiveHeight: CGFloat {
+        settings.mode == .singleLine ? DesktopLyricsAdaptiveHeight.singleLineMinimum : DesktopLyricsAdaptiveHeight.minimum
     }
 }
 

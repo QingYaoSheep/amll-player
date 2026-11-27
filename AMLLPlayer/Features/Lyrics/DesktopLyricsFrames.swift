@@ -65,6 +65,7 @@ final class DesktopLyricsFrames {
         var confirmedSeek: UUID?
         var position: Double
         var playing: Bool
+        var additive: Bool
         var backgroundRevision: Int
     }
 
@@ -157,7 +158,11 @@ final class DesktopLyricsFrames {
         needsPlaybackFrames = advancing && document != nil
         background.update(artworkURL: item.artworkURL)
 
+        let reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
+        let additive = settings.blendsAdditively(reduceTransparency: reduceTransparency)
         var presentation = settings
+        // Blend changes redraw the output without rebasing the native lyrics.
+        presentation.plusLighter = true
         presentation.mode = aspect == .singleLine ? .singleLine : .scrolling
         if aspect != .singleLine {
             presentation.aspect = aspect
@@ -165,12 +170,12 @@ final class DesktopLyricsFrames {
         }
         let appearance = CanvasSettings(revision: document == nil ? nil : revision, offset: offset, configuration: source, settings: presentation,
                                         reduceMotion: UIAccessibility.isReduceMotionEnabled,
-                                        reduceTransparency: UIAccessibility.isReduceTransparencyEnabled)
+                                        reduceTransparency: reduceTransparency)
         let position = animates ? frame.position : (frame.position * 2).rounded(.down) / 2
         let key = FrameKey(item: item, canvas: appearance, seekRevision: frame.seekRevision,
                            pendingSeek: frame.pending?.id, confirmedSeek: frame.confirmation?.requestID,
                            position: document == nil ? 0 : position, playing: needsPlaybackFrames,
-                           backgroundRevision: background.revision)
+                           additive: additive, backgroundRevision: background.revision)
         let renderer = layer.sampleBufferRenderer
         if renderer.requiresFlushToResumeDecoding || renderer.status == .failed {
             renderer.flush()
@@ -297,7 +302,7 @@ final class DesktopLyricsFrames {
         defer { UIGraphicsPopContext() }
         let backgroundHeight = DesktopLyricsAdaptiveHeight.maximum
         background.draw(in: CGRect(x: 0, y: (height - backgroundHeight) / 2, width: width, height: backgroundHeight))
-        let additive = !key.canvas.reduceTransparency
+        let additive = key.additive
         switch content {
         case .metadata:
             drawMetadata(key.item, bounds: bounds)

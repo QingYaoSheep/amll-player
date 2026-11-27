@@ -47,6 +47,9 @@ struct DesktopLyricsSettingsView: View {
                         .accessibilityIdentifier("desktopLyricsAspect")
                         SettingsDivider(inset: 16)
                     }
+                    Toggle("desktopLyrics.plusLighter", isOn: $preferences.settings.plusLighter.hapticSelection())
+                        .accessibilityIdentifier("desktopLyricsPlusLighter")
+                    SettingsDivider(inset: 16)
                     SettingsSliderRow("desktopLyrics.fontSize", valueText: "\(Int(settings.fontSize)) pt",
                                       value: $preferences.settings.fontSize, in: DesktopLyricsSettings.fontRange,
                                       sliderIdentifier: "desktopLyricsFontSize")

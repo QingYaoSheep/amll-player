@@ -17,6 +17,20 @@ final class DesktopLyricsTests: XCTestCase {
         XCTAssertFalse(settings.wordHighlight)
     }
 
+    func testDesktopPlusLighterDefaultsOnAndHonorsTheUserAndAccessibility() throws {
+        let old = Data(#"{"mode":"singleLine"}"#.utf8)
+        var settings = try JSONDecoder().decode(DesktopLyricsSettings.self, from: old)
+        XCTAssertTrue(settings.blendsAdditively(reduceTransparency: false))
+        XCTAssertFalse(settings.blendsAdditively(reduceTransparency: true))
+
+        settings.plusLighter = false
+        let saved = try JSONEncoder().encode(settings)
+        settings = try JSONDecoder().decode(DesktopLyricsSettings.self, from: saved)
+        XCTAssertFalse(settings.blendsAdditively(reduceTransparency: false))
+        settings.mode = .scrolling
+        XCTAssertFalse(settings.blendsAdditively(reduceTransparency: false))
+    }
+
     @MainActor
     func testAppearancePersistsAndCanResetWithoutChangingLegacyAutoStart() throws {
         let suite = "desktop-lyrics-test-" + UUID().uuidString

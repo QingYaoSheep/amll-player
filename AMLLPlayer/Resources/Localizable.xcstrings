@@ -191,6 +191,7 @@
     "desktopLyrics.transition.fade" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Fade"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"淡化"}}}},
     "desktopLyrics.transition.instant" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Instant"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"直接切换"}}}},
     "desktopLyrics.blur" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Nearby Line Blur"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"上下句模糊强度"}}}},
+    "desktopLyrics.plusLighter" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Plus Lighter Blending"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Plus Lighter 混色"}}}},
     "desktopLyrics.wordHighlight" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Word by Word Highlighting"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"逐字高亮"}}}},
     "desktopLyrics.reset" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Restore Defaults"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"恢复默认"}}}},
     "desktopLyrics.mode" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Display Mode"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示模式"}}}},

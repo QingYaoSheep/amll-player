@@ -22,6 +22,7 @@ import XCTest
         let lyrics = LyricsCoordinator(providers: [], cache: cache, settingsStore: settingsStore)
         let desktop = DesktopLyricsPreferences(defaults: defaults)
         desktop.settings.aspect = .tall
+        desktop.settings.plusLighter = false
         let model = AppModel(environment: .make(configuration: .preview), lyrics: lyrics,
                              renderPreferences: appearances, desktopLyricsPreferences: desktop, musicPreferences: selected)
         let artwork = ImmersiveArtworkDebugStore(defaults: defaults)
@@ -36,6 +37,7 @@ import XCTest
         let decoded = try JSONDecoder().decode(AppSettingsExport.self, from: data)
         XCTAssertEqual(decoded.version, 1)
         XCTAssertEqual(decoded.desktopLyrics?.aspect, .tall)
+        XCTAssertEqual(decoded.desktopLyrics?.plusLighter, false)
         XCTAssertEqual(decoded.hapticsEnabled, false)
         XCTAssertEqual(decoded.music.source, .netease)
         XCTAssertEqual(decoded.music.netEaseQuality, model.netEasePlayback.quality)

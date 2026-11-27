@@ -61,6 +61,7 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
     var fontSize = 22.0
     var blurStrength = 1.0
     var wordHighlight = true
+    var plusLighter = true
     var aspect: Aspect = .standard
     var transition: Transition = .blur
     var mode: DisplayMode = .scrolling
@@ -72,6 +73,10 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
     var outputAspect: Aspect { mode == .singleLine ? .singleLine : aspect }
 
     var fitsSingleLine: Bool { mode == .singleLine && fitsContent }
+
+    func blendsAdditively(reduceTransparency: Bool) -> Bool {
+        plusLighter && !reduceTransparency
+    }
 
     func validated() -> Self {
         var value = self
@@ -104,7 +109,7 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case fontSize, blurStrength, wordHighlight, aspect, transition, mode, singleLineTranslation, singleLineRomanization
-        case fitsContent, alignment
+        case fitsContent, alignment, plusLighter
     }
 
     init(from decoder: any Decoder) throws {
@@ -119,6 +124,7 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
         singleLineRomanization = (try? values.decode(Bool.self, forKey: .singleLineRomanization)) ?? singleLineRomanization
         fitsContent = (try? values.decode(Bool.self, forKey: .fitsContent)) ?? fitsContent
         alignment = (try? values.decode(Alignment.self, forKey: .alignment)) ?? alignment
+        plusLighter = (try? values.decode(Bool.self, forKey: .plusLighter)) ?? plusLighter
         self = validated()
     }
 }

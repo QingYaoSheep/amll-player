@@ -359,6 +359,42 @@ import XCTest
         XCTAssertFalse(session.currentState.connected)
         XCTAssertNil(session.profile); XCTAssertNil(try store.load())
     }
+
+    func testDisplayedEntriesIgnoresDuplicateQueueIDsAndInterruptionResetsState() async throws {
+        let suite = "NetEaseDuplicateQueue-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let session = NetEaseSession(api: NetEaseFixtureAPI(), store: NetEaseMemoryStore())
+        try await session.importCookie("MUSIC_U=x")
+        let songA = try XCTUnwrap(NetEaseDecoder.item(["id": 42, "name": "First"], kind: .track))
+        let songB = try XCTUnwrap(NetEaseDecoder.item(["id": 43, "name": "Second"], kind: .track))
+        let duplicateID = UUID()
+        let corrupted = NetEaseQueueState(
+            entries: [
+                NetEaseQueueEntry(id: duplicateID, item: songA),
+                NetEaseQueueEntry(id: duplicateID, item: songB),
+            ],
+            currentID: duplicateID,
+            position: 0,
+            shuffle: true,
+            repeatMode: .off,
+            shuffleOrder: [duplicateID]
+        )
+        defaults.set(try JSONEncoder().encode(corrupted), forKey: "netease.queue.v1.1")
+
+        let playback = NetEasePlayback(session: session, catalog: NetEaseCatalog(session: session), defaults: defaults)
+        playback.accountChanged()
+        playback.start()
+        XCTAssertEqual(playback.displayedEntries.count, 1)
+        XCTAssertEqual(playback.displayedEntries.first?.item.title, "First")
+
+        playback.handleAudioSessionInterruption(type: AVAudioSession.InterruptionType.began.rawValue, options: nil)
+        playback.handleAudioSessionInterruption(type: AVAudioSession.InterruptionType.ended.rawValue,
+                                                options: AVAudioSession.InterruptionOptions.shouldResume.rawValue)
+        XCTAssertFalse(MusicAudioSession.ownsPlayback)
+        playback.deselect()
+    }
 }
 @MainActor private final class NetEaseFixtureAPI: NetEaseRequesting {
     var userID = 1

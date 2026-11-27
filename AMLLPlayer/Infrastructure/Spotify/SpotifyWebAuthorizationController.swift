@@ -36,6 +36,16 @@ final class SpotifyWebAuthorizationController: NSObject {
     private let redirectURI: URL
     private let presentationContext = SpotifyWebPresentationContext()
     private var authenticationSession: ASWebAuthenticationSession?
+    nonisolated(unsafe) private let httpSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 30
+        return URLSession(configuration: configuration)
+    }()
+
+    deinit {
+        httpSession.finishTasksAndInvalidate()
+    }
 
     init(clientID: String, redirectURI: URL) {
         self.clientID = clientID
@@ -129,7 +139,7 @@ final class SpotifyWebAuthorizationController: NSObject {
         }
     }
 
-    private func authorizationCode(
+    func authorizationCode(
         from callbackURL: URL,
         expectedState: String
     ) throws -> String {
@@ -141,7 +151,8 @@ final class SpotifyWebAuthorizationController: NSObject {
         }
 
         let values = Dictionary(
-            uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }
+            (components.queryItems ?? []).map { ($0.name, $0.value ?? "") },
+            uniquingKeysWith: { _, latest in latest }
         )
         if values["error"] != nil {
             throw SpotifyServiceError.notAuthorized
@@ -183,8 +194,11 @@ final class SpotifyWebAuthorizationController: NSObject {
         )
         request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
 
+        request.timeoutInterval = 15
+
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await httpSession.data(for: request)
+            try Task.checkCancellation()
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw SpotifyServiceError.transport
             }
@@ -192,6 +206,10 @@ final class SpotifyWebAuthorizationController: NSObject {
                 throw SpotifyServiceError.invalidResponse(statusCode: httpResponse.statusCode)
             }
             return try JSONDecoder().decode(TokenResponse.self, from: data)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as SpotifyServiceError {
             throw error
         } catch let error as URLError where error.code == .notConnectedToInternet {

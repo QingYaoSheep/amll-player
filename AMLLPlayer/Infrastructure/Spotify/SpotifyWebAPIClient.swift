@@ -2,19 +2,29 @@ import Foundation
 
 actor SpotifyWebAPIClient: SpotifyWebAPIProviding {
     private let session: URLSession
+    private let ownsSession: Bool
     private let baseURL: URL
     private let now: @Sendable () -> TimeInterval
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
     init(
-        session: URLSession = .shared,
+        session: URLSession? = nil,
         baseURL: URL = URL(string: "https://api.spotify.com/v1/")!,
         now: @escaping @Sendable () -> TimeInterval = {
             ProcessInfo.processInfo.systemUptime
         }
     ) {
-        self.session = session
+        if let session {
+            self.session = session
+            self.ownsSession = false
+        } else {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 15
+            configuration.timeoutIntervalForResource = 30
+            self.session = URLSession(configuration: configuration)
+            self.ownsSession = true
+        }
         self.baseURL = baseURL
         self.now = now
 
@@ -25,6 +35,12 @@ actor SpotifyWebAPIClient: SpotifyWebAPIProviding {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         self.encoder = encoder
+    }
+
+    deinit {
+        if ownsSession {
+            session.finishTasksAndInvalidate()
+        }
     }
 
     func playback(accessToken: String) async throws -> PlaybackSnapshot {
@@ -222,10 +238,15 @@ actor SpotifyWebAPIClient: SpotifyWebAPIProviding {
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
             let (data, response) = try await session.data(for: request)
+            try Task.checkCancellation()
             guard let response = response as? HTTPURLResponse else {
                 throw SpotifyServiceError.transport
             }
             return (data, response)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as SpotifyServiceError {
             throw error
         } catch let error as URLError where [

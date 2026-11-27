@@ -21,7 +21,7 @@ struct NetEaseProfile: Equatable {
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var foreground = true
-    @ObservationIgnored private var qrWake: CheckedContinuation<Void, Never>?
+    nonisolated(unsafe) @ObservationIgnored private var qrWake: CheckedContinuation<Void, Never>?
     init(api: any NetEaseRequesting = NetEaseAPI(),
          store: any SpotifySessionDataStoring = KeychainSpotifySessionStore(service: "net.stevexmh.amllplayer.netease")) {
         self.api = api; self.store = store
@@ -29,7 +29,11 @@ struct NetEaseProfile: Equatable {
         connectionStates = stream.stream; continuation = stream.continuation
         cookie = (try? store.load()).flatMap { String(data: $0, encoding: .utf8) }
     }
-    deinit { polling?.cancel(); continuation.finish() }
+    deinit {
+        polling?.cancel()
+        let wake = qrWake; qrWake = nil; wake?.resume()
+        continuation.finish()
+    }
     func connect() async { await beginQR() }
     func refresh() async {
         guard let cookie, !currentState.requesting else { return }
@@ -146,7 +150,15 @@ struct NetEaseProfile: Equatable {
     }
     private func waitForQRForeground(_ epoch: UUID) async -> Bool {
         while !foreground, epoch == generation, !Task.isCancelled {
-            await withCheckedContinuation { qrWake = $0 }
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { qrWake = $0 }
+            } onCancel: {
+                Task { @MainActor [weak self] in
+                    let wake = self?.qrWake
+                    self?.qrWake = nil
+                    wake?.resume()
+                }
+            }
         }
         return epoch == generation && !Task.isCancelled
     }

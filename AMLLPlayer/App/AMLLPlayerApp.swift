@@ -23,12 +23,13 @@ struct AMLLPlayerApp: App {
         WindowGroup {
             RootView(model: model, roomNotification: roomNotifications.response)
         }
-        .onChange(of: appScenePhase, initial: true) {
+        .onChange(of: appScenePhase, initial: true) { _, newPhase in
             // App-level phase aggregates all windows; one inactive iPad window
-            // must not suspend a QR login in another active window.
-            model.netEaseSession.setForeground(appScenePhase == .active)
+            // must not suspend playback, lyrics, or QR login in another active window.
+            model.handleScenePhase(newPhase)
+            model.netEaseSession.setForeground(newPhase == .active)
             let activity = model.netEasePlayback.roomActivity
-            switch appScenePhase {
+            switch newPhase {
             case .active:
                 activity.setPhase(.foreground)
                 Task { await activity.refreshAuthorization() }

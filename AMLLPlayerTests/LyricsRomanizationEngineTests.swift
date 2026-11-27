@@ -443,4 +443,25 @@ final class LyricsRomanizationEngineTests: XCTestCase {
         let current = try await engine.exportOverrides()
         XCTAssertEqual(current, original)
     }
+
+    func testCancelledCachedGenerationDoesNotPersistPartialResult() async throws {
+        let engine = LyricsRomanizationEngine()
+        try await engine.clearCache()
+        let doc = document([
+            .init(id: "ko-cancel", text: "사랑해 \(UUID().uuidString)", start: 0, end: 2),
+        ], language: "ko")
+
+        let gate = AsyncStream<Void>.makeStream()
+        let cancelledTask = Task {
+            for await _ in gate.stream { break }
+            return await engine.generateCached(document: doc)
+        }
+        cancelledTask.cancel()
+        gate.continuation.finish()
+        let cancelledResult = await cancelledTask.value
+        XCTAssertTrue(cancelledResult.lines.isEmpty)
+
+        let completeResult = await engine.generateCached(document: doc)
+        XCTAssertEqual(completeResult.lines.count, 1)
+    }
 }

@@ -67,6 +67,7 @@ final class SystemSilentAudioKeepAliveDriver: SilentAudioKeepAliveDriving {
     }
 
     func start() -> Bool {
+        guard AMLLBuildCapabilities.supportsSilentBackgroundKeepAlive else { return false }
         guard !MusicAudioSession.ownsPlayback else { return false }
         do {
             try MusicAudioSession.activateLockScreenKeepAlive()

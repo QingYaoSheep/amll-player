@@ -23,4 +23,14 @@ final class SpotifyPKCETests: XCTestCase {
             )
         )
     }
+
+    @MainActor
+    func testAuthorizationCodeHandlesDuplicateQueryKeysWithoutCrashing() throws {
+        let controller = SpotifyWebAuthorizationController(
+            clientID: "test-client",
+            redirectURI: URL(string: "amllplayer://spotify-callback")!
+        )
+        let url = URL(string: "amllplayer://spotify-callback?state=first&state=expected&code=abc&code=xyz")!
+        XCTAssertEqual(try controller.authorizationCode(from: url, expectedState: "expected"), "xyz")
+    }
 }

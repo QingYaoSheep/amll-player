@@ -346,19 +346,32 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
                 return
             }
 
+            var consecutiveFailures = 0
             while !Task.isCancelled {
                 var delay = (!isForeground && pollInterval == .seconds(2)) ? .seconds(3) : pollInterval
                 do {
                     try await refresh()
+                    consecutiveFailures = 0
+                } catch is CancellationError {
+                    return
                 } catch let error as SpotifyServiceError {
-                    if case let .rateLimited(retryAfter) = error {
+                    switch error {
+                    case let .rateLimited(retryAfter):
                         delay = .seconds(max(retryAfter ?? 2, 1))
-                    }
-                    if error == .tokenExpired {
-                        try? await session.refreshIfNeeded()
+                    case .tokenExpired:
+                        try? await session.refreshAfterUnauthorized()
+                        consecutiveFailures = min(consecutiveFailures + 1, 4)
+                        delay = max(delay, .seconds(1 << consecutiveFailures))
+                    case .offline, .transport, .invalidResponse:
+                        consecutiveFailures = min(consecutiveFailures + 1, 4)
+                        let backoffSeconds = min(30, 1 << consecutiveFailures)
+                        delay = max(delay, .seconds(backoffSeconds))
+                    default:
+                        break
                     }
                 } catch {
-                    // Polling remains best-effort; user actions surface their own errors.
+                    consecutiveFailures = min(consecutiveFailures + 1, 4)
+                    delay = max(delay, .seconds(min(30, 1 << consecutiveFailures)))
                 }
 
                 do {

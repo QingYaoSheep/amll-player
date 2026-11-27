@@ -200,7 +200,6 @@ struct AMLLMeshBackground: UIViewRepresentable {
 
         func stop() {
             loadTask?.cancel(); loadTask = nil
-            frameSource = nil
         }
 
         func setRunning(_ value: Bool, staticMode: Bool) {

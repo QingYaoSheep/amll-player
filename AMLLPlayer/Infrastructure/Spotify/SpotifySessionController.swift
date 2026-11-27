@@ -14,6 +14,7 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
         UUID: AsyncStream<SpotifySessionState>.Continuation
     ] = [:]
     private var renewalContinuation: CheckedContinuation<Void, Error>?
+    private var renewalTimeoutTask: Task<Void, Never>?
     private var webToken: SpotifyWebToken?
     private var webRefreshTask: Task<SpotifyWebToken, Error>?
     private var credentialGeneration = UUID()
@@ -155,6 +156,18 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
         }
 
         currentState = .refreshing
+        let epoch = credentialGeneration
+        renewalTimeoutTask?.cancel()
+        renewalTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard !Task.isCancelled, let self, epoch == self.credentialGeneration else { return }
+            self.renewalTimeoutTask = nil
+            guard let continuation = self.renewalContinuation else { return }
+            self.renewalContinuation = nil
+            self.currentState = .failed(.transport)
+            continuation.resume(throwing: SpotifyServiceError.transport)
+            self.record("Session renewal timed out")
+        }
         try await withCheckedThrowingContinuation { continuation in
             renewalContinuation = continuation
             sessionManager.renewSession()
@@ -187,6 +200,8 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
         clearWebSession()
         sessionManager.session = nil
         try? store.remove()
+        renewalTimeoutTask?.cancel()
+        renewalTimeoutTask = nil
         renewalContinuation?.resume(throwing: SpotifyServiceError.notAuthorized)
         renewalContinuation = nil
         currentState = .signedOut
@@ -241,6 +256,8 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
         }
 
         currentState = .authenticated(expiresAt: session.expirationDate)
+        renewalTimeoutTask?.cancel()
+        renewalTimeoutTask = nil
         renewalContinuation?.resume()
         renewalContinuation = nil
         record(renewed ? "Session renewed" : "Authorization completed")
@@ -262,9 +279,8 @@ final class SpotifySessionController: NSObject, SpotifySessionProviding {
     private func refreshWebToken(_ token: SpotifyWebToken) async throws {
         let epoch = credentialGeneration
         if let webRefreshTask {
-            let renewed = try await webRefreshTask.value
+            _ = try await webRefreshTask.value
             guard epoch == credentialGeneration else { throw CancellationError() }
-            accept(renewed)
             return
         }
 
@@ -352,6 +368,8 @@ extension SpotifySessionController: @preconcurrency SPTSessionManagerDelegate {
             return .transport
         }()
 
+        renewalTimeoutTask?.cancel()
+        renewalTimeoutTask = nil
         renewalContinuation?.resume(throwing: mappedError)
         renewalContinuation = nil
         currentState = .failed(mappedError)

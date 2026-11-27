@@ -123,6 +123,7 @@ final class AppModel {
     @ObservationIgnored private var sessionTask: Task<Void, Never>?
     @ObservationIgnored private var playbackTask: Task<Void, Never>?
     @ObservationIgnored private var lyricsMetadataTask: Task<Void, Never>?
+    @ObservationIgnored private var spotifyMetadataClient: SpotifyCatalogClient?
     @ObservationIgnored private var clock = PlayerClock()
     @ObservationIgnored private var prepared = false
     @ObservationIgnored private var isForeground = false
@@ -393,6 +394,8 @@ final class AppModel {
 
     func logout() {
         spotifyCatalog.reset()
+        spotifyMetadataClient?.invalidate()
+        spotifyMetadataClient = nil
         selectedDeviceID = nil
         environment.spotifySession.logout()
         sessionState = .signedOut
@@ -421,6 +424,8 @@ final class AppModel {
             clearPlayback()
         }
         spotifyCatalog.reset()
+        spotifyMetadataClient?.invalidate()
+        spotifyMetadataClient = nil
         selectedDeviceID = nil
         environment.spotifyPlayback.stop()
         environment.spotifySession.logout()
@@ -845,7 +850,14 @@ final class AppModel {
         guard changed else { return }
         lyricsMetadataTask?.cancel()
         guard item?.service == .spotify, var identity, identity.isrc == nil, SpotifyCatalogDecoder.validID(identity.spotifyID) else { return }
-        let client = SpotifyCatalogClient(session: environment.spotifySession)
+        let client: SpotifyCatalogClient
+        if let existing = spotifyMetadataClient {
+            client = existing
+        } else {
+            let created = SpotifyCatalogClient(session: environment.spotifySession)
+            spotifyMetadataClient = created
+            client = created
+        }
         lyricsMetadataTask = Task { [weak self] in
             guard let detail = try? await client.detail(kind: .track, id: identity.spotifyID),
                   !Task.isCancelled, let self, sessionState.isAuthenticated,

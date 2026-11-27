@@ -237,12 +237,13 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
     }
 
     private static func makeCAFilter(type: String) -> NSObject? {
-        guard let filterClass: AnyClass = NSClassFromString("CAFilter") else { return nil }
+        guard AMLLBuildCapabilities.supportsPrivateVariableBlur,
+              let filterClass: AnyClass = NSClassFromString("CAFilter") else { return nil }
         let selector = NSSelectorFromString("filterWithType:")
         guard let method = class_getClassMethod(filterClass, selector) else { return nil }
-        typealias FilterFactory = @convention(c) (AnyClass, Selector, NSString) -> NSObject?
+        typealias FilterFactory = @convention(c) (AnyClass, Selector, NSString) -> Unmanaged<NSObject>?
         let impl = unsafeBitCast(method_getImplementation(method), to: FilterFactory.self)
-        return impl(filterClass, selector, type as NSString)
+        return impl(filterClass, selector, type as NSString)?.takeUnretainedValue()
     }
 
     private func makeFallbackMaskView(profile: ImmersiveBackgroundBlurProfile) -> UIView? {

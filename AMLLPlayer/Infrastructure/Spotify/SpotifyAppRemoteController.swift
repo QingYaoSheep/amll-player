@@ -10,6 +10,7 @@ final class SpotifyAppRemoteController: NSObject, SpotifyAppRemoteControlling {
     private var snapshotContinuations: [
         UUID: AsyncStream<PlaybackSnapshot>.Continuation
     ] = [:]
+    private var pendingOperations: [UUID: CheckedContinuation<Void, Error>] = [:]
 
     private(set) var state: SpotifyAppRemoteState = .disconnected {
         didSet {
@@ -75,6 +76,7 @@ final class SpotifyAppRemoteController: NSObject, SpotifyAppRemoteControlling {
         if appRemote.isConnected {
             appRemote.disconnect()
         }
+        failPendingOperations(with: SpotifyServiceError.appRemoteUnavailable)
         state = .disconnected
     }
 
@@ -124,16 +126,42 @@ final class SpotifyAppRemoteController: NSObject, SpotifyAppRemoteControlling {
             throw SpotifyServiceError.appRemoteUnavailable
         }
 
+        let operationID = UUID()
+        let timeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            self?.finishPendingOperation(operationID, result: .failure(SpotifyServiceError.transport))
+        }
+        defer { timeoutTask.cancel() }
+
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Error>) in
-            operation { _, error in
-                if error != nil {
-                    continuation.resume(throwing: SpotifyServiceError.transport)
-                } else {
-                    continuation.resume()
+            pendingOperations[operationID] = continuation
+            operation { [weak self] _, error in
+                Task { @MainActor [weak self] in
+                    if error != nil {
+                        self?.finishPendingOperation(operationID, result: .failure(SpotifyServiceError.transport))
+                    } else {
+                        self?.finishPendingOperation(operationID, result: .success(()))
+                    }
                 }
             }
         }
+    }
+
+    private func finishPendingOperation(_ id: UUID, result: Result<Void, Error>) {
+        guard let continuation = pendingOperations.removeValue(forKey: id) else { return }
+        switch result {
+        case .success:
+            continuation.resume()
+        case let .failure(error):
+            continuation.resume(throwing: error)
+        }
+    }
+
+    private func failPendingOperations(with error: Error) {
+        let pending = pendingOperations
+        pendingOperations.removeAll()
+        pending.values.forEach { $0.resume(throwing: error) }
     }
 
     private func subscribeToPlayerState() {
@@ -194,10 +222,10 @@ final class SpotifyAppRemoteController: NSObject, SpotifyAppRemoteControlling {
 
     private static func identifier(from uri: String) -> String? {
         let components = uri.split(separator: ":")
-        guard components.count >= 3 else {
+        guard components.count >= 3, let last = components.last else {
             return nil
         }
-        return String(components.last!)
+        return String(last)
     }
 }
 
@@ -211,10 +239,12 @@ extension SpotifyAppRemoteController: @preconcurrency SPTAppRemoteDelegate {
         _ appRemote: SPTAppRemote,
         didFailConnectionAttemptWithError error: Error?
     ) {
+        failPendingOperations(with: SpotifyServiceError.appRemoteUnavailable)
         state = .failed
     }
 
     func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
+        failPendingOperations(with: SpotifyServiceError.appRemoteUnavailable)
         state = .disconnected
     }
 }

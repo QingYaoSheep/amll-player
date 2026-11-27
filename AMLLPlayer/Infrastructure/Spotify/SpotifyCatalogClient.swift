@@ -9,6 +9,14 @@ actor SpotifyCatalogHTTPClient {
         self.session = session
     }
 
+    deinit {
+        session.finishTasksAndInvalidate()
+    }
+
+    func finishSession() {
+        session.finishTasksAndInvalidate()
+    }
+
     static func validatedURL(endpoint: String) throws -> URL {
         guard let url = URL(string: endpoint, relativeTo: URL(string: "https://api.spotify.com/v1/")!)?.absoluteURL,
               url.scheme == "https", url.host == "api.spotify.com",
@@ -107,8 +115,15 @@ final class SpotifyCatalogClient: SpotifyCatalogProviding {
         self.http = http
     }
 
+    deinit {
+        let retiring = http
+        Task { await retiring.finishSession() }
+    }
+
     func invalidate() {
         generation = UUID()
+        let retiring = http
+        Task { await retiring.finishSession() }
         http = SpotifyCatalogHTTPClient()
     }
 

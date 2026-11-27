@@ -175,6 +175,7 @@ actor LyricsRomanizationEngine {
             return cached
         }
         let result = generate(document: document, overrides: overrides)
+        guard !Task.isCancelled else { return result }
         if let url, let data = try? JSONEncoder().encode(result) {
             try? data.write(to: url, options: .atomic)
             if !result.ttml.isEmpty {

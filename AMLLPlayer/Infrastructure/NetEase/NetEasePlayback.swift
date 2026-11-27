@@ -64,7 +64,7 @@ struct NetEaseQueueState: Codable {
     @ObservationIgnored private let makeItem: (URL) -> AVPlayerItem
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var itemObservation: NSKeyValueObservation?
-    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    nonisolated(unsafe) @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var commands: [(MPRemoteCommand, Any)] = []
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var seekOperation: UUID?
@@ -84,10 +84,11 @@ struct NetEaseQueueState: Codable {
     @ObservationIgnored private var saveTicks = 0
     @ObservationIgnored private var lastPosition = 0.0
     @ObservationIgnored private var stallSeconds = 0
+    @ObservationIgnored private var resumeAfterInterruption = false
     var currentEntry: NetEaseQueueEntry? { queue.entries.first { $0.id == queue.currentID } }
     var displayedEntries: [NetEaseQueueEntry] {
         guard queue.shuffle, let order = queue.shuffleOrder else { return queue.entries }
-        let entries = Dictionary(uniqueKeysWithValues: queue.entries.map { ($0.id, $0) })
+        let entries = Dictionary(queue.entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return order.compactMap { entries[$0] }
     }
     init(session: NetEaseSession, catalog: NetEaseCatalog, defaults: UserDefaults = .standard, player: AVPlayer = AVPlayer(),
@@ -101,6 +102,7 @@ struct NetEaseQueueState: Codable {
     }
     deinit {
         timer?.cancel(); radioTask?.cancel(); artworkTask?.cancel(); itemObservation?.invalidate()
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
         roomPolling?.cancel(); roomSync?.cancel(); roomMessageRead?.cancel(); continuation.finish()
     }
     func accountChanged() {
@@ -726,6 +728,7 @@ struct NetEaseQueueState: Codable {
     /// Invalidates pending source/seek work as well as pausing ready audio.
     func suspendForInterruption() {
         guard selected else { return }
+        resumeAfterInterruption = false
         if isListeningTogether { roomPausedLocally = true }
         cancelRadioWork()
         PlaybackSeekDiagnostics.shared.record("media-interrupted")
@@ -733,6 +736,27 @@ struct NetEaseQueueState: Codable {
         queue.position = position
         // Stop republishing our metadata over another app after a system interruption.
         removeCommands(); MusicAudioSession.releasePlayback(); save(); publish()
+    }
+
+    func handleAudioSessionInterruption(type: UInt?, options: UInt?) {
+        guard selected else { return }
+        if type == AVAudioSession.InterruptionType.began.rawValue {
+            resumeAfterInterruption = intentPlaying && !isListeningTogether
+            cancelRadioWork()
+            PlaybackSeekDiagnostics.shared.record("media-interrupted")
+            generation = UUID(); cancelSeek(); intentPlaying = false; player.pause()
+            queue.position = position
+            save(); publish()
+        } else if type == AVAudioSession.InterruptionType.ended.rawValue {
+            let shouldResume = resumeAfterInterruption
+            resumeAfterInterruption = false
+            let interruptionOptions = AVAudioSession.InterruptionOptions(rawValue: options ?? 0)
+            if shouldResume, interruptionOptions.contains(.shouldResume) {
+                Task { @MainActor [weak self] in
+                    try? await self?.play()
+                }
+            }
+        }
     }
     private func resetAudioServices() {
         guard selected else { return }
@@ -763,8 +787,9 @@ struct NetEaseQueueState: Codable {
         })
         observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
             let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let options = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
             MainActor.assumeIsolated {
-                if type == AVAudioSession.InterruptionType.began.rawValue { self?.suspendForInterruption() }
+                self?.handleAudioSessionInterruption(type: type, options: options)
             }
         })
         observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in

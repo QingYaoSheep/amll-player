@@ -61,10 +61,6 @@ struct RootView: View {
                 savedSpotifyConfiguration: (try? SpotifyClientIDStore().load()) != nil)
             #endif
             model.prepare()
-            model.handleScenePhase(scenePhase)
-        }
-        .onChange(of: scenePhase) { _, newValue in
-            model.handleScenePhase(newValue)
         }
         .onOpenURL { url in
             if url == LockScreenLyricsAttributes.playerURL {

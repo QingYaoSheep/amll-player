@@ -67,7 +67,12 @@ struct RootView: View {
             model.handleScenePhase(newValue)
         }
         .onOpenURL { url in
-            model.handleOpenURL(url)
+            if url == LockScreenLyricsAttributes.playerURL {
+                model.renderPreferences.configuration.showLyrics = true
+                showingPlayer = true
+            } else {
+                model.handleOpenURL(url)
+            }
         }
         .alert(
             "error.title",

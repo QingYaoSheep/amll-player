@@ -84,6 +84,14 @@ struct SettingsView: View {
 
                     SettingsDivider()
 
+                    Toggle(isOn: $model.lockScreenLyricsEnabled.hapticSelection()) {
+                        SettingsIconToggleLabel(title: "lockScreenLyrics.title", icon: "lock.rectangle",
+                                                color: MusicProductStyle.accent)
+                    }
+                    .accessibilityIdentifier("lockScreenLyricsEnabled")
+
+                    SettingsDivider()
+
                     Toggle(isOn: $hapticsEnabled.hapticSelection()) {
                         SettingsIconToggleLabel(title: "settings.haptics", icon: "hand.tap", color: MusicProductStyle.accent)
                     }

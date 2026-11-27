@@ -58,7 +58,7 @@ final class DesktopLyricsBackground {
     }
 }
 
-private actor DesktopLyricsArtworkWorker {
+actor DesktopLyricsArtworkWorker {
     static let shared = DesktopLyricsArtworkWorker()
 
     struct Images: @unchecked Sendable {

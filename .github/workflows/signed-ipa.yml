@@ -26,6 +26,7 @@ jobs:
           DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
           KEYCHAIN_PASSWORD: ${{ secrets.TEMPORARY_KEYCHAIN_PASSWORD }}
           PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          WIDGET_PROFILE_BASE64: ${{ secrets.APPLE_LOCK_SCREEN_LYRICS_PROVISIONING_PROFILE_BASE64 }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
         run: |
           test -n "$CERTIFICATE_BASE64"
@@ -33,6 +34,7 @@ jobs:
           test -n "$DEVELOPMENT_TEAM"
           test -n "$KEYCHAIN_PASSWORD"
           test -n "$PROFILE_BASE64"
+          test -n "$WIDGET_PROFILE_BASE64"
           test -n "$SPOTIFY_CLIENT_ID"
 
       - name: Write build configuration
@@ -50,13 +52,16 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPMENT_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.TEMPORARY_KEYCHAIN_PASSWORD }}
           PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          WIDGET_PROFILE_BASE64: ${{ secrets.APPLE_LOCK_SCREEN_LYRICS_PROVISIONING_PROFILE_BASE64 }}
         run: |
           CERTIFICATE_PATH="$RUNNER_TEMP/development.p12"
           PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
+          WIDGET_PROFILE_PATH="$RUNNER_TEMP/lock-screen-lyrics.mobileprovision"
           KEYCHAIN_PATH="$RUNNER_TEMP/amll-signing.keychain-db"
 
           echo -n "$CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
           echo -n "$PROFILE_BASE64" | base64 --decode -o "$PROFILE_PATH"
+          echo -n "$WIDGET_PROFILE_BASE64" | base64 --decode -o "$WIDGET_PROFILE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -65,12 +70,19 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          security cms -D -i "$PROFILE_PATH" > "$RUNNER_TEMP/profile.plist"
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' "$RUNNER_TEMP/profile.plist")
-          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print Name' "$RUNNER_TEMP/profile.plist")
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
-          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          install_profile() {
+            local path="$1" name_key="$2" bundle_id="$3" uuid name identifier
+            security cms -D -i "$path" > "$path.plist"
+            uuid=$(/usr/libexec/PlistBuddy -c 'Print UUID' "$path.plist")
+            name=$(/usr/libexec/PlistBuddy -c 'Print Name' "$path.plist")
+            identifier=$(/usr/libexec/PlistBuddy -c 'Print Entitlements:application-identifier' "$path.plist")
+            [[ "$identifier" == *."$bundle_id" || "$identifier" == *.\* ]]
+            cp "$path" "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.mobileprovision"
+            echo "$name_key=$name" >> "$GITHUB_ENV"
+          }
+          install_profile "$PROFILE_PATH" APP_PROFILE_NAME net.stevexmh.amllplayer
+          install_profile "$WIDGET_PROFILE_PATH" WIDGET_PROFILE_NAME net.stevexmh.amllplayer.lockscreenlyrics
 
       - name: Generate project
         run: bash Scripts/generate-project.sh
@@ -87,7 +99,8 @@ jobs:
           -archivePath "$RUNNER_TEMP/AMLLPlayer.xcarchive"
           DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
           CODE_SIGN_STYLE=Manual
-          PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+          AMLL_APP_PROFILE="$APP_PROFILE_NAME"
+          AMLL_LOCK_SCREEN_LYRICS_PROFILE="$WIDGET_PROFILE_NAME"
 
       - name: Verify archived application bundle and signatures
         run: |
@@ -102,7 +115,8 @@ jobs:
           cp Configuration/ExportOptions.plist "$RUNNER_TEMP/ExportOptions.plist"
           /usr/libexec/PlistBuddy -c "Set :teamID $DEVELOPMENT_TEAM" "$RUNNER_TEMP/ExportOptions.plist"
           /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$RUNNER_TEMP/ExportOptions.plist"
-          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:net.stevexmh.amllplayer string $PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:net.stevexmh.amllplayer string $APP_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:net.stevexmh.amllplayer.lockscreenlyrics string $WIDGET_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/AMLLPlayer.xcarchive" \
             -exportPath "$RUNNER_TEMP/export" \

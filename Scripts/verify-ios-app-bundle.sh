@@ -62,6 +62,20 @@ fi
 
 APP_EXECUTABLE="$APP_BUNDLE/$APP_EXECUTABLE_NAME"
 SPOTIFY_EXECUTABLE="$APP_BUNDLE/Frameworks/SpotifyiOS.framework/SpotifyiOS"
+WIDGET="$APP_BUNDLE/PlugIns/LockScreenLyricsWidget.appex"
+WIDGET_PLIST="$WIDGET/Info.plist"
+if [[ ! -s "$WIDGET_PLIST" || "$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$INFO_PLIST")" != "true" ]]; then
+    echo "Missing embedded Lock Screen Lyrics widget or Live Activities opt-in" >&2
+    exit 1
+fi
+APP_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
+WIDGET_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$WIDGET_PLIST")"
+WIDGET_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$WIDGET_PLIST")"
+WIDGET_POINT="$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$WIDGET_PLIST")"
+if [[ "$WIDGET_IDENTIFIER" != "$APP_IDENTIFIER.lockscreenlyrics" || "$WIDGET_POINT" != com.apple.widgetkit-extension || ! -s "$WIDGET/$WIDGET_EXECUTABLE" ]]; then
+    echo "Invalid Lock Screen Lyrics widget bundle" >&2
+    exit 1
+fi
 
 if [[ ! -f "$APP_EXECUTABLE" ]]; then
     echo "Missing application executable: $APP_EXECUTABLE" >&2
@@ -83,4 +97,4 @@ if ! otool -l "$APP_EXECUTABLE" | grep -Fq '@executable_path/Frameworks'; then
     exit 1
 fi
 
-echo "Verified ProMotion/orientations, Spotify callback, embedded framework, offline dictionary, and runtime search path"
+echo "Verified orientation and ProMotion, Spotify callback and framework, widget extension, offline dictionary, and runtime search path"

@@ -68,6 +68,27 @@ final class LyricsCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.errors.count, 2); XCTAssertEqual(netease.searchCalls, 1)
     }
 
+    func testLockScreenBackgroundAudioLoadsUncachedLyricsAndRejectsResultsAfterPlaybackStops() async {
+        let provider = TestLyricsProvider(.qq)
+        provider.suspended = true
+        let coordinator = LyricsCoordinator(providers: [provider], cache: MemoryLyricsCache(), settingsStore: store())
+        coordinator.setForeground(false)
+        coordinator.update(track: track)
+        XCTAssertEqual(provider.searchCalls, 0)
+
+        coordinator.setBackgroundAudioLoading(true)
+        await waitUntil { provider.waiters.count == 1 }
+        coordinator.setBackgroundAudioLoading(false)
+        provider.resume(0, text: "Stale")
+        XCTAssertNil(coordinator.document)
+
+        coordinator.setBackgroundAudioLoading(true)
+        await waitUntil { provider.waiters.count == 2 }
+        provider.resume(1, text: "Current")
+        await waitUntil { !coordinator.isLoading }
+        XCTAssertEqual(coordinator.document?.lines.first?.text, "Current")
+    }
+
     func testSameSourcePrefersRealWordTimingOverFirstLineCandidate() async {
         let provider = QualityLyricsProvider()
         let coordinator = LyricsCoordinator(providers: [provider], cache: MemoryLyricsCache(), settingsStore: store())

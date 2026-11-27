@@ -5,6 +5,10 @@ on:
   push:
     paths:
       - '.github/workflows/lyrics-animation.yml'
+      - 'AMLLPlayer/Features/Lyrics/LockScreenLyrics*.swift'
+      - 'AMLLPlayerTests/LockScreenLyricsTests.swift'
+      - 'LockScreenLyricsWidget/**'
+      - 'SharedLockScreenLyrics/**'
       - 'AMLLPlayer/Features/Lyrics/DesktopLyrics*.swift'
       - 'AMLLPlayer/Features/Settings/DesktopLyricsSettingsView.swift'
       - 'AMLLPlayerTests/DesktopLyricsTests.swift'
@@ -88,6 +92,8 @@ jobs:
           -scheme AMLLPlayer
           -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
           -only-testing:AMLLPlayerTests/DesktopLyricsTests
+          -only-testing:AMLLPlayerTests/LockScreenLyricsTests
+          -only-testing:AMLLPlayerTests/LyricsCoordinatorTests/testLockScreenBackgroundAudioLoadsUncachedLyricsAndRejectsResultsAfterPlaybackStops
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkDebugStoreTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkLayersTests

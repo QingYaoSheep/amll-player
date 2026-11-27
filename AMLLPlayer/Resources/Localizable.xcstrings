@@ -248,6 +248,7 @@
     "render.profile.custom" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Legacy custom layout"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"旧版自定义布局"}}}},
     "render.profile.help" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Native AMLL combines the Apple Music-derived page layout with AMLL lyric motion. The legacy custom renderer remains available for comparison."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"原生 AMLL 采用 Apple Music 页面布局和 AMLL 歌词动效。可切到旧版自定义渲染器对照。"}}}},
     "render.options" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Display options"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示选项"}}}},
+    "lockScreenLyrics.title" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Lock Screen Lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"锁屏歌词"}}}},
     "render.hideLyrics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Hide lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"隐藏歌词"}}}},
     "render.showLyrics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示歌词"}}}},
     "render.typography" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Typography"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"文字排版"}}}},

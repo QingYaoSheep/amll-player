@@ -44,6 +44,8 @@ final class LyricsCoordinator {
     @ObservationIgnored private var previewPayload: LyricsAssetBundle?
     @ObservationIgnored private var previewTrackID: String?
     @ObservationIgnored private var foreground = true
+    @ObservationIgnored private var backgroundAudioLoading = false
+    private var canLoadLyrics: Bool { foreground || backgroundAudioLoading }
 
     init(providers: [any LyricsProvider], cache: any LyricsCacheProviding, settingsStore: LyricsSettingsStore = LyricsSettingsStore(), apple: AppleLyricsProvider? = nil) {
         self.providers = providers; self.cache = cache; self.settingsStore = settingsStore; self.apple = apple
@@ -92,7 +94,20 @@ final class LyricsCoordinator {
         if value {
             reload()
         } else {
-            cancelLoad(); cancelSearch(); apple?.invalidateDiscovery()
+            cancelSearch()
+            if !canLoadLyrics { cancelLoad(); apple?.invalidateDiscovery() }
+        }
+    }
+
+    func setBackgroundAudioLoading(_ value: Bool) {
+        guard backgroundAudioLoading != value else { return }
+        backgroundAudioLoading = value
+        guard !foreground else { return }
+        if value {
+            if document == nil { reload() }
+        } else {
+            cancelLoad()
+            apple?.invalidateDiscovery()
         }
     }
 
@@ -136,7 +151,7 @@ final class LyricsCoordinator {
                 } catch { cacheWarning = LyricsError.cache.localizedDescription }
             }
         }
-        guard foreground else { return }
+        guard canLoadLyrics else { return }
         isLoading = true; errors = [:]
         if document == nil {
             status = .loading
@@ -175,7 +190,7 @@ final class LyricsCoordinator {
                         catch { failure = error }
                     }
                     if let best {
-                        guard epoch == ticket, foreground, !Task.isCancelled else { return }
+                        guard epoch == ticket, canLoadLyrics, !Task.isCancelled else { return }
                         install(best.payload, document: best.document, track: track, settings: config)
                         return
                     }
@@ -209,6 +224,7 @@ final class LyricsCoordinator {
     }
 
     private func startRomanization(for base: LyricsDocument, trackID: String, force: Bool = false) {
+        guard foreground else { return }
         romanizationTask?.cancel()
         romanizationEpoch = UUID()
         let ticket = romanizationEpoch

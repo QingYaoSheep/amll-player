@@ -72,7 +72,7 @@ jobs:
       - name: Lint Swift
         run: >-
           xcrun swift-format lint --recursive
-          AMLLPlayer AMLLPlayerTests AMLLPlayerUITests
+          AMLLPlayer AMLLPlayerTests AMLLPlayerUITests LockScreenLyricsWidget SharedLockScreenLyrics
 
       - name: Prepare iOS 27 reference simulators
         id: prepare-simulators

@@ -103,6 +103,21 @@ struct SettingsView: View {
                                                     color: MusicProductStyle.accent)
                         }
                         .accessibilityIdentifier("lockScreenLyricsRomanization")
+
+                        SettingsDivider()
+                        Toggle(isOn: $model.lockScreenLyricsKeepAliveEnabled.hapticSelection()) {
+                            SettingsIconToggleLabel(title: "lockScreenLyrics.keepAlive", icon: "waveform",
+                                                    color: MusicProductStyle.accent)
+                        }
+                        .accessibilityIdentifier("lockScreenLyricsKeepAlive")
+
+                        Text("lockScreenLyrics.keepAliveHint")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.leading, 64)
+                            .padding(.trailing, 18)
+                            .padding(.bottom, 12)
                     }
 
                     SettingsDivider()

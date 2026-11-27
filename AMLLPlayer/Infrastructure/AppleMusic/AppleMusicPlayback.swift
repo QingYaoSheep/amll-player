@@ -38,6 +38,8 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     private var subscriptions = Set<AnyCancellable>()
     private var enabled = false
     private var foreground = false
+    private var backgroundLyricsEnabled = false
+    private var activeObservation: Bool { foreground || backgroundLyricsEnabled }
     private var commandGeneration = UUID()
     private var previous: PlaybackSnapshot?
     private var revision: UInt64 = 0
@@ -63,6 +65,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
 
     func stop() {
         enabled = false
+        backgroundLyricsEnabled = false
         commandGeneration = UUID()
         polling?.cancel(); polling = nil
         subscriptions.removeAll()
@@ -77,31 +80,45 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     }
 
     func enterBackground() {
-        foreground = false; polling?.cancel(); polling = nil; subscriptions.removeAll()
+        foreground = false
+        if !backgroundLyricsEnabled {
+            polling?.cancel(); polling = nil; subscriptions.removeAll()
+        }
+    }
+
+    func setBackgroundLyricsEnabled(_ enabled: Bool) {
+        guard backgroundLyricsEnabled != enabled else { return }
+        backgroundLyricsEnabled = enabled
+        if enabled {
+            schedule()
+        } else if !foreground {
+            polling?.cancel(); polling = nil; subscriptions.removeAll()
+        }
     }
 
     private func schedule() {
-        guard enabled, foreground, session.currentState.connected, polling == nil else { return }
+        guard enabled, activeObservation, session.currentState.connected, polling == nil else { return }
         player.state.objectWillChange.sink { [weak self] in
             Task { @MainActor in
                 await Task.yield()
-                guard let self, self.enabled, self.foreground else { return }
+                guard let self, self.enabled, self.activeObservation else { return }
                 self.sample()
             }
         }.store(in: &subscriptions)
         player.queue.objectWillChange.sink { [weak self] in
             Task { @MainActor in
                 await Task.yield()
-                guard let self, self.enabled, self.foreground else { return }
+                guard let self, self.enabled, self.activeObservation else { return }
                 self.knownContext = nil // External mutations invalidate the app's queue assumptions.
                 self.sample()
             }
         }.store(in: &subscriptions)
         polling = Task { [weak self] in
             while !Task.isCancelled {
-                guard let self, enabled, foreground, session.currentState.connected else { return }
+                guard let self, enabled, activeObservation, session.currentState.connected else { return }
                 sample()
-                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+                let interval = foreground ? 250 : 500
+                do { try await Task.sleep(for: .milliseconds(interval)) } catch { return }
             }
         }
     }
@@ -267,7 +284,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
     }
 
     private func sample() {
-        guard enabled, foreground, session.currentState.connected else { return }
+        guard enabled, activeObservation, session.currentState.connected else { return }
         let entry = player.queue.currentEntry
         var item: PlaybackItem?
         if case let .song(song) = entry?.item {

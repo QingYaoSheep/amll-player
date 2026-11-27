@@ -6,6 +6,7 @@ import UIKit
     static let preferenceKey = "lockScreenLyrics.enabled"
     static let translationKey = "lockScreenLyrics.translation"
     static let romanizationKey = "lockScreenLyrics.romanization"
+    static let keepAliveKey = "lockScreenLyrics.keepAlive"
     private typealias Attributes = LockScreenLyricsAttributes
     private typealias State = Attributes.ContentState
     private typealias LyricsActivity = Activity<Attributes>
@@ -184,7 +185,7 @@ import UIKit
                 if state == .dismissed || state == .ended {
                     session.dismiss()
                     endActivity()
-                    if let model { model.refreshLockScreenLyricsLoading() }
+                    if let model { model.handleLockScreenLyricsEnded() }
                     return
                 }
             }

@@ -24,6 +24,7 @@ struct AppSettingsExport: Codable {
     let lockScreenLyrics: Bool?
     let lockScreenLyricsTranslation: Bool?
     let lockScreenLyricsRomanization: Bool?
+    let lockScreenLyricsKeepAlive: Bool?
     let music: Music
     let lyrics: LyricsSettings
     let appearance: Appearance
@@ -45,6 +46,7 @@ struct AppSettingsExport: Codable {
         lockScreenLyrics = model.lockScreenLyricsEnabled
         lockScreenLyricsTranslation = model.lockScreenLyricsShowsTranslation
         lockScreenLyricsRomanization = model.lockScreenLyricsShowsRomanization
+        lockScreenLyricsKeepAlive = model.lockScreenLyricsKeepAliveEnabled
         music = Music(source: model.selectedMusicService,
                       spotifyClientID: model.environment.configuration.spotifyClientID.flatMap(SpotifyClientIDStore.normalized),
                       netEaseQuality: playback.quality, netEaseShuffle: modes.shuffle, netEaseRepeat: modes.repeatMode,

@@ -85,6 +85,7 @@ protocol MusicPlaybackProviding: AnyObject {
     func stop()
     func enterForeground()
     func enterBackground()
+    func setBackgroundLyricsEnabled(_ enabled: Bool)
     func refresh() async throws
     func play() async throws
     func pause() async throws
@@ -102,6 +103,8 @@ protocol MusicPlaybackProviding: AnyObject {
 }
 
 extension MusicPlaybackProviding {
+    func setBackgroundLyricsEnabled(_: Bool) {}
+
     func playShuffled(_: MusicCatalogItem) async throws {
         throw MusicServiceError.unsupportedOperation
     }

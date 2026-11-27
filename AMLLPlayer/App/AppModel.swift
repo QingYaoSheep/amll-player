@@ -73,12 +73,13 @@ final class AppModel {
     let desktopLyricsPreferences: DesktopLyricsPreferences
     @ObservationIgnored private var desktopLyricsRunning = false
     @ObservationIgnored private let lockScreenLyrics = LockScreenLyricsController()
+    @ObservationIgnored private let lockScreenKeepAlive = LockScreenBackgroundKeepAlive()
     var lockScreenLyricsEnabled = UserDefaults.standard.bool(forKey: LockScreenLyricsController.preferenceKey) {
         didSet {
             guard lockScreenLyricsEnabled != oldValue else { return }
             UserDefaults.standard.set(lockScreenLyricsEnabled, forKey: LockScreenLyricsController.preferenceKey)
             lockScreenLyrics.synchronize(self)
-            refreshLockScreenLyricsLoading()
+            refreshBackgroundLyricsRuntime()
         }
     }
     var lockScreenLyricsShowsTranslation = UserDefaults.standard.object(forKey: LockScreenLyricsController.translationKey) as? Bool ?? true {
@@ -93,6 +94,14 @@ final class AppModel {
             guard lockScreenLyricsShowsRomanization != oldValue else { return }
             UserDefaults.standard.set(lockScreenLyricsShowsRomanization, forKey: LockScreenLyricsController.romanizationKey)
             refreshLockScreenLyricsLoading()
+            lockScreenLyrics.synchronize(self)
+        }
+    }
+    var lockScreenLyricsKeepAliveEnabled = UserDefaults.standard.bool(forKey: LockScreenLyricsController.keepAliveKey) {
+        didSet {
+            guard lockScreenLyricsKeepAliveEnabled != oldValue else { return }
+            UserDefaults.standard.set(lockScreenLyricsKeepAliveEnabled, forKey: LockScreenLyricsController.keepAliveKey)
+            refreshBackgroundLyricsRuntime()
             lockScreenLyrics.synchronize(self)
         }
     }
@@ -117,6 +126,7 @@ final class AppModel {
     @ObservationIgnored private var clock = PlayerClock()
     @ObservationIgnored private var prepared = false
     @ObservationIgnored private var isForeground = false
+    @ObservationIgnored private var scenePhase: ScenePhase = .inactive
     @ObservationIgnored private let clientIDStore: SpotifyClientIDStore
     @ObservationIgnored private let environmentFactory: @MainActor (AppConfiguration) -> AppEnvironment
 
@@ -181,6 +191,9 @@ final class AppModel {
         if appleMusicState.connected {
             appleStore.activate()
         }
+        lockScreenKeepAlive.onIdleSleep = { [weak self] in
+            self?.handleLockScreenKeepAliveIdleSleep()
+        }
     }
 
     deinit {
@@ -244,58 +257,100 @@ final class AppModel {
     }
 
     func handleScenePhase(_ phase: ScenePhase) {
+        scenePhase = phase
         switch phase {
         case .active:
             isForeground = true
+            lockScreenKeepAlive.stop()
             lyrics.setForeground(true)
-            refreshLockScreenLyricsLoading()
+            refreshBackgroundLyricsRuntime()
             currentPlayback.enterForeground()
             Task { await appleSession.refresh(); await netEaseSession.refresh() }
-        case .background:
-            if isForeground { lockScreenLyrics.requireNewExternalSample() }
-            isForeground = false
-            suspendForegroundPlayback()
         case .inactive:
-            break
-        @unknown default:
-            if isForeground { lockScreenLyrics.requireNewExternalSample() }
+            refreshBackgroundLyricsRuntime()
+        case .background:
+            let wasForeground = isForeground
             isForeground = false
+            refreshBackgroundLyricsRuntime()
+            let keepsExternalAlive = lockScreenKeepAlive.isRunning || desktopLyricsRunning
+            if wasForeground && !keepsExternalAlive { lockScreenLyrics.requireNewExternalSample() }
+            suspendForegroundPlayback()
+        @unknown default:
+            let wasForeground = isForeground
+            isForeground = false
+            refreshBackgroundLyricsRuntime()
+            let keepsExternalAlive = lockScreenKeepAlive.isRunning || desktopLyricsRunning
+            if wasForeground && !keepsExternalAlive { lockScreenLyrics.requireNewExternalSample() }
             suspendForegroundPlayback()
         }
         lockScreenLyrics.synchronize(self)
+        if !lockScreenLyrics.needsBackgroundLyrics {
+            refreshBackgroundLyricsRuntime()
+        }
     }
 
     var lockScreenLyricsInForeground: Bool { isForeground }
 
     func refreshLockScreenLyricsLoading() {
+        let hasBackgroundRuntime = (selectedMusicService == .netease && playbackSnapshot?.source == .nativeAudio && MusicAudioSession.ownsPlayback)
+            || (selectedMusicService != .netease && (lockScreenKeepAlive.isRunning || desktopLyricsRunning))
         let canLoad = !isForeground && lockScreenLyricsEnabled && lockScreenLyrics.needsBackgroundLyrics
-            && selectedMusicService == .netease && playbackSnapshot?.source == .nativeAudio
-            && playbackSnapshot?.isPlaying == true && MusicAudioSession.ownsPlayback
+            && playbackSnapshot?.isPlaying == true && hasBackgroundRuntime
         lyrics.setBackgroundAudioLoading(canLoad, romanization: lockScreenLyricsShowsRomanization)
     }
 
+    func handleLockScreenLyricsEnded() {
+        lockScreenKeepAlive.stop()
+        refreshBackgroundLyricsRuntime()
+    }
+
+    private func lockScreenKeepAliveContext() -> LockScreenKeepAliveContext {
+        LockScreenKeepAliveContext(
+            lockScreenEnabled: lockScreenLyricsEnabled,
+            keepAliveEnabled: lockScreenLyricsKeepAliveEnabled,
+            hasActiveActivity: lockScreenLyrics.needsBackgroundLyrics,
+            isForeground: isForeground,
+            isTransitioningOut: scenePhase == .inactive,
+            service: selectedMusicService,
+            isPlaying: playbackSnapshot?.isPlaying == true
+        )
+    }
+
+    private func refreshBackgroundLyricsRuntime() {
+        lockScreenKeepAlive.synchronize(lockScreenKeepAliveContext())
+        let externalBackgroundNeeded = desktopLyricsRunning || lockScreenKeepAlive.isRunning
+        applePlayback.setBackgroundLyricsEnabled(selectedMusicService == .appleMusic && externalBackgroundNeeded)
+        environment.spotifyPlayback.setBackgroundLyricsEnabled(selectedMusicService == .spotify && externalBackgroundNeeded)
+        if !isForeground {
+            lyrics.setForeground(desktopLyricsRunning)
+            refreshLockScreenLyricsLoading()
+        } else {
+            refreshLockScreenLyricsLoading()
+        }
+    }
+
+    private func handleLockScreenKeepAliveIdleSleep() {
+        refreshBackgroundLyricsRuntime()
+        guard !isForeground, !desktopLyricsRunning else { return }
+        lockScreenLyrics.requireNewExternalSample()
+        suspendForegroundPlayback()
+        lockScreenLyrics.synchronize(self)
+    }
+
     private func suspendForegroundPlayback() {
-        if !desktopLyricsRunning { lyricsMetadataTask?.cancel() }
+        let keepsExternalAlive = desktopLyricsRunning || lockScreenKeepAlive.isRunning
+        if !keepsExternalAlive { lyricsMetadataTask?.cancel() }
         refreshLockScreenLyricsLoading()
         lyrics.setForeground(desktopLyricsRunning)
-        if selectedMusicService != .appleMusic || !desktopLyricsRunning {
-            currentPlayback.enterBackground()
-        }
+        currentPlayback.enterBackground()
     }
 
     func setDesktopLyricsRunning(_ running: Bool) {
         guard desktopLyricsRunning != running else { return }
         desktopLyricsRunning = running
-        if selectedMusicService == .spotify {
-            environment.spotifyPlayback.setBackgroundLyricsEnabled(running)
-        }
-        if !isForeground {
-            if running {
-                lyrics.setForeground(true)
-                if selectedMusicService == .appleMusic { applePlayback.enterForeground() }
-            } else {
-                suspendForegroundPlayback()
-            }
+        refreshBackgroundLyricsRuntime()
+        if !isForeground && !running && !lockScreenKeepAlive.isRunning {
+            suspendForegroundPlayback()
         }
     }
 
@@ -554,6 +609,7 @@ final class AppModel {
         AppHaptics.shared.play(.selection)
         desktopLyrics.stop()
         setDesktopLyricsRunning(false)
+        lockScreenKeepAlive.stop()
         sourceGeneration = UUID()
         currentPlayback.enterBackground()
         if selectedMusicService == .netease { netEasePlayback.deselect() }
@@ -695,7 +751,8 @@ final class AppModel {
         desktopLyrics.stop()
         setDesktopLyricsRunning(false)
         lockScreenLyrics.stopSession()
-        lyrics.setBackgroundAudioLoading(false)
+        lockScreenKeepAlive.stop()
+        refreshBackgroundLyricsRuntime()
         lyricsMetadataTask?.cancel()
         lyrics.update(track: nil)
         playbackSnapshot = nil
@@ -733,10 +790,10 @@ final class AppModel {
         }
         playbackSnapshot = snapshot
         clock = PlayerClock(anchor: snapshot)
-        refreshLockScreenLyricsLoading()
         updateLyricsMetadata(snapshot.item)
         desktopLyrics.playbackChanged()
         if lockScreenLyricsEnabled { lockScreenLyrics.synchronize(self) }
+        refreshBackgroundLyricsRuntime()
     }
 
     private func prepareAppleMusic() {

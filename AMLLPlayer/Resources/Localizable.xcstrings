@@ -251,6 +251,8 @@
     "lockScreenLyrics.title" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Lock Screen Lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"锁屏歌词"}}}},
     "lockScreenLyrics.translation" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show Translation on Lock Screen"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"锁屏显示翻译"}}}},
     "lockScreenLyrics.romanization" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show Romanization on Lock Screen"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"锁屏显示音译"}}}},
+    "lockScreenLyrics.keepAlive" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Background Keep-Alive"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Apple Music / Spotify 后台保活"}}}},
+    "lockScreenLyrics.keepAliveHint" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Uses silent audio mixing so Apple Music and Spotify lyrics stay synced on the Lock Screen and Dynamic Island. Uses extra battery and sleeps automatically after 3 minutes paused."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"通过混音静音保持后台同步，使 Apple Music 与 Spotify 的锁屏及灵动岛歌词持续更新。会增加后台耗电，暂停 3 分钟后自动休眠。"}}}},
     "render.hideLyrics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Hide lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"隐藏歌词"}}}},
     "render.showLyrics" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show lyrics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示歌词"}}}},
     "render.typography" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Typography"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"文字排版"}}}},

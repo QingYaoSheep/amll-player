@@ -140,6 +140,102 @@ final class LockScreenLyricsTests: XCTestCase {
         XCTAssertTrue(session.canStart(foreground: true, playing: true, synchronized: true))
     }
 
+    func testSilentWAVDataProducesValidZeroedOneSecondPCM() {
+        let wav = SilentWAVData.makeOneSecondPCM()
+        XCTAssertEqual(wav.count, 44 + 88_200)
+        XCTAssertEqual(String(decoding: wav[0 ..< 4], as: UTF8.self), "RIFF")
+        XCTAssertEqual(String(decoding: wav[8 ..< 16], as: UTF8.self), "WAVEfmt ")
+        XCTAssertEqual(String(decoding: wav[36 ..< 40], as: UTF8.self), "data")
+        XCTAssertTrue(wav.dropFirst(44).allSatisfy { $0 == 0 })
+    }
+
+    @MainActor
+    func testBackgroundKeepAliveFollowsServiceForegroundAndDismissalRules() {
+        let driver = FakeSilentAudioDriver()
+        let keepAlive = LockScreenBackgroundKeepAlive(driver: driver, idleTimeout: .seconds(180))
+
+        // Ignores NetEase (owns real audio) and stays off when disabled or missing activity.
+        keepAlive.synchronize(.init(lockScreenEnabled: true, keepAliveEnabled: true, hasActiveActivity: true,
+                                    isForeground: false, isTransitioningOut: false, service: .netease, isPlaying: true))
+        XCTAssertFalse(keepAlive.isRunning)
+        keepAlive.synchronize(.init(lockScreenEnabled: true, keepAliveEnabled: false, hasActiveActivity: true,
+                                    isForeground: false, isTransitioningOut: false, service: .appleMusic, isPlaying: true))
+        XCTAssertFalse(keepAlive.isRunning)
+        keepAlive.synchronize(.init(lockScreenEnabled: true, keepAliveEnabled: true, hasActiveActivity: false,
+                                    isForeground: false, isTransitioningOut: false, service: .spotify, isPlaying: true))
+        XCTAssertFalse(keepAlive.isRunning)
+        XCTAssertEqual(driver.startCount, 0)
+
+        // Pre-arms during .inactive transition when playing Apple Music with an active Live Activity.
+        keepAlive.synchronize(.init(lockScreenEnabled: true, keepAliveEnabled: true, hasActiveActivity: true,
+                                    isForeground: true, isTransitioningOut: true, service: .appleMusic, isPlaying: true))
+        XCTAssertTrue(keepAlive.isRunning)
+        XCTAssertEqual(driver.startCount, 1)
+
+        // Remains running on transition into .background and switches cleanly to Spotify if active.
+        keepAlive.synchronize(.init(lockScreenEnabled: true, keepAliveEnabled: true, hasActiveActivity: true,
+                                    isForeground: false, isTransitioningOut: false, service: .appleMusic, isPlaying: true))
+        XCTAssertTrue(keepAlive.isRunning)
+        XCTAssertEqual(driver.startCount, 1)
+
+        // Returning to foreground stops silent playback immediately.
+        keepAlive.synchronize(.init(lockScreenEnabled: true, keepAliveEnabled: true, hasActiveActivity: true,
+                                    isForeground: true, isTransitioningOut: false, service: .appleMusic, isPlaying: true))
+        XCTAssertFalse(keepAlive.isRunning)
+        XCTAssertEqual(driver.stopCount, 1)
+
+        // Starts in background for Spotify when playing, and stops immediately when dismissed.
+        keepAlive.synchronize(.init(lockScreenEnabled: true, keepAliveEnabled: true, hasActiveActivity: true,
+                                    isForeground: false, isTransitioningOut: false, service: .spotify, isPlaying: true))
+        XCTAssertTrue(keepAlive.isRunning)
+        XCTAssertEqual(driver.startCount, 2)
+        keepAlive.synchronize(.init(lockScreenEnabled: true, keepAliveEnabled: true, hasActiveActivity: false,
+                                    isForeground: false, isTransitioningOut: false, service: .spotify, isPlaying: true))
+        XCTAssertFalse(keepAlive.isRunning)
+        XCTAssertEqual(driver.stopCount, 2)
+    }
+
+    @MainActor
+    func testBackgroundKeepAlivePauseGraceCancelsOnResumeAndSleepsOnTimeout() async throws {
+        let driver = FakeSilentAudioDriver()
+        let keepAlive = LockScreenBackgroundKeepAlive(driver: driver, idleTimeout: .milliseconds(80))
+        var idleSleepCount = 0
+        keepAlive.onIdleSleep = { idleSleepCount += 1 }
+
+        let playing = LockScreenKeepAliveContext(lockScreenEnabled: true, keepAliveEnabled: true,
+                                                 hasActiveActivity: true, isForeground: false,
+                                                 isTransitioningOut: false, service: .appleMusic, isPlaying: true)
+        var paused = playing
+        paused.isPlaying = false
+
+        keepAlive.synchronize(playing)
+        XCTAssertTrue(keepAlive.isRunning)
+        XCTAssertFalse(keepAlive.isWaitingIdleSleep)
+
+        // Pausing enters grace window without immediately cutting silent audio.
+        keepAlive.synchronize(paused)
+        XCTAssertTrue(keepAlive.isRunning)
+        XCTAssertTrue(keepAlive.isWaitingIdleSleep)
+
+        // Resuming within grace period cancels the sleep timer.
+        try await Task.sleep(for: .milliseconds(30))
+        keepAlive.synchronize(playing)
+        XCTAssertTrue(keepAlive.isRunning)
+        XCTAssertFalse(keepAlive.isWaitingIdleSleep)
+        try await Task.sleep(for: .milliseconds(70))
+        XCTAssertTrue(keepAlive.isRunning)
+        XCTAssertEqual(idleSleepCount, 0)
+
+        // Pausing beyond the timeout releases the audio session and invokes onIdleSleep.
+        keepAlive.synchronize(paused)
+        XCTAssertTrue(keepAlive.isWaitingIdleSleep)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertFalse(keepAlive.isRunning)
+        XCTAssertFalse(keepAlive.isWaitingIdleSleep)
+        XCTAssertEqual(driver.stopCount, 1)
+        XCTAssertEqual(idleSleepCount, 1)
+    }
+
     private func fixture() -> LockScreenLyricsTimeline {
         let lines = [
             LyricLine(id: "1", text: "First\nline", start: 1, end: 4, translation: "译文一", romanization: "Provider first"),
@@ -152,5 +248,23 @@ final class LockScreenLyricsTests: XCTestCase {
         return .init(document: .init(candidate: .init(source: .qq, sourceID: "test", title: "Song", artists: []),
                                      lines: lines, language: "en", selectionReason: "fixture",
                                      romanizationTTMLTrack: .init(ttml: "", cues: [.init(sourceLineIndex: 2, line: generated, tokens: [])])))
+    }
+}
+
+@MainActor
+private final class FakeSilentAudioDriver: SilentAudioKeepAliveDriving {
+    private(set) var isPlaying = false
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+
+    func start() -> Bool {
+        startCount += 1
+        isPlaying = true
+        return true
+    }
+
+    func stop() {
+        stopCount += 1
+        isPlaying = false
     }
 }

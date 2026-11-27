@@ -5,8 +5,13 @@ import AVFoundation
     private static var artworkPrepared = false
     private static var pictureInPicturePrepared = false
     private static var pictureInPictureActivated = false
+    private(set) static var lockScreenKeepAliveActivated = false
+    private static var mixesPlaybackWithOthers: Bool {
+        pictureInPicturePrepared || pictureInPictureActivated || lockScreenKeepAliveActivated
+    }
+
     static func prepareArtwork() throws {
-        guard !ownsPlayback, !pictureInPicturePrepared, !artworkPrepared else { return }
+        guard !ownsPlayback, !mixesPlaybackWithOthers, !artworkPrepared else { return }
         try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
         artworkPrepared = true
     }
@@ -18,10 +23,10 @@ import AVFoundation
     static func releasePlayback() {
         guard ownsPlayback else { return }
         ownsPlayback = false
-        if pictureInPicturePrepared {
+        if mixesPlaybackWithOthers {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: .mixWithOthers)
         }
-        if !pictureInPictureActivated {
+        if !pictureInPictureActivated && !lockScreenKeepAliveActivated {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
         artworkPrepared = false
@@ -50,7 +55,32 @@ import AVFoundation
         pictureInPictureActivated = false
         guard !ownsPlayback else { return }
         let session = AVAudioSession.sharedInstance()
-        if activated { try? session.setActive(false, options: .notifyOthersOnDeactivation) }
+        if activated && !lockScreenKeepAliveActivated {
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        try? prepareArtwork()
+    }
+
+    static func activateLockScreenKeepAlive() throws {
+        guard !ownsPlayback else { return }
+        if !mixesPlaybackWithOthers {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: .mixWithOthers)
+            artworkPrepared = false
+        }
+        if !lockScreenKeepAliveActivated {
+            try AVAudioSession.sharedInstance().setActive(true)
+            lockScreenKeepAliveActivated = true
+        }
+    }
+
+    static func releaseLockScreenKeepAlive() {
+        guard lockScreenKeepAliveActivated else { return }
+        lockScreenKeepAliveActivated = false
+        guard !ownsPlayback else { return }
+        let session = AVAudioSession.sharedInstance()
+        if !pictureInPictureActivated {
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        }
         try? prepareArtwork()
     }
 }

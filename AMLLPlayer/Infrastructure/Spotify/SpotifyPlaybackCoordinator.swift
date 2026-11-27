@@ -347,7 +347,7 @@ final class SpotifyPlaybackCoordinator: SpotifyPlaybackProviding {
             }
 
             while !Task.isCancelled {
-                var delay = pollInterval
+                var delay = (!isForeground && pollInterval == .seconds(2)) ? .seconds(3) : pollInterval
                 do {
                     try await refresh()
                 } catch let error as SpotifyServiceError {

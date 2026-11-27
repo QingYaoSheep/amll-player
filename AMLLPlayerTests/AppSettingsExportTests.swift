@@ -31,11 +31,21 @@ import XCTest
         let overrides = ["ja": ["言葉": "ことば"]]
 
         defaults.set(false, forKey: AppHaptics.preferenceKey)
+        let savedLockScreen = model.lockScreenLyricsEnabled
+        let savedKeepAlive = model.lockScreenLyricsKeepAliveEnabled
+        defer {
+            model.lockScreenLyricsEnabled = savedLockScreen
+            model.lockScreenLyricsKeepAliveEnabled = savedKeepAlive
+        }
+        model.lockScreenLyricsEnabled = true
+        model.lockScreenLyricsKeepAliveEnabled = true
         let snapshot = try AppSettingsExport(model: model, artwork: artwork, pronunciationOverrides: overrides,
                                              haptics: AppHaptics(defaults: defaults))
         let data = try snapshot.encoded()
         let decoded = try JSONDecoder().decode(AppSettingsExport.self, from: data)
         XCTAssertEqual(decoded.version, 1)
+        XCTAssertEqual(decoded.lockScreenLyrics, true)
+        XCTAssertEqual(decoded.lockScreenLyricsKeepAlive, true)
         XCTAssertEqual(decoded.desktopLyrics?.aspect, .tall)
         XCTAssertEqual(decoded.desktopLyrics?.plusLighter, false)
         XCTAssertEqual(decoded.hapticsEnabled, false)
@@ -53,9 +63,11 @@ import XCTest
         var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         legacy.removeValue(forKey: "hapticsEnabled")
         legacy.removeValue(forKey: "desktopLyrics")
+        legacy.removeValue(forKey: "lockScreenLyricsKeepAlive")
         let legacyData = try JSONSerialization.data(withJSONObject: legacy)
         let legacySettings = try JSONDecoder().decode(AppSettingsExport.self, from: legacyData)
         XCTAssertNil(legacySettings.hapticsEnabled)
         XCTAssertNil(legacySettings.desktopLyrics)
+        XCTAssertNil(legacySettings.lockScreenLyricsKeepAlive)
     }
 }

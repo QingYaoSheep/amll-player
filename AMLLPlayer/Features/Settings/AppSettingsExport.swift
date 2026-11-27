@@ -20,6 +20,7 @@ struct AppSettingsExport: Codable {
     let version: Int
     let hapticsEnabled: Bool?
     let autoDesktopLyrics: Bool?
+    let desktopLyrics: DesktopLyricsSettings?
     let music: Music
     let lyrics: LyricsSettings
     let appearance: Appearance
@@ -37,6 +38,7 @@ struct AppSettingsExport: Codable {
         version = 1
         hapticsEnabled = haptics.isEnabled
         autoDesktopLyrics = UserDefaults.standard.bool(forKey: DesktopLyricsController.autoStartKey)
+        desktopLyrics = model.desktopLyricsPreferences.settings
         music = Music(source: model.selectedMusicService,
                       spotifyClientID: model.environment.configuration.spotifyClientID.flatMap(SpotifyClientIDStore.normalized),
                       netEaseQuality: playback.quality, netEaseShuffle: modes.shuffle, netEaseRepeat: modes.repeatMode,

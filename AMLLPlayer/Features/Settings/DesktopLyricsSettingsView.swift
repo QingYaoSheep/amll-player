@@ -1,0 +1,145 @@
+import SwiftUI
+
+struct DesktopLyricsSettingsView: View {
+    let model: AppModel
+    @Bindable var preferences: DesktopLyricsPreferences
+    @AppStorage(DesktopLyricsController.autoStartKey) private var autoStart = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let settings = preferences.settings
+        return SettingsPage {
+            SettingsSection("desktopLyrics.preview") {
+                DesktopLyricsPreview(configuration: model.renderPreferences.configuration, settings: settings)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .accessibilityLabel(Text("desktopLyrics.preview"))
+                    .accessibilityIdentifier("desktopLyricsPreview")
+            }
+
+            SettingsSection("desktopLyrics.appearance", footer: "desktopLyrics.aspect.help") {
+                SettingsGroup {
+                    Picker("desktopLyrics.aspect", selection: $preferences.settings.aspect.hapticSelection()) {
+                        ForEach(DesktopLyricsSettings.Aspect.allCases, id: \.self) { aspect in
+                            Text(LocalizedStringKey(aspect.label)).tag(aspect)
+                        }
+                    }
+                    .accessibilityIdentifier("desktopLyricsAspect")
+                    SettingsDivider(inset: 16)
+                    SettingsSliderRow("desktopLyrics.fontSize", valueText: "\(Int(settings.fontSize)) pt",
+                                      value: $preferences.settings.fontSize, in: DesktopLyricsSettings.fontRange,
+                                      sliderIdentifier: "desktopLyricsFontSize")
+                }
+            }
+
+            SettingsSection("desktopLyrics.motion") {
+                SettingsGroup {
+                    Picker("desktopLyrics.transition", selection: $preferences.settings.transition.hapticSelection()) {
+                        ForEach(DesktopLyricsSettings.Transition.allCases, id: \.self) { transition in
+                            Text(LocalizedStringKey(transition.label)).tag(transition)
+                        }
+                    }
+                    .accessibilityIdentifier("desktopLyricsTransition")
+                    SettingsDivider(inset: 16)
+                    SettingsSliderRow("desktopLyrics.blur", valueText: settings.blurStrength.formatted(.number.precision(.fractionLength(0 ... 1))),
+                                      value: $preferences.settings.blurStrength, in: DesktopLyricsSettings.blurRange,
+                                      step: 0.5, disabled: settings.transition != .blur,
+                                      sliderIdentifier: "desktopLyricsBlurStrength")
+                    SettingsDivider(inset: 16)
+                    Toggle("desktopLyrics.wordHighlight", isOn: $preferences.settings.wordHighlight.hapticSelection())
+                        .accessibilityIdentifier("desktopLyricsWordHighlight")
+                }
+            }
+
+            SettingsSection {
+                SettingsGroup {
+                    Toggle(isOn: $autoStart.hapticSelection()) {
+                        SettingsIconToggleLabel(title: "desktopLyrics.autoStart", icon: "pip.enter",
+                                                color: MusicProductStyle.accent)
+                    }
+                    .accessibilityIdentifier("autoDesktopLyrics")
+                }
+                SettingsTextButton(title: "desktopLyrics.reset", icon: "arrow.counterclockwise") {
+                    withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
+                        preferences.settings = .init()
+                        autoStart = false
+                    }
+                    AppHaptics.shared.play(.selection)
+                }
+                .accessibilityIdentifier("resetDesktopLyrics")
+            }
+        }
+        .tint(MusicProductStyle.accent)
+        .navigationTitle("desktopLyrics.title")
+    }
+}
+
+private struct DesktopLyricsPreview: View {
+    let configuration: LyricsRenderConfiguration
+    let settings: DesktopLyricsSettings
+    @Environment(\.scenePhase) private var phase
+    @State private var startedAt = Date()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: phase != .active)) { timeline in
+            let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
+            DesktopLyricsPreviewSurface(configuration: configuration, settings: settings, elapsed: elapsed, playing: phase == .active)
+                .id(settings.aspect)
+        }
+        .aspectRatio(settings.aspect.ratio, contentMode: .fit)
+        .background(Color(white: 0.075))
+    }
+}
+
+private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
+    let configuration: LyricsRenderConfiguration
+    let settings: DesktopLyricsSettings
+    let elapsed: Double
+    let playing: Bool
+
+    func makeCoordinator() -> DesktopLyricsFrames { .init(aspect: settings.aspect) }
+
+    func makeUIView(context: Context) -> DesktopLyricsSourceView {
+        let view = DesktopLyricsSourceView()
+        view.isUserInteractionEnabled = false
+        view.install(context.coordinator.layer)
+        return view
+    }
+
+    func updateUIView(_ view: DesktopLyricsSourceView, context: Context) {
+        guard view.window != nil else { return }
+        let position = elapsed.truncatingRemainder(dividingBy: Self.duration)
+        let snapshot = PlaybackSnapshot(item: Self.item, isPlaying: playing, position: position,
+                                        duration: Self.duration, device: nil, restrictions: .unrestricted,
+                                        source: .nativeAudio, sampledAtUptime: ProcessInfo.processInfo.systemUptime)
+        let frame = LyricsPlaybackFrame(snapshot: snapshot, position: position, playing: playing,
+                                        seekRevision: Int(elapsed / Self.duration), pending: nil,
+                                        confirmation: nil, legacySeekPosition: nil)
+        var appearance = configuration
+        appearance.translation = true
+        appearance.romanization = true
+        context.coordinator.render(frame: frame, lyrics: Self.document, revision: 1, offset: 0,
+                                   configuration: appearance, settings: settings, immersive: false,
+                                   usesAlbumBackground: false, animates: true)
+    }
+
+    private static let duration = 12.0
+    private static let item = PlaybackItem(id: "preview", uri: "desktop-lyrics:preview", title: "", artists: [],
+                                          albumTitle: nil, duration: duration, isEpisode: false, isAdvertisement: false)
+    private static let document: LyricsDocument = {
+        let samples = [
+            (["風が ", "そっと ", "歌う"], "风轻轻地唱", "Kaze ga sotto utau"),
+            (["月が ", "道を ", "照らす"], "月光照亮路途", "Tsuki ga michi o terasu"),
+            (["波が ", "夜に ", "溶ける"], "海浪融进夜色", "Nami ga yoru ni tokeru")
+        ]
+        let lines = samples.enumerated().map { index, sample in
+            let start = Double(index) * 4
+            let words = sample.0.enumerated().map { syllable, text in
+                LyricWord(text: text, start: start + Double(syllable), end: start + Double(syllable == 2 ? 4 : syllable + 1))
+            }
+            return LyricLine(id: "desktop-preview-\(index)", text: sample.0.joined(), start: start, end: start + 4,
+                             words: words, translation: sample.1, romanization: sample.2, precision: .word)
+        }
+        return LyricsDocument(candidate: .init(source: .apple, sourceID: "desktop-preview", title: "", artists: []),
+                              lines: lines, language: "ja", selectionReason: "preview")
+    }()
+}

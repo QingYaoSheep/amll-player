@@ -90,7 +90,7 @@ final class DesktopLyricsController: NSObject {
 
     private func reevaluate() {
         if armed && phase != .background { prepare() }
-        controller?.canStartPictureInPictureAutomaticallyFromInline = armed
+        controller?.canStartPictureInPictureAutomaticallyFromInline = armed && producer?.hasSubmittedFrame == true
         if state == .stopped { releaseIfIdle() }
         if producer != nil { startRendering() }
     }
@@ -117,9 +117,12 @@ final class DesktopLyricsController: NSObject {
     }
 
     private func prepare() {
-        guard controller == nil, let sourceView, isSupported else { return }
+        guard let model, let sourceView, isSupported else { return }
+        let aspect = model.desktopLyricsPreferences.settings.aspect
+        if state == .stopped, let producer, producer.aspect != aspect { tearDown() }
+        guard controller == nil else { return }
         do { try MusicAudioSession.preparePictureInPicture() } catch { return }
-        let frames = DesktopLyricsFrames()
+        let frames = DesktopLyricsFrames(aspect: aspect)
         let content = AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer: frames.layer,
                                                                  playbackDelegate: self)
         let pip = AVPictureInPictureController(contentSource: content)
@@ -161,7 +164,7 @@ final class DesktopLyricsController: NSObject {
 
     private func startWhenPossible() {
         guard state == .starting, !startRequested, let controller,
-              controller.isPictureInPicturePossible else { return }
+              producer?.hasSubmittedFrame == true, controller.isPictureInPicturePossible else { return }
         startRequested = true
         controller.startPictureInPicture()
     }
@@ -201,7 +204,11 @@ final class DesktopLyricsController: NSObject {
         updateTimebase(frame)
         producer.render(model: model, frame: frame, immersive: immersive,
                         animates: state != .stopped)
-        if state == .stopped { return .milliseconds(200) }
+        if state == .stopped {
+            controller?.canStartPictureInPictureAutomaticallyFromInline = armed && producer.hasSubmittedFrame
+            return .milliseconds(200)
+        }
+        startWhenPossible()
         let interval = frame.playing || producer.isAnimating ? 1.0 / 60 : 0.1
         return .seconds(max(0.001, interval - (ProcessInfo.processInfo.systemUptime - started)))
     }

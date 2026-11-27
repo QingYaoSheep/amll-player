@@ -50,7 +50,7 @@ struct AMLLNativeLyricsView: UIViewRepresentable {
 final class AMLLNativeCanvas: UIView {
     var drivesFramesExternally = false
     var exportRasterScale: CGFloat = 1
-    private var exportTransition = DesktopLyricsLineTransition()
+    private var desktopSettings: DesktopLyricsSettings?
     private var rasterScale: CGFloat { drivesFramesExternally ? exportRasterScale : (window?.screen.scale ?? 2) }
     private var rendersOffscreenOrAttached: Bool { drivesFramesExternally || window != nil }
 
@@ -262,7 +262,8 @@ final class AMLLNativeCanvas: UIView {
 
     func configure(document: LyricsDocument, documentVersion: Int? = nil,
                    configuration: LyricsRenderConfiguration, input: AMLLPlayerInput,
-                   active: Bool, reduceMotion: Bool, reduceTransparency: Bool = false, canSeek: Bool = true)
+                   active: Bool, reduceMotion: Bool, reduceTransparency: Bool = false, canSeek: Bool = true,
+                   desktopSettings: DesktopLyricsSettings? = nil)
     {
         let documentChanged = documentVersion.map { sourceVersion != $0 } ?? (source != document)
         let changedAuxiliary: Set<LyricsAuxiliaryKind> = Set(LyricsAuxiliaryKind.allCases.filter {
@@ -297,12 +298,13 @@ final class AMLLNativeCanvas: UIView {
             engine = nil; dirty = true
             hasDuet = display?.lines.contains(where: \.isDuet) ?? false
         }
-        let configurationChanged = self.configuration != configuration
+        let configurationChanged = self.configuration != configuration || self.desktopSettings != desktopSettings
         if self.configuration.tabletTypography?.fade != configuration.tabletTypography?.fade {
             fadeSize = .zero
             setNeedsLayout()
         }
-        if self.configuration.lyricBlurLevel != configuration.lyricBlurLevel {
+        if self.configuration.lyricBlurLevel != configuration.lyricBlurLevel
+            || self.desktopSettings?.blurMaximum != desktopSettings?.blurMaximum {
             blurLevelChangedAt = CACurrentMediaTime()
         }
         if oldLayoutSettings != Self.layoutSettings(auxiliaryFade.layoutConfiguration(configuration)) || !changedAuxiliary.isEmpty {
@@ -327,6 +329,7 @@ final class AMLLNativeCanvas: UIView {
             || self.input.position != input.position {
             needsFrame = true
         }
+        self.desktopSettings = desktopSettings
         self.configuration = configuration; self.input = input; self.active = active
         self.canSeek = canSeek; self.reduceMotion = reduceMotion; self.reduceTransparency = reduceTransparency
         if dirty { setNeedsLayout() }
@@ -495,6 +498,7 @@ final class AMLLNativeCanvas: UIView {
         environment.alignPosition = configuration.anchor
         environment.tabletTypography = configuration.tabletTypography
         environment.reduceMotion = reduceMotion
+        environment.snapLinePresentation = desktopSettings?.snapsLines
         environment.reduceTransparency = reduceTransparency || reduceTransparencyEnabled
         environment.boldText = traits.legibilityWeight == .bold
         environment.dynamicTypeScale = typeScale
@@ -610,7 +614,6 @@ final class AMLLNativeCanvas: UIView {
         let previousAnchor = engine!.timeAnchorRevision
         let state = engine!.render(input, delta: delta)
         if frameState != nil, engine!.timeAnchorRevision != previousAnchor {
-            exportTransition.reset()
             auxiliaryReflow.reset(); auxiliarySlotReflow.reset()
         }
         input.seeking = false
@@ -644,23 +647,9 @@ final class AMLLNativeCanvas: UIView {
         lastHeadroom = capabilities.headroom
         let sourceClipping = configuration.animationStyle == .appleMusic164
         let margin = sourceClipping ? 50 : bounds.height * 0.5
-        var visible = state.rows.filter {
+        let visible = state.rows.filter {
             let extent = heights[$0.lineIndex] * (sourceClipping ? $0.scale : 1)
             return !$0.hidden && $0.y + extent >= -margin && $0.y <= bounds.height + margin
-        }
-        if drivesFramesExternally {
-            exportTransition.keepVisible(Set(visible.map(\.lineIndex)))
-            let now = ProcessInfo.processInfo.systemUptime
-            let maximum = requestsBlurImages ? lyricBlurMaximum : 0
-            for index in visible.indices {
-                let row = visible[index]
-                let appearance = exportTransition.appearance(
-                    index: row.lineIndex, focused: row.active || row.visualFocus == .current || row.visualFocus == .holding,
-                    opacity: row.opacity, blur: row.blur, maximumBlur: maximum, now: now, reduceMotion: reduceMotion
-                )
-                visible[index].opacity = appearance.opacity
-                visible[index].blur = appearance.blur
-            }
         }
         let brightness = capabilities.outputBrightness(configuration: configuration.hdr ?? .init(),
                                                         reduceTransparency: reduceTransparency)
@@ -688,7 +677,10 @@ final class AMLLNativeCanvas: UIView {
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let usesApple164Appearance = configuration.usesCalibratedApple164Appearance
-        for row in visible {
+        for var row in visible {
+            if desktopSettings != nil {
+                row.blur = requestsBlurImages ? min(row.blur, lyricBlurMaximum) : 0
+            }
             let view: AMLLCompositeRow
             if let existing = rowViews[row.lineIndex] {
                 view = existing
@@ -757,7 +749,8 @@ final class AMLLNativeCanvas: UIView {
             view.updateVisuals(renderer: brightness > 1 ? hdrRenderer : nil,
                                gain: gain, hdrBrightness: brightness, hdrTime: actualTime,
                                lyricTime: state.lyricTime, runStore: engine!.runStore,
-                               row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords)
+                               row: row, configuration: configuration, motionEnabled: !reduceMotion && configuration.emphasizeWords,
+                               blurMaximum: lyricBlurMaximum, wordHighlight: desktopSettings?.wordHighlight ?? true)
             if !requestsBlurImages || row.blur == 0 { view.releaseAuxiliarySourceWait() }
             view.updateAuxiliaryVisibility(auxiliaryFade)
             if view.needsHDRRetry { needsFrame = true }
@@ -807,7 +800,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private var lyricBlurMaximum: Double {
-        configuration.resolvedLyricBlurMaximum(isPad: UIDevice.current.userInterfaceIdiom == .pad)
+        desktopSettings?.blurMaximum ?? configuration.resolvedLyricBlurMaximum(isPad: UIDevice.current.userInterfaceIdiom == .pad)
     }
 
     private var requestsBlurImages: Bool {
@@ -1129,8 +1122,6 @@ final class AMLLNativeCanvas: UIView {
         }
     }
 
-    func resetExportTransition() { exportTransition.reset() }
-
     /// Evaluate model layers offscreen and draw them into the PiP sample.
     func drawExportFrame(in context: CGContext, sample: LyricsPlaybackFrame, delta: Double, additive: Bool) -> Bool {
         if dirty || lastLayoutKey != currentLayoutKey() || fadeSize != bounds.size {
@@ -1161,7 +1152,7 @@ final class AMLLNativeCanvas: UIView {
         layer.render(in: context)
         if additive { context.endTransparencyLayer() }
         context.restoreGState()
-        return needsFrame || blurRefreshInFlight || !preparingRows.isEmpty || exportTransition.isAnimating || auxiliaryFade.isAnimating
+        return needsFrame || blurRefreshInFlight || !preparingRows.isEmpty || auxiliaryFade.isAnimating
             || auxiliaryReflow.isAnimating || auxiliarySlotReflow.isAnimating || frameState?.settled == false
     }
 
@@ -1418,11 +1409,12 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, hdrBrightness: Double, hdrTime: Double,
                        lyricTime: Double, runStore: LyricsBlossomRunStore,
-                       row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool)
+                       row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool,
+                       blurMaximum: Double, wordHighlight: Bool)
     {
         if let (blur, romanBlur, overlayBlur) = pendingBlur {
             pendingBlur = nil
-            if blur.maximum == configuration.resolvedLyricBlurMaximum(isPad: UIDevice.current.userInterfaceIdiom == .pad) {
+            if blur.maximum == blurMaximum {
                 // Replace the textures and compute the new weights in the same frame.
                 original.installBlur(blur)
                 if let romanBlur { romanization?.installBlur(romanBlur) }
@@ -1430,8 +1422,9 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
             }
         }
         original.updateVisuals(renderer: gain > 1 ? renderer : nil, gain: gain, row: row,
-                               configuration: configuration, motionEnabled: motionEnabled, lyricTime: lyricTime, runStore: runStore, runKey: "main:\(row.lineIndex)")
-        alignedRomanization?.update(row: row, lyricTime: lyricTime, configuration: configuration)
+                               configuration: configuration, motionEnabled: motionEnabled, lyricTime: lyricTime, runStore: runStore, runKey: "main:\(row.lineIndex)",
+                               wordHighlight: wordHighlight)
+        alignedRomanization?.update(row: row, lyricTime: lyricTime, configuration: configuration, wordHighlight: wordHighlight)
         guard let cue = romanizationCue, let romanization else { return }
         let timing = configuration.animationStyle == .appleMusic164 && cue.precision == .word ? pronunciationTiming : nil
         let animated = timing != nil
@@ -1466,7 +1459,8 @@ private final class AMLLCompositeRow: UIView, UIGestureRecognizerDelegate {
         romanization.updateVisuals(renderer: romanGain > 1 ? renderer : nil, gain: romanGain, row: independent,
                                    configuration: auxiliaryConfiguration, motionEnabled: animated && motionEnabled,
                                    lyricTime: time, runStore: runStore, runKey: "roman:\(row.lineIndex)",
-                                   runRole: animated ? .pronunciation(bodyEnd: bodyEnd) : .independent)
+                                   runRole: animated ? .pronunciation(bodyEnd: bodyEnd) : .independent,
+                                   wordHighlight: wordHighlight)
     }
 
 }
@@ -1786,6 +1780,7 @@ private final class AMLLNativeRow: UIView {
     private var lastVisualFlatDeparture = false
     private var lastVisualConfiguration: LyricsRenderConfiguration?
     private var lastVisualMotion = false
+    private var lastWordHighlight = true
     private var lastVisualGain = 1.0
     private(set) var visualUpdateCount = 0
 
@@ -1808,7 +1803,7 @@ private final class AMLLNativeRow: UIView {
 
     func updateVisuals(renderer: LyricsHDRRenderer?, gain: Double, row: AMLLFrameState.Row,
                        configuration originalConfiguration: LyricsRenderConfiguration, motionEnabled: Bool, lyricTime: Double,
-                       runStore: LyricsBlossomRunStore, runKey: String, runRole: LyricsBlossomRunStore.Role = .body)
+                       runStore: LyricsBlossomRunStore, runKey: String, runRole: LyricsBlossomRunStore.Role = .body, wordHighlight: Bool = true)
     {
         var configuration = originalConfiguration
         if configuration.animationStyle == .appleMusic164 {
@@ -1828,7 +1823,7 @@ private final class AMLLNativeRow: UIView {
             settled.advance(min(visual.wordClock.time, visual.wordClock.reverseElapsed), playing: false)
             visual.wordClock = settled
         }
-        let runSample: LyricsBlossomRunLayout.Sample? = configuration.animationStyle == .appleMusic164 && line.precision == .word
+        let runSample: LyricsBlossomRunLayout.Sample? = wordHighlight && configuration.animationStyle == .appleMusic164 && line.precision == .word
             ? runStore.sample(key: runKey, row: row.lineIndex, layout: blossomLayout, role: runRole) : nil
         let nextSample = configuration.usesCalibratedApple164Appearance
             ? runSample.map(blossomLayout.withCalibratedFeather) : runSample
@@ -1836,14 +1831,15 @@ private final class AMLLNativeRow: UIView {
         let runChanged = !flat && nextSample != blossomSample
         blossomSample = nextSample
         guard runChanged || flat != lastVisualFlatDeparture || visual != lastVisualRow || configuration != lastVisualConfiguration
-            || motionEnabled != lastVisualMotion || gain != lastVisualGain else { return }
+            || motionEnabled != lastVisualMotion || wordHighlight != lastWordHighlight || gain != lastVisualGain else { return }
         lastVisualRow = visual
         lastVisualFlatDeparture = flat
         lastVisualConfiguration = configuration
         lastVisualMotion = motionEnabled
+        lastWordHighlight = wordHighlight
         lastVisualGain = gain
         visualUpdateCount += 1
-        apply(row: row, configuration: configuration, motionEnabled: motionEnabled, flatDeparture: flat)
+        apply(row: row, configuration: configuration, motionEnabled: motionEnabled, flatDeparture: flat, wordHighlight: wordHighlight)
         let hdrSubmitted = applyHDR(renderer: flat ? nil : renderer, gain: gain, row: row, configuration: configuration)
         needsHDRRetry = gain > 1 && renderer != nil && !hdrSubmitted
         if needsHDRRetry { lastVisualRow = nil }
@@ -1928,7 +1924,7 @@ private final class AMLLNativeRow: UIView {
     }
 
     func apply(row: AMLLFrameState.Row, configuration: LyricsRenderConfiguration, motionEnabled: Bool,
-               flatDeparture: Bool = false) {
+               flatDeparture: Bool = false, wordHighlight: Bool = true) {
         if accessibilityConfiguration != configuration {
             accessibilityConfiguration = configuration
             accessibilityLabel = layoutLineAccessibilityText()
@@ -1940,7 +1936,8 @@ private final class AMLLNativeRow: UIView {
         for base in runFillBases.values { base.opacity = 0 }
         let weights = LyricsAnimationBlur.weights(radius: row.blur, maximum: blurMaximum)
         let sharpWeight = weights.sharp
-        let sourceFill = sourceRunFillEnabled(configuration)
+        base.isHidden = wordHighlight && !words.isEmpty && !characters.isEmpty
+        let sourceFill = wordHighlight && sourceRunFillEnabled(configuration)
         appliesSourceRunFill = sourceFill
         configureRunFillGroup(enabled: sourceFill, sharpWeight: sharpWeight)
         let calibrated = configuration.usesCalibratedApple164Appearance
@@ -1951,7 +1948,7 @@ private final class AMLLNativeRow: UIView {
         // brightness instead of displaying its white pixels at full alpha.
         let lineBrightness = row.retirement != nil ? bright : (row.active || row.visualFocus == .holding ? 1.0 : dark)
         let blurredAlpha = Float(sourceFill ? LyricsBlossomRunFill(bright: row.brightAlpha, dark: dark, cutsOverlay: flatDeparture).base
-            : (row.retirement != nil ? bright : (words.isEmpty ? lineBrightness : dark)))
+            : (row.retirement != nil ? bright : (words.isEmpty || !wordHighlight ? lineBrightness : dark)))
         nearBlur.opacity = weights.near * blurredAlpha
         farBlur.opacity = weights.far * blurredAlpha
         // Remove the native focus normalization before the source's two passes.
@@ -1962,6 +1959,11 @@ private final class AMLLNativeRow: UIView {
         ruby.opacity = sharpWeight * annotationWeight
         for entry in rubyPieces {
             entry.layer.opacity = sharpWeight * annotationWeight
+            if !wordHighlight {
+                entry.layer.setAffineTransform(.identity)
+                entry.mask.colors = [UIColor.white.cgColor, UIColor.white.cgColor]
+                continue
+            }
             let fragment = entry.fragment
             if fragment.kind == .ruby, textLayout.sourceAtoms.indices.contains(fragment.wordIndex) {
                 let word = textLayout.sourceAtoms[fragment.wordIndex].word
@@ -1997,16 +1999,16 @@ private final class AMLLNativeRow: UIView {
             entry.mask.endPoint = CGPoint(x: fragment.rtl ? 1 - last : last, y: 0.5)
         }
         auxiliary.opacity = sharpWeight * annotationWeight
-        base.opacity = Float(words.isEmpty ? lineBrightness : dark) * sharpWeight
+        base.opacity = Float(words.isEmpty || !wordHighlight ? lineBrightness : dark) * sharpWeight
         // Fully blurred inactive rows need only two whole-line layers.
         // Their word clocks remain engine-owned and catch up when sharp.
         for entry in words {
-            entry.layer.opacity = sharpWeight
+            entry.layer.opacity = wordHighlight ? sharpWeight : 0
         }
         for entry in characters {
-            entry.layer.opacity = sharpWeight
+            entry.layer.opacity = wordHighlight ? sharpWeight : 0
         }
-        if sharpWeight == 0 {
+        if sharpWeight == 0 || !wordHighlight {
             return
         }
         for entry in words {

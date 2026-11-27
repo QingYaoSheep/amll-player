@@ -22,6 +22,7 @@ struct AMLLRenderEnvironment: Codable, Equatable, Sendable {
     var alignPosition = 0.1
     var alignAnchor = Anchor.top
     var reduceMotion = false
+    var snapLinePresentation: Bool?
     var reduceTransparency = false
     var boldText = false
     var dynamicTypeScale = 1.0
@@ -893,8 +894,9 @@ struct AMLLFrameEngine {
                 visualFocus = current
             }
         }
+        if environment.snapLinePresentation == true { pendingVisualFocus = nil }
         if !usesBlossomSelector, !songEnded, !browsing, interlude == nil, pendingVisualFocus == nil,
-           visualFocus != timeline.focus, environment.reduceMotion || !input.playing
+           visualFocus != timeline.focus, environment.reduceMotion || environment.snapLinePresentation == true || !input.playing
         {
             selectVisualFocus(document.groups.indices.contains(timeline.focus) ? timeline.focus : nil, at: frameStart)
         }
@@ -917,7 +919,7 @@ struct AMLLFrameEngine {
                          sourcePosition: input.position, lyricTime: time / 1000)
             dirty = false
         }
-        let forceAlpha = seeking || firstFrame || environment.reduceMotion
+        let forceAlpha = seeking || firstFrame || environment.reduceMotion || environment.snapLinePresentation == true
         var appearanceTime = frameStart
         while !browsing {
             var nextEvent = pendingVisualFocus?.startTime
@@ -1309,7 +1311,7 @@ struct AMLLFrameEngine {
             // Seeking invalidates lyric clocks and masks, but the spatial handoff
             // follows the same spring as Return to Current. Only initial layout
             // and the existing accessibility variant position immediately.
-            let immediate = firstFrame || environment.reduceMotion
+            let immediate = firstFrame || environment.reduceMotion || environment.snapLinePresentation == true
             let scaleDelay: Double = if let blossom, !seeking, !browsing, !hasIndependentExit,
                 !LyricsBlossomLineSchedule.clearsDelay(wordVersion: blossom.word, paused: !playing,
                     hidden: false, advanceSatisfied: advanceClearsScale) {
@@ -1432,7 +1434,7 @@ struct AMLLFrameEngine {
                 motions[index].completedReleaseAt = environment.enableSpring
                     ? max(frameStart, motions[index].y.schedule.scheduledAt ?? frameStart) : frameStart
             }
-            if sourceSelection == nil, !seeking, !browsing, playing, !environment.reduceMotion,
+            if sourceSelection == nil, !seeking, !browsing, playing, !immediate,
                visualFocus != nil, index == timeline.focus, visualFocus != index
             {
                 pendingVisualFocus = (index: index, startTime: environment.enableSpring

@@ -12,9 +12,10 @@ struct AMLLPreparedBlurImages: @unchecked Sendable {
         self.maximum = maximum
         let romanization: Bool? = overlay ? true : (hideRomanization ? false : nil)
         let ruby: Bool? = overlay ? true : nil
-        near = snapshot.raster(scale: min(scale, 1), ruby: ruby, romanization: romanization,
+        let rasterScale = snapshot.blurRasterScale(for: scale)
+        near = snapshot.raster(scale: rasterScale, ruby: ruby, romanization: romanization,
                                blurRadius: LyricsAnimationBlur.near(maximum))
-        far = snapshot.raster(scale: min(scale, 1), ruby: ruby, romanization: romanization, blurRadius: maximum)
+        far = snapshot.raster(scale: rasterScale, ruby: ruby, romanization: romanization, blurRadius: maximum)
     }
 
     var estimatedBytes: Int { rasterBytes(near) + rasterBytes(far) }

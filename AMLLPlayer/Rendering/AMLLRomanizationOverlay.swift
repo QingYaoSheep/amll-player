@@ -96,7 +96,7 @@ final class AMLLRomanizationOverlay: UIView {
         bounds.insetBy(dx: -22, dy: -22).contains(point) || super.point(inside: point, with: event)
     }
 
-    func update(row: AMLLFrameState.Row, lyricTime: Double, configuration: LyricsRenderConfiguration) {
+    func update(row: AMLLFrameState.Row, lyricTime: Double, configuration: LyricsRenderConfiguration, wordHighlight: Bool = true) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         alpha = row.opacity * (cue.isBackground ? 0.4 : 1)
@@ -109,7 +109,7 @@ final class AMLLRomanizationOverlay: UIView {
         for piece in pieces {
             piece.layer.opacity = weights.sharp
             let ordinal = piece.fragment.ttmlWordIndex ?? -1
-            guard cue.words.indices.contains(ordinal) else {
+            guard wordHighlight, cue.words.indices.contains(ordinal) else {
                 // The TTML file has only paragraph timing for this source
                 // line. Keep the pronunciation line-level, without making up
                 // syllable or word timestamps.

@@ -6,7 +6,7 @@ on:
     paths:
       - '.github/workflows/lyrics-animation.yml'
       - 'AMLLPlayer/Features/Lyrics/DesktopLyrics*.swift'
-      - 'AMLLPlayer/Rendering/DesktopLyricsLineTransition.swift'
+      - 'AMLLPlayer/Features/Settings/DesktopLyricsSettingsView.swift'
       - 'AMLLPlayerTests/DesktopLyricsTests.swift'
       - 'AMLLPlayer/Rendering/LyricsAnimation*.swift'
       - 'AMLLPlayer/Rendering/LyricsBlossomAnimationOptions.swift'

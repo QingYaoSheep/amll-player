@@ -7,13 +7,16 @@ import UIKit
 @MainActor
 final class DesktopLyricsFrames {
     let layer = AVSampleBufferDisplayLayer()
+    let aspect: DesktopLyricsSettings.Aspect
     private let canvas = AMLLNativeCanvas()
     private let background = DesktopLyricsBackground()
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private var pool: CVPixelBufferPool?
     private let bufferLimit = [kCVPixelBufferPoolAllocationThresholdKey: 4] as CFDictionary
     private var format: CMVideoFormatDescription?
-    private var pixelSize = CGSize(width: 640, height: 360)
+    private(set) var pixelSize: CGSize
+    private var pendingResize: (size: CGSize, changedAt: Double)?
+    var hasSubmittedFrame: Bool { submitted != nil }
     private var lastFrameTime: Double?
     private var submitted: FrameKey?
     private var displayedTrack: String?
@@ -28,12 +31,15 @@ final class DesktopLyricsFrames {
         var offset: Double
         var playing: Bool
         var configuration: LyricsRenderConfiguration
+        var settings: DesktopLyricsSettings
         var backgroundRevision: Int
         var reduceMotion: Bool
         var reduceTransparency: Bool
     }
 
-    init() {
+    init(aspect: DesktopLyricsSettings.Aspect) {
+        self.aspect = aspect
+        pixelSize = aspect.outputSize(for: .zero)
         layer.videoGravity = .resizeAspect
         canvas.drivesFramesExternally = true
         canvas.clipsToBounds = false
@@ -42,32 +48,51 @@ final class DesktopLyricsFrames {
 
     func resize(_ dimensions: CMVideoDimensions) {
         guard dimensions.width > 0, dimensions.height > 0 else { return }
-        // AVKit controls the window. Preserve the feed aspect ratio while
-        // rounding and bounding raster resolution to limit reallocations.
-        let longest = max(dimensions.width, dimensions.height)
-        let width = min(768, max(320, ((Int(longest) + 63) / 64) * 64))
-        let size = CGSize(width: width, height: width * 9 / 16)
-        guard size != pixelSize else { return }
-        pixelSize = size
-        createPool()
+        let size = aspect.outputSize(for: CGSize(width: Int(dimensions.width), height: Int(dimensions.height)))
+        if size == pixelSize {
+            pendingResize = nil
+        } else if pendingResize?.size != size {
+            pendingResize = (size, ProcessInfo.processInfo.systemUptime)
+        }
     }
 
-    private func createPool() {
+    private func applyPendingResize(at now: Double) {
+        guard let request = pendingResize, now - request.changedAt >= 0.15 else { return }
+        pendingResize = nil
+        createPool(size: request.size)
+    }
+
+    private func createPool(size: CGSize? = nil) {
+        let target = size ?? pixelSize
         let attrs: [CFString: Any] = [
-            kCVPixelBufferWidthKey: Int(pixelSize.width),
-            kCVPixelBufferHeightKey: Int(pixelSize.height),
+            kCVPixelBufferWidthKey: Int(target.width),
+            kCVPixelBufferHeightKey: Int(target.height),
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
             kCVPixelBufferCGImageCompatibilityKey: true,
             kCVPixelBufferCGBitmapContextCompatibilityKey: true,
             kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
         ]
-        pool = nil
-        CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &pool)
+        var newPool: CVPixelBufferPool?
+        guard CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &newPool) == kCVReturnSuccess,
+              let newPool else { return }
+        pool = newPool
+        pixelSize = target
         format = nil
         submitted = nil
     }
 
     func render(model: AppModel, frame: LyricsPlaybackFrame, immersive: Bool, animates: Bool) {
+        render(frame: frame, lyrics: model.lyrics.document, revision: model.lyrics.documentRevision,
+               offset: model.lyrics.effectiveOffset, configuration: model.renderPreferences.configuration,
+               settings: model.desktopLyricsPreferences.settings, immersive: immersive,
+               usesAlbumBackground: model.renderPreferences.profile == .custom, animates: animates)
+    }
+
+    func render(frame: LyricsPlaybackFrame, lyrics: LyricsDocument?, revision: Int, offset: Double,
+                configuration source: LyricsRenderConfiguration, settings: DesktopLyricsSettings,
+                immersive: Bool, usesAlbumBackground: Bool, animates: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
+        applyPendingResize(at: now)
         guard let item = frame.snapshot?.item, let pool else {
             if submitted != nil {
                 layer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
@@ -79,27 +104,20 @@ final class DesktopLyricsFrames {
 
         let duration = frame.snapshot?.duration ?? 0
         let advancing = frame.playing && (duration <= 0 || frame.position < duration)
-        let bounds = CGRect(x: 0, y: 0, width: 320, height: 180)
-        var configuration = model.renderPreferences.configuration.validated()
+        let bounds = CGRect(origin: .zero, size: aspect.canvasSize)
+        var presentation = settings
+        presentation.aspect = aspect
+        let configuration = presentation.rendererConfiguration(source)
         let reduceMotion = UIAccessibility.isReduceMotionEnabled
         let reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
         background.update(item: item, configuration: configuration, immersive: immersive,
                           reduceTransparency: reduceTransparency, size: bounds.size,
-                          usesAlbumBackground: model.renderPreferences.profile == .custom)
+                          usesAlbumBackground: usesAlbumBackground)
 
         let scale = pixelSize.width / bounds.width
-        let font = configuration.resolvedFontSize(width: bounds.width, height: bounds.height)
-        configuration.sizePreset = nil
-        configuration.fontSize = min(28, max(17, font * 0.65))
-        configuration.horizontalPadding = 16
-        configuration.anchor = 0.29
-        configuration.tabletTypography = nil
-        configuration.hdr = nil // Opaque sRGB PiP samples carry SDR output.
-        let lyrics = model.lyrics.document
-        let offset = model.lyrics.effectiveOffset
-        let key = FrameKey(item: item, size: pixelSize, revision: model.lyrics.documentRevision,
+        let key = FrameKey(item: item, size: pixelSize, revision: revision,
                            seekRevision: frame.seekRevision, position: animates ? frame.position : (frame.position * 2).rounded(.down) / 2, offset: offset,
-                           playing: advancing, configuration: configuration, backgroundRevision: background.revision,
+                           playing: advancing, configuration: configuration, settings: presentation, backgroundRevision: background.revision,
                            reduceMotion: reduceMotion, reduceTransparency: reduceTransparency)
         let renderer = layer.sampleBufferRenderer
         if renderer.requiresFlushToResumeDecoding || renderer.status == .failed {
@@ -112,14 +130,12 @@ final class DesktopLyricsFrames {
               let output else { return }
 
         if displayedTrack != item.uri {
-            canvas.resetExportTransition()
             displayedTrack = item.uri
             isAnimating = false
             lastFrameTime = nil
         }
-        let now = ProcessInfo.processInfo.systemUptime
         let delta = lastFrameTime.map { min(0.1, max(0, now - $0)) } ?? 0
-        guard draw(output, bounds: bounds, scale: scale, item: item, document: lyrics, configuration: configuration,
+        guard draw(output, bounds: bounds, scale: scale, item: item, document: lyrics, configuration: configuration, settings: presentation,
                    frame: frame, revision: key.revision, offset: offset, delta: delta,
                    reduceMotion: reduceMotion, reduceTransparency: reduceTransparency) else { return }
         if let sample = sample(for: output, at: now) {
@@ -130,7 +146,7 @@ final class DesktopLyricsFrames {
     }
 
     private func draw(_ buffer: CVPixelBuffer, bounds: CGRect, scale: CGFloat, item: PlaybackItem,
-                      document: LyricsDocument?, configuration: LyricsRenderConfiguration,
+                      document: LyricsDocument?, configuration: LyricsRenderConfiguration, settings: DesktopLyricsSettings,
                       frame: LyricsPlaybackFrame, revision: Int, offset: Double, delta: Double,
                       reduceMotion: Bool, reduceTransparency: Bool) -> Bool
     {
@@ -158,7 +174,7 @@ final class DesktopLyricsFrames {
                                         artworkURL: item.artworkURL, configuration: configuration, event: .snapshot)
             canvas.configure(document: document, documentVersion: revision, configuration: configuration,
                              input: input, active: true, reduceMotion: reduceMotion,
-                             reduceTransparency: reduceTransparency, canSeek: false)
+                             reduceTransparency: reduceTransparency, canSeek: false, desktopSettings: settings)
             isAnimating = canvas.drawExportFrame(in: context, sample: frame, delta: delta,
                                                   additive: !reduceTransparency)
         } else {

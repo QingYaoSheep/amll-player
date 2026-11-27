@@ -28,11 +28,15 @@ import XCTest
         let overrides = ["ja": ["言葉": "ことば"]]
 
         defaults.set(false, forKey: AppHaptics.preferenceKey)
+        let desktopSettings = model.desktopLyricsPreferences.settings
+        model.desktopLyricsPreferences.settings.aspect = .tall
+        defer { model.desktopLyricsPreferences.settings = desktopSettings }
         let snapshot = try AppSettingsExport(model: model, artwork: artwork, pronunciationOverrides: overrides,
                                              haptics: AppHaptics(defaults: defaults))
         let data = try snapshot.encoded()
         let decoded = try JSONDecoder().decode(AppSettingsExport.self, from: data)
         XCTAssertEqual(decoded.version, 1)
+        XCTAssertEqual(decoded.desktopLyrics?.aspect, .tall)
         XCTAssertEqual(decoded.hapticsEnabled, false)
         XCTAssertEqual(decoded.music.source, .netease)
         XCTAssertEqual(decoded.music.netEaseQuality, model.netEasePlayback.quality)
@@ -47,7 +51,10 @@ import XCTest
         XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("fixture-token"))
         var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         legacy.removeValue(forKey: "hapticsEnabled")
+        legacy.removeValue(forKey: "desktopLyrics")
         let legacyData = try JSONSerialization.data(withJSONObject: legacy)
-        XCTAssertNil(try JSONDecoder().decode(AppSettingsExport.self, from: legacyData).hapticsEnabled)
+        let legacySettings = try JSONDecoder().decode(AppSettingsExport.self, from: legacyData)
+        XCTAssertNil(legacySettings.hapticsEnabled)
+        XCTAssertNil(legacySettings.desktopLyrics)
     }
 }

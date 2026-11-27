@@ -3,42 +3,72 @@ import UIKit
 import XCTest
 
 final class DesktopLyricsTests: XCTestCase {
-    @MainActor
-    func testFocusExitRetargetsFromThePresentedOpacityAndBlur() {
-        var transition = DesktopLyricsLineTransition()
-        func sample(_ time: Double, focused: Bool) -> DesktopLyricsLineTransition.Appearance {
-            transition.appearance(index: 3, focused: focused, opacity: 0.8, blur: 0,
-                                  maximumBlur: 8, now: time, reduceMotion: false)
-        }
-
-        let clear = sample(0, focused: true)
-        XCTAssertEqual(clear, .init(opacity: 0.8, blur: 0))
-        XCTAssertEqual(sample(1, focused: false), clear)
-        let exit = sample(1.08, focused: false)
-        XCTAssertLessThan(exit.opacity, clear.opacity)
-        XCTAssertGreaterThan(exit.blur, 0)
-        XCTAssertTrue(transition.isAnimating)
-        XCTAssertEqual(sample(1.08, focused: true), exit)
-        XCTAssertEqual(sample(1.3, focused: true), clear)
-        XCTAssertFalse(transition.isAnimating)
+    func testSettingsDefaultAndDecodeInvalidFieldsIndependently() throws {
+        let decoder = JSONDecoder()
+        let defaults = try decoder.decode(DesktopLyricsSettings.self, from: Data("{}".utf8))
+        XCTAssertEqual(defaults, DesktopLyricsSettings())
+        let partial = Data(#"{"fontSize":90,"blurStrength":-1,"wordHighlight":false,"aspect":"tall","transition":"unknown"}"#.utf8)
+        let settings = try decoder.decode(DesktopLyricsSettings.self, from: partial)
+        XCTAssertEqual(settings.fontSize, 36)
+        XCTAssertEqual(settings.blurStrength, 0)
+        XCTAssertEqual(settings.aspect, .tall)
+        XCTAssertEqual(settings.transition, .blur)
+        XCTAssertFalse(settings.wordHighlight)
     }
 
     @MainActor
-    func testReducedMotionAndResyncUseTheCurrentAppearance() {
-        var transition = DesktopLyricsLineTransition()
-        _ = transition.appearance(index: 3, focused: true, opacity: 1, blur: 0,
-                                  maximumBlur: 8, now: 0, reduceMotion: false)
-        _ = transition.appearance(index: 3, focused: false, opacity: 1, blur: 2,
-                                  maximumBlur: 8, now: 2, reduceMotion: true)
-        let faded = transition.appearance(index: 3, focused: false, opacity: 1, blur: 2,
-                                          maximumBlur: 8, now: 2.1, reduceMotion: true)
-        XCTAssertEqual(faded.blur, 0)
-        XCTAssertLessThan(faded.opacity, 1)
-        transition.reset()
-        let focused = transition.appearance(index: 3, focused: true, opacity: 1, blur: 2,
-                                            maximumBlur: 8, now: 2.1, reduceMotion: true)
-        XCTAssertEqual(focused, .init(opacity: 1, blur: 0))
-        XCTAssertFalse(transition.isAnimating)
+    func testAppearancePersistsAndCanResetWithoutChangingLegacyAutoStart() throws {
+        let suite = "desktop-lyrics-test-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: DesktopLyricsController.autoStartKey)
+        let preferences = DesktopLyricsPreferences(defaults: defaults)
+        preferences.settings.aspect = .tall
+        preferences.settings.blurStrength = 3.2
+        preferences.settings.transition = .fade
+        XCTAssertEqual(DesktopLyricsPreferences(defaults: defaults).settings, preferences.settings)
+        XCTAssertEqual(preferences.settings.blurStrength, 3)
+        preferences.settings = .init()
+        XCTAssertEqual(DesktopLyricsPreferences(defaults: defaults).settings, DesktopLyricsSettings())
+        XCTAssertTrue(defaults.bool(forKey: DesktopLyricsController.autoStartKey))
+    }
+
+    @MainActor
+    func testFirstFrameDimensionsAndTierLimitsForEachAspect() {
+        typealias Aspect = DesktopLyricsSettings.Aspect
+        XCTAssertEqual(DesktopLyricsFrames(aspect: .wide).pixelSize, CGSize(width: 960, height: 480))
+        XCTAssertEqual(DesktopLyricsFrames(aspect: .standard).pixelSize, CGSize(width: 960, height: 540))
+        XCTAssertEqual(DesktopLyricsFrames(aspect: .tall).pixelSize, CGSize(width: 960, height: 720))
+        XCTAssertEqual(Aspect.wide.outputSize(for: CGSize(width: 1000, height: 500)), CGSize(width: 1152, height: 576))
+        XCTAssertEqual(Aspect.standard.outputSize(for: CGSize(width: 1080, height: 400)), CGSize(width: 960, height: 540))
+        XCTAssertEqual(Aspect.tall.outputSize(for: CGSize(width: 2000, height: 1500)), CGSize(width: 1104, height: 828))
+        for aspect in Aspect.allCases {
+            for size in aspect.pixelSizes {
+                XCTAssertEqual(size.width / size.height, aspect.ratio, accuracy: 0.001)
+                XCTAssertLessThanOrEqual(size.width * size.height, 1280 * 720)
+            }
+        }
+    }
+
+    func testDesktopPoliciesKeepTheSourcePresetAndSeparateBlurFromWordHighlighting() {
+        var source = LyricsRenderConfiguration()
+        source.blurInactive = false
+        source.fontSize = 32
+        var settings = DesktopLyricsSettings()
+        settings.fontSize = 28
+        settings.wordHighlight = false
+        XCTAssertEqual(settings.blurMaximum, 1)
+        XCTAssertTrue(settings.rendererConfiguration(source).blurInactive)
+        XCTAssertEqual(settings.rendererConfiguration(source).fontSize, 28)
+        XCTAssertEqual(settings.rendererConfiguration(source).animationStyle, source.animationStyle)
+        settings.transition = .fade
+        XCTAssertFalse(settings.rendererConfiguration(source).blurInactive)
+        XCTAssertFalse(settings.snapsLines)
+        XCTAssertFalse(settings.wordHighlight)
+        settings.transition = .instant
+        XCTAssertTrue(settings.snapsLines)
+        XCTAssertEqual(settings.blurStrength, 1)
+        XCTAssertEqual(source.fontSize, 32)
     }
 
     @MainActor

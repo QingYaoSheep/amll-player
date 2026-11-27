@@ -70,6 +70,7 @@ final class AppModel {
     let lyrics: LyricsCoordinator
     let renderPreferences: LyricsRenderPreferences
     let desktopLyrics = DesktopLyricsController()
+    let desktopLyricsPreferences = DesktopLyricsPreferences()
     @ObservationIgnored private var desktopLyricsRunning = false
     private(set) var selectedDeviceID: String?
     private(set) var isBrowserLoginInProgress = false

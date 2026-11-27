@@ -22,6 +22,8 @@ struct AMLLCoreTextRasterSnapshot: @unchecked Sendable {
     nonisolated(unsafe) private static let rasterContext = CIContext(options: nil)
     nonisolated(unsafe) private static let softwareRasterContext = CIContext(options: [.useSoftwareRenderer: true])
 
+    func blurRasterScale(for scale: CGFloat) -> CGFloat { min(scale, softwareBlur ? 2 : 1) }
+
     func usingSoftwareBlur(_ enabled: Bool) -> Self {
         var copy = self
         copy.softwareBlur = enabled

@@ -185,8 +185,11 @@ final class DesktopLyricsFrames {
         let delta = lastFrameTime.map { min(0.1, max(0, now - $0)) } ?? 0
         let content = prepareContent(document: document, frame: frame, key: key, delta: delta, now: now, animates: animates)
         lastFrameTime = now
+        let previousSettings = submitted?.canvas.settings
+        let resizeImmediately = changedTrack || previousSettings?.fitsContent != true
+            || previousSettings?.fontSize != presentation.fontSize
         let height = presentation.fitsContent
-            ? adaptiveHeight.update(contentHeight: content.height, at: now, reset: changedTrack || submitted?.canvas.settings.fitsContent != true)
+            ? adaptiveHeight.update(contentHeight: content.height, at: now, reset: resizeImmediately)
             : aspect.canvasSize.height
         isAnimating = isAnimating || (presentation.fitsContent && adaptiveHeight.isSettling)
         updatePool(height: height)

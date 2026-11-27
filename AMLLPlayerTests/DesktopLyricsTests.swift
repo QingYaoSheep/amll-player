@@ -267,12 +267,12 @@ final class DesktopLyricsTests: XCTestCase {
 
     func testAdaptiveWindowExpandsForAdditionalVoicesThenSettlesBack() throws {
         var height = DesktopLyricsAdaptiveHeight()
-        XCTAssertEqual(height.update(contentHeight: 32, at: 0), 112)
-        XCTAssertEqual(height.update(contentHeight: 120, at: 1), 160)
+        XCTAssertEqual(height.update(contentHeight: 32, at: 0), 44)
+        XCTAssertEqual(height.update(contentHeight: 120, at: 1), 136)
         XCTAssertEqual(height.update(contentHeight: 178, at: 1.1), 208)
         XCTAssertEqual(height.update(contentHeight: 32, at: 2), 208)
         XCTAssertTrue(height.isSettling)
-        XCTAssertEqual(height.update(contentHeight: 32, at: 2.4), 112)
+        XCTAssertEqual(height.update(contentHeight: 32, at: 2.4), 44)
         XCTAssertFalse(height.isSettling)
         XCTAssertEqual(height.update(contentHeight: 500, at: 3), 240)
 
@@ -283,6 +283,81 @@ final class DesktopLyricsTests: XCTestCase {
         let restored = try JSONDecoder().decode(DesktopLyricsSettings.self, from: JSONEncoder().encode(settings))
         XCTAssertEqual(restored, settings)
         XCTAssertEqual(restored.outputAspect, .tall)
+    }
+
+    func testScrollingStartsBothExitChannelsOnTheSelectorCatchUpFrame() throws {
+        let records: [LyricsBlossomSelectionSchedule.Record] = [
+            .init(index: 0, start: 0, end: 4.5, lastWordEnd: 4.5),
+            .init(index: 1, start: 4.55, end: 8, lastWordEnd: 8)
+        ]
+        let catchUp = LyricsBlossomSelectionSchedule.dispatch(family: 2, now: 3.9, records: records,
+            selected: [0], pending: 1, capacity: 2, mainHold: false, ticketHold: false, deadline: -1, adaptive: true)
+        XCTAssertEqual(catchUp.catchUp, [0])
+        XCTAssertNil(catchUp.enterIndex)
+        var handoff = DesktopLyricsScrollHandoff()
+        let selection = AMLLFrameEngine.desktopHandoff(for: catchUp, groupCount: 2)
+        handoff.update(selection, at: 1, delta: 1.0 / 60, interlude: false, immediately: false)
+        XCTAssertEqual(handoff.upcoming, 1)
+        let start = try XCTUnwrap(handoff.departure(0, at: 1))
+        XCTAssertLessThan(start.opacity, 1)
+        XCTAssertGreaterThan(start.softness, 0)
+
+        let later = try XCTUnwrap(handoff.departure(0, at: 1.08))
+        handoff.update(selection, at: 1.08, delta: 1.0 / 60, interlude: false, immediately: false)
+        XCTAssertEqual(handoff.departure(0, at: 1.08)?.opacity, later.opacity)
+        XCTAssertLessThan(later.opacity, start.opacity)
+        XCTAssertGreaterThan(later.softness, start.softness)
+        XCTAssertEqual(handoff.departure(0, at: 1.3)?.opacity, 0)
+        XCTAssertFalse(handoff.isAnimating(at: 1.3))
+    }
+
+    func testScrollingCutoffKeepsAlreadySelectedLyricAheadOfLaterPendingLyrics() throws {
+        let cutoff = LyricsBlossomSelectionSchedule.Output(selected: [1], pending: 2, left: [0])
+        let selection = AMLLFrameEngine.desktopHandoff(for: cutoff, groupCount: 3)
+        var handoff = DesktopLyricsScrollHandoff()
+        handoff.update(selection, at: 1, delta: 1.0 / 60, interlude: false, immediately: false)
+        XCTAssertEqual(selection.selected, [1])
+        XCTAssertNil(handoff.upcoming)
+        XCTAssertNotNil(handoff.departure(0, at: 1))
+        XCTAssertNil(handoff.departure(1, at: 1))
+
+        let enter = LyricsBlossomSelectionSchedule.Output(selected: [1], pending: 2, catchUp: [0],
+                                                          enterIndex: 1, entered: [1], left: [0])
+        let combined = AMLLFrameEngine.desktopHandoff(for: enter, groupCount: 3)
+        XCTAssertNil(combined.early)
+        XCTAssertEqual(Set(combined.departing), [0])
+    }
+
+    @MainActor
+    func testSingleLinePiPResizesTheVideoSampleWhenFontSizeChanges() {
+        let item = PlaybackItem(id: "fit-text", uri: "test:fit-text", title: "Fit", artists: [],
+                                albumTitle: nil, duration: 8, isEpisode: false, isAdvertisement: false)
+        let snapshot = PlaybackSnapshot(item: item, isPlaying: false, position: 1, duration: 8,
+                                        device: nil, restrictions: .unrestricted, source: .nativeAudio, sampledAtUptime: 0)
+        let frame = LyricsPlaybackFrame(snapshot: snapshot, position: 1, playing: false, seekRevision: 0,
+                                         pending: nil, confirmation: nil, legacySeekPosition: nil)
+        let document = LyricsDocument(candidate: .init(source: .apple, sourceID: "fit-text", title: "", artists: []),
+                                      lines: [.init(id: "row", text: "Fit", start: 0, end: 7)],
+                                      language: "en", selectionReason: "Resize with font size")
+        let producer = DesktopLyricsFrames(aspect: .singleLine)
+        var settings = DesktopLyricsSettings()
+        settings.fitsContent = true
+        settings.fontSize = 16
+        settings.singleLineTranslation = false
+        settings.singleLineRomanization = false
+        producer.render(frame: frame, lyrics: document, revision: 1, offset: 0, configuration: .init(),
+                        settings: settings, animates: true)
+        let small = producer.pixelSize
+        settings.fontSize = 36
+        producer.render(frame: frame, lyrics: document, revision: 1, offset: 0, configuration: .init(),
+                        settings: settings, animates: true)
+        XCTAssertLessThan(small.height, 96 * small.width / 320)
+        XCTAssertEqual(producer.pixelSize.width, small.width)
+        XCTAssertGreaterThan(producer.pixelSize.height, small.height)
+        settings.fontSize = 16
+        producer.render(frame: frame, lyrics: document, revision: 1, offset: 0, configuration: .init(),
+                        settings: settings, animates: true)
+        XCTAssertEqual(producer.pixelSize, small)
     }
 
     @MainActor

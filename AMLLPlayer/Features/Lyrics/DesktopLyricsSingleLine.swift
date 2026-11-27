@@ -47,6 +47,19 @@ struct DesktopLyricsSingleLineTimeline {
     }
 }
 
+struct DesktopLyricsDeparture {
+    static let duration = 0.20
+
+    let opacity: Double
+    let softness: Double
+
+    init(elapsed: Double) {
+        let progress = min(1, max(0, elapsed / Self.duration))
+        opacity = 1 - progress * progress * (3 - 2 * progress)
+        softness = AMLLWordMotion.cubicBezier(progress, x1: 0.23, y1: 1, x2: 0.32, y2: 1)
+    }
+}
+
 struct DesktopLyricsSingleLineTransition {
     enum Layer: Equatable {
         case empty
@@ -60,7 +73,7 @@ struct DesktopLyricsSingleLineTransition {
     }
 
     static let duration = 0.12
-    static let exitDuration = 0.20
+    static let exitDuration = DesktopLyricsDeparture.duration
     static let blurMaximum = 2.0
 
     private enum Phase {
@@ -97,13 +110,9 @@ struct DesktopLyricsSingleLineTransition {
         case let .exiting(since, alpha):
             let boundary = since + Self.exitDuration
             if now >= boundary { return enter(target, since: boundary, now: now) }
-            let progress = min(1, max(0, (now - since) / Self.exitDuration))
-            // Soften the line while it is still legible. Run the fade on a
-            // separate smooth curve so the soft frames are visible.
-            let opacity = 1 - progress * progress * (3 - 2 * progress)
-            let blur = easing(progress * Self.duration)
-            return .init(layer: .outgoing(alpha: alpha * opacity,
-                                          blur: blurs ? Self.blurMaximum * blur : 0))
+            let departure = DesktopLyricsDeparture(elapsed: now - since)
+            return .init(layer: .outgoing(alpha: alpha * departure.opacity,
+                                          blur: blurs ? Self.blurMaximum * departure.softness : 0))
         case let .entering(index, since):
             if index == target { return enter(index, since: since, now: now) }
             guard lastVisibleAlpha > 0 else { return enter(target, since: now, now: now) }

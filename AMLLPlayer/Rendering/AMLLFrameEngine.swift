@@ -1072,12 +1072,21 @@ struct AMLLFrameEngine {
         )
     }
 
-    /// PiP uses the same selection and preview events as the lyric page.
-    var desktopHandoff: (selected: [Int], pending: Int?, previewsPending: Bool) {
-        guard let schedule = blossomSchedule else { return ([], nil, false) }
-        let previews = !schedule.catchUp.isEmpty || schedule.takeover || (!schedule.left.isEmpty && schedule.entered.isEmpty)
-        return (schedule.selected.filter(document.groups.indices.contains),
-                schedule.pending.flatMap { document.groups.indices.contains($0) ? $0 : nil }, previews)
+    /// PiP reads the very same catch-up and cutoff decisions as the lyric page.
+    var desktopHandoff: DesktopLyricsScrollHandoff.Selection {
+        guard let schedule = blossomSchedule else { return .init() }
+        return Self.desktopHandoff(for: schedule, groupCount: document.groups.count)
+    }
+
+    static func desktopHandoff(for schedule: LyricsBlossomSelectionSchedule.Output,
+                               groupCount: Int) -> DesktopLyricsScrollHandoff.Selection {
+        let real = 0 ..< groupCount
+        let pending = schedule.pending.flatMap { real.contains($0) ? $0 : nil }
+        let next = schedule.enterIndex ?? pending
+        let departures = schedule.catchUp.filter { key in next.map { key < $0 } == true } + schedule.left
+        let early = schedule.enterIndex == nil && (!schedule.catchUp.isEmpty || schedule.takeover) ? pending : nil
+        return .init(selected: schedule.selected.filter(real.contains), pending: pending,
+                     early: early, departing: departures.filter(real.contains))
     }
 
     private func height(_ index: Int) -> Double {

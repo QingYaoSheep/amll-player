@@ -1434,7 +1434,8 @@ struct AMLLFrameEngine {
                 motions[index].completedReleaseAt = environment.enableSpring
                     ? max(frameStart, motions[index].y.schedule.scheduledAt ?? frameStart) : frameStart
             }
-            if sourceSelection == nil, !seeking, !browsing, playing, !immediate,
+            if sourceSelection == nil, !seeking, !browsing, playing, !environment.reduceMotion,
+               environment.snapLinePresentation != true,
                visualFocus != nil, index == timeline.focus, visualFocus != index
             {
                 pendingVisualFocus = (index: index, startTime: environment.enableSpring

@@ -1,4 +1,5 @@
 @testable import AMLLPlayer
+import CoreMedia
 import UIKit
 import XCTest
 
@@ -48,6 +49,42 @@ final class DesktopLyricsTests: XCTestCase {
                 XCTAssertLessThanOrEqual(size.width * size.height, 1280 * 720)
             }
         }
+    }
+
+    @MainActor
+    func testQuickResizesOnlyReallocateForTheFinalTier() {
+        let frames = DesktopLyricsFrames(aspect: .standard)
+        let initial = CGSize(width: 960, height: 540)
+        frames.resize(CMVideoDimensions(width: 1100, height: 650), at: 1)
+        frames.applyPendingResize(at: 1.05)
+        XCTAssertEqual(frames.pixelSize, initial)
+        frames.resize(CMVideoDimensions(width: 1200, height: 700), at: 1.1)
+        frames.applyPendingResize(at: 1.2)
+        XCTAssertEqual(frames.pixelSize, initial)
+        frames.applyPendingResize(at: 1.3)
+        XCTAssertEqual(frames.pixelSize, CGSize(width: 1280, height: 720))
+    }
+
+    func testInstantChangeSnapsTheNativePositionAndPreservesLyricTime() throws {
+        let document = AMLLDisplayDocument(lines: (0 ..< 3).map { index in
+            let start = Double(index) * 3
+            return LyricLine(id: "line-\(index)", text: "Line \(index)", start: start, end: start + 3)
+        })
+        var environment = AMLLRenderEnvironment(width: 320, height: 180, screenWidth: 320, fontSize: 22)
+        environment.advance = 0
+        environment.enableBlur = false
+        environment.snapLinePresentation = true
+        var engine = AMLLFrameEngine(document: document, environment: environment, heights: [44, 44, 44])
+        let first = engine.render(.init(position: 2.99, playing: true), delta: 0)
+        let next = engine.render(.init(position: 3.01, playing: true), delta: 0.02)
+        let old = try XCTUnwrap(first.rows.first { $0.lineIndex == 1 })
+        let current = try XCTUnwrap(next.rows.first { $0.lineIndex == 1 })
+        let motion = try XCTUnwrap(current.positionMotion)
+        XCTAssertLessThan(current.y, old.y)
+        XCTAssertEqual(current.y, motion.target + 22 * 0.4, accuracy: 0.1)
+        XCTAssertEqual(current.visualFocus, .current)
+        XCTAssertEqual(current.blur, 0)
+        XCTAssertEqual(next.lyricTime, 3.01, accuracy: 0.001)
     }
 
     func testDesktopPoliciesKeepTheSourcePresetAndSeparateBlurFromWordHighlighting() {

@@ -70,7 +70,7 @@ final class AppModel {
     let lyrics: LyricsCoordinator
     let renderPreferences: LyricsRenderPreferences
     let desktopLyrics = DesktopLyricsController()
-    let desktopLyricsPreferences = DesktopLyricsPreferences()
+    let desktopLyricsPreferences: DesktopLyricsPreferences
     @ObservationIgnored private var desktopLyricsRunning = false
     private(set) var selectedDeviceID: String?
     private(set) var isBrowserLoginInProgress = false
@@ -102,6 +102,7 @@ final class AppModel {
         catalogProvider: (any SpotifyCatalogProviding)? = nil,
         lyrics: LyricsCoordinator? = nil,
         renderPreferences: LyricsRenderPreferences? = nil,
+        desktopLyricsPreferences: DesktopLyricsPreferences? = nil,
         appleSession: (any MusicSessionProviding)? = nil,
         applePlayback: (any MusicPlaybackProviding)? = nil,
         appleCatalog: (any MusicCatalogProviding)? = nil,
@@ -139,6 +140,7 @@ final class AppModel {
         self.environment = environment
         self.lyrics = lyrics ?? .live()
         self.renderPreferences = renderPreferences ?? LyricsRenderPreferences()
+        self.desktopLyricsPreferences = desktopLyricsPreferences ?? DesktopLyricsPreferences()
         self.clientIDStore = clientIDStore
         self.environmentFactory = environmentFactory
         sessionState = environment.spotifySession.currentState

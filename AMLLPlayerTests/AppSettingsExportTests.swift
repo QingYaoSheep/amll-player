@@ -20,17 +20,16 @@ import XCTest
         let candidate = LyricCandidate(source: .netease, sourceID: "123", title: "Fixture", artists: ["Artist"])
         try cache.saveSelection(.init(candidate: candidate, offset: -1.2), for: "netease:123")
         let lyrics = LyricsCoordinator(providers: [], cache: cache, settingsStore: settingsStore)
+        let desktop = DesktopLyricsPreferences(defaults: defaults)
+        desktop.settings.aspect = .tall
         let model = AppModel(environment: .make(configuration: .preview), lyrics: lyrics,
-                             renderPreferences: appearances, musicPreferences: selected)
+                             renderPreferences: appearances, desktopLyricsPreferences: desktop, musicPreferences: selected)
         let artwork = ImmersiveArtworkDebugStore(defaults: defaults)
         artwork.showsButton = false
         artwork.configuration[.reflection].enabled = false
         let overrides = ["ja": ["言葉": "ことば"]]
 
         defaults.set(false, forKey: AppHaptics.preferenceKey)
-        let desktopSettings = model.desktopLyricsPreferences.settings
-        model.desktopLyricsPreferences.settings.aspect = .tall
-        defer { model.desktopLyricsPreferences.settings = desktopSettings }
         let snapshot = try AppSettingsExport(model: model, artwork: artwork, pronunciationOverrides: overrides,
                                              haptics: AppHaptics(defaults: defaults))
         let data = try snapshot.encoded()

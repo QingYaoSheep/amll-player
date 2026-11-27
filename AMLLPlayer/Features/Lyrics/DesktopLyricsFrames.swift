@@ -46,17 +46,17 @@ final class DesktopLyricsFrames {
         createPool()
     }
 
-    func resize(_ dimensions: CMVideoDimensions) {
+    func resize(_ dimensions: CMVideoDimensions, at now: Double = ProcessInfo.processInfo.systemUptime) {
         guard dimensions.width > 0, dimensions.height > 0 else { return }
         let size = aspect.outputSize(for: CGSize(width: Int(dimensions.width), height: Int(dimensions.height)))
         if size == pixelSize {
             pendingResize = nil
         } else if pendingResize?.size != size {
-            pendingResize = (size, ProcessInfo.processInfo.systemUptime)
+            pendingResize = (size, now)
         }
     }
 
-    private func applyPendingResize(at now: Double) {
+    func applyPendingResize(at now: Double) {
         guard let request = pendingResize, now - request.changedAt >= 0.15 else { return }
         pendingResize = nil
         createPool(size: request.size)

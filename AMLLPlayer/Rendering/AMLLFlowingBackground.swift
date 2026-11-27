@@ -86,6 +86,7 @@ struct AMLLFlowingBackground: UIViewRepresentable {
     var active: Bool
     var configuration: FlowingBackgroundConfiguration
     var suppressBlur = false
+    var preferredFramesPerSecond: Int? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -93,11 +94,18 @@ struct AMLLFlowingBackground: UIViewRepresentable {
 
     func makeUIView(context: Context) -> AMLLFlowingBackgroundSurface {
         let surface = AMLLFlowingBackgroundSurface(device: context.coordinator.renderer?.device)
+        if let preferredFramesPerSecond {
+            surface.metal.preferredFramesPerSecond = preferredFramesPerSecond
+        }
         context.coordinator.attach(surface)
         return surface
     }
 
     func updateUIView(_ surface: AMLLFlowingBackgroundSurface, context: Context) {
+        let targetFPS = preferredFramesPerSecond ?? 60
+        if surface.metal.preferredFramesPerSecond != targetFPS {
+            surface.metal.preferredFramesPerSecond = targetFPS
+        }
         context.coordinator.configure(url: artworkURL, configuration: configuration, active: active,
                                       reduceMotion: reduceMotion, reduceTransparency: reduceTransparency,
                                       suppressBlur: suppressBlur)

@@ -23,9 +23,6 @@ struct AMLLLyricsPlayer: View {
     @State private var artworkLoader = AnimatedArtworkLoader()
     @State private var artworkNetwork = ArtworkNetworkPolicy.shared
     @State private var artworkPortraitViewport = false
-    @State private var artworkReflectionFrames = ArtworkReflectionFrames()
-    @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
-    @State private var showingArtworkDebug = false
     @State private var presentation = LyricsPagePresentationCoordinator()
     @State private var artworkFrame: CGRect?
     @Namespace private var metadataMotion
@@ -95,9 +92,6 @@ struct AMLLLyricsPlayer: View {
             .onChange(of: geometry.size, initial: true) { _, size in
                 artworkPortraitViewport = size.height > size.width
             }
-            .onChange(of: artworkPresentationDiagnostic(size: geometry.size), initial: true) { _, diagnostic in
-                artworkReflectionFrames.pageDiagnostic = diagnostic
-            }
             .foregroundStyle(.white)
             // Clip the already-composited page, never the transparent lyric
             // foreground separately from the backdrop it must blend with.
@@ -106,23 +100,6 @@ struct AMLLLyricsPlayer: View {
             .offset(y: drag.offset)
             .opacity(immersive ? 1 : drag.opacity)
             .overlay(alignment: .top) { dismissalHandle(metrics: metrics, room: room) }
-            .overlay(alignment: .topTrailing) {
-                if artworkDebug.showsButton, let item = model.playbackSnapshot?.item,
-                   lyricLayout != nil || mountsImmersiveArtwork(item, size: geometry.size) {
-                    ImmersiveArtworkDebugButton { showingArtworkDebug = true }
-                    .padding(.top, geometry.safeAreaInsets.top + 48).padding(.trailing, 16)
-                }
-            }
-            .sheet(isPresented: $showingArtworkDebug) {
-                ImmersiveArtworkDebugPanel(viewport: geometry.size,
-                    video: lyricLayout?.visibleCover ?? AMLLImmersiveArtworkGeometry.fittedFrame(
-                        container: artworkDebug.configuration[.video].frame(AMLLImmersiveArtworkGeometry.frame(
-                            viewport: geometry.size, video: artworkLoader.videoSize ?? .zero)),
-                        source: artworkLoader.videoSize ?? CGSize(width: 9, height: 16)),
-                    backgroundDimming: configuration.backgroundDimming ?? 0.16,
-                    frames: artworkReflectionFrames)
-                    .presentationDetents([.medium, .large])
-            }
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
@@ -457,8 +434,7 @@ struct AMLLLyricsPlayer: View {
         else { source = currentStillFrame?.size ?? CGSize(width: 1, height: 1) }
         return .resolve(viewport: size, artwork: source, informationHeight: immersiveInformationHeight,
                         bottomInset: bottomInset, isVideo: presentsVideo,
-                        informationTextBottom: immersiveInformationTextBottom,
-                        artworkAdjustment: artworkDebug.configuration[.video])
+                        informationTextBottom: immersiveInformationTextBottom)
     }
 
     private var immersiveLyricsHasVideo: Bool {
@@ -526,8 +502,7 @@ struct AMLLLyricsPlayer: View {
             || AppleMusicLyricsLayoutMetrics.usesTabletColumns(in: size)
         let cover = layout?.cover ?? AMLLImmersiveArtworkGeometry.frame(viewport: size, video: artworkLoader.videoSize ?? .zero)
         let mediaLayout: ImmersiveArtworkMedia.Layout = immersive
-            ? .immersive(cover: cover, viewport: size, configuration: configuration,
-                tuning: artworkDebug.configuration, presentsFrame: canKeepVideo && artworkLoader.hasPresentedFrame,
+            ? .immersive(cover: cover, viewport: size, presentsFrame: canKeepVideo && artworkLoader.hasPresentedFrame,
                 reduceTransparency: reduceTransparency, excludesStatusBarBlur: layout != nil)
             : .inline(frame: inlineFrame,
                 visible: showsInlineCover && (currentStillFrame != nil || showsInlineVideo),
@@ -536,10 +511,10 @@ struct AMLLLyricsPlayer: View {
                     ? 14 : configuration.showLyrics ? 11 : 12), dimming: configuration.backgroundDimming ?? 0.16)
         var video = canKeepVideo ? immersiveVideo(item) : nil
         if !immersive && !showsInlineVideo { video?.active = false }
-        return ImmersiveArtworkMedia(video: video, frames: artworkReflectionFrames,
+        return ImmersiveArtworkMedia(video: video,
             layout: mediaLayout,
             background: artworkBackground(meshForegroundBlending: needsMeshForegroundBlending(immersive: immersive),
-                enabled: !immersive || artworkDebug.configuration[.background].enabled),
+                preferredFramesPerSecond: immersive ? 60 : nil),
             still: currentStillFrame)
             .frame(width: size.width, height: size.height)
             .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: mediaLayout.video)
@@ -552,7 +527,6 @@ struct AMLLLyricsPlayer: View {
         return AnimatedArtwork(url: url,
                                active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage && model.playbackSnapshot?.isPlaying == true,
                                allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
-                               reflectionFrames: artworkReflectionFrames,
                                onFailure: { url, error in artworkLoader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
                                onState: { url, state in artworkLoader.playbackChanged(token: token, url: url, state: state) },
                                onFirstFrame: { url, videoSize in artworkLoader.firstFramePresented(token: token, url: url, size: videoSize) },
@@ -560,14 +534,15 @@ struct AMLLLyricsPlayer: View {
                                fadesBottom: false)
     }
 
-    private func artworkBackground(meshForegroundBlending: Bool = false, enabled: Bool = true) -> AMLLBackground {
+    private func artworkBackground(meshForegroundBlending: Bool = false, preferredFramesPerSecond: Int? = nil) -> AMLLBackground {
         AMLLBackground(artworkURL: model.playbackSnapshot?.item?.artworkURL,
-            active: enabled && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
+            active: scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
             blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
             color: configuration.backgroundColor ?? .sourceDefault,
             gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
             flowing: configuration.flowingBackground ?? .init(), dimming: 0,
-            meshForegroundBlending: meshForegroundBlending)
+            meshForegroundBlending: meshForegroundBlending,
+            preferredFramesPerSecond: preferredFramesPerSecond)
     }
 
     private func needsMeshForegroundBlending(immersive: Bool) -> Bool {
@@ -679,12 +654,6 @@ struct AMLLLyricsPlayer: View {
         case .unavailable: return "动态封面：无匹配布局的视频，使用静态图"
         case .failed: return "动态封面：加载失败，使用静态图（\(artworkLoader.failureCode ?? "未知错误")）"
         }
-    }
-
-    private func artworkPresentationDiagnostic(size: CGSize) -> String {
-        let immersive = model.playbackSnapshot?.item.map { mountsImmersiveArtwork($0, size: size) } ?? false
-        let resource = artworkLoader.playbackURL.map { $0.isFileURL ? "本地" : "在线" } ?? "无"
-        return "页面资源：\(artworkLoader.status.rawValue)；类型：\(artworkLoader.kind?.rawValue ?? "无")；来源：\(resource)；沉浸挂载：\(immersive ? "是" : "否")；歌词：\(configuration.showLyrics ? "显示" : "隐藏")\n播放页状态：\(artworkStatus)；页面：\(Int(size.width))×\(Int(size.height)) pt"
     }
 
     private var artworkPlaybackDescription: String {

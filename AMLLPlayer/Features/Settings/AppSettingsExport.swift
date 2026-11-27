@@ -28,13 +28,11 @@ struct AppSettingsExport: Codable {
     let music: Music
     let lyrics: LyricsSettings
     let appearance: Appearance
-    let immersiveArtwork: ImmersiveArtworkDebugConfiguration
-    let showsImmersiveArtworkDebugButton: Bool
     let trackLyrics: [String: LyricsSelection]
     let pronunciationOverrides: [String: [String: String]]
 
     @MainActor
-    init(model: AppModel, artwork: ImmersiveArtworkDebugStore,
+    init(model: AppModel,
          pronunciationOverrides: [String: [String: String]], haptics: AppHaptics = .shared) throws {
         let configuration = model.renderPreferences.configuration.validated()
         let playback = model.netEasePlayback
@@ -54,8 +52,6 @@ struct AppSettingsExport: Codable {
         lyrics = model.lyrics.settings.validated()
         appearance = Appearance(profile: model.renderPreferences.profile, current: configuration,
                                 savedCustom: model.renderPreferences.migratedCustomConfiguration?.validated())
-        immersiveArtwork = artwork.exportConfiguration(backgroundDimming: configuration.backgroundDimming ?? 0.16)
-        showsImmersiveArtworkDebugButton = artwork.showsButton
         trackLyrics = try model.lyrics.savedSelections()
         self.pronunciationOverrides = pronunciationOverrides
     }

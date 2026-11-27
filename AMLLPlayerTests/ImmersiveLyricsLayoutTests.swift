@@ -5,22 +5,15 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
     @MainActor func testLyricsBackdropKeepsTheCalibratedArtworkPageJunction() {
         let viewport = CGSize(width: 402, height: 874)
         let cover = AMLLImmersiveArtworkGeometry.frame(viewport: viewport, video: CGSize(width: 3, height: 4))
-        var tuning = ImmersiveArtworkDebugConfiguration()
-        tuning[.video].y = 18
-        tuning[.transition].y = 36
-        tuning[.transition].height = 0.8
-        tuning[.reflection].y = 12
-        tuning[.background].width = 1.2
-        let visible = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(cover), source: cover.size)
-        let expected = ImmersiveBackgroundBlurProfile.extendingBackground(video: visible, viewport: viewport,
-            adjustment: tuning[.transition])
+        let visible = AMLLImmersiveArtworkGeometry.fittedFrame(container: cover, source: cover.size)
+        let expected = ImmersiveBackgroundBlurProfile.extendingBackground(video: visible, viewport: viewport)
         let actual = ImmersiveArtworkMedia.Layout.immersive(cover: cover, viewport: viewport,
-            configuration: .init(), tuning: tuning, presentsFrame: true, reduceTransparency: false)
+            presentsFrame: true, reduceTransparency: false)
         XCTAssertEqual(actual.video, visible)
         XCTAssertEqual(actual.transition, expected.frame, "Opening lyrics must not lift the calibrated blur region")
         XCTAssertEqual(actual.blurProfile, expected)
-        XCTAssertEqual(actual.reflection, tuning[.reflection].frame(ArtworkReflectionGeometry.frame(cover: visible, viewportHeight: viewport.height)))
-        XCTAssertEqual(actual.background, tuning[.background].frame(CGRect(origin: .zero, size: viewport)))
+        XCTAssertEqual(actual.reflection, ImmersiveArtworkPreset.reflectionFrame(cover: visible, viewportHeight: viewport.height))
+        XCTAssertEqual(actual.backgroundDimming, ImmersiveArtworkPreset.dimmingOpacity, accuracy: 0.0001)
     }
 
     func testSquareCoverAndInformationLeaveAnIndependentLyricViewport() {
@@ -133,14 +126,11 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
     }
 
     func testInformationAndLyricsFollowTheActualCalibratedCover() {
-        var adjustment = ImmersiveArtworkLayerAdjustment()
-        adjustment.y = 20
-        adjustment.width = 0.8
         let layout = ImmersiveLyricsLayout.resolve(viewport: CGSize(width: 402, height: 874),
             artwork: CGSize(width: 3, height: 4), informationHeight: 64, bottomInset: 34, isVideo: true,
-            informationTextBottom: 60, artworkAdjustment: adjustment)
+            informationTextBottom: 60)
         XCTAssertEqual(layout.cover.width, 402)
-        XCTAssertEqual(layout.visibleCover.width, 321.6, accuracy: 0.001)
+        XCTAssertEqual(layout.visibleCover, layout.cover)
         XCTAssertEqual(layout.visibleCover.width / layout.visibleCover.height, 0.75, accuracy: 0.001)
         XCTAssertEqual(layout.information.maxY, layout.visibleCover.maxY - 16)
         XCTAssertEqual(layout.lyrics.minY, layout.information.minY + 60)
@@ -159,30 +149,15 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         XCTAssertFalse(ImmersiveLyricsLayout.isEnabled(configuration, isPhone: true, viewport: phone))
     }
 
-    @MainActor func testLyricsLayerDebuggingKeepsAllSavedGeometryAndOrder() {
-        var legacy = ImmersiveArtworkDebugConfiguration()
-        legacy[.video].y = 400
-        legacy[.video].height = 1.8
-        legacy[.video].enabled = false
-        legacy[.reflection].y = 250
-        legacy[.reflection].opacity = 0.7
-        legacy[.reflection].enabled = false
-        legacy.blurRadius = 48
-        legacy.topFeatherLength = 36
-        legacy.order = Array(ImmersiveArtworkLayer.allCases)
-        let layout = ImmersiveArtworkMedia.Layout.immersive(cover: CGRect(x: 0, y: 0, width: 402, height: 536),
-            viewport: CGSize(width: 402, height: 874), configuration: .init(), tuning: legacy,
-            presentsFrame: true, reduceTransparency: false)
-        var expected = legacy
-        expected[.reflection].enabled = true
-        XCTAssertEqual(layout.tuning, expected)
-        XCTAssertTrue(layout.reflectionEnabled)
-        XCTAssertEqual(layout.video.minY, 400, accuracy: 0.001)
-        XCTAssertFalse(layout.tuning[.video].enabled)
-        XCTAssertEqual(layout.tuning[.reflection].y, 250)
-        XCTAssertEqual(layout.tuning[.reflection].opacity, 0.7)
-        XCTAssertEqual(layout.tuning.validatedBlur, 48)
-        XCTAssertEqual(layout.tuning.validatedTopFeatherLength, 36)
-        XCTAssertEqual(legacy[.video].y, 400)
+    func testImmersiveArtworkPresetRetainsCalibratedGeometryAndDefaults() {
+        XCTAssertEqual(ImmersiveArtworkPreset.dimmingOpacity, 0.12, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.reflectionYOffset, -78, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.reflectionHeightScale, 0.41, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.reflectionOpacity, 0.94, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.blurRadius, 10, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.topFeatherLength, 80, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.transitionYOffset, 174, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.transitionHeightScale, 2.0, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.transitionOpacity, 1.0, accuracy: 0.0001)
     }
 }

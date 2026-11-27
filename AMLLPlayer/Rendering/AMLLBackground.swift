@@ -15,8 +15,8 @@ struct AMLLBackground: View {
     var meshForegroundBlending = false
     /// Presentation override; never writes the user's background preferences.
     var suppressBlur = false
-    /// Optional completed GPU frames for the immersive backdrop only.
-    var frameSource: AMLLBackgroundFrameSource? = nil
+    /// Optional frame-rate cap (e.g., 60 FPS in immersive mode to save GPU behind blurred/video layers).
+    var preferredFramesPerSecond: Int? = nil
     @State private var usedMesh = false
     @State private var usedPixi = false
     @State private var usedFlowing = false
@@ -40,17 +40,19 @@ struct AMLLBackground: View {
                 AMLLMeshBackground(artworkURL: artworkURL, active: active && mode.isMesh, blur: effectiveMeshBlur,
                                    colorMode: mode == .meshColorMode2 ? .colorMode2 : .original,
                                    seed: blendProbeSeed,
-                                   frameSource: mode.isMesh ? frameSource : nil,
-                                   allowsForegroundBlending: meshForegroundBlending)
+                                   allowsForegroundBlending: meshForegroundBlending,
+                                   preferredFramesPerSecond: preferredFramesPerSecond)
                     .opacity(mode.isMesh ? 1 : 0)
             }
             if usedPixi || mode == .pixi {
-                AMLLPixiBackground(artworkURL: artworkURL, active: active && mode == .pixi, blurEnabled: !suppressBlur)
+                AMLLPixiBackground(artworkURL: artworkURL, active: active && mode == .pixi, blurEnabled: !suppressBlur,
+                                   preferredFramesPerSecond: preferredFramesPerSecond)
                     .opacity(mode == .pixi ? 1 : 0)
             }
             if usedFlowing || mode == .flowing {
                 AMLLFlowingBackground(artworkURL: artworkURL, active: active && mode == .flowing,
-                    configuration: effectiveFlowingConfiguration, suppressBlur: suppressBlur)
+                    configuration: effectiveFlowingConfiguration, suppressBlur: suppressBlur,
+                    preferredFramesPerSecond: preferredFramesPerSecond)
                     .opacity(mode == .flowing ? 1 : 0)
             }
         }

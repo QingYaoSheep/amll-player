@@ -25,9 +25,6 @@ import XCTest
         desktop.settings.plusLighter = false
         let model = AppModel(environment: .make(configuration: .preview), lyrics: lyrics,
                              renderPreferences: appearances, desktopLyricsPreferences: desktop, musicPreferences: selected)
-        let artwork = ImmersiveArtworkDebugStore(defaults: defaults)
-        artwork.showsButton = false
-        artwork.configuration[.reflection].enabled = false
         let overrides = ["ja": ["言葉": "ことば"]]
 
         defaults.set(false, forKey: AppHaptics.preferenceKey)
@@ -39,7 +36,7 @@ import XCTest
         }
         model.lockScreenLyricsEnabled = true
         model.lockScreenLyricsKeepAliveEnabled = true
-        let snapshot = try AppSettingsExport(model: model, artwork: artwork, pronunciationOverrides: overrides,
+        let snapshot = try AppSettingsExport(model: model, pronunciationOverrides: overrides,
                                              haptics: AppHaptics(defaults: defaults))
         let data = try snapshot.encoded()
         let decoded = try JSONDecoder().decode(AppSettingsExport.self, from: data)
@@ -54,9 +51,6 @@ import XCTest
         XCTAssertEqual(decoded.lyrics.globalDelay, 0.65)
         XCTAssertEqual(decoded.appearance.current.fontSize, 43)
         XCTAssertEqual(decoded.appearance.savedCustom?.fontSize, 43)
-        XCTAssertEqual(decoded.immersiveArtwork.validatedBlur, 10)
-        XCTAssertTrue(decoded.immersiveArtwork[.reflection].enabled)
-        XCTAssertFalse(decoded.showsImmersiveArtworkDebugButton)
         XCTAssertEqual(decoded.trackLyrics["netease:123"], .init(candidate: candidate, offset: -1.2))
         XCTAssertEqual(decoded.pronunciationOverrides, overrides)
         XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("fixture-token"))
@@ -64,6 +58,8 @@ import XCTest
         legacy.removeValue(forKey: "hapticsEnabled")
         legacy.removeValue(forKey: "desktopLyrics")
         legacy.removeValue(forKey: "lockScreenLyricsKeepAlive")
+        legacy["immersiveArtwork"] = ["blurRadius": 10]
+        legacy["showsImmersiveArtworkDebugButton"] = false
         let legacyData = try JSONSerialization.data(withJSONObject: legacy)
         let legacySettings = try JSONDecoder().decode(AppSettingsExport.self, from: legacyData)
         XCTAssertNil(legacySettings.hapticsEnabled)

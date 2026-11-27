@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Compatibility-page adapter. It reuses the same loader, layout, frame hub and
+/// Compatibility-page adapter. It reuses the same loader, layout and
 /// media surfaces without replacing that page's existing lyric renderer.
 struct ImmersiveLyricsArtworkBackdrop: View {
     @Bindable var model: AppModel
@@ -9,13 +9,11 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     let viewport: CGSize
     let active: Bool
     let artworkSource: (ImmersiveLyricsArtworkSource) -> Void
-    let frames: ArtworkReflectionFrames
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var loader = AnimatedArtworkLoader()
     @State private var still = ImmersiveStillArtwork()
     @State private var network = ArtworkNetworkPolicy.shared
-    @State private var debug = ImmersiveArtworkDebugStore.shared
     private var configuration: LyricsRenderConfiguration { model.renderPreferences.configuration.validated() }
     private var eligibleViewport: Bool {
         UIDevice.current.userInterfaceIdiom == .phone && viewport.height > viewport.width
@@ -39,41 +37,61 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     }
     var body: some View {
         ZStack {
-        ImmersiveArtworkMedia(video: video, frames: frames,
-            layout: layout.map { .immersive(cover: $0.cover, viewport: viewport, configuration: configuration,
-                tuning: debug.configuration, presentsFrame: hasVideo && loader.hasPresentedFrame,
-                reduceTransparency: reduceTransparency, excludesStatusBarBlur: true) } ?? .inline(frame: .zero, visible: false, presentsFrame: false, radius: 0, dimming: 0),
-            background: layout.map { _ in AMLLBackground(artworkURL: item.artworkURL, active: active,
-                blur: configuration.backgroundBlur, mode: configuration.backgroundMode ?? .mesh,
-                color: configuration.backgroundColor ?? .sourceDefault,
-                gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
-                flowing: configuration.flowingBackground ?? .init(), dimming: 0) },
-            still: still.frame(for: item.artworkURL))
+            ImmersiveArtworkMedia(
+                video: video,
+                layout: layout.map {
+                    .immersive(
+                        cover: $0.cover,
+                        viewport: viewport,
+                        presentsFrame: hasVideo && loader.hasPresentedFrame,
+                        reduceTransparency: reduceTransparency,
+                        excludesStatusBarBlur: true
+                    )
+                } ?? .inline(frame: .zero, visible: false, presentsFrame: false, radius: 0, dimming: 0),
+                background: layout.map { _ in
+                    AMLLBackground(
+                        artworkURL: item.artworkURL,
+                        active: active,
+                        blur: configuration.backgroundBlur,
+                        mode: configuration.backgroundMode ?? .mesh,
+                        color: configuration.backgroundColor ?? .sourceDefault,
+                        gradientEnd: configuration.backgroundGradientEnd ?? .sourceDefault,
+                        flowing: configuration.flowingBackground ?? .init(),
+                        dimming: 0,
+                        preferredFramesPerSecond: 60
+                    )
+                },
+                still: still.frame(for: item.artworkURL)
+            )
             .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.cover)
         }
-            .onChange(of: displayedSource, initial: true) { _, source in artworkSource(source) }
-            .task(id: item.uri + "|" + (item.artworkURL?.absoluteString ?? "")) { await still.load(item.artworkURL) }
-            .task(id: requestKey) {
-                let settings = configuration.animatedArtwork ?? .init()
-                guard settings.enabled, !reduceMotion,
-                      network.permits(allowCellular: settings.allowCellular) else { loader.reset(); return }
-                guard configuration.immersiveLyrics == true, eligibleViewport else {
-                    if loader.trackID != item.uri { loader.reset() }
-                    return
-                }
-                await loader.loadForLyrics(item: item, coordinator: model.lyrics, settings: settings, prefersPortrait: true)
+        .onChange(of: displayedSource, initial: true) { _, source in artworkSource(source) }
+        .task(id: item.uri + "|" + (item.artworkURL?.absoluteString ?? "")) { await still.load(item.artworkURL) }
+        .task(id: requestKey) {
+            let settings = configuration.animatedArtwork ?? .init()
+            guard settings.enabled, !reduceMotion,
+                  network.permits(allowCellular: settings.allowCellular) else { loader.reset(); return }
+            guard configuration.immersiveLyrics == true, eligibleViewport else {
+                if loader.trackID != item.uri { loader.reset() }
+                return
             }
-            .allowsHitTesting(false).accessibilityHidden(true)
+            await loader.loadForLyrics(item: item, coordinator: model.lyrics, settings: settings, prefersPortrait: true)
+        }
+        .allowsHitTesting(false).accessibilityHidden(true)
     }
     private var video: AnimatedArtwork? {
         guard hasVideo, let url = loader.playbackURL else { return nil }
         let token = loader.requestToken
-        return AnimatedArtwork(url: url, active: layout != nil && active && model.playbackSnapshot?.isPlaying == true,
-            allowCellular: configuration.animatedArtwork?.allowCellular ?? false, reflectionFrames: frames,
+        return AnimatedArtwork(
+            url: url,
+            active: layout != nil && active && model.playbackSnapshot?.isPlaying == true,
+            allowCellular: configuration.animatedArtwork?.allowCellular ?? false,
             onFailure: { url, error in loader.playbackFailed(trackID: item.uri, url: url, error: error, token: token) },
             onState: { url, state in loader.playbackChanged(token: token, url: url, state: state) },
             onFirstFrame: { url, size in loader.firstFramePresented(token: token, url: url, size: size) },
-            gravity: .resizeAspect, fadesBottom: false)
+            gravity: .resizeAspect,
+            fadesBottom: false
+        )
     }
 }
 

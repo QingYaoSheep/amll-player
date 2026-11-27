@@ -1,11 +1,10 @@
-import CoreImage
+import CoreGraphics
 import ImageIO
 import Observation
 
-/// One immutable decode supplies the visible cover, reflection and live blur.
+/// One immutable decode supplies the visible cover and its hardware-flipped reflection.
 struct ImmersiveStillFrame: @unchecked Sendable {
     let image: CGImage
-    let buffer: CVPixelBuffer
     var size: CGSize { CGSize(width: CGFloat(image.width), height: CGFloat(image.height)) }
 }
 
@@ -20,7 +19,7 @@ actor ImmersiveStillArtworkCache {
             return value.1
         }
         if let request = pending[url] { return await request.task.value }
-        // A canceled synchronous ImageIO/CI operation still owns its slot until
+        // A canceled synchronous ImageIO operation still owns its slot until
         // it actually finishes. Waiting here suspends the actor, never the UI.
         while pending.count >= 2, let oldest = pending.first {
             _ = await oldest.value.task.value
@@ -39,15 +38,7 @@ actor ImmersiveStillArtworkCache {
                     kCGImageSourceShouldCacheImmediately: true,
                   ] as CFDictionary) else { return nil }
             guard !Task.isCancelled else { return nil }
-            var buffer: CVPixelBuffer?
-            guard CVPixelBufferCreate(kCFAllocatorDefault, image.width, image.height, kCVPixelFormatType_32BGRA,
-                [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer) == kCVReturnSuccess,
-                let buffer else { return nil }
-            let space = CGColorSpace(name: CGColorSpace.sRGB)!
-            CIContext(options: [.cacheIntermediates: false]).render(CIImage(cgImage: image), to: buffer,
-                bounds: CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height)), colorSpace: space)
-            CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, space, .shouldPropagate)
-            return ImmersiveStillFrame(image: image, buffer: buffer)
+            return ImmersiveStillFrame(image: image)
         }
         pending[url] = (id, task)
         let frame = await task.value

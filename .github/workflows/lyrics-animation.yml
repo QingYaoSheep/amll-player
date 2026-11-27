@@ -23,9 +23,8 @@ on:
       - 'AMLLPlayer/Features/Lyrics/AMLLLyricsPlayer.swift'
       - 'AMLLPlayer/Features/Lyrics/FullscreenLyricsPlayer.swift'
       - 'AMLLPlayer/Features/Lyrics/ImmersiveArtworkMedia.swift'
-      - 'AMLLPlayer/Features/Lyrics/ImmersiveArtworkDebug.swift'
+      - 'AMLLPlayer/Features/Lyrics/ImmersiveBackdropBlurView.swift'
       - 'AMLLPlayer/Features/Settings/AppSettingsExport.swift'
-      - 'AMLLPlayerTests/ImmersiveArtworkDebugStoreTests.swift'
       - 'AMLLPlayerTests/AppSettingsExportTests.swift'
       - 'AMLLPlayerTests/LyricsPagePresentationTests.swift'
       - 'AMLLPlayer/Rendering/LyricsAuxiliaryFade.swift'
@@ -95,7 +94,6 @@ jobs:
           -only-testing:AMLLPlayerTests/LockScreenLyricsTests
           -only-testing:AMLLPlayerTests/LyricsCoordinatorTests/testLockScreenBackgroundAudioLoadsUncachedLyricsAndRejectsResultsAfterPlaybackStops
           -only-testing:AMLLPlayerTests/LyricsPagePresentationTests
-          -only-testing:AMLLPlayerTests/ImmersiveArtworkDebugStoreTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkLayersTests
           -only-testing:AMLLPlayerTests/ImmersiveLyricsLayoutTests
           -only-testing:AMLLPlayerTests/AppSettingsExportTests
@@ -145,7 +143,8 @@ jobs:
           -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests
           -only-testing:AMLLPlayerTests/LyricsBlossomFamilyTwoTests
           -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testVideoFirstFrameReplacesStillFallbackWithoutRestartingPlayer
-          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testRetiredPresentationCannotInvalidateCurrentPlayersReflection
+          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testNativeBackdropBlurUsesCABackdropLayerAndNeutralizesSystemTint
+          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testImmersiveSurfaceUsesFixedCalibratedFiveLayerOrderAnd60FPSBackground
           -only-testing:AMLLPlayerTests/AMLLSeekMotionTests
           -only-testing:AMLLPlayerTests/AMLLSeekCanvasTests
           -only-testing:AMLLPlayerTests/AppleMusicIntegrationTests/testApplePlaybackSnapshotUpdatesLyricsSeekRevisionAndIgnoresSpotifySnapshot

@@ -7,6 +7,7 @@ struct AMLLPixiBackground: UIViewRepresentable {
     var active: Bool
     var seed: UInt32? = nil
     var blurEnabled = true
+    var preferredFramesPerSecond: Int? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -19,12 +20,16 @@ struct AMLLPixiBackground: UIViewRepresentable {
         view.colorPixelFormat = .bgra8Unorm
         view.isOpaque = true
         view.backgroundColor = .black
-        view.preferredFramesPerSecond = 60 // react-full overrides the core constructor's 30 Hz default.
+        view.preferredFramesPerSecond = preferredFramesPerSecond ?? 60 // react-full overrides the core constructor's 30 Hz default.
         context.coordinator.attach(view)
         return view
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
+        let targetFPS = preferredFramesPerSecond ?? 60
+        if view.preferredFramesPerSecond != targetFPS {
+            view.preferredFramesPerSecond = targetFPS
+        }
         context.coordinator.setBlurEnabled(blurEnabled)
         if active {
             context.coordinator.setArtwork(artworkURL)

@@ -211,7 +211,6 @@ struct LyricsQuickSettingsPanel: View {
     @State private var contentHeight: CGFloat = 0
     @State private var headerHeight: CGFloat = 56
     @State private var compositingDiagnosticCopied = false
-    @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
     @GestureState private var dragIsActive = false
     @AccessibilityFocusState private var titleFocused: Bool
     @AccessibilityFocusState private var focusedRoute: LyricsQuickSettingsPresentation.Destination?
@@ -730,25 +729,6 @@ struct LyricsQuickSettingsPanel: View {
                 .buttonStyle(QuickSettingsRowButtonStyle())
                 .accessibilityFocused($focusedRoute, equals: .lyricsSources)
                 .accessibilityIdentifier("quickSettingsRoute.lyricsSources")
-
-                QuickSettingsDivider(inset: 56)
-
-                Button {
-                    AppHaptics.shared.play(.selection)
-                    artworkDebug.showsButton.toggle()
-                } label: {
-                    QuickSettingsCardToggleRow(
-                        title: "quickSettings.artworkDebugButton",
-                        symbol: "rectangle.on.rectangle",
-                        accent: MusicProductStyle.accent,
-                        selected: artworkDebug.showsButton
-                    )
-                }
-                .buttonStyle(QuickSettingsRowButtonStyle())
-                .accessibilityLabel(Text("quickSettings.artworkDebugButton"))
-                .accessibilityValue(Text(LocalizedStringKey(artworkDebug.showsButton ? "quickSettings.on" : "quickSettings.off")))
-                .accessibilityAddTraits(artworkDebug.showsButton ? .isSelected : [])
-                .accessibilityIdentifier("quickSettingsArtworkDebugButton")
 
                 QuickSettingsDivider(inset: 56)
 

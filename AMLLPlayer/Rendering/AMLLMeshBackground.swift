@@ -16,10 +16,11 @@ struct AMLLMeshBackground: UIViewRepresentable {
     var colorMode: ColorMode = .original
     /// Debug/reference playback can inject a seed; production seeds once per context.
     var seed: UInt32? = nil
-    var frameSource: AMLLBackgroundFrameSource? = nil
     /// Core Animation must composite this surface with the lyric foreground.
     /// This changes surface classification, never shader colors or pixel alpha.
     var allowsForegroundBlending = false
+    /// Optional FPS cap (defaults to display maximum when nil).
+    var preferredFramesPerSecond: Int? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -32,18 +33,16 @@ struct AMLLMeshBackground: UIViewRepresentable {
         view.isOpaque = !allowsForegroundBlending
         view.layer.isOpaque = !allowsForegroundBlending
         view.backgroundColor = allowsForegroundBlending ? .clear : UIColor(white: 0.08, alpha: 1)
-        view.framebufferOnly = frameSource == nil
-        context.coordinator.frameSource = frameSource
+        view.framebufferOnly = true
         view.colorPixelFormat = .bgra8Unorm
-        view.preferredFramesPerSecond = UIScreen.main.maximumFramesPerSecond
+        let screenMax = UIScreen.main.maximumFramesPerSecond
+        view.preferredFramesPerSecond = preferredFramesPerSecond.map { min($0, screenMax) } ?? screenMax
         context.coordinator.attach(to: view)
         return view
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
-        let framebufferOnly = frameSource == nil
-        if view.framebufferOnly != framebufferOnly { view.framebufferOnly = framebufferOnly }
-        context.coordinator.frameSource = frameSource
+        if !view.framebufferOnly { view.framebufferOnly = true }
         let opaque = !allowsForegroundBlending
         if view.isOpaque != opaque || view.layer.isOpaque != opaque {
             view.isOpaque = opaque
@@ -54,7 +53,11 @@ struct AMLLMeshBackground: UIViewRepresentable {
         if active {
             context.coordinator.setArtwork(artworkURL)
         }
-        view.preferredFramesPerSecond = view.window?.screen.maximumFramesPerSecond ?? UIScreen.main.maximumFramesPerSecond
+        let screenMax = view.window?.screen.maximumFramesPerSecond ?? UIScreen.main.maximumFramesPerSecond
+        let targetFPS = preferredFramesPerSecond.map { min($0, screenMax) } ?? screenMax
+        if view.preferredFramesPerSecond != targetFPS {
+            view.preferredFramesPerSecond = targetFPS
+        }
         let shouldAnimate = active && !reduceMotion && !reduceTransparency
         context.coordinator.setRunning(shouldAnimate, staticMode: reduceMotion || reduceTransparency)
         view.isPaused = !shouldAnimate
@@ -84,7 +87,6 @@ struct AMLLMeshBackground: UIViewRepresentable {
             var aspect: Float
         }
 
-        var frameSource: AMLLBackgroundFrameSource?
         private weak var view: MTKView?
         private var queue: MTLCommandQueue?
         private var pipeline: MTLRenderPipelineState?
@@ -307,8 +309,6 @@ struct AMLLMeshBackground: UIViewRepresentable {
             if states.isEmpty {
                 command.makeRenderCommandEncoder(descriptor: pass)?.endEncoding()
             }
-            frameSource?.encodeCopy(texture: drawable.texture, viewport: view.bounds.size,
-                timestamp: now, command: command)
             command.present(drawable)
             let semaphore = inFlight
             command.addCompletedHandler { _ in semaphore.signal() }

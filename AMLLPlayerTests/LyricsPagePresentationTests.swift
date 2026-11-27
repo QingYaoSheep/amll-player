@@ -44,12 +44,12 @@ final class LyricsPagePresentationTests: XCTestCase {
         let controller = UIViewController()
         window.rootViewController = controller; window.frame = scene.coordinateSpace.bounds
         window.makeKeyAndVisible()
-        let frames = ArtworkReflectionFrames()
-        let surface = ImmersiveArtworkMedia.Surface(frames: frames)
+        let surface = ImmersiveArtworkMedia.Surface()
         surface.frame = window.bounds; controller.view.addSubview(surface)
         defer { surface.stop(); window.isHidden = true; previous?.makeKey() }
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "artwork-layer-order", withExtension: "mp4"))
-        let video = AnimatedArtwork(url: url, active: false)
+        var presented = false
+        let video = AnimatedArtwork(url: url, active: false, onFirstFrame: { _, _ in presented = true })
         let start = CGRect(x: 20, y: 80, width: 100, height: 100)
         let end = CGRect(x: 0, y: 0, width: 300, height: 400)
         surface.configure(video: video, layout: .inline(frame: start, visible: true, presentsFrame: false, radius: 12))
@@ -87,34 +87,20 @@ final class LyricsPagePresentationTests: XCTestCase {
             "Reduce Motion must not animate geometry through the content-fade fallback")
 
         for _ in 0 ..< 200 {
-            if frames.hasFrame { break }
+            if presented { break }
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTAssertTrue(frames.hasFrame)
+        XCTAssertTrue(presented)
         let poster = try solidFrame(red: 1, green: 0, blue: 0)
-        var tuning = ImmersiveArtworkDebugConfiguration()
-        tuning[.video].enabled = true; tuning[.video].opacity = 1
-        tuning[.transition].enabled = true; tuning[.reflection].enabled = false
-        tuning[.bottomFade].enabled = false
-        surface.configure(video: video, layout: .init(video: end, reflection: .zero,
-            transition: window.bounds, bottomFade: .zero, tuning: tuning, presentsFrame: true,
-            reflectionEnabled: false, reduceTransparency: false), still: poster)
-        try await Task.sleep(for: .milliseconds(350))
-        surface.stillSurface.isHidden = false
-        surface.stillSurface.alpha = 0.5
-        for _ in 0 ..< 100 {
-            if abs((surface.stillSurface.layer.presentation()?.opacity ?? 0) - 0.5) < 0.01 { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let visible = surface.visibleMediaSnapshot()
-        XCTAssertEqual(visible.layers.count, 2, "The actual video and half-visible poster both supply the outgoing snapshot")
-        let input = try XCTUnwrap(surface.transitionSurface.capture?())
-        let opacities = input.planes.compactMap { plane -> Double? in
-            if case let .video(_, _, _, alpha) = plane { return alpha }
-            return nil
-        }
-        XCTAssertEqual(opacities.count, 2, "Live blur must consume the same two subplanes as the visible media")
-        XCTAssertTrue(opacities.contains { abs($0 - 0.5) < 0.01 })
+        surface.configure(video: video, layout: .immersive(cover: end, viewport: window.bounds.size,
+            presentsFrame: true, reduceTransparency: false), still: poster)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(surface.reflectionVideoView.playerLayer.player === player,
+            "The hardware reflection layer must share the single player instance")
+        XCTAssertNotNil(surface.transitionSurface.resolvedBackdropLayer)
+        XCTAssertFalse(surface.dimmingSurface.isHidden)
+        XCTAssertEqual(surface.dimmingSurface.backgroundColor?.cgColor.alpha ?? 0,
+            CGFloat(ImmersiveArtworkPreset.dimmingOpacity), accuracy: 0.01)
     }
 
     func testPageRequestsReuseReadyMediaButExplicitReloadStillChangesGeneration() async throws {
@@ -139,28 +125,6 @@ final class LyricsPagePresentationTests: XCTestCase {
         XCTAssertEqual(discoveries, 2, "A changed manual match must not reuse the old discovery")
     }
 
-    func testInterruptedMediaSnapshotRetainsTheVisibleBlend() async throws {
-        let red = try solidFrame(red: 1, green: 0, blue: 0)
-        let blue = try solidFrame(red: 0, green: 0, blue: 1)
-        let green = try solidFrame(red: 0, green: 1, blue: 0)
-        let rect = CGRect(x: 0, y: 0, width: 8, height: 8)
-        let purpleValue = await LyricsArtworkSnapshotDecoder.shared.decode(.init(size: rect.size, scale: 1, layers: [
-            .init(buffer: red.buffer, frame: rect, opacity: 1, fits: true),
-            .init(buffer: blue.buffer, frame: rect, opacity: 0.5, fits: true),
-        ]))
-        let purple = try XCTUnwrap(purpleValue)
-        let mixedValue = await LyricsArtworkSnapshotDecoder.shared.decode(.init(size: rect.size, scale: 1, layers: [
-            .init(buffer: purple.buffer, frame: rect, opacity: 1, fits: true),
-            .init(buffer: green.buffer, frame: rect, opacity: 0.25, fits: true),
-        ]))
-        let mixed = try XCTUnwrap(mixedValue)
-        let pixel = try rgb(mixed.image)
-        XCTAssertGreaterThan(pixel[0], 60)
-        XCTAssertGreaterThan(pixel[1], 30)
-        XCTAssertGreaterThan(pixel[2], 60, "Retargeting must retain both components of the old dissolve")
-        XCTAssertEqual(pixel[0], pixel[2], accuracy: 3)
-    }
-
     func testCompatibilityModeToggleChangesTheActualArtworkTaskIdentity() {
         let defaults = UserDefaults(suiteName: "page-artwork-" + UUID().uuidString)!
         let model = AppModel(environment: .make(configuration: .preview),
@@ -168,7 +132,7 @@ final class LyricsPagePresentationTests: XCTestCase {
         let item = PlaybackItem(id: "one", uri: "fixture:one", title: "One", artists: [], albumTitle: nil,
             artworkURL: nil, duration: 30, isEpisode: false, isAdvertisement: false)
         let view = ImmersiveLyricsArtworkBackdrop(model: model, item: item, layout: nil,
-            viewport: CGSize(width: 402, height: 874), active: true, artworkSource: { _ in }, frames: ArtworkReflectionFrames())
+            viewport: CGSize(width: 402, height: 874), active: true, artworkSource: { _ in })
         model.renderPreferences.configuration.immersiveLyrics = false
         let ordinary = view.requestKey
         model.renderPreferences.configuration.immersiveLyrics = true
@@ -178,11 +142,12 @@ final class LyricsPagePresentationTests: XCTestCase {
     func testDelayedSnapshotCannotCoverAnAlreadyPresentedNewSong() async throws {
         let red = try solidFrame(red: 1, green: 0, blue: 0)
         let blue = try solidFrame(red: 0, green: 0, blue: 1)
+        let green = try solidFrame(red: 0, green: 1, blue: 0)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.keyWindow
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds; window.rootViewController = UIViewController(); window.makeKeyAndVisible()
-        let surface = ImmersiveArtworkMedia.Surface(frames: ArtworkReflectionFrames())
+        let surface = ImmersiveArtworkMedia.Surface()
         surface.frame = window.bounds; window.rootViewController?.view.addSubview(surface)
         defer { surface.stop(); window.isHidden = true; previous?.makeKey() }
         let start = CGRect(x: 20, y: 20, width: 100, height: 100)
@@ -190,57 +155,29 @@ final class LyricsPagePresentationTests: XCTestCase {
         surface.configure(video: nil, layout: .inline(frame: start, visible: true, presentsFrame: false, radius: 0), still: red)
         try await Task.sleep(for: .milliseconds(50))
         let imageView = surface.stillSurface
-        surface.decodeSnapshot = { input in
-            try? await Task.sleep(for: .milliseconds(120))
-            return await LyricsArtworkSnapshotDecoder.shared.decode(input)
-        }
+        surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0),
+            still: green, animation: LyricsPageMotion.geometry)
         surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0),
             still: blue, animation: LyricsPageMotion.geometry)
-        XCTAssertTrue(surface.stillSurface.image?.cgImage === red.image,
-            "Keep old native content until its outgoing frame is ready, rather than showing new then reverting")
-        try await Task.sleep(for: .milliseconds(600))
+        try await Task.sleep(for: .milliseconds(450))
         XCTAssertTrue(surface.stillSurface === imageView)
         XCTAssertTrue(surface.stillSurface.image?.cgImage === blue.image)
+        XCTAssertTrue(surface.reflectionStillView.image?.cgImage === blue.image)
         XCTAssertEqual(surface.outgoingFrameCount, 0)
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
         let presented = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         let pixel = try rgb(XCTUnwrap(presented.cgImage?.cropping(to: CGRect(x: 50, y: 50, width: 1, height: 1))))
-        XCTAssertGreaterThan(pixel[2], pixel[0] + 100, "A delayed old frame must not reappear over the new blue cover")
-
-        // A->B is fading; C begins preparing; return to the already configured B.
-        // Preparation cancellation must not invalidate the displayed fade's cleanup.
-        surface.decodeSnapshot = { _ in blue }
-        surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0), still: red)
-        for _ in 0 ..< 50 {
-            if surface.outgoingFrameCount == 1 { break }
-            try await Task.sleep(for: .milliseconds(2))
-        }
-        XCTAssertEqual(surface.outgoingFrameCount, 1)
-        let green = try solidFrame(red: 0, green: 1, blue: 0)
-        surface.decodeSnapshot = { _ in
-            try? await Task.sleep(for: .milliseconds(120))
-            return red
-        }
-        surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0), still: green)
-        surface.configure(video: nil, layout: .inline(frame: end, visible: true, presentsFrame: false, radius: 0), still: red)
-        try await Task.sleep(for: .milliseconds(400))
-        XCTAssertEqual(surface.outgoingFrameCount, 0, "Canceled preparation cannot orphan the currently displayed fade")
-        XCTAssertTrue(surface.stillSurface.image?.cgImage === red.image)
+        XCTAssertGreaterThan(pixel[2], pixel[0] + 100, "Rapid track changes must settle on the latest blue cover")
     }
 
     private func solidFrame(red: CGFloat, green: CGFloat, blue: CGFloat) throws -> ImmersiveStillFrame {
-        var storage: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 8, 8, kCVPixelFormatType_32BGRA,
-            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &storage), kCVReturnSuccess)
-        let buffer = try XCTUnwrap(storage)
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let image = CIImage(color: CIColor(red: red, green: green, blue: blue)).cropped(to: CGRect(x: 0, y: 0, width: 8, height: 8))
         let context = CIContext()
-        context.render(image, to: buffer, bounds: image.extent, colorSpace: space)
-        CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, space, .shouldPropagate)
-        return .init(image: try XCTUnwrap(context.createCGImage(image, from: image.extent)), buffer: buffer)
+        let cgImage = try XCTUnwrap(context.createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: space))
+        return .init(image: cgImage)
     }
 
     private func rgb(_ image: CGImage) throws -> [Double] {

@@ -117,27 +117,6 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [controlsReady], timeout: 4), .completed)
             XCTAssertTrue(app.buttons["immersiveLyricsPlayPause"].isHittable)
             capture(app, name: legacy ? "Immersive-lyrics-custom" : "Immersive-lyrics-native")
-            let debugButton = app.buttons["immersiveArtworkDebug"]
-            XCTAssertTrue(debugButton.exists)
-            XCTAssertGreaterThanOrEqual(debugButton.frame.width, 44)
-            XCTAssertGreaterThanOrEqual(debugButton.frame.height, 44)
-            // The dismissal handle's AX rectangle spans the screen width and
-            // overlaps this control. Verify the physical center hit and the
-            // resulting sheet rather than AX's overlapping-rectangle heuristic.
-            debugButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            XCTAssertTrue(app.buttons["closeImmersiveArtworkDebug"].waitForExistence(timeout: 5))
-            XCTAssertTrue(app.staticTexts["层级顺序（最上层 → 最下层）"].exists)
-            app.buttons["closeImmersiveArtworkDebug"].tap()
-            XCTAssertTrue(app.buttons["immersiveArtworkDebug"].waitForExistence(timeout: 4))
-            app.buttons["lyricsDisplayOptions"].tap()
-            let visibility = app.buttons["quickSettingsArtworkDebugButton"]
-            reveal(visibility, in: app)
-            XCTAssertEqual(visibility.value as? String, "On")
-            visibility.tap()
-            XCTAssertTrue(panel(app).exists)
-            XCTAssertEqual(visibility.value as? String, "Off")
-            app.buttons["closeLyricsQuickSettings"].tap()
-            XCTAssertTrue(debugButton.waitForNonExistence(timeout: 4))
             XCUIDevice.shared.orientation = .landscapeLeft
             XCTAssertTrue(information.waitForNonExistence(timeout: 4))
             XCUIDevice.shared.orientation = .portrait
@@ -146,13 +125,6 @@ final class LyricsQuickSettingsUITests: XCTestCase {
             openPanel(app)
             reveal(app.buttons["quickSettingsImmersiveLyrics"], in: app)
             XCTAssertEqual(app.buttons["quickSettingsImmersiveLyrics"].value as? String, "On")
-            reveal(visibility, in: app)
-            XCTAssertEqual(visibility.value as? String, "Off", "Button visibility survives relaunch")
-            visibility.tap()
-            app.buttons["closeLyricsQuickSettings"].tap()
-            XCTAssertTrue(debugButton.waitForExistence(timeout: 4))
-            app.buttons["lyricsDisplayOptions"].tap()
-            reveal(app.buttons["quickSettingsImmersiveLyrics"], in: app)
             app.buttons["quickSettingsImmersiveLyrics"].tap()
             XCTAssertTrue(panel(app).exists)
             app.buttons["closeLyricsQuickSettings"].tap()

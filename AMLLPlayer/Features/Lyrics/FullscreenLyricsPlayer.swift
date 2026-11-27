@@ -51,9 +51,6 @@ struct FullscreenLyricsPlayer: View {
     @State private var immersiveArtworkSource = ImmersiveLyricsArtworkSource.placeholder
     @State private var immersiveInformationHeight: CGFloat = 64
     @State private var immersiveInformationTextBottom: CGFloat?
-    @State private var artworkDebug = ImmersiveArtworkDebugStore.shared
-    @State private var artworkReflectionFrames = ArtworkReflectionFrames()
-    @State private var showingArtworkDebug = false
     @State private var immersiveViewport = false
     @State private var presentation = LyricsPagePresentationCoordinator()
     @State private var phoneControlsHeight: CGFloat = 0
@@ -87,8 +84,7 @@ struct FullscreenLyricsPlayer: View {
                     viewport: geometry.size) ? ImmersiveLyricsLayout.resolve(viewport: geometry.size,
                         artwork: source.size, informationHeight: immersiveInformationHeight,
                         bottomInset: geometry.safeAreaInsets.bottom, isVideo: source.isVideo,
-                        informationTextBottom: immersiveInformationTextBottom,
-                        artworkAdjustment: artworkDebug.configuration[.video]) : nil
+                        informationTextBottom: immersiveInformationTextBottom) : nil
                 ZStack {
                     AlbumArtworkBackground(url: model.playbackSnapshot?.item?.artworkURL,
                                            blur: configuration.backgroundBlur)
@@ -98,7 +94,7 @@ struct FullscreenLyricsPlayer: View {
                             active: pageVisible && scenePhase == .active && !search && !devices && !quickSettings.suspendsPage,
                             artworkSource: { source in
                                 if source.trackID == model.playbackSnapshot?.item?.uri { immersiveArtworkSource = source }
-                            }, frames: artworkReflectionFrames)
+                            })
                     }
                     if let snapshot = model.playbackSnapshot, let item = snapshot.item,
                        UIDevice.current.userInterfaceIdiom == .pad {
@@ -177,17 +173,6 @@ struct FullscreenLyricsPlayer: View {
                 }
                 .onPreferenceChange(ImmersiveInformationTextBottomKey.self) { bottom in
                     if let bottom, abs((immersiveInformationTextBottom ?? -1) - bottom) > 0.5 { immersiveInformationTextBottom = bottom }
-                }
-                .overlay(alignment: .topTrailing) {
-                    if layout != nil, artworkDebug.showsButton {
-                        ImmersiveArtworkDebugButton { showingArtworkDebug = true }
-                            .padding(.top, geometry.safeAreaInsets.top + 48).padding(.trailing, 16)
-                    }
-                }
-                .sheet(isPresented: $showingArtworkDebug) {
-                    ImmersiveArtworkDebugPanel(viewport: geometry.size, video: layout?.visibleCover ?? .zero,
-                        backgroundDimming: configuration.backgroundDimming ?? 0.16, frames: artworkReflectionFrames)
-                        .presentationDetents([.medium, .large])
                 }
             }
             .ignoresSafeArea(.container, edges: immersiveViewport ? .all : [])

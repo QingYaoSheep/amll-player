@@ -10,7 +10,8 @@ struct DesktopLyricsSettingsView: View {
         let settings = preferences.settings
         return SettingsPage {
             SettingsSection("desktopLyrics.preview") {
-                DesktopLyricsPreview(configuration: model.renderPreferences.configuration, settings: settings)
+                DesktopLyricsPreview(configuration: model.renderPreferences.configuration, settings: settings,
+                                     artworkURL: model.playbackSnapshot?.item?.artworkURL)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .accessibilityLabel(Text("desktopLyrics.preview"))
                     .accessibilityIdentifier("desktopLyricsPreview")
@@ -95,13 +96,15 @@ struct DesktopLyricsSettingsView: View {
 private struct DesktopLyricsPreview: View {
     let configuration: LyricsRenderConfiguration
     let settings: DesktopLyricsSettings
+    let artworkURL: URL?
     @Environment(\.scenePhase) private var phase
     @State private var startedAt = Date()
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: phase != .active)) { timeline in
             let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
-            DesktopLyricsPreviewSurface(configuration: configuration, settings: settings, elapsed: elapsed, playing: phase == .active)
+            DesktopLyricsPreviewSurface(configuration: configuration, settings: settings, artworkURL: artworkURL,
+                                        elapsed: elapsed, playing: phase == .active)
                 .id(settings.outputAspect)
         }
         .aspectRatio(settings.outputAspect.ratio, contentMode: .fit)
@@ -112,6 +115,7 @@ private struct DesktopLyricsPreview: View {
 private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
     let configuration: LyricsRenderConfiguration
     let settings: DesktopLyricsSettings
+    let artworkURL: URL?
     let elapsed: Double
     let playing: Bool
 
@@ -127,7 +131,9 @@ private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
     func updateUIView(_ view: DesktopLyricsSourceView, context: Context) {
         guard view.window != nil else { return }
         let position = elapsed.truncatingRemainder(dividingBy: Self.duration)
-        let snapshot = PlaybackSnapshot(item: Self.item, isPlaying: playing, position: position,
+        var item = Self.item
+        item.artworkURL = artworkURL
+        let snapshot = PlaybackSnapshot(item: item, isPlaying: playing, position: position,
                                         duration: Self.duration, device: nil, restrictions: .unrestricted,
                                         source: .nativeAudio, sampledAtUptime: ProcessInfo.processInfo.systemUptime)
         let frame = LyricsPlaybackFrame(snapshot: snapshot, position: position, playing: playing,
@@ -137,8 +143,7 @@ private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
         appearance.translation = true
         appearance.romanization = true
         context.coordinator.render(frame: frame, lyrics: Self.document, revision: 1, offset: 0,
-                                   configuration: appearance, settings: settings, immersive: false,
-                                   usesAlbumBackground: false, animates: true)
+                                   configuration: appearance, settings: settings, animates: true)
     }
 
     private static let duration = 12.0

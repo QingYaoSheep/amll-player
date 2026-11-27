@@ -28,7 +28,6 @@ final class DesktopLyricsController: NSObject {
     @ObservationIgnored private var phase: ScenePhase = .inactive
     @ObservationIgnored private var autoStart = false
     @ObservationIgnored private var lyricsVisible = false
-    @ObservationIgnored private var immersive = false
     @ObservationIgnored private var automaticAttempt = false
     @ObservationIgnored private var autoSuppressed = false
     @ObservationIgnored private var playbackState: PlaybackState?
@@ -63,13 +62,12 @@ final class DesktopLyricsController: NSObject {
     }
 
     func update(_ view: DesktopLyricsSourceView, phase: ScenePhase, autoStart: Bool,
-                lyricsVisible: Bool, immersive: Bool) {
+                lyricsVisible: Bool) {
         guard sourceView === view else { return }
         let previous = self.phase
         self.phase = phase
         self.autoStart = autoStart
         self.lyricsVisible = lyricsVisible
-        self.immersive = immersive
         if phase == .active && previous != .active { autoSuppressed = false }
         reevaluate()
         // AVKit normally starts during the scene transition. Handle devices
@@ -202,14 +200,13 @@ final class DesktopLyricsController: NSObject {
         frame.progressDraft = nil
         frame.legacySeekPosition = nil
         updateTimebase(frame)
-        producer.render(model: model, frame: frame, immersive: immersive,
-                        animates: state != .stopped)
+        producer.render(model: model, frame: frame, animates: state != .stopped)
         if state == .stopped {
             controller?.canStartPictureInPictureAutomaticallyFromInline = armed && producer.hasSubmittedFrame
             return .milliseconds(200)
         }
         startWhenPossible()
-        let interval = frame.playing || producer.isAnimating ? 1.0 / 60 : 0.1
+        let interval = producer.needsPlaybackFrames || producer.isAnimating ? 1.0 / 60 : 0.1
         return .seconds(max(0.001, interval - (ProcessInfo.processInfo.systemUptime - started)))
     }
 
@@ -385,7 +382,6 @@ struct DesktopLyricsAnchor: UIViewRepresentable {
     let phase: ScenePhase
     let autoStart: Bool
     let lyricsVisible: Bool
-    let configuration: LyricsRenderConfiguration
     let restore: () -> Void
 
     func makeUIView(context _: Context) -> DesktopLyricsSourceView {
@@ -404,10 +400,7 @@ struct DesktopLyricsAnchor: UIViewRepresentable {
                 return
             }
             controller.attach(view, model: model, restore: restore)
-            controller.update(view, phase: phase, autoStart: autoStart,
-                              lyricsVisible: lyricsVisible,
-                              immersive: ImmersiveLyricsLayout.isEnabled(configuration,
-                                  isPhone: view.traitCollection.userInterfaceIdiom == .phone, viewport: view.bounds.size))
+            controller.update(view, phase: phase, autoStart: autoStart, lyricsVisible: lyricsVisible)
         }
         // The delegate may change observable state while arming AVKit.
         Task { @MainActor [weak view] in view?.windowChanged?() }

@@ -33,8 +33,7 @@ struct RootView: View {
                 .background {
                     if model.desktopLyrics.isSupported {
                         DesktopLyricsAnchor(model: model, phase: scenePhase, autoStart: autoDesktopLyrics,
-                                            lyricsVisible: model.renderPreferences.configuration.showLyrics,
-                                            configuration: model.renderPreferences.configuration) {
+                                            lyricsVisible: model.renderPreferences.configuration.showLyrics) {
                             presentation.wrappedValue = true
                         }
                         .allowsHitTesting(false)

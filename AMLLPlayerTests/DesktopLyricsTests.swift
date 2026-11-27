@@ -202,6 +202,68 @@ final class DesktopLyricsTests: XCTestCase {
         XCTAssertNotNil(canvas.snapshotExportLine(2))
     }
 
+    @MainActor
+    func testDesktopBackdropIsBlurredOpaqueAndReusedForTheSameCover() async throws {
+        let size = CGSize(width: 100, height: 50)
+        let bounds = CGRect(origin: .zero, size: size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let source = renderer.image { output in
+            output.cgContext.setFillColor(UIColor.white.cgColor)
+            output.cgContext.fill(CGRect(x: 50, y: 0, width: 50, height: 50))
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try XCTUnwrap(source.pngData()).write(to: url)
+
+        let background = DesktopLyricsBackground(size: size)
+        background.update(artworkURL: url)
+        for _ in 0 ..< 500 where background.artwork == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(background.artwork)
+        let revision = background.revision
+        background.update(artworkURL: url)
+        XCTAssertEqual(background.revision, revision)
+        let rendered = try XCTUnwrap(renderer.image { _ in background.draw(in: bounds) }.cgImage)
+        let context = try XCTUnwrap(CGContext(data: nil, width: 100, height: 50, bitsPerComponent: 8,
+            bytesPerRow: 400, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo:
+                CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(rendered, in: bounds)
+        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        let row = 25 * 400
+        XCTAssertEqual(pixels[row + 49 * 4 + 3], 255)
+        XCTAssertGreaterThan(Int(pixels[row + 46 * 4]), Int(pixels[row + 4 * 4]) + 20)
+        XCTAssertLessThan(Int(pixels[row + 54 * 4]), Int(pixels[row + 95 * 4]) - 10)
+
+        background.update(artworkURL: nil)
+        XCTAssertNil(background.artwork)
+        XCTAssertNotEqual(background.revision, revision)
+    }
+
+    @MainActor
+    func testMetadataAndStoppedLyricsDoNotRequestPlaybackRateRendering() {
+        let item = PlaybackItem(id: "sample", uri: "test:sample", title: "Sample", artists: [],
+                                albumTitle: nil, duration: 12, isEpisode: false, isAdvertisement: false)
+        let snapshot = PlaybackSnapshot(item: item, isPlaying: true, position: 1, duration: 12,
+                                        device: nil, restrictions: .unrestricted, source: .nativeAudio, sampledAtUptime: 0)
+        let producer = DesktopLyricsFrames(aspect: .singleLine)
+        var frame = LyricsPlaybackFrame(snapshot: snapshot, position: 1, playing: true, seekRevision: 0,
+                                        pending: nil, confirmation: nil, legacySeekPosition: nil)
+        producer.render(frame: frame, lyrics: nil, revision: 0, offset: 0, configuration: .init(),
+                        settings: .init(), animates: true)
+        XCTAssertFalse(producer.needsPlaybackFrames)
+        let lyrics = singleLineFixture()
+        producer.render(frame: frame, lyrics: lyrics, revision: 1, offset: 0, configuration: .init(),
+                        settings: .init(), animates: true)
+        XCTAssertTrue(producer.needsPlaybackFrames)
+        frame.playing = false
+        producer.render(frame: frame, lyrics: lyrics, revision: 1, offset: 0, configuration: .init(),
+                        settings: .init(), animates: true)
+        XCTAssertFalse(producer.needsPlaybackFrames)
+    }
+
     private func singleLineFixture() -> LyricsDocument {
         let lines = [
             LyricLine(id: "opening", text: "Opening", start: 0, end: 6,

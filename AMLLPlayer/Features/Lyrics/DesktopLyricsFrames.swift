@@ -36,13 +36,13 @@ final class DesktopLyricsFrames {
 
     private enum Content {
         case metadata
-        case scrolling(CGRect)
+        case scrolling
         case singleLine(DesktopLyricsSingleLineTransition.Layer, height: CGFloat)
 
         var height: CGFloat {
             switch self {
             case .metadata: 52
-            case let .scrolling(focus): focus.isNull ? 0 : focus.height
+            case .scrolling: 0
             case let .singleLine(_, height): height
             }
         }
@@ -98,7 +98,7 @@ final class DesktopLyricsFrames {
         guard let request = pendingResize, now - request.changedAt >= 0.15 else { return }
         pendingResize = nil
         requestedSize = request.size
-        if submitted?.canvas.settings.fitsContent == true {
+        if submitted?.canvas.settings.fitsSingleLine == true {
             updatePool(height: adaptiveHeight.height)
         } else {
             createPool(size: request.size)
@@ -159,7 +159,10 @@ final class DesktopLyricsFrames {
 
         var presentation = settings
         presentation.mode = aspect == .singleLine ? .singleLine : .scrolling
-        if aspect != .singleLine { presentation.aspect = aspect }
+        if aspect != .singleLine {
+            presentation.aspect = aspect
+            presentation.fitsContent = false
+        }
         let appearance = CanvasSettings(revision: document == nil ? nil : revision, offset: offset, configuration: source, settings: presentation,
                                         reduceMotion: UIAccessibility.isReduceMotionEnabled,
                                         reduceTransparency: UIAccessibility.isReduceTransparencyEnabled)
@@ -173,8 +176,7 @@ final class DesktopLyricsFrames {
             renderer.flush()
             submitted = nil
         }
-        let isSingleLine = presentation.mode == .singleLine
-        let remeasure = isSingleLine && presentation.fitsContent
+        let remeasure = presentation.fitsSingleLine
             && configuredCanvas?.settings.fontSize != presentation.fontSize
         // The video layer can briefly stop accepting samples while its format
         // changes. A newer font size must still supersede the pending geometry.
@@ -192,12 +194,12 @@ final class DesktopLyricsFrames {
         let content = prepareContent(document: document, frame: frame, key: key, delta: delta, now: now, animates: animates)
         lastFrameTime = now
         let previousSettings = submitted?.canvas.settings
-        let resizeImmediately = changedTrack || previousSettings?.fitsContent != true || remeasure
-            || (isSingleLine && previousSettings?.fontSize != presentation.fontSize)
-        let height = presentation.fitsContent
-            ? adaptiveHeight.update(contentHeight: content.height, at: now, reset: resizeImmediately, singleLine: isSingleLine)
+        let resizeImmediately = changedTrack || previousSettings?.fitsSingleLine != true || remeasure
+            || previousSettings?.fontSize != presentation.fontSize
+        let height = presentation.fitsSingleLine
+            ? adaptiveHeight.update(contentHeight: content.height, at: now, reset: resizeImmediately)
             : aspect.canvasSize.height
-        isAnimating = isAnimating || (presentation.fitsContent && adaptiveHeight.isSettling)
+        isAnimating = isAnimating || (presentation.fitsSingleLine && adaptiveHeight.isSettling)
         updatePool(height: height)
 
         var output: CVPixelBuffer?
@@ -222,7 +224,7 @@ final class DesktopLyricsFrames {
             return .metadata
         }
         let appearance = key.canvas
-        let layoutHeight = appearance.settings.fitsContent ? DesktopLyricsAdaptiveHeight.maximum : aspect.canvasSize.height
+        let layoutHeight = appearance.settings.fitsSingleLine ? DesktopLyricsAdaptiveHeight.maximum : aspect.canvasSize.height
         let layoutBounds = CGRect(x: 0, y: 0, width: aspect.canvasSize.width, height: layoutHeight)
         if canvas.frame != layoutBounds { canvas.frame = layoutBounds }
         canvas.exportRasterScale = requestedSize.width / layoutBounds.width
@@ -240,7 +242,7 @@ final class DesktopLyricsFrames {
         }
         if appearance.settings.mode == .scrolling {
             isAnimating = canvas.advanceExportFrame(sample: frame, delta: delta)
-            return .scrolling(canvas.exportScrollingBounds)
+            return .scrolling
         }
 
         if singleLineRevision != appearance.revision {
@@ -252,7 +254,8 @@ final class DesktopLyricsFrames {
         let moving = canvas.advanceExportFrame(sample: frame, delta: delta) { [self] state, handoff, reanchored in
             let reset = immediate || reanchored
             let selection = singleLineSelection.update(timeline: singleLineTimeline, at: state.lyricTime,
-                                                       handoff: handoff, interlude: state.interlude != nil, reset: reset)
+                                                       handoff: handoff, interlude: state.interlude != nil, reset: reset,
+                                                       tailInMotion: canvas.isExportTailInMotion)
             let presentation = singleLineTransition.frame(target: selection.line?.index, now: now, immediate: reset,
                                                            blurs: !appearance.reduceMotion && !appearance.reduceTransparency,
                                                            earlyDelta: selection.advancesEarly ? delta : 0)
@@ -263,7 +266,7 @@ final class DesktopLyricsFrames {
             layer = presentation.layer
             return selection.line
         }
-        isAnimating = moving || singleLineTransition.isAnimating
+        isAnimating = moving || singleLineTransition.isAnimating || singleLineSelection.needsNextFrame
         switch layer {
         case .empty:
             outgoingLine = nil
@@ -298,8 +301,8 @@ final class DesktopLyricsFrames {
         switch content {
         case .metadata:
             drawMetadata(key.item, bounds: bounds)
-        case let .scrolling(focusBounds):
-            canvas.drawExportScrolling(in: context, viewport: bounds, focusBounds: focusBounds, additive: additive)
+        case .scrolling:
+            canvas.drawExportScrolling(in: context, additive: additive)
         case let .singleLine(presentation, _):
             context.clip(to: bounds)
             context.translateBy(x: 0, y: (height - canvas.bounds.height) / 2)

@@ -26,9 +26,11 @@ struct DesktopLyricsSettingsView: View {
                     }
                     .accessibilityIdentifier("desktopLyricsMode")
                     SettingsDivider(inset: 16)
-                    Toggle("desktopLyrics.fitHeight", isOn: $preferences.settings.fitsContent.hapticSelection())
-                        .accessibilityIdentifier("desktopLyricsFitHeight")
-                    SettingsDivider(inset: 16)
+                    if settings.mode == .singleLine {
+                        Toggle("desktopLyrics.fitHeight", isOn: $preferences.settings.fitsContent.hapticSelection())
+                            .accessibilityIdentifier("desktopLyricsFitHeight")
+                        SettingsDivider(inset: 16)
+                    }
                     Picker("desktopLyrics.alignment", selection: $preferences.settings.alignment.hapticSelection()) {
                         ForEach(DesktopLyricsSettings.Alignment.allCases, id: \.self) { alignment in
                             Text(LocalizedStringKey(alignment.label)).tag(alignment)
@@ -36,7 +38,7 @@ struct DesktopLyricsSettingsView: View {
                     }
                     .accessibilityIdentifier("desktopLyricsAlignment")
                     SettingsDivider(inset: 16)
-                    if settings.mode == .scrolling && !settings.fitsContent {
+                    if settings.mode == .scrolling {
                         Picker("desktopLyrics.aspect", selection: $preferences.settings.aspect.hapticSelection()) {
                             ForEach(DesktopLyricsSettings.Aspect.scrollingOptions, id: \.self) { aspect in
                                 Text(LocalizedStringKey(aspect.label)).tag(aspect)
@@ -61,20 +63,6 @@ struct DesktopLyricsSettingsView: View {
 
             SettingsSection("desktopLyrics.motion") {
                 SettingsGroup {
-                    if settings.mode == .scrolling {
-                        Picker("desktopLyrics.transition", selection: $preferences.settings.transition.hapticSelection()) {
-                            ForEach(DesktopLyricsSettings.Transition.allCases, id: \.self) { transition in
-                                Text(LocalizedStringKey(transition.label)).tag(transition)
-                            }
-                        }
-                        .accessibilityIdentifier("desktopLyricsTransition")
-                        SettingsDivider(inset: 16)
-                        SettingsSliderRow("desktopLyrics.blur", valueText: settings.blurStrength.formatted(.number.precision(.fractionLength(0 ... 1))),
-                                          value: $preferences.settings.blurStrength, in: DesktopLyricsSettings.blurRange,
-                                          step: 0.5, disabled: settings.transition != .blur,
-                                          sliderIdentifier: "desktopLyricsBlurStrength")
-                        SettingsDivider(inset: 16)
-                    }
                     Toggle("desktopLyrics.wordHighlight", isOn: $preferences.settings.wordHighlight.hapticSelection())
                         .accessibilityIdentifier("desktopLyricsWordHighlight")
                 }
@@ -118,14 +106,11 @@ private struct DesktopLyricsPreview: View {
                                         elapsed: elapsed, playing: phase == .active, adaptiveRatio: $adaptiveRatio)
                 .id(settings.outputAspect)
         }
-        .aspectRatio(settings.fitsContent ? adaptiveRatio ?? (320 / minimumAdaptiveHeight)
+        .aspectRatio(settings.fitsSingleLine ? adaptiveRatio ?? (320 / DesktopLyricsAdaptiveHeight.minimum)
                      : CGFloat(settings.outputAspect.ratio), contentMode: .fit)
         .background(Color(white: 0.075))
     }
 
-    private var minimumAdaptiveHeight: CGFloat {
-        settings.mode == .singleLine ? DesktopLyricsAdaptiveHeight.singleLineMinimum : DesktopLyricsAdaptiveHeight.minimum
-    }
 }
 
 private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
@@ -161,7 +146,7 @@ private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
         appearance.romanization = true
         context.coordinator.render(frame: frame, lyrics: Self.document, revision: 1, offset: 0,
                                    configuration: appearance, settings: settings, animates: true)
-        if settings.fitsContent {
+        if settings.fitsSingleLine {
             let size = context.coordinator.pixelSize
             let ratio = size.width / size.height
             if adaptiveRatio != ratio {

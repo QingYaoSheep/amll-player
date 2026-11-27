@@ -71,8 +71,7 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
 
     var outputAspect: Aspect { mode == .singleLine ? .singleLine : aspect }
 
-    var blurMaximum: Double { mode == .scrolling && transition == .blur ? blurStrength : 0 }
-    var snapsLines: Bool { mode == .scrolling && transition == .instant }
+    var fitsSingleLine: Bool { mode == .singleLine && fitsContent }
 
     func validated() -> Self {
         var value = self
@@ -93,8 +92,8 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
         configuration.anchor = 0.29
         configuration.tabletTypography = nil
         configuration.hdr = nil
-        configuration.blurInactive = blurMaximum > 0
         if mode == .singleLine {
+            configuration.blurInactive = false
             configuration.translation = singleLineTranslation
             configuration.romanization = singleLineRomanization
         }

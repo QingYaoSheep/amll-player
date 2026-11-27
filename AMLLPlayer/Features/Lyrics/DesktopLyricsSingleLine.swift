@@ -60,19 +60,44 @@ struct DesktopLyricsSingleLineHandoff {
 
 struct DesktopLyricsSingleLineSelection {
     private var selected: DesktopLyricsSingleLineTimeline.Line?
+    private var queued: DesktopLyricsSingleLineTimeline.Line?
+    private var presentsTailBeforeExit = false
+    private(set) var needsNextFrame = false
 
     mutating func update(timeline: DesktopLyricsSingleLineTimeline?, at time: Double,
-                         handoff: DesktopLyricsSingleLineHandoff?, interlude: Bool, reset: Bool)
+                         handoff: DesktopLyricsSingleLineHandoff?, interlude: Bool, reset: Bool,
+                         tailInMotion: (Int) -> Bool)
         -> (line: DesktopLyricsSingleLineTimeline.Line?, advancesEarly: Bool)
     {
-        if reset || interlude { selected = nil }
-        guard !interlude else { return (nil, false) }
+        needsNextFrame = false
+        if reset {
+            selected = nil
+            queued = nil
+            presentsTailBeforeExit = false
+        }
         let timed = timeline?.line(at: time)
-        if !reset, let current = selected ?? timed, let index = handoff?.successor(after: current.index),
+        if !reset, !interlude, let current = selected ?? timed, let index = handoff?.successor(after: current.index),
            let next = timeline?.line(sourceIndex: index), next.start > current.start {
-            selected = (timed?.start ?? -.infinity) > next.start ? timed : next
+            selected = current
+            if queued == nil, handoff?.leaving.contains(current.index) == true { presentsTailBeforeExit = true }
+            if next.start > (queued?.start ?? -.infinity) { queued = next }
+        }
+        if let queued, let current = selected {
+            if tailInMotion(current.index) {
+                presentsTailBeforeExit = true
+                return (current, false)
+            }
+            if presentsTailBeforeExit {
+                // Publish the final run or cutoff pixels before snapshotting them.
+                presentsTailBeforeExit = false
+                needsNextFrame = true
+                return (current, false)
+            }
+            self.queued = nil
+            selected = interlude ? nil : ((timed?.start ?? -.infinity) > queued.start ? timed : queued)
             return (selected, true)
         }
+        if interlude { selected = nil; return (nil, false) }
         if selected == nil || (timed?.start ?? -.infinity) > (selected?.start ?? -.infinity) {
             selected = timed
         }

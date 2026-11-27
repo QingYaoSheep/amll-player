@@ -51,8 +51,6 @@ final class AMLLNativeCanvas: UIView {
     var drivesFramesExternally = false
     var exportRasterScale: CGFloat = 1
     private var desktopSettings: DesktopLyricsSettings?
-    private var exportFocusGroups: Set<Int> = []
-    private var exportUpcomingGroup: Int?
     private var rasterScale: CGFloat { drivesFramesExternally ? exportRasterScale : (window?.screen.scale ?? 2) }
     private var rendersOffscreenOrAttached: Bool { drivesFramesExternally || window != nil }
 
@@ -305,8 +303,7 @@ final class AMLLNativeCanvas: UIView {
             fadeSize = .zero
             setNeedsLayout()
         }
-        if self.configuration.lyricBlurLevel != configuration.lyricBlurLevel
-            || self.desktopSettings?.blurMaximum != desktopSettings?.blurMaximum {
+        if self.configuration.lyricBlurLevel != configuration.lyricBlurLevel {
             blurLevelChangedAt = CACurrentMediaTime()
         }
         if oldLayoutSettings != Self.layoutSettings(auxiliaryFade.layoutConfiguration(configuration)) || !changedAuxiliary.isEmpty {
@@ -502,7 +499,6 @@ final class AMLLNativeCanvas: UIView {
         environment.alignPosition = configuration.anchor
         environment.tabletTypography = configuration.tabletTypography
         environment.reduceMotion = reduceMotion
-        environment.snapLinePresentation = desktopSettings?.snapsLines
         environment.reduceTransparency = reduceTransparency || reduceTransparencyEnabled
         environment.boldText = traits.legibilityWeight == .bold
         environment.dynamicTypeScale = typeScale
@@ -622,7 +618,6 @@ final class AMLLNativeCanvas: UIView {
         let previousAnchor = engine!.timeAnchorRevision
         let state = engine!.render(input, delta: delta)
         let reanchored = engine!.timeAnchorRevision != previousAnchor
-        if reanchored { exportUpcomingGroup = nil }
         if frameState != nil, reanchored {
             auxiliaryReflow.reset(); auxiliarySlotReflow.reset()
         }
@@ -663,22 +658,8 @@ final class AMLLNativeCanvas: UIView {
         let selectedSingleLine = if isSingleLine, let chooseSingleLine {
             chooseSingleLine(state, engine!.desktopSingleLineHandoff, reanchored)
         } else { singleLine }
-        if desktopSettings?.mode == .scrolling {
-            let handoff = engine!.desktopHandoff
-            if state.interlude != nil || exportUpcomingGroup != handoff.pending
-                || handoff.selected.contains(exportUpcomingGroup ?? -1) {
-                exportUpcomingGroup = nil
-            }
-            if state.interlude == nil, handoff.previewsPending {
-                exportUpcomingGroup = handoff.pending
-            }
-            exportFocusGroups = Set(handoff.selected)
-            if let exportUpcomingGroup { exportFocusGroups.insert(exportUpcomingGroup) }
-            if exportFocusGroups.isEmpty { exportFocusGroups.insert(state.focusGroup) }
-        }
         let visible = state.rows.filter {
             if isSingleLine { return $0.lineIndex == selectedSingleLine?.index && !$0.hidden }
-            if desktopSettings != nil, Self.exportFocuses($0, groups: exportFocusGroups) { return true }
             let extent = heights[$0.lineIndex] * (sourceClipping ? $0.scale : 1)
             return !$0.hidden && $0.y + extent >= -margin && $0.y <= bounds.height + margin
         }
@@ -715,10 +696,7 @@ final class AMLLNativeCanvas: UIView {
                 row.opacity = 1
                 row.blur = 0
                 row.retirement = nil
-                row.blossomWordExit = nil
                 if let selectedSingleLine, state.lyricTime >= selectedSingleLine.end { row.visualFocus = .holding }
-            } else if desktopSettings != nil {
-                row.blur = requestsBlurImages ? min(row.blur, lyricBlurMaximum) : 0
             }
             let view: AMLLCompositeRow
             if let existing = rowViews[row.lineIndex] {
@@ -845,7 +823,7 @@ final class AMLLNativeCanvas: UIView {
     }
 
     private var lyricBlurMaximum: Double {
-        desktopSettings?.blurMaximum ?? configuration.resolvedLyricBlurMaximum(isPad: UIDevice.current.userInterfaceIdiom == .pad)
+        configuration.resolvedLyricBlurMaximum(isPad: UIDevice.current.userInterfaceIdiom == .pad)
     }
 
     private var requestsBlurImages: Bool {
@@ -1180,32 +1158,20 @@ final class AMLLNativeCanvas: UIView {
             || auxiliaryReflow.isAnimating || auxiliarySlotReflow.isAnimating || frameState?.settled == false
     }
 
-    private static func exportFocuses(_ row: AMLLFrameState.Row, groups: Set<Int>) -> Bool {
-        !row.hidden && (groups.contains(row.groupIndex) || row.active || row.visualFocus == .current
-            || row.visualFocus == .holding || row.visualFocus == .preparing || (row.retirement?.progress ?? 1) < 1)
-    }
-
-    var exportScrollingBounds: CGRect {
-        guard let state = frameState else { return .null }
-        if state.interlude != nil, !dots.isHidden { return dots.frame }
-        return state.rows.reduce(CGRect.null) { rect, row in
-            guard Self.exportFocuses(row, groups: exportFocusGroups),
-                  let nativeRow = rowViews[row.lineIndex] else { return rect }
+    func drawExportScrolling(in context: CGContext, additive: Bool) {
+        context.saveGState()
+        context.clip(to: bounds)
+        let focused = frameState?.rows.filter {
+            !$0.hidden && ($0.active || $0.visualFocus == .current || $0.visualFocus == .holding)
+        } ?? []
+        let focusBounds = focused.reduce(CGRect.null) { rect, row in
+            guard let nativeRow = rowViews[row.lineIndex] else { return rect }
             return rect.union(nativeRow.frame)
         }
-    }
-
-    func drawExportScrolling(in context: CGContext, viewport: CGRect, focusBounds: CGRect, additive: Bool) {
-        context.saveGState()
-        context.clip(to: viewport)
-        if !focusBounds.isNull {
-            let padding = DesktopLyricsAdaptiveHeight.padding
-            let fit = min(1, (viewport.height - 2 * padding) / max(1, focusBounds.height))
-            let naturalOrigin = (bounds.height - viewport.height) * 0.29
-            let lower = focusBounds.maxY * fit + padding - viewport.height
-            let upper = focusBounds.minY * fit - padding
-            let origin = max(lower, min(naturalOrigin, upper))
-            context.translateBy(x: bounds.midX * (1 - fit), y: -origin)
+        // Keep the original offscreen fit for unusually tall focus groups.
+        if !focusBounds.isNull, focusBounds.maxY > bounds.height - 12 {
+            let fit = min(1, (bounds.height - 24) / max(1, focusBounds.height))
+            context.translateBy(x: bounds.midX * (1 - fit), y: min(0, bounds.height - 12 - focusBounds.maxY * fit))
             context.scaleBy(x: fit, y: fit)
         }
         if additive {
@@ -1216,6 +1182,22 @@ final class AMLLNativeCanvas: UIView {
         if additive { context.endTransparencyLayer() }
         context.restoreGState()
     }
+
+    func isExportTailInMotion(_ index: Int) -> Bool {
+        guard desktopSettings?.wordHighlight == true, let engine else { return false }
+        if engine.runStore.cursorStates(key: "main:\(index)").contains(where: { $0.suppressed && $0.active }) {
+            return true
+        }
+        // The family-2 cutoff is a single-frame removal of the gradient.
+        // Other versions can still have a visible word-emphasis release.
+        if configuration.appleMusicAnimation?.cutsForegroundOnDeparture == true { return false }
+        let row = frameState?.rows.first { $0.lineIndex == index }
+        return (row?.blossomWordExit?.weight ?? 0) > 0
+    }
+
+    #if DEBUG
+        var exportInterludeBounds: CGRect { dots.isHidden ? .null : dots.frame }
+    #endif
 
     func exportSingleLineHeight(_ index: Int) -> CGFloat {
         guard let row = rowViews[index] else { return 0 }

@@ -1072,14 +1072,6 @@ struct AMLLFrameEngine {
         )
     }
 
-    /// PiP uses the same selection and preview events as the lyric page.
-    var desktopHandoff: (selected: [Int], pending: Int?, previewsPending: Bool) {
-        guard let schedule = blossomSchedule else { return ([], nil, false) }
-        let previews = !schedule.catchUp.isEmpty || schedule.takeover || (!schedule.left.isEmpty && schedule.entered.isEmpty)
-        return (schedule.selected.filter(document.groups.indices.contains),
-                schedule.pending.flatMap { document.groups.indices.contains($0) ? $0 : nil }, previews)
-    }
-
     var desktopSingleLineHandoff: DesktopLyricsSingleLineHandoff? {
         guard let schedule = blossomSchedule else { return nil }
         return Self.desktopSingleLineHandoff(schedule, groups: document.groups)

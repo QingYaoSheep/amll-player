@@ -87,24 +87,25 @@ final class DesktopLyricsTests: XCTestCase {
         XCTAssertEqual(next.lyricTime, 3.01, accuracy: 0.001)
     }
 
-    func testDesktopPoliciesKeepTheSourcePresetAndSeparateBlurFromWordHighlighting() {
+    func testScrollingInheritsSourceBlurAndKeepsSavedSingleLineFit() {
         var source = LyricsRenderConfiguration()
         source.blurInactive = false
         source.fontSize = 32
         var settings = DesktopLyricsSettings()
         settings.fontSize = 28
         settings.wordHighlight = false
-        XCTAssertEqual(settings.blurMaximum, 1)
+        settings.transition = .instant
+        settings.fitsContent = true
+        XCTAssertFalse(settings.fitsSingleLine)
+        XCTAssertFalse(settings.rendererConfiguration(source).blurInactive)
+        source.blurInactive = true
         XCTAssertTrue(settings.rendererConfiguration(source).blurInactive)
         XCTAssertEqual(settings.rendererConfiguration(source).fontSize, 28)
         XCTAssertEqual(settings.rendererConfiguration(source).animationStyle, source.animationStyle)
-        settings.transition = .fade
+        settings.mode = .singleLine
+        XCTAssertTrue(settings.fitsSingleLine)
         XCTAssertFalse(settings.rendererConfiguration(source).blurInactive)
-        XCTAssertFalse(settings.snapsLines)
         XCTAssertFalse(settings.wordHighlight)
-        settings.transition = .instant
-        XCTAssertTrue(settings.snapsLines)
-        XCTAssertEqual(settings.blurStrength, 1)
         XCTAssertEqual(source.fontSize, 32)
     }
 
@@ -273,12 +274,12 @@ final class DesktopLyricsTests: XCTestCase {
 
     func testAdaptiveWindowExpandsForAdditionalVoicesThenSettlesBack() throws {
         var height = DesktopLyricsAdaptiveHeight()
-        XCTAssertEqual(height.update(contentHeight: 32, at: 0), 112)
-        XCTAssertEqual(height.update(contentHeight: 120, at: 1), 160)
+        XCTAssertEqual(height.update(contentHeight: 32, at: 0), 44)
+        XCTAssertEqual(height.update(contentHeight: 120, at: 1), 136)
         XCTAssertEqual(height.update(contentHeight: 178, at: 1.1), 208)
         XCTAssertEqual(height.update(contentHeight: 32, at: 2), 208)
         XCTAssertTrue(height.isSettling)
-        XCTAssertEqual(height.update(contentHeight: 32, at: 2.4), 112)
+        XCTAssertEqual(height.update(contentHeight: 32, at: 2.4), 44)
         XCTAssertFalse(height.isSettling)
         XCTAssertEqual(height.update(contentHeight: 500, at: 3), 240)
 
@@ -291,7 +292,7 @@ final class DesktopLyricsTests: XCTestCase {
         XCTAssertEqual(restored.outputAspect, .tall)
     }
 
-    func testSingleLineStartsBothExitChannelsOnTheSelectorCatchUpFrame() throws {
+    func testSingleLineFinishesTheRunBeforeStartingBothExitChannels() throws {
         let document = singleLineHandoffFixture()
         let timeline = DesktopLyricsSingleLineTimeline(document: document)
         let display = AMLLDisplayDocument(lines: document.lines)
@@ -301,32 +302,59 @@ final class DesktopLyricsTests: XCTestCase {
         ]
         let catchUp = LyricsBlossomSelectionSchedule.dispatch(family: 2, now: 3.9, records: records,
             selected: [0], pending: 1, capacity: 2, mainHold: false, ticketHold: false, deadline: -1, adaptive: true)
-        XCTAssertEqual(catchUp.catchUp, [0])
-        XCTAssertNil(catchUp.enterIndex)
         let cue = try XCTUnwrap(AMLLFrameEngine.desktopSingleLineHandoff(catchUp, groups: display.groups))
+        let store = LyricsBlossomRunStore()
+        let layout = LyricsBlossomRunLayout(text: "Old", pieces: [
+            .init(range: NSRange(location: 0, length: 3), width: 80, start: 0, end: 4.5)
+        ], pixelsPerPoint: 1)
+        store.beginFrame(.init(time: 3.88, delta: 0, playing: true, revision: 0, family: 2, selectedRows: [0]))
+        _ = store.sample(key: "main:0", row: 0, layout: layout)
+        func tailInMotion(_ index: Int) -> Bool {
+            store.cursorStates(key: "main:\(index)").contains { $0.active && $0.suppressed }
+        }
+
         var selection = DesktopLyricsSingleLineSelection()
         var animation = DesktopLyricsSingleLineTransition()
-        let original = selection.update(timeline: timeline, at: 3.88, handoff: nil, interlude: false, reset: true)
-        XCTAssertEqual(original.line?.index, 0)
+        let original = selection.update(timeline: timeline, at: 3.88, handoff: nil, interlude: false, reset: true,
+                                        tailInMotion: tailInMotion)
         _ = animation.frame(target: original.line?.index, now: 3.88, immediate: true, blurs: true)
 
-        let handoff = selection.update(timeline: timeline, at: 3.9, handoff: cue, interlude: false, reset: false)
+        store.beginFrame(.init(time: 3.9, delta: 0.02, playing: true, revision: 0, family: 2))
+        store.applySelection(entered: [], left: [], catchUp: [0])
+        XCTAssertTrue(tailInMotion(0))
+        let holding = selection.update(timeline: timeline, at: 3.9, handoff: cue, interlude: false, reset: false,
+                                       tailInMotion: tailInMotion)
+        XCTAssertEqual(holding.line?.index, 0)
+        XCTAssertFalse(holding.advancesEarly)
+        XCTAssertEqual(animation.frame(target: holding.line?.index, now: 3.9, immediate: false, blurs: true).layer,
+                       .live(index: 0, alpha: 1))
+
+        store.beginFrame(.init(time: 3.9, delta: 0.1, playing: false, revision: 0, family: 2))
+        XCTAssertTrue(tailInMotion(0))
+        XCTAssertEqual(selection.update(timeline: timeline, at: 3.9, handoff: nil, interlude: false, reset: false,
+                                       tailInMotion: tailInMotion).line?.index, 0)
+        store.beginFrame(.init(time: 4.16, delta: 0.26, playing: true, revision: 0, family: 2))
+        XCTAssertFalse(tailInMotion(0))
+        let final = selection.update(timeline: timeline, at: 4.16, handoff: nil, interlude: false, reset: false,
+                                     tailInMotion: tailInMotion)
+        XCTAssertEqual(final.line?.index, 0)
+        XCTAssertTrue(selection.needsNextFrame)
+        let handoff = selection.update(timeline: timeline, at: 4.18, handoff: nil, interlude: false, reset: false,
+                                       tailInMotion: tailInMotion)
         XCTAssertEqual(handoff.line?.index, 2)
         XCTAssertTrue(handoff.advancesEarly)
-        let leaving = animation.frame(target: handoff.line?.index, now: 3.9, immediate: false, blurs: true,
+        let leaving = animation.frame(target: handoff.line?.index, now: 4.18, immediate: false, blurs: true,
                                       earlyDelta: 1.0 / 60)
         XCTAssertEqual(leaving.capture, 0)
-        guard case let .outgoing(opacity, blur) = leaving.layer else { return XCTFail("The outgoing line should be the only visible lyric") }
+        guard case let .outgoing(opacity, blur) = leaving.layer else { return XCTFail("Missing old-line fade") }
         XCTAssertLessThan(opacity, 1)
         XCTAssertGreaterThan(blur, 0)
-        let repeated = selection.update(timeline: timeline, at: 4.15, handoff: cue, interlude: false, reset: false)
-        XCTAssertEqual(repeated.line?.index, 2)
-        XCTAssertFalse(repeated.advancesEarly)
-        guard case let .live(index, alpha) = animation.frame(target: repeated.line?.index, now: 4.15,
-                immediate: false, blurs: true).layer else { return XCTFail("The new line should be visible before its source onset") }
+        guard case let .live(index, alpha) = animation.frame(target: handoff.line?.index, now: 4.43,
+                immediate: false, blurs: true).layer else { return XCTFail("The next line should be visible before its source onset") }
         XCTAssertEqual(index, 2)
         XCTAssertGreaterThan(alpha, 0)
-        XCTAssertEqual(selection.update(timeline: timeline, at: 2, handoff: cue, interlude: false, reset: true).line?.index, 0)
+        XCTAssertEqual(selection.update(timeline: timeline, at: 2, handoff: cue, interlude: false, reset: true,
+                                       tailInMotion: tailInMotion).line?.index, 0)
     }
 
     func testSingleLineCutoffChoosesTheNextSelectedLyricAndRespectsInterludes() throws {
@@ -338,13 +366,19 @@ final class DesktopLyricsTests: XCTestCase {
         XCTAssertEqual(cue.successor(after: 0), 2)
         XCTAssertNil(cue.successor(after: 2))
         var selection = DesktopLyricsSingleLineSelection()
-        let target = selection.update(timeline: timeline, at: 4.3, handoff: cue, interlude: false, reset: false)
-        XCTAssertEqual(target.line?.index, 2)
-        XCTAssertNil(selection.update(timeline: timeline, at: 4.31, handoff: cue, interlude: true, reset: false).line)
-        _ = selection.update(timeline: timeline, at: 4.4, handoff: nil, interlude: false, reset: true)
-        let coincidentOnset = selection.update(timeline: timeline, at: 4.55, handoff: cue, interlude: false, reset: false)
-        XCTAssertEqual(coincidentOnset.line?.index, 2)
-        XCTAssertTrue(coincidentOnset.advancesEarly)
+        let holding = selection.update(timeline: timeline, at: 4.3, handoff: cue, interlude: false, reset: false) { _ in true }
+        XCTAssertEqual(holding.line?.index, 0)
+        let lastCutoff = selection.update(timeline: timeline, at: 4.55, handoff: nil, interlude: false, reset: false) { _ in false }
+        XCTAssertEqual(lastCutoff.line?.index, 0)
+        let completed = selection.update(timeline: timeline, at: 4.57, handoff: nil, interlude: false, reset: false) { _ in false }
+        XCTAssertEqual(completed.line?.index, 2)
+        XCTAssertTrue(completed.advancesEarly)
+        XCTAssertNil(selection.update(timeline: timeline, at: 4.58, handoff: cue, interlude: true, reset: false) { _ in false }.line)
+        _ = selection.update(timeline: timeline, at: 4.4, handoff: nil, interlude: false, reset: true) { _ in false }
+        let instantCutoff = selection.update(timeline: timeline, at: 4.55, handoff: cue, interlude: false, reset: false) { _ in false }
+        XCTAssertEqual(instantCutoff.line?.index, 0)
+        XCTAssertTrue(selection.needsNextFrame)
+        XCTAssertEqual(selection.update(timeline: timeline, at: 4.57, handoff: nil, interlude: false, reset: false) { _ in false }.line?.index, 2)
         let synthetic = LyricsBlossomSelectionSchedule.Output(selected: [0], pending: display.groups.count, catchUp: [0])
         XCTAssertNil(AMLLFrameEngine.desktopSingleLineHandoff(synthetic, groups: display.groups)?.successor(after: 0))
     }
@@ -389,6 +423,11 @@ final class DesktopLyricsTests: XCTestCase {
         producer.render(frame: frame, lyrics: document, revision: 1, offset: 0, configuration: .init(),
                         settings: settings, animates: true)
         XCTAssertEqual(producer.pixelSize, small)
+
+        let scrolling = DesktopLyricsFrames(aspect: .standard)
+        scrolling.render(frame: frame, lyrics: document, revision: 1, offset: 0, configuration: .init(),
+                         settings: settings, animates: true)
+        XCTAssertEqual(scrolling.pixelSize, CGSize(width: 960, height: 540))
     }
 
     @MainActor
@@ -435,7 +474,6 @@ final class DesktopLyricsTests: XCTestCase {
         let state = try XCTUnwrap(canvas.frameState)
         XCTAssertEqual(Set(state.rows.filter { $0.active && !$0.hidden }.map(\.lineIndex)), [0, 1, 2])
         XCTAssertEqual(canvas.visibleRowCount, 3)
-        XCTAssertGreaterThan(canvas.exportScrollingBounds.height, 50)
     }
 
     @MainActor
@@ -461,7 +499,7 @@ final class DesktopLyricsTests: XCTestCase {
         _ = canvas.advanceExportFrame(sample: sample, delta: 1 / 60)
         XCTAssertNotNil(canvas.frameState?.interlude)
         XCTAssertEqual(canvas.visibleRowCount, 0)
-        let dots = canvas.exportScrollingBounds
+        let dots = canvas.exportInterludeBounds
         XCTAssertFalse(dots.isNull)
         XCTAssertEqual(dots.midX, canvas.bounds.midX, accuracy: 1)
         XCTAssertEqual(dots.midY, canvas.bounds.midY, accuracy: 1)

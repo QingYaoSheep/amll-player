@@ -175,7 +175,8 @@ private struct LockScreenLyricsCard: View {
 
     private var legacyBackdrop: some View {
         GeometryReader { geometry in
-            if !reduceTransparency, !luminanceReduced, let bytes = state.backdrop, let image = UIImage(data: bytes) {
+            if !reduceTransparency, !luminanceReduced, let bytes = state.backdrop,
+               let image = LockScreenBackdropImageCache.image(for: bytes) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -185,5 +186,27 @@ private struct LockScreenLyricsCard: View {
                     .accessibilityHidden(true)
             }
         }
+    }
+}
+
+private enum LockScreenBackdropImageCache {
+    private final class Box: @unchecked Sendable {
+        let cache: NSCache<NSString, UIImage> = {
+            let cache = NSCache<NSString, UIImage>()
+            cache.countLimit = 4
+            return cache
+        }()
+    }
+
+    private static let storage = Box()
+
+    static func image(for data: Data) -> UIImage? {
+        let key = "\(data.count)-\(data.prefix(64).hashValue)" as NSString
+        if let cached = storage.cache.object(forKey: key) {
+            return cached
+        }
+        guard let decoded = UIImage(data: data) else { return nil }
+        storage.cache.setObject(decoded, forKey: key)
+        return decoded
     }
 }

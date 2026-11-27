@@ -20,6 +20,7 @@ final class ArtworkMediaCache {
     private let registry: URL
     private let limit: Int64
     private var entries: [Entry] = []
+    private var cachedTotalBytes: Int64?
 
     init(root: URL? = nil, sandbox: URL = URL(fileURLWithPath: NSHomeDirectory()), limit: Int64 = maximumBytes) {
         self.sandbox = sandbox.standardizedFileURL.resolvingSymlinksInPath()
@@ -128,10 +129,16 @@ final class ArtworkMediaCache {
     }
 
     var byteCount: Int64 {
-        entries.reduce(0) { $0 + (safeURL($1.relativePath).map(size) ?? 0) }
+        if let cachedTotalBytes {
+            return cachedTotalBytes
+        }
+        let computed = entries.reduce(0) { $0 + (safeURL($1.relativePath).map(size) ?? 0) }
+        cachedTotalBytes = computed
+        return computed
     }
 
     func clear() {
+        cachedTotalBytes = nil
         entries.removeAll { entry in
             guard let url = safeURL(entry.relativePath), FileManager.default.fileExists(atPath: url.path) else { return true }
             do { try FileManager.default.removeItem(at: url); return true }
@@ -141,6 +148,7 @@ final class ArtworkMediaCache {
     }
 
     private func prune() {
+        cachedTotalBytes = nil
         entries.removeAll { entry in
             guard let url = safeURL(entry.relativePath) else { return true }
             return !FileManager.default.fileExists(atPath: url.path)
@@ -160,21 +168,25 @@ final class ArtworkMediaCache {
     }
 
     private func size(_ url: URL) -> Int64 {
-        let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey]
-        func bytes(_ file: URL) -> Int64 {
-            guard let values = try? file.resourceValues(forKeys: keys), values.isRegularFile == true,
-                  values.isSymbolicLink != true else { return 0 }
-            return Int64(values.fileSize ?? 0)
-        }
-        if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey]
+        guard let values = try? url.resourceValues(forKeys: keys) else { return 0 }
+        if values.isDirectory == true,
            let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: Array(keys))
         {
-            return enumerator.reduce(0) { $0 + (($1 as? URL).map(bytes) ?? 0) }
+            return enumerator.reduce(0) { sum, item in
+                guard let file = item as? URL,
+                      let fileValues = try? file.resourceValues(forKeys: keys),
+                      fileValues.isRegularFile == true,
+                      fileValues.isSymbolicLink != true else { return sum }
+                return sum + Int64(fileValues.fileSize ?? 0)
+            }
         }
-        return bytes(url)
+        guard values.isRegularFile == true, values.isSymbolicLink != true else { return 0 }
+        return Int64(values.fileSize ?? 0)
     }
 
     private func save() {
+        cachedTotalBytes = nil
         if let data = try? JSONEncoder().encode(entries) {
             try? data.write(to: registry, options: .atomic)
             try? data.write(to: registry.appendingPathExtension("backup"), options: .atomic)

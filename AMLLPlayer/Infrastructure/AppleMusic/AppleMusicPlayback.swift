@@ -117,7 +117,8 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
             while !Task.isCancelled {
                 guard let self, enabled, activeObservation, session.currentState.connected else { return }
                 sample()
-                let interval = foreground ? 250 : 500
+                let isPlaying = player.state.playbackStatus == .playing
+                let interval = isPlaying ? (foreground ? 250 : 500) : (foreground ? 1000 : 1500)
                 do { try await Task.sleep(for: .milliseconds(interval)) } catch { return }
             }
         }
@@ -324,6 +325,12 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         }
         if knownEntryID != entry?.id {
             knownContext = nil; knownEntryID = entry?.id
+        }
+        if !playing, let previous, previous.item == item, !previous.isPlaying,
+           previous.shuffleEnabled == (player.state.shuffleMode == .songs),
+           previous.repeatMode == (player.state.repeatMode == .one ? .one : (player.state.repeatMode == .all ? .all : .off)),
+           abs(previous.position - position) < 0.01, !displaced, !resolvedSeek {
+            return
         }
         let snapshot = PlaybackSnapshot(item: item, isPlaying: playing, position: position, duration: duration,
                                         device: nil, restrictions: .init(canPause: true, canResume: true, canSeek: duration > 0 && valid,

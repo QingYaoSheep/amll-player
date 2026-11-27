@@ -17,9 +17,6 @@ struct AMLLBackground: View {
     var suppressBlur = false
     /// Optional frame-rate cap (e.g., 60 FPS in immersive mode to save GPU behind blurred/video layers).
     var preferredFramesPerSecond: Int? = nil
-    @State private var usedMesh = false
-    @State private var usedPixi = false
-    @State private var usedFlowing = false
 
     var effectiveMeshBlur: Double { suppressBlur ? 0 : blur }
     var effectiveFlowingConfiguration: FlowingBackgroundConfiguration {
@@ -36,36 +33,24 @@ struct AMLLBackground: View {
             if mode == .gradient {
                 LinearGradient(colors: [color.swiftUIColor, gradientEnd.swiftUIColor], startPoint: .top, endPoint: .bottom)
             }
-            if usedMesh || mode.isMesh {
+            if mode.isMesh {
                 AMLLMeshBackground(artworkURL: artworkURL, active: active && mode.isMesh, blur: effectiveMeshBlur,
                                    colorMode: mode == .meshColorMode2 ? .colorMode2 : .original,
                                    seed: blendProbeSeed,
                                    allowsForegroundBlending: meshForegroundBlending,
                                    preferredFramesPerSecond: preferredFramesPerSecond)
-                    .opacity(mode.isMesh ? 1 : 0)
             }
-            if usedPixi || mode == .pixi {
+            if mode == .pixi {
                 AMLLPixiBackground(artworkURL: artworkURL, active: active && mode == .pixi, blurEnabled: !suppressBlur,
                                    preferredFramesPerSecond: preferredFramesPerSecond)
-                    .opacity(mode == .pixi ? 1 : 0)
             }
-            if usedFlowing || mode == .flowing {
+            if mode == .flowing {
                 AMLLFlowingBackground(artworkURL: artworkURL, active: active && mode == .flowing,
                     configuration: effectiveFlowingConfiguration, suppressBlur: suppressBlur,
                     preferredFramesPerSecond: preferredFramesPerSecond)
-                    .opacity(mode == .flowing ? 1 : 0)
             }
         }
         .overlay { Color.black.opacity(dimming) }
-        .onChange(of: mode, initial: true) { _, value in
-            if value.isMesh {
-                usedMesh = true
-            }
-            if value == .pixi {
-                usedPixi = true
-            }
-            if value == .flowing { usedFlowing = true }
-        }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

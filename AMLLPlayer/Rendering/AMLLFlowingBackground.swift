@@ -190,6 +190,7 @@ struct AMLLFlowingBackground: UIViewRepresentable {
             if !active || reduceTransparency {
                 artworkTask?.cancel(); artworkTask = nil; loadingURL = nil
                 fallbackTask?.cancel(); fallbackRevision &+= 1
+                if !active { renderer?.clear() }
                 return
             }
             if let url, url != loadedURL, url != loadingURL, url != failedURL { request(url) }

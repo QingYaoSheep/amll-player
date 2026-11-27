@@ -21,7 +21,7 @@ struct NetEaseProfile: Equatable {
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var foreground = true
-    nonisolated(unsafe) @ObservationIgnored private var qrWake: CheckedContinuation<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var qrWake: CheckedContinuation<Void, Never>?
     init(api: any NetEaseRequesting = NetEaseAPI(),
          store: any SpotifySessionDataStoring = KeychainSpotifySessionStore(service: "net.stevexmh.amllplayer.netease")) {
         self.api = api; self.store = store

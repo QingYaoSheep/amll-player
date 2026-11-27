@@ -252,6 +252,7 @@ final class AMLLNativeCanvas: UIView {
         let visible = Set(rowViews.keys)
         layouts = layouts.filter { visible.contains($0.key) }
         needsFrame = true
+        syncLink()
     }
 
     @objc private func refreshAfterActivation() {
@@ -389,6 +390,7 @@ final class AMLLNativeCanvas: UIView {
             }
         }
         needsFrame = true
+        syncLink()
         // Debug's explicit replay has no display link. Production commits the
         // new size and the first frame together on the next CADisplayLink tick.
         if !drivesFramesExternally && (link == nil || auxiliaryLayoutPreparation != nil || replacedAuxiliaryRows) { draw(delta: 0) }
@@ -855,6 +857,7 @@ final class AMLLNativeCanvas: UIView {
             defer {
                 blurRefreshInFlight = false
                 needsFrame = true
+                syncLink()
             }
             guard active, rendersOffscreenOrAttached, requestsBlurImages, prewarmGeneration == generation,
                   lyricBlurMaximum == maximum else { return }
@@ -930,6 +933,7 @@ final class AMLLNativeCanvas: UIView {
                     guard let self, self.prewarmGeneration == generation else { return }
                     self.preparingRows.remove(index)
                     self.needsFrame = true
+                    self.syncLink()
                     guard self.rowViews[index] == nil, self.retainedRows[index] == nil else { return }
                     self.preparedRows[index] = images
                     self.preparedOrder.append(index)
@@ -1027,6 +1031,7 @@ final class AMLLNativeCanvas: UIView {
         super.safeAreaInsetsDidChange()
         if !dirty { engine?.resize(environment: renderEnvironment(), heights: heights) }
         needsFrame = true
+        syncLink()
     }
 
     func stop() {
@@ -1106,7 +1111,13 @@ final class AMLLNativeCanvas: UIView {
             }
         #endif
         guard window != nil, active else { stop(); return }
-        guard link == nil else { return }
+        if let link {
+            if link.isPaused {
+                lastTick = 0
+                link.isPaused = false
+            }
+            return
+        }
         let target = LinkTarget(); target.owner = self; linkTarget = target
         let link = CADisplayLink(target: target, selector: #selector(LinkTarget.tick(_:)))
         applyFrameRate(link)
@@ -1126,7 +1137,12 @@ final class AMLLNativeCanvas: UIView {
         if input.progressDraft == nil, !input.playing, !needsFrame, !auxiliaryFade.isAnimating, !auxiliaryReflow.isAnimating, !auxiliarySlotReflow.isAnimating,
            frameState?.settled == true, frameState?.browsing == false {
             let wantsEDR = configuration.hdr?.enabled == true && !reduceTransparency
-            if !wantsEDR || start - lastHeadroomCheck < 0.25 {
+            if !wantsEDR {
+                link.isPaused = true
+                lastTick = 0
+                return
+            }
+            if start - lastHeadroomCheck < 0.25 {
                 lastTick = link.timestamp
                 return
             }
@@ -1258,12 +1274,14 @@ final class AMLLNativeCanvas: UIView {
 
     func handleInteraction(_ interaction: AMLLInteraction) {
         needsFrame = true
+        syncLink()
         onInteraction(interaction)
         engine?.handle(interaction)
     }
 
     @objc private func pan(_ gesture: UIPanGestureRecognizer) {
         needsFrame = true
+        syncLink()
         switch gesture.state {
         case .began:
             lastTranslation = 0

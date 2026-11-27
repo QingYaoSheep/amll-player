@@ -38,27 +38,28 @@ actor LyricsHTTP: LyricsHTTPProviding {
     func data(for request: URLRequest) async throws -> Data {
         guard let url = request.url, url.scheme == "https", Self.allowed(url.host ?? ""),
               url.user == nil, url.password == nil, url.port == nil || url.port == 443 else { throw LyricsError.transport }
+        let limit = 8_000_000
+        let delegate = LyricsDataDelegate(limit: limit)
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 15; config.timeoutIntervalForResource = 25
+        config.httpCookieStorage = nil; config.httpShouldSetCookies = false
+        config.urlCache = nil
         do {
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let response = response as? HTTPURLResponse else { throw LyricsError.transport }
-            guard (200 ... 299).contains(response.statusCode) else { throw LyricsError.http(response.statusCode) }
-            let limit = 8_000_000
-            guard response.expectedContentLength <= limit else { throw LyricsError.tooLarge }
-            var result = Data()
-            for try await byte in bytes {
-                if result.count % 4096 == 0 {
-                    try Task.checkCancellation()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+                    delegate.start(session: session, request: request, continuation: continuation)
                 }
-                guard result.count < limit else { throw LyricsError.tooLarge }
-                result.append(byte)
+            } onCancel: {
+                delegate.cancel()
             }
-            return result
         } catch is CancellationError { throw CancellationError() }
         catch let error as LyricsError { throw error }
         catch {
             if Task.isCancelled {
                 throw CancellationError()
-            }; throw LyricsError.transport
+            }
+            throw LyricsError.transport
         }
     }
 
@@ -74,6 +75,123 @@ actor LyricsHTTP: LyricsHTTPProviding {
         // Both original and redirected headers must be credential-free, even if Foundation stripped a header.
         return [original, request].allSatisfy { value in
             ["Authorization", "Cookie", "Media-User-Token"].allSatisfy { value.value(forHTTPHeaderField: $0) == nil }
+        }
+    }
+}
+
+private final class LyricsDataDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private let limit: Int
+    private var redirects = 0
+    private var buffer = Data()
+    private var continuation: CheckedContinuation<Data, Error>?
+    private var task: URLSessionDataTask?
+    private var session: URLSession?
+    private var cancelled = false
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func start(session: URLSession, request: URLRequest, continuation: CheckedContinuation<Data, Error>) {
+        let shouldCancel = lock.withLock {
+            self.session = session
+            self.continuation = continuation
+            let created = session.dataTask(with: request)
+            self.task = created
+            return cancelled
+        }
+        if shouldCancel {
+            task?.cancel()
+            finish(with: .failure(CancellationError()))
+        } else {
+            task?.resume()
+        }
+    }
+
+    func cancel() {
+        let currentTask = lock.withLock { () -> URLSessionDataTask? in
+            cancelled = true
+            return task
+        }
+        currentTask?.cancel()
+    }
+
+    func urlSession(_: URLSession, task: URLSessionTask, willPerformHTTPRedirection _: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void)
+    {
+        guard let original = task.originalRequest, LyricsHTTP.canFollowRedirect(from: original, to: request) else {
+            completionHandler(nil); return
+        }
+        let allowed = lock.withLock {
+            redirects += 1
+            return redirects <= 3
+        }
+        completionHandler(allowed ? request : nil)
+    }
+
+    func urlSession(_: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void)
+    {
+        guard let http = response as? HTTPURLResponse else {
+            completionHandler(.cancel)
+            finish(with: .failure(LyricsError.transport))
+            return
+        }
+        guard (200 ... 299).contains(http.statusCode) else {
+            completionHandler(.cancel)
+            finish(with: .failure(LyricsError.http(http.statusCode)))
+            return
+        }
+        guard http.expectedContentLength <= Int64(limit) else {
+            completionHandler(.cancel)
+            finish(with: .failure(LyricsError.tooLarge))
+            return
+        }
+        if http.expectedContentLength > 0 {
+            lock.withLock { buffer.reserveCapacity(Int(http.expectedContentLength)) }
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        let overflow = lock.withLock { () -> Bool in
+            if buffer.count + data.count > limit {
+                return true
+            }
+            buffer.append(data)
+            return false
+        }
+        if overflow {
+            dataTask.cancel()
+            finish(with: .failure(LyricsError.tooLarge))
+        }
+    }
+
+    func urlSession(_: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            let urlError = error as? URLError
+            let isCancelled = lock.withLock { cancelled } || urlError?.code == .cancelled
+            finish(with: .failure(isCancelled ? CancellationError() : LyricsError.transport))
+        } else {
+            let data = lock.withLock { buffer }
+            finish(with: .success(data))
+        }
+    }
+
+    private func finish(with result: Result<Data, Error>) {
+        let (cont, sess) = lock.withLock { () -> (CheckedContinuation<Data, Error>?, URLSession?) in
+            let c = continuation
+            let s = session
+            continuation = nil
+            session = nil
+            task = nil
+            return (c, s)
+        }
+        sess?.finishTasksAndInvalidate()
+        switch result {
+        case let .success(data): cont?.resume(returning: data)
+        case let .failure(error): cont?.resume(throwing: error)
         }
     }
 }

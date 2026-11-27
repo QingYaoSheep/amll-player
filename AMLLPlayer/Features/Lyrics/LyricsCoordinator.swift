@@ -58,8 +58,17 @@ final class LyricsCoordinator {
         let apple = AppleLyricsProvider(http: http, credentials: credentials)
         let cache: any LyricsCacheProviding
         var failed = false
-        do { cache = try SwiftDataLyricsCache() }
-        catch { cache = MemoryLyricsCache(); failed = true }
+        if let opened = try? SwiftDataLyricsCache() {
+            cache = opened
+        } else {
+            SwiftDataLyricsCache.removeCorruptStoreFiles()
+            if let recovered = try? SwiftDataLyricsCache() {
+                cache = recovered
+            } else {
+                cache = MemoryLyricsCache()
+                failed = true
+            }
+        }
         let coordinator = LyricsCoordinator(providers: [apple, QQLyricsProvider(http: http), NetEaseLyricsProvider(http: http)], cache: cache, apple: apple)
         if failed {
             coordinator.cacheWarning = LyricsError.cache.localizedDescription
@@ -240,9 +249,12 @@ final class LyricsCoordinator {
         romanizationStatus = "正在生成日语／韩语音译"
         romanizationTask = Task { [weak self] in
             let result = await LyricsRomanizationEngine.shared.generateCached(document: base, force: force)
+            guard !Task.isCancelled else { return }
+            let withRomanization = await Task.detached(priority: .userInitiated) {
+                result.applying(to: base)
+            }.value
             guard let self, !Task.isCancelled, romanizationEpoch == ticket,
                   track?.spotifyID == trackID else { return }
-            let withRomanization = result.applying(to: base)
             document = withRomanization
             romanizationStatus = withRomanization.romanizationTTMLTrack == nil
                 ? "无可生成的日语／韩语音译" : "已生成独立罗马音 TTML 时间轴"

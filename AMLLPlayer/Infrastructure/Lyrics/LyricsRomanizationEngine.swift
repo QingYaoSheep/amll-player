@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import UIKit
 
 struct RomanizationResult: Codable, Sendable {
     struct Line: Codable, Sendable {
@@ -23,6 +24,7 @@ struct RomanizationResult: Codable, Sendable {
               let parsed = try? TTMLLyricsParser.parse(ttml, duration: original.lines.map(\.end).max() ?? 0,
                                                        preserveGeneratedIDs: true)
         else { return document }
+        let lineByIndex = Dictionary(lines.map { ($0.index, $0) }, uniquingKeysWith: { first, _ in first })
         let cues = parsed.compactMap { line -> RomanizationTTMLTrack.Cue? in
             let prefix = "generated-roman-"
             guard line.id.hasPrefix(prefix),
@@ -31,9 +33,10 @@ struct RomanizationResult: Codable, Sendable {
             var cue = line
             cue.isBackground = original.lines[index].isBackground
             cue.isDuet = original.lines[index].isDuet
-            cue.generatedRomanizationLanguage = lines.first { $0.index == index }?.language
+            let matched = lineByIndex[index]
+            cue.generatedRomanizationLanguage = matched?.language
             return .init(sourceLineIndex: index, line: cue,
-                         tokens: lines.first { $0.index == index }?.tokens ?? [])
+                         tokens: matched?.tokens ?? [])
         }
         document.romanizationTTMLTrack = cues.isEmpty ? nil : .init(ttml: ttml, cues: cues)
         return document
@@ -57,9 +60,36 @@ actor LyricsRomanizationEngine {
     private let finals = ["", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "p", "l", "l", "p", "l", "m", "p", "p", "t", "t", "ng", "t", "t", "k", "t", "p", "t"]
     private let liaison: [Int: Int] = [1: 0, 2: 1, 4: 2, 7: 3, 8: 5, 16: 6, 17: 7, 19: 9, 20: 10, 22: 12, 23: 14, 24: 15, 25: 16, 26: 17]
     private let complex: [Int: (Int, Int)] = [3: (1, 9), 5: (4, 12), 6: (4, 18), 9: (8, 0), 10: (8, 6), 11: (8, 7), 12: (8, 9), 13: (8, 16), 14: (8, 17), 15: (8, 18), 18: (17, 9)]
+    private static let maximumCacheBytes: Int64 = 100 * 1024 * 1024
+    private static let koreanWordRegex = try? NSRegularExpression(pattern: #"\S+"#)
+    private static let latinTokenRegex = try? NSRegularExpression(pattern: #"^[\p{Latin}\p{M}\p{N}'’\-‐‑‒–—]+$"#)
+    private static let punctuationTokenRegex = try? NSRegularExpression(pattern: #"^[\p{P}\p{S}]+$"#)
+
     private var dictionary: MineradioKuromoji?
     private var kanaMap: [String: String]?
     private var overrides: [String: [String: String]]?
+    nonisolated(unsafe) private var memoryWarningObserver: NSObjectProtocol?
+
+    init() {
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { await self?.evictInMemoryDictionaries() }
+        }
+    }
+
+    deinit {
+        if let memoryWarningObserver {
+            NotificationCenter.default.removeObserver(memoryWarningObserver)
+        }
+    }
+
+    private func evictInMemoryDictionaries() {
+        dictionary = nil
+        kanaMap = nil
+    }
 
     private struct Syllable {
         var initial: Int
@@ -80,8 +110,11 @@ actor LyricsRomanizationEngine {
         guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw CocoaError(.fileNoSuchFile)
         }
-        let folder = base.appendingPathComponent(name, isDirectory: true)
+        var folder = base.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? folder.setResourceValues(values)
         return folder
     }
 
@@ -181,8 +214,32 @@ actor LyricsRomanizationEngine {
             if !result.ttml.isEmpty {
                 try? Data(result.ttml.utf8).write(to: url.deletingPathExtension().appendingPathExtension("ttml"), options: .atomic)
             }
+            pruneCacheIfNeeded(in: url.deletingLastPathComponent(), keeping: url.lastPathComponent)
         }
         return result
+    }
+
+    private func pruneCacheIfNeeded(in folder: URL, keeping newestName: String) {
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: Array(keys)) else { return }
+        var entries: [(url: URL, bytes: Int64, modified: Date)] = []
+        var total: Int64 = 0
+        for file in files {
+            guard let values = try? file.resourceValues(forKeys: keys), values.isRegularFile == true else { continue }
+            let size = Int64(values.fileSize ?? 0)
+            total += size
+            entries.append((file, size, values.contentModificationDate ?? .distantPast))
+        }
+        guard total > Self.maximumCacheBytes else { return }
+        let sorted = entries.sorted { $0.modified < $1.modified }
+        for entry in sorted where total > Self.maximumCacheBytes {
+            if entry.url.deletingPathExtension().lastPathComponent == URL(fileURLWithPath: newestName).deletingPathExtension().lastPathComponent {
+                continue
+            }
+            if (try? FileManager.default.removeItem(at: entry.url)) != nil {
+                total -= entry.bytes
+            }
+        }
     }
 
     private func japaneseDictionary() throws -> MineradioKuromoji {
@@ -314,8 +371,7 @@ actor LyricsRomanizationEngine {
             var tokens: [RomanizationToken] = []
             var coverage = 1.0
             if language == "ko" {
-                let regex = try? NSRegularExpression(pattern: #"\S+"#)
-                let matches = regex?.matches(in: line.text, range: NSRange(location: 0, length: source.length)) ?? []
+                let matches = Self.koreanWordRegex?.matches(in: line.text, range: NSRange(location: 0, length: source.length)) ?? []
                 for match in matches {
                     let text = source.substring(with: match.range)
                     let hangulCount = text.unicodeScalars.filter { (0xAC00 ... 0xD7A3).contains($0.value) }.count
@@ -340,7 +396,9 @@ actor LyricsRomanizationEngine {
                             (0x3040 ... 0x30FF).contains($0.value) || (0x3400 ... 0x9FFF).contains($0.value)
                         }.count
                         targets += count
-                        let latin = text.range(of: #"^[\p{Latin}\p{M}\p{N}'’\-‐‑‒–—]+$"#, options: .regularExpression) != nil
+                        let nsToken = text as NSString
+                        let fullRange = NSRange(location: 0, length: nsToken.length)
+                        let latin = Self.latinTokenRegex?.firstMatch(in: text, range: fullRange) != nil
                         let override = overrides["ja"]?[text]
                         let reading = override ?? entry.pronunciation ?? entry.reading
                         let roman: String
@@ -357,7 +415,7 @@ actor LyricsRomanizationEngine {
                                                       utf16Start: entry.start, utf16End: entry.end,
                                                       sourceNodeIndexes: Self.nodes(for: line, from: entry.start, to: entry.end),
                                                       language: language)
-                        if text.range(of: #"^[\p{P}\p{S}]+$"#, options: .regularExpression) != nil,
+                        if Self.punctuationTokenRegex?.firstMatch(in: text, range: fullRange) != nil,
                            !tokens.isEmpty {
                             tokens[tokens.count - 1].sourceText += text
                             // Mineradio appends the original punctuation to

@@ -471,7 +471,11 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
 
     private func beginBrowsing() {
         follow.browse(); motion.handle(.beginBrowsing, at: CACurrentMediaTime())
-        browsing(true); displayLink?.isPaused = false
+        browsing(true)
+        if displayLink?.isPaused == true {
+            previousTick = 0
+        }
+        displayLink?.isPaused = false
     }
 
     func scrollViewDidScroll(_: UIScrollView) {

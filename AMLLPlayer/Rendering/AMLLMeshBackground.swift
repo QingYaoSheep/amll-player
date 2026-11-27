@@ -75,7 +75,11 @@ struct AMLLMeshBackground: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, MTKViewDelegate {
-        private struct Vertex {
+        private struct SendableBox<Value>: @unchecked Sendable {
+            let value: Value
+        }
+
+        private nonisolated struct Vertex {
             var position: SIMD2<Float>
             var uv: SIMD2<Float>
         }
@@ -113,6 +117,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
         private var blurRadius = 2
         private var colorMode: ColorMode
         private var loadTask: Task<Void, Never>?
+        private var processTask: Task<Void, Never>?
 
         init(seed: UInt32, colorMode: ColorMode = .original) {
             random = AMLLMeshPreset.Random(state: seed)
@@ -162,23 +167,24 @@ struct AMLLMeshBackground: UIViewRepresentable {
                 do {
                     let data = try await ArtworkImageData.load(url)
                     try Task.checkCancellation()
-                    guard let loaded = Self.albumTexture(data: data, device: device, blurRadius: self?.blurRadius ?? 2,
-                                                        colorMode: self?.colorMode ?? .original)
-                    else { throw URLError(.cannotDecodeContentData) }
-                    guard self?.artworkURL == url else { return }
-                    self?.artworkData = data
-                    self?.install(loaded, device: device)
-                    // The mesh clock belongs to the page, not to the artwork
-                    // request. Reloading a cover after a cache miss must not
-                    // reset the animation phase during a track change,
-                    // rotation, or foreground transition.
-                    self?.view?.setNeedsDisplay()
+                    guard let self else { return }
+                    let deviceBox = SendableBox(value: device)
+                    let radius = self.blurRadius
+                    let mode = self.colorMode
+                    let prepared = await Task.detached(priority: .userInitiated) {
+                        Self.albumTexture(data: data, device: deviceBox.value,
+                                          blurRadius: radius, colorMode: mode).map { SendableBox(value: $0) }
+                    }.value
+                    try Task.checkCancellation()
+                    guard let prepared else { throw URLError(.cannotDecodeContentData) }
+                    guard self.artworkURL == url else { return }
+                    self.artworkData = data
+                    self.install(prepared.value, device: device)
+                    self.view?.setNeedsDisplay()
                 } catch is CancellationError {
                     return
                 } catch {
                     guard self?.artworkURL == url else { return }
-                    // An unavailable replacement leaves the last valid frame.
-                    // Empty canvases retain the neutral clear color.
                     self?.view?.setNeedsDisplay()
                 }
             }
@@ -189,17 +195,27 @@ struct AMLLMeshBackground: UIViewRepresentable {
             guard next != blurRadius || colorMode != self.colorMode else { return }
             blurRadius = next
             self.colorMode = colorMode
-            guard let artworkData, let device = view?.device,
-                  let rebuilt = Self.albumTexture(data: artworkData, device: device, blurRadius: next, colorMode: colorMode)
-            else { return }
-            if !states.isEmpty {
-                states[states.count - 1].texture = rebuilt
+            processTask?.cancel()
+            guard let artworkData, let device = view?.device else { return }
+            let deviceBox = SendableBox(value: device)
+            processTask = Task { [weak self] in
+                let rebuilt = await Task.detached(priority: .userInitiated) {
+                    Self.albumTexture(data: artworkData, device: deviceBox.value, blurRadius: next, colorMode: colorMode)
+                        .map { SendableBox(value: $0) }
+                }.value
+                guard !Task.isCancelled, let self, self.blurRadius == next, self.colorMode == colorMode,
+                      let texture = rebuilt?.value else { return }
+                if !self.states.isEmpty {
+                    self.states[self.states.count - 1].texture = texture
+                }
+                self.view?.setNeedsDisplay()
             }
-            view?.setNeedsDisplay()
         }
 
         func stop() {
             loadTask?.cancel(); loadTask = nil
+            processTask?.cancel(); processTask = nil
+            intermediate = nil
         }
 
         func setRunning(_ value: Bool, staticMode: Bool) {
@@ -207,6 +223,9 @@ struct AMLLMeshBackground: UIViewRepresentable {
             guard running != value else { return }
             running = value
             lastFrame = nil
+            if !value {
+                intermediate = nil
+            }
         }
 
         func mtkView(_: MTKView, drawableSizeWillChange _: CGSize) {
@@ -317,7 +336,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
 
         /// Original: 32×32, source color matrix, four box-blur passes.
         /// Color mode 2: 64×64, unadjusted cover colors, two box-blur passes.
-        static func albumTexture(data: Data, device: MTLDevice, blurRadius: Int, colorMode: ColorMode = .original) -> MTLTexture? {
+        nonisolated static func albumTexture(data: Data, device: MTLDevice, blurRadius: Int, colorMode: ColorMode = .original) -> MTLTexture? {
             guard let image = UIImage(data: data)?.cgImage else { return nil }
             let side = colorMode.textureSide
             let bytesPerRow = side * 4
@@ -367,11 +386,11 @@ struct AMLLMeshBackground: UIViewRepresentable {
             return texture
         }
 
-        private static func clampedByte(_ value: Double) -> UInt8 {
+        private nonisolated static func clampedByte(_ value: Double) -> UInt8 {
             UInt8(clamping: Int(value.rounded(.toNearestOrEven)))
         }
 
-        private static func blur(_ pixels: inout [UInt8], width: Int, height: Int, radius: Int, quality: Int) {
+        private nonisolated static func blur(_ pixels: inout [UInt8], width: Int, height: Int, radius: Int, quality: Int) {
             let maximumX = width - 1
             let maximumY = height - 1
             let radiusPlusOne = radius + 1

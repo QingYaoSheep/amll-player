@@ -60,17 +60,42 @@ final class StoredLyricsSelection {
 @MainActor
 final class SwiftDataLyricsCache: LyricsCacheProviding {
     private let container: ModelContainer
+    private let inMemory: Bool
+    private static let maximumStoredEntries = 2_000
     private var context: ModelContext {
         container.mainContext
     }
 
     init(inMemory: Bool = false) throws {
+        self.inMemory = inMemory
         if !inMemory, let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             try FileManager.default.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
         }
         let schema = Schema([StoredLyrics.self, StoredLyricsSelection.self])
         container = try ModelContainer(for: schema, configurations: [ModelConfiguration("Lyrics-v1", schema: schema, isStoredInMemoryOnly: inMemory)])
         context.autosaveEnabled = false
+        if !inMemory {
+            Self.excludeStoreFromBackup()
+        }
+    }
+
+    static func removeCorruptStoreFiles() {
+        guard let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        for suffix in ["", ".store", ".sqlite", ".sqlite-wal", ".sqlite-shm", ".store-wal", ".store-shm"] {
+            let url = applicationSupport.appendingPathComponent("Lyrics-v1" + suffix)
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    private static func excludeStoreFromBackup() {
+        guard let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        for url in (try? FileManager.default.contentsOfDirectory(at: applicationSupport, includingPropertiesForKeys: nil)) ?? []
+        where url.lastPathComponent.hasPrefix("Lyrics-v1") {
+            var mutable = url
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? mutable.setResourceValues(values)
+        }
     }
 
     private func scope(_ track: TrackIdentity, _ source: LyricsSource, _ settings: LyricsSettings) -> String {
@@ -101,7 +126,19 @@ final class SwiftDataLyricsCache: LyricsCacheProviding {
                 context.delete(old)
             }
             context.insert(StoredLyrics(key: scope + ":\(LyricsDocument.parserVersion)", scope: scope, data: data))
+            let total = (try? context.fetchCount(FetchDescriptor<StoredLyrics>())) ?? 0
+            if total > Self.maximumStoredEntries {
+                let overflow = total - Self.maximumStoredEntries
+                if let all = try? context.fetch(FetchDescriptor<StoredLyrics>()) {
+                    for row in all.prefix(overflow) {
+                        context.delete(row)
+                    }
+                }
+            }
             try context.save()
+            if !inMemory {
+                Self.excludeStoreFromBackup()
+            }
         } catch { context.rollback(); throw LyricsError.cache }
     }
 
@@ -135,8 +172,19 @@ final class SwiftDataLyricsCache: LyricsCacheProviding {
     }
 
     var cachedByteCount: Int64? {
-        guard let values = try? context.fetch(FetchDescriptor<StoredLyrics>()) else { return nil }
-        return values.reduce(0) { $0 + Int64($1.data.count) }
+        if inMemory {
+            guard let values = try? context.fetch(FetchDescriptor<StoredLyrics>()) else { return nil }
+            return values.reduce(0) { $0 + Int64($1.data.count) }
+        }
+        guard let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first,
+              let files = try? FileManager.default.contentsOfDirectory(at: applicationSupport,
+                                                                       includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+        else { return nil }
+        return files.filter { $0.lastPathComponent.hasPrefix("Lyrics-v1") }.reduce(0) { sum, url in
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { return sum }
+            return sum + Int64(values.fileSize ?? 0)
+        }
     }
 
     func clearLyrics() throws {

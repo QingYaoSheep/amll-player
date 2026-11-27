@@ -28,8 +28,8 @@ fragment half4 lyricsHDRFragment(LyricsHDRVarying in [[stage_in]],
     float glyph = glyphs.sample(linearSampler, in.uv).a;
     if (in.glow.x > 0 || in.glow.y > 0) {
         float sum = 0, weight = 0;
-        for (int y = -3; y <= 3; ++y) {
-            for (int x = -3; x <= 3; ++x) {
+        for (int y = -2; y <= 2; ++y) {
+            for (int x = -2; x <= 2; ++x) {
                 float2 offset = float2(x, y);
                 float w = exp(-dot(offset, offset) / 2.0f);
                 float2 uv = in.uv + offset * in.glow;

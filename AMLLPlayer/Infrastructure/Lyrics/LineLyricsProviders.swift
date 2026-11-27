@@ -105,13 +105,17 @@ final class QQLyricsProvider: LyricsProvider {
                     "version": "15", "miniversion": "82", "lrctype": "4", "musicid": numericID,
                 ], headers: headers)
                 let data = try await http.data(for: request)
-                let fields = try QQLyricDownloadXML.parse(data)
-                if let bundle = Self.bundle(
-                    primary: Self.asset(fields["content"], hint: .qrc, origin: "lyric_download.content"),
-                    translation: Self.asset(fields["contentts"], hint: .lrc, origin: "lyric_download.contentts"),
-                    romanization: Self.asset(fields["contentroma"], hint: .lrc, origin: "lyric_download.contentroma"),
-                    reason: "QQ lyric_download"
-                ), Self.isValid(bundle, candidate: candidate) {
+                let bundle = await Task.detached(priority: .userInitiated) { () -> LyricsAssetBundle? in
+                    guard let fields = try? QQLyricDownloadXML.parse(data),
+                          let candidateBundle = Self.bundle(
+                              primary: Self.asset(fields["content"], hint: .qrc, origin: "lyric_download.content"),
+                              translation: Self.asset(fields["contentts"], hint: .lrc, origin: "lyric_download.contentts"),
+                              romanization: Self.asset(fields["contentroma"], hint: .lrc, origin: "lyric_download.contentroma"),
+                              reason: "QQ lyric_download"
+                          ), Self.isValid(candidateBundle, candidate: candidate) else { return nil }
+                    return candidateBundle
+                }.value
+                if let bundle {
                     return bundle
                 }
             } catch is CancellationError {

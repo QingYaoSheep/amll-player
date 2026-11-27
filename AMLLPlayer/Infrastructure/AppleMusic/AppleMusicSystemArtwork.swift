@@ -5,17 +5,18 @@ import UIKit
 /// Metadata-only access. All playback commands remain in SystemMusicPlayer.
 @MainActor
 final class AppleMusicSystemArtwork {
-    private let readArtwork: @MainActor (PlaybackItem) -> Data?
+    private let customReader: (@MainActor (PlaybackItem) -> Data?)?
     private let cache: SystemArtworkCache
     private var key: String?
     private var imageURL: URL?
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private var nextAttempt: TimeInterval = 0
+    private var lastExistenceCheck: TimeInterval = -.infinity
 
     init(cache: SystemArtworkCache = .init(), readArtwork: (@MainActor (PlaybackItem) -> Data?)? = nil) {
         self.cache = cache
-        self.readArtwork = readArtwork ?? Self.readSystemArtwork
+        self.customReader = readArtwork
     }
 
     deinit { task?.cancel() }
@@ -26,30 +27,51 @@ final class AppleMusicSystemArtwork {
             reset()
             key = item.uri
         }
-        if let imageURL, FileManager.default.fileExists(atPath: imageURL.path) {
-            return imageURL
+        if let imageURL {
+            if now - lastExistenceCheck < 0.5 {
+                return imageURL
+            }
+            lastExistenceCheck = now
+            if FileManager.default.fileExists(atPath: imageURL.path) {
+                return imageURL
+            }
         }
         if imageURL != nil {
             imageURL = nil; nextAttempt = 0
         }
         guard task == nil, now >= nextAttempt else { return nil }
         nextAttempt = now + 2 // Artwork may arrive after metadata; never poll images per frame.
-        guard let data = readArtwork(item), !data.isEmpty else { return nil }
         let token = generation
+        if let customReader {
+            guard let data = customReader(item), !data.isEmpty else { return nil }
+            task = Task { [weak self, cache] in
+                defer {
+                    if let self, self.generation == token { self.task = nil }
+                }
+                await self?.persistArtworkData(data, cache: cache, token: token)
+            }
+            return nil
+        }
+        guard let image = Self.readSystemImage(item) else { return nil }
         task = Task { [weak self, cache] in
             defer {
-                if let self, self.generation == token {
-                    self.task = nil
-                }
+                if let self, self.generation == token { self.task = nil }
             }
-            do {
-                let url = try await cache.store(data)
-                try Task.checkCancellation()
-                guard let self, self.generation == token else { return }
-                self.imageURL = url
-            } catch { /* Keep MusicKit's URL and allow a later metadata-only retry. */ }
+            let encoded = await Task.detached(priority: .utility) { image.pngData() }.value
+            guard !Task.isCancelled, let encoded, !encoded.isEmpty else { return }
+            await self?.persistArtworkData(encoded, cache: cache, token: token)
         }
         return nil
+    }
+
+    private func persistArtworkData(_ data: Data, cache: SystemArtworkCache, token: UUID) async {
+        do {
+            let url = try await cache.store(data)
+            try Task.checkCancellation()
+            guard generation == token else { return }
+            self.imageURL = url
+            self.lastExistenceCheck = ProcessInfo.processInfo.systemUptime
+        } catch { /* Keep MusicKit's URL and allow a later metadata-only retry. */ }
     }
 
     func reset() {
@@ -59,6 +81,7 @@ final class AppleMusicSystemArtwork {
         key = nil
         imageURL = nil
         nextAttempt = 0
+        lastExistenceCheck = -.infinity
     }
 
     static func matches(_ item: PlaybackItem, storeID: String, title: String?, artist: String?,
@@ -81,12 +104,12 @@ final class AppleMusicSystemArtwork {
         return true
     }
 
-    private static func readSystemArtwork(_ item: PlaybackItem) -> Data? {
+    private static func readSystemImage(_ item: PlaybackItem) -> UIImage? {
         guard let media = MPMusicPlayerController.systemMusicPlayer.nowPlayingItem,
               matches(item, storeID: media.playbackStoreID, title: media.title, artist: media.artist,
                       album: media.albumTitle, duration: media.playbackDuration),
               let image = media.artwork?.image(at: CGSize(width: 1000, height: 1000)) else { return nil }
-        return image.pngData()
+        return image
     }
 }
 

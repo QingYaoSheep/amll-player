@@ -33,6 +33,8 @@ struct AMLLPixiBackground: UIViewRepresentable {
         context.coordinator.setBlurEnabled(blurEnabled)
         if active {
             context.coordinator.setArtwork(artworkURL)
+        } else {
+            context.coordinator.releaseOffscreenTargets()
         }
         context.coordinator.setRunning(active && !reduceMotion && !reduceTransparency, staticMode: reduceMotion || reduceTransparency)
         view.alpha = reduceTransparency ? 0 : 1
@@ -119,8 +121,10 @@ struct AMLLPixiBackground: UIViewRepresentable {
                 do {
                     let data = try await ArtworkImageData.load(value)
                     try Task.checkCancellation()
+                    let cgImage = await Task.detached(priority: .utility) { UIImage(data: data)?.cgImage }.value
+                    try Task.checkCancellation()
                     guard let self, self.url == value, let device = self.view?.device,
-                          let image = UIImage(data: data)?.cgImage else { return }
+                          let image = cgImage else { return }
                     let texture = try await MTKTextureLoader(device: device).newTexture(cgImage: image, options: [.SRGB: false])
                     try Task.checkCancellation()
                     guard self.url == value else { return }
@@ -135,8 +139,12 @@ struct AMLLPixiBackground: UIViewRepresentable {
             }
         }
 
+        func releaseOffscreenTargets() {
+            textures.removeAll()
+        }
+
         func stop() {
-            task?.cancel(); task = nil; view?.isPaused = true
+            task?.cancel(); task = nil; view?.isPaused = true; textures.removeAll()
         }
 
         func mtkView(_: MTKView, drawableSizeWillChange _: CGSize) {}

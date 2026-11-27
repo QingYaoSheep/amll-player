@@ -1,5 +1,10 @@
 import Foundation
 
+private enum AppleLyricsRegex {
+    static let script = try? NSRegularExpression(pattern: #"(?:src\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']|(/assets/index[^\s"'<>]*\.js))"#)
+    static let bearer = try? NSRegularExpression(pattern: #"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"#)
+}
+
 @MainActor
 final class AppleLyricsProvider: LyricsProvider {
     let source = LyricsSource.apple
@@ -61,22 +66,32 @@ final class AppleLyricsProvider: LyricsProvider {
             do { requests += 1; data = try await http.data(for: LyricsRequest.make(page, headers: headers)) }
             catch is CancellationError { throw CancellationError() }
             catch { continue }
-            let html = String(decoding: data, as: UTF8.self)
-            if let token = Self.extractBearer(html) {
+            let scanResult: (token: AppleBearerInfo?, scripts: [URL]) = await Task.detached(priority: .userInitiated) {
+                let html = String(decoding: data, as: UTF8.self)
+                if let token = Self.extractBearer(html) {
+                    return (token, [])
+                }
+                guard let regex = AppleLyricsRegex.script, let baseURL = URL(string: page) else { return (nil, []) }
+                let ns = html as NSString
+                let urls = regex.matches(in: html, range: NSRange(location: 0, length: ns.length)).prefix(8).compactMap { match -> URL? in
+                    let range = match.range(at: 1).location != NSNotFound ? match.range(at: 1) : match.range(at: 2)
+                    guard let url = URL(string: ns.substring(with: range), relativeTo: baseURL)?.absoluteURL,
+                          url.scheme == "https", ["music.apple.com", "beta.music.apple.com"].contains(url.host ?? "") else { return nil }
+                    return url
+                }
+                return (nil, urls)
+            }.value
+            if let token = scanResult.token {
                 return token
             }
-            let regex = try NSRegularExpression(pattern: #"(?:src\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']|(/assets/index[^\s"'<>]*\.js))"#)
-            let ns = html as NSString
-            let scripts = regex.matches(in: html, range: NSRange(location: 0, length: ns.length)).prefix(8)
-            for match in scripts {
+            for url in scanResult.scripts {
                 guard requests < 12 else { break }
-                let range = match.range(at: 1).location != NSNotFound ? match.range(at: 1) : match.range(at: 2)
-                guard let url = URL(string: ns.substring(with: range), relativeTo: URL(string: page))?.absoluteURL,
-                      url.scheme == "https", ["music.apple.com", "beta.music.apple.com"].contains(url.host ?? "") else { continue }
                 do {
                     requests += 1
                     let script = try await http.data(for: LyricsRequest.make(url.absoluteString, headers: headers))
-                    if let token = Self.extractBearer(String(decoding: script, as: UTF8.self)) {
+                    if let token = await Task.detached(priority: .userInitiated, operation: {
+                        Self.extractBearer(String(decoding: script, as: UTF8.self))
+                    }).value {
                         return token
                     }
                 } catch is CancellationError { throw CancellationError() }
@@ -86,9 +101,9 @@ final class AppleLyricsProvider: LyricsProvider {
         throw LyricsError.bearer
     }
 
-    static func extractBearer(_ text: String, now: Date = Date()) -> AppleBearerInfo? {
+    nonisolated static func extractBearer(_ text: String, now: Date = Date()) -> AppleBearerInfo? {
         let decoded = text.removingPercentEncoding ?? text
-        guard let regex = try? NSRegularExpression(pattern: #"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"#) else { return nil }
+        guard let regex = AppleLyricsRegex.bearer else { return nil }
         let ns = decoded as NSString
         return regex.matches(in: decoded, range: NSRange(location: 0, length: ns.length)).prefix(128)
             .compactMap { try? AppleBearerInfo(ns.substring(with: $0.range), now: now) }

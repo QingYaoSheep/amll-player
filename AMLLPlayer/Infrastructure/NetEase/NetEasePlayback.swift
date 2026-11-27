@@ -63,8 +63,9 @@ struct NetEaseQueueState: Codable {
     @ObservationIgnored private var player: AVPlayer
     @ObservationIgnored private let makeItem: (URL) -> AVPlayerItem
     @ObservationIgnored private var timer: Task<Void, Never>?
+    @ObservationIgnored private var queueSaveTask: Task<Void, Never>?
     @ObservationIgnored private var itemObservation: NSKeyValueObservation?
-    nonisolated(unsafe) @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var commands: [(MPRemoteCommand, Any)] = []
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var seekOperation: UUID?
@@ -101,7 +102,7 @@ struct NetEaseQueueState: Codable {
         playbackSnapshots = s.stream; continuation = s.continuation
     }
     deinit {
-        timer?.cancel(); radioTask?.cancel(); artworkTask?.cancel(); itemObservation?.invalidate()
+        timer?.cancel(); queueSaveTask?.cancel(); radioTask?.cancel(); artworkTask?.cancel(); itemObservation?.invalidate()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         roomPolling?.cancel(); roomSync?.cancel(); roomMessageRead?.cancel(); continuation.finish()
     }
@@ -109,8 +110,13 @@ struct NetEaseQueueState: Codable {
         let next = session.profile?.id
         guard account != next else { return }
         deselect(); queue = .init(); radio = nil; account = next; failure = nil; actualQuality = ""
-        if let next, let data = defaults.data(forKey: "netease.queue.v1." + next),
+        if let next, defaults === UserDefaults.standard,
+           let url = Self.queueFileURL(account: next),
+           let data = try? Data(contentsOf: url),
            let saved = try? JSONDecoder().decode(NetEaseQueueState.self, from: data), saved.entries.count <= 10000 {
+            queue = saved
+        } else if let next, let data = defaults.data(forKey: "netease.queue.v1." + next),
+                  let saved = try? JSONDecoder().decode(NetEaseQueueState.self, from: data), saved.entries.count <= 10000 {
             queue = saved
         }
         if let next, let data = defaults.data(forKey: "netease.radio.v1." + next),
@@ -124,11 +130,22 @@ struct NetEaseQueueState: Codable {
         installNotifications()
         resumeStoredRoom()
         timer = Task { [weak self] in
+            var lastPublishedState: (Bool, UUID?, Double)?
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
+                let sleepDuration: Duration = (self?.intentPlaying == true || self?.seekOperation != nil || self?.isListeningTogether == true)
+                    ? .milliseconds(250) : .seconds(1)
+                try? await Task.sleep(for: sleepDuration)
                 guard !Task.isCancelled, let self else { return }
-                publish()
                 let p = position
+                let isPlayingNow = seekOperation == nil && intentPlaying && player.timeControlStatus == .playing
+                let currentTuple = (isPlayingNow, queue.currentID, p)
+                let changedEnough = lastPublishedState.map {
+                    $0.0 != currentTuple.0 || $0.1 != currentTuple.1 || abs($0.2 - currentTuple.2) >= 0.05
+                } ?? true
+                if isPlayingNow || changedEnough || isListeningTogether {
+                    publish()
+                    lastPublishedState = currentTuple
+                }
                 if intentPlaying, player.currentItem != nil {
                     if abs(p - lastPosition) < 0.005 { stallSeconds += 1 } else { stallSeconds = 0 }
                     if stallSeconds >= 120 {
@@ -139,7 +156,7 @@ struct NetEaseQueueState: Codable {
                 } else { stallSeconds = 0 }
                 lastPosition = p
                 saveTicks += 1
-                if saveTicks >= 20 { saveTicks = 0; save() }
+                if saveTicks >= 20, intentPlaying { saveTicks = 0; save() }
             }
         }
     }
@@ -372,6 +389,9 @@ struct NetEaseQueueState: Codable {
         if let old { defaults.removeObject(forKey: "netease.queue.v1." + old) }
         if let old { defaults.removeObject(forKey: "netease.radio.v1." + old) }
         if let old { defaults.removeObject(forKey: "netease.room.v1." + old) }
+        if let old, defaults === UserDefaults.standard, let url = Self.queueFileURL(account: old) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
     private var position: Double {
         let time = player.currentItem == nil ? queue.position : player.currentTime().seconds
@@ -625,7 +645,34 @@ struct NetEaseQueueState: Codable {
             if let data = try? JSONEncoder().encode(radio) { defaults.set(data, forKey: "netease.radio.v1." + account) }
             return
         }
+        if defaults === UserDefaults.standard, let url = Self.queueFileURL(account: account) {
+            let defaultsRef = defaults
+            let legacyKey = "netease.queue.v1." + account
+            let snapshotState = state
+            queueSaveTask?.cancel()
+            queueSaveTask = Task.detached(priority: .utility) {
+                try? await Task.sleep(for: .milliseconds(150))
+                guard !Task.isCancelled, let data = try? JSONEncoder().encode(snapshotState) else { return }
+                var dir = url.deletingLastPathComponent()
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                var values = URLResourceValues()
+                values.isExcludedFromBackup = true
+                try? dir.setResourceValues(values)
+                try? data.write(to: url, options: .atomic)
+                defaultsRef.removeObject(forKey: legacyKey)
+            }
+            return
+        }
         if let data = try? JSONEncoder().encode(state) { defaults.set(data, forKey: "netease.queue.v1." + account) }
+    }
+
+    private nonisolated static func queueFileURL(account: String) -> URL? {
+        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let sanitized = account.replacingOccurrences(of: "/", with: "_")
+        return base.appendingPathComponent("NetEaseQueue", isDirectory: true)
+            .appendingPathComponent("\(sanitized).json")
     }
     @discardableResult
     private func publish(seekAnchor: Double? = nil, confirmation: PlaybackSeekConfirmation? = nil) -> PlaybackSnapshot? {
@@ -672,13 +719,10 @@ struct NetEaseQueueState: Codable {
         guard let url, let trusted = NetEaseDecoder.image(url.absoluteString) else { return }
         let entry = queue.currentID
         artworkTask = Task { [weak self] in
-            // Independent ephemeral download never carries session cookies.
-            let config = URLSessionConfiguration.ephemeral
-            config.httpCookieStorage = nil; config.httpShouldSetCookies = false; config.timeoutIntervalForRequest = 15
-            let download = URLSession(configuration: config)
-            defer { download.invalidateAndCancel() }
-            guard let (data, _) = try? await download.data(from: trusted), data.count <= 8 * 1024 * 1024,
-                  !Task.isCancelled, let image = UIImage(data: data), let self,
+            guard let data = try? await ArtworkImageData.load(trusted), data.count <= 8 * 1024 * 1024,
+                  !Task.isCancelled else { return }
+            let image = await Task.detached(priority: .utility) { UIImage(data: data) }.value
+            guard !Task.isCancelled, let image, let self,
                   selected, queue.currentID == entry, artworkURL == url else { return }
             nowArtwork = NetEaseNowPlayingArtwork.make(image)
             publish()

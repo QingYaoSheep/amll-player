@@ -60,6 +60,7 @@ struct DesktopLyricsSingleLineTransition {
     }
 
     static let duration = 0.12
+    static let exitDuration = 0.20
     static let blurMaximum = 2.0
 
     private enum Phase {
@@ -94,11 +95,15 @@ struct DesktopLyricsSingleLineTransition {
             phase = .exiting(since: now, alpha: lastVisibleAlpha)
             return .init(layer: .outgoing(alpha: lastVisibleAlpha, blur: 0), capture: index)
         case let .exiting(since, alpha):
-            let boundary = since + Self.duration
+            let boundary = since + Self.exitDuration
             if now >= boundary { return enter(target, since: boundary, now: now) }
-            let progress = easing(now - since)
-            return .init(layer: .outgoing(alpha: alpha * (1 - progress),
-                                          blur: blurs ? Self.blurMaximum * progress : 0))
+            let progress = min(1, max(0, (now - since) / Self.exitDuration))
+            // Soften the line while it is still legible. Run the fade on a
+            // separate smooth curve so the soft frames are visible.
+            let opacity = 1 - progress * progress * (3 - 2 * progress)
+            let blur = easing(progress * Self.duration)
+            return .init(layer: .outgoing(alpha: alpha * opacity,
+                                          blur: blurs ? Self.blurMaximum * blur : 0))
         case let .entering(index, since):
             if index == target { return enter(index, since: since, now: now) }
             guard lastVisibleAlpha > 0 else { return enter(target, since: now, now: now) }

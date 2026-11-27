@@ -24,9 +24,28 @@ final class DesktopLyricsFrames {
     private var singleLineRevision: Int?
     private var singleLineTransition = DesktopLyricsSingleLineTransition()
     private var outgoingLine: UIImage?
+    private var outgoingHeight: CGFloat = 0
+    private var adaptiveHeight = DesktopLyricsAdaptiveHeight()
+    private var requestedSize: CGSize
+    private var needsResubmission = false
+    private var configuredCanvas: CanvasSettings?
     private lazy var transitionBlurContext = CIContext(options: [.useSoftwareRenderer: true, .cacheIntermediates: false])
     private(set) var isAnimating = false
     private(set) var needsPlaybackFrames = false
+
+    private enum Content {
+        case metadata
+        case scrolling(CGRect)
+        case singleLine(DesktopLyricsSingleLineTransition.Layer, height: CGFloat)
+
+        var height: CGFloat {
+            switch self {
+            case .metadata: 52
+            case let .scrolling(focus): focus.isNull ? 0 : focus.height
+            case let .singleLine(_, height): height
+            }
+        }
+    }
 
     private struct CanvasSettings: Equatable {
         var revision: Int?
@@ -50,8 +69,11 @@ final class DesktopLyricsFrames {
 
     init(aspect: DesktopLyricsSettings.Aspect) {
         self.aspect = aspect
-        background = DesktopLyricsBackground(size: aspect.canvasSize)
-        pixelSize = aspect.outputSize(for: .zero)
+        background = DesktopLyricsBackground(size: CGSize(width: aspect.canvasSize.width,
+                                                           height: DesktopLyricsAdaptiveHeight.maximum))
+        let size = aspect.outputSize(for: .zero)
+        requestedSize = size
+        pixelSize = size
         layer.videoGravity = .resizeAspect
         canvas.drivesFramesExternally = true
         canvas.clipsToBounds = false
@@ -60,8 +82,11 @@ final class DesktopLyricsFrames {
 
     func resize(_ dimensions: CMVideoDimensions, at now: Double = ProcessInfo.processInfo.systemUptime) {
         guard dimensions.width > 0, dimensions.height > 0 else { return }
-        let size = aspect.outputSize(for: CGSize(width: Int(dimensions.width), height: Int(dimensions.height)))
-        if size == pixelSize {
+        let ratio = pixelSize.width / pixelSize.height
+        let width = min(CGFloat(dimensions.width), CGFloat(dimensions.height) * ratio)
+        let tiers = aspect.pixelSizes
+        let size = tiers.first { $0.width >= width } ?? tiers.last!
+        if size == requestedSize {
             pendingResize = nil
         } else if pendingResize?.size != size {
             pendingResize = (size, now)
@@ -71,7 +96,12 @@ final class DesktopLyricsFrames {
     func applyPendingResize(at now: Double) {
         guard let request = pendingResize, now - request.changedAt >= 0.15 else { return }
         pendingResize = nil
-        createPool(size: request.size)
+        requestedSize = request.size
+        if submitted?.canvas.settings.fitsContent == true {
+            updatePool(height: adaptiveHeight.height)
+        } else {
+            createPool(size: request.size)
+        }
     }
 
     private func createPool(size: CGSize? = nil) {
@@ -90,7 +120,12 @@ final class DesktopLyricsFrames {
         pool = newPool
         pixelSize = target
         format = nil
-        submitted = nil
+        needsResubmission = true
+    }
+
+    private func updatePool(height: CGFloat) {
+        let size = CGSize(width: requestedSize.width, height: (requestedSize.width * height / aspect.canvasSize.width).rounded())
+        if size != pixelSize { createPool(size: size) }
     }
 
     func render(model: AppModel, frame: LyricsPlaybackFrame, animates: Bool) {
@@ -103,11 +138,13 @@ final class DesktopLyricsFrames {
                 configuration source: LyricsRenderConfiguration, settings: DesktopLyricsSettings, animates: Bool) {
         let now = ProcessInfo.processInfo.systemUptime
         applyPendingResize(at: now)
-        guard let item = frame.snapshot?.item, let pool else {
+        guard let item = frame.snapshot?.item else {
             if submitted != nil {
                 layer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
                 submitted = nil
             }
+            configuredCanvas = nil
+            outgoingLine = nil
             isAnimating = false
             needsPlaybackFrames = false
             return
@@ -135,109 +172,135 @@ final class DesktopLyricsFrames {
             renderer.flush()
             submitted = nil
         }
-        guard submitted != key || (animates && isAnimating), renderer.isReadyForMoreMediaData else { return }
-        var output: CVPixelBuffer?
-        guard CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool, bufferLimit, &output) == kCVReturnSuccess,
-              let output else { return }
+        guard needsResubmission || submitted != key || (animates && isAnimating),
+              renderer.isReadyForMoreMediaData else { return }
 
-        if displayedTrack != item.uri {
+        let changedTrack = displayedTrack != item.uri
+        if changedTrack {
             displayedTrack = item.uri
+            configuredCanvas = nil
             singleLineRevision = nil
-            isAnimating = false
             lastFrameTime = nil
         }
         let delta = lastFrameTime.map { min(0.1, max(0, now - $0)) } ?? 0
-        guard draw(output, document: document, frame: frame, key: key, delta: delta,
-                   now: now, animates: animates) else { return }
+        let content = prepareContent(document: document, frame: frame, key: key, delta: delta, now: now, animates: animates)
+        lastFrameTime = now
+        let height = presentation.fitsContent
+            ? adaptiveHeight.update(contentHeight: content.height, at: now, reset: changedTrack || submitted?.canvas.settings.fitsContent != true)
+            : aspect.canvasSize.height
+        isAnimating = isAnimating || (presentation.fitsContent && adaptiveHeight.isSettling)
+        updatePool(height: height)
+
+        var output: CVPixelBuffer?
+        guard let pool,
+              CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool, bufferLimit, &output) == kCVReturnSuccess,
+              let output, draw(output, content: content, height: height, key: key) else { return }
         if let sample = sample(for: output, at: now) {
             renderer.enqueue(sample)
             submitted = key
-            lastFrameTime = now
+            needsResubmission = false
         }
     }
 
-    private func draw(_ buffer: CVPixelBuffer, document: LyricsDocument?, frame: LyricsPlaybackFrame,
-                      key: FrameKey, delta: Double, now: Double, animates: Bool) -> Bool
-    {
-        guard CVPixelBufferLockBaseAddress(buffer, []) == kCVReturnSuccess else { return false }
-        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-        guard let address = CVPixelBufferGetBaseAddress(buffer),
-              let context = CGContext(data: address, width: CVPixelBufferGetWidth(buffer),
-                                      height: CVPixelBufferGetHeight(buffer), bitsPerComponent: 8,
-                                      bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: colorSpace,
-                                      bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue)
-        else { return false }
-        let bounds = CGRect(origin: .zero, size: aspect.canvasSize)
-        let scale = pixelSize.width / bounds.width
-        context.translateBy(x: 0, y: pixelSize.height)
-        context.scaleBy(x: scale, y: -scale)
-        UIGraphicsPushContext(context)
-        defer { UIGraphicsPopContext() }
-        background.draw(in: bounds)
-
-        if let document {
-            let appearance = key.canvas
-            if canvas.frame != bounds { canvas.frame = bounds }
-            canvas.exportRasterScale = scale
-            if submitted?.canvas != appearance || submitted?.item.uri != key.item.uri
-                || submitted?.item.artworkURL != key.item.artworkURL
-            {
-                let configuration = appearance.settings.rendererConfiguration(appearance.configuration)
-                let input = AMLLPlayerInput(position: frame.position, offset: appearance.offset, playing: frame.playing,
-                                            seekRevision: frame.seekRevision, seekPosition: frame.legacySeekPosition,
-                                            document: document, playbackSnapshot: frame.snapshot,
-                                            artworkURL: key.item.artworkURL, configuration: configuration, event: .snapshot)
-                canvas.configure(document: document, documentVersion: appearance.revision, configuration: configuration,
-                                 input: input, active: true, reduceMotion: appearance.reduceMotion,
-                                 reduceTransparency: appearance.reduceTransparency, canSeek: false,
-                                 desktopSettings: appearance.settings)
-            }
-            // Playback and seek transactions are applied by advanceExportFrame on every lyric sample.
-            if appearance.settings.mode == .singleLine {
-                drawSingleLine(in: context, document: document, frame: frame, key: key, delta: delta,
-                               now: now, animates: animates)
-            } else {
-                isAnimating = canvas.drawExportFrame(in: context, sample: frame, delta: delta,
-                                                      additive: !appearance.reduceTransparency)
-            }
-        } else {
+    private func prepareContent(document: LyricsDocument?, frame: LyricsPlaybackFrame, key: FrameKey,
+                                delta: Double, now: Double, animates: Bool) -> Content {
+        guard let document else {
+            configuredCanvas = nil
             outgoingLine = nil
             singleLineTimeline = nil
             singleLineRevision = nil
             isAnimating = false
-            drawMetadata(key.item, bounds: bounds)
+            return .metadata
         }
-        return true
-    }
-
-    private func drawSingleLine(in context: CGContext, document: LyricsDocument, frame: LyricsPlaybackFrame,
-                                key: FrameKey, delta: Double, now: Double, animates: Bool) {
         let appearance = key.canvas
+        let layoutHeight = appearance.settings.fitsContent ? DesktopLyricsAdaptiveHeight.maximum : aspect.canvasSize.height
+        let layoutBounds = CGRect(x: 0, y: 0, width: aspect.canvasSize.width, height: layoutHeight)
+        if canvas.frame != layoutBounds { canvas.frame = layoutBounds }
+        canvas.exportRasterScale = requestedSize.width / layoutBounds.width
+        if configuredCanvas != appearance || submitted?.item.artworkURL != key.item.artworkURL {
+            let configuration = appearance.settings.rendererConfiguration(appearance.configuration)
+            let input = AMLLPlayerInput(position: frame.position, offset: appearance.offset, playing: frame.playing,
+                                        seekRevision: frame.seekRevision, seekPosition: frame.legacySeekPosition,
+                                        document: document, playbackSnapshot: frame.snapshot,
+                                        artworkURL: key.item.artworkURL, configuration: configuration, event: .snapshot)
+            canvas.configure(document: document, documentVersion: appearance.revision, configuration: configuration,
+                             input: input, active: true, reduceMotion: appearance.reduceMotion,
+                             reduceTransparency: appearance.reduceTransparency, canSeek: false,
+                             desktopSettings: appearance.settings)
+            configuredCanvas = appearance
+        }
+        if appearance.settings.mode == .scrolling {
+            isAnimating = canvas.advanceExportFrame(sample: frame, delta: delta)
+            return .scrolling(canvas.exportScrollingBounds)
+        }
+
         if singleLineRevision != appearance.revision {
             singleLineTimeline = DesktopLyricsSingleLineTimeline(document: document)
             singleLineRevision = appearance.revision
         }
         let time = DesktopLyricsSingleLineTimeline.lyricTime(position: frame.position, offset: appearance.offset)
-        let target = singleLineTimeline?.line(at: time)
         let immediate = !animates || singleLineNeedsRebase(to: key)
+        let sameDocument = submitted?.item.uri == key.item.uri && submitted?.canvas.revision == appearance.revision
+        let interlude = sameDocument ? canvas.frameState?.interlude : nil
+        let inInterlude = interlude.map { time >= $0.start && time < $0.end } == true
+        let target = inInterlude ? nil : singleLineTimeline?.line(at: time)
         let presentation = singleLineTransition.frame(target: target?.index, now: now, immediate: immediate,
                                                        blurs: !appearance.reduceMotion && !appearance.reduceTransparency)
         if let capture = presentation.capture {
-            // Keep only the old transparent lyric pixels. The shared engine
-            // advances the incoming lyric below, even while it remains hidden.
+            outgoingHeight = canvas.exportSingleLineHeight(capture)
             outgoingLine = canvas.snapshotExportLine(capture)
         }
         let moving = canvas.advanceExportFrame(sample: frame, delta: delta, singleLine: target)
+        isAnimating = moving || singleLineTransition.isAnimating
         switch presentation.layer {
         case .empty:
             outgoingLine = nil
-        case let .live(index, alpha):
+            return .singleLine(.empty, height: 0)
+        case let .live(index, _):
             outgoingLine = nil
-            canvas.drawExportLine(index, in: context, opacity: alpha, additive: !appearance.reduceTransparency)
-        case let .outgoing(alpha, blur):
-            drawOutgoingLine(in: canvas.bounds, alpha: alpha, blur: blur, additive: !appearance.reduceTransparency)
+            return .singleLine(presentation.layer, height: canvas.exportSingleLineHeight(index))
+        case .outgoing:
+            return .singleLine(presentation.layer, height: outgoingHeight)
         }
-        isAnimating = moving || singleLineTransition.isAnimating
+    }
+
+    private func draw(_ buffer: CVPixelBuffer, content: Content, height: CGFloat, key: FrameKey) -> Bool {
+        guard CVPixelBufferLockBaseAddress(buffer, []) == kCVReturnSuccess else { return false }
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        guard let address = CVPixelBufferGetBaseAddress(buffer),
+              let context = CGContext(data: address, width: CVPixelBufferGetWidth(buffer),
+                                      height: CVPixelBufferGetHeight(buffer),
+                                      bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: colorSpace,
+                                      bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue)
+        else { return false }
+        let width = aspect.canvasSize.width
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        let scale = pixelSize.width / width
+        context.translateBy(x: 0, y: pixelSize.height)
+        context.scaleBy(x: scale, y: -scale)
+        UIGraphicsPushContext(context)
+        defer { UIGraphicsPopContext() }
+        let backgroundHeight = DesktopLyricsAdaptiveHeight.maximum
+        background.draw(in: CGRect(x: 0, y: (height - backgroundHeight) / 2, width: width, height: backgroundHeight))
+        let additive = !key.canvas.reduceTransparency
+        switch content {
+        case .metadata:
+            drawMetadata(key.item, bounds: bounds)
+        case let .scrolling(focusBounds):
+            canvas.drawExportScrolling(in: context, viewport: bounds, focusBounds: focusBounds, additive: additive)
+        case let .singleLine(presentation, _):
+            context.clip(to: bounds)
+            context.translateBy(x: 0, y: (height - canvas.bounds.height) / 2)
+            switch presentation {
+            case .empty:
+                canvas.drawExportInterlude(in: context)
+            case let .live(index, alpha):
+                canvas.drawExportLine(index, in: context, opacity: alpha, additive: additive)
+            case let .outgoing(alpha, blur):
+                drawOutgoingLine(in: canvas.bounds, alpha: alpha, blur: blur, additive: additive)
+            }
+        }
+        return true
     }
 
     private func singleLineNeedsRebase(to frame: FrameKey) -> Bool {

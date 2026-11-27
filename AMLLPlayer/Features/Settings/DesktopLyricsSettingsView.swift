@@ -26,7 +26,17 @@ struct DesktopLyricsSettingsView: View {
                     }
                     .accessibilityIdentifier("desktopLyricsMode")
                     SettingsDivider(inset: 16)
-                    if settings.mode == .scrolling {
+                    Toggle("desktopLyrics.fitHeight", isOn: $preferences.settings.fitsContent.hapticSelection())
+                        .accessibilityIdentifier("desktopLyricsFitHeight")
+                    SettingsDivider(inset: 16)
+                    Picker("desktopLyrics.alignment", selection: $preferences.settings.alignment.hapticSelection()) {
+                        ForEach(DesktopLyricsSettings.Alignment.allCases, id: \.self) { alignment in
+                            Text(LocalizedStringKey(alignment.label)).tag(alignment)
+                        }
+                    }
+                    .accessibilityIdentifier("desktopLyricsAlignment")
+                    SettingsDivider(inset: 16)
+                    if settings.mode == .scrolling && !settings.fitsContent {
                         Picker("desktopLyrics.aspect", selection: $preferences.settings.aspect.hapticSelection()) {
                             ForEach(DesktopLyricsSettings.Aspect.scrollingOptions, id: \.self) { aspect in
                                 Text(LocalizedStringKey(aspect.label)).tag(aspect)
@@ -99,15 +109,17 @@ private struct DesktopLyricsPreview: View {
     let artworkURL: URL?
     @Environment(\.scenePhase) private var phase
     @State private var startedAt = Date()
+    @State private var adaptiveRatio: CGFloat?
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: phase != .active)) { timeline in
             let elapsed = max(0, timeline.date.timeIntervalSince(startedAt))
             DesktopLyricsPreviewSurface(configuration: configuration, settings: settings, artworkURL: artworkURL,
-                                        elapsed: elapsed, playing: phase == .active)
+                                        elapsed: elapsed, playing: phase == .active, adaptiveRatio: $adaptiveRatio)
                 .id(settings.outputAspect)
         }
-        .aspectRatio(settings.outputAspect.ratio, contentMode: .fit)
+        .aspectRatio(settings.fitsContent ? adaptiveRatio ?? (320 / DesktopLyricsAdaptiveHeight.minimum)
+                     : CGFloat(settings.outputAspect.ratio), contentMode: .fit)
         .background(Color(white: 0.075))
     }
 }
@@ -118,6 +130,7 @@ private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
     let artworkURL: URL?
     let elapsed: Double
     let playing: Bool
+    @Binding var adaptiveRatio: CGFloat?
 
     func makeCoordinator() -> DesktopLyricsFrames { .init(aspect: settings.outputAspect) }
 
@@ -144,6 +157,13 @@ private struct DesktopLyricsPreviewSurface: UIViewRepresentable {
         appearance.romanization = true
         context.coordinator.render(frame: frame, lyrics: Self.document, revision: 1, offset: 0,
                                    configuration: appearance, settings: settings, animates: true)
+        if settings.fitsContent {
+            let size = context.coordinator.pixelSize
+            let ratio = size.width / size.height
+            if adaptiveRatio != ratio {
+                Task { @MainActor in adaptiveRatio = ratio }
+            }
+        }
     }
 
     private static let duration = 12.0

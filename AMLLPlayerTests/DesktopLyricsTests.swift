@@ -158,10 +158,11 @@ final class DesktopLyricsTests: XCTestCase {
         XCTAssertNil(interrupted.capture)
         guard case let .outgoing(alpha, blur) = interrupted.layer else { return XCTFail("The newer lyric drew during the exit") }
         XCTAssertLessThan(alpha, 1)
-        XCTAssertGreaterThan(blur, 0)
+        XCTAssertGreaterThan(blur, 1)
+        XCTAssertGreaterThan(alpha, 0.7, "Visible softening needs enough old-line opacity")
         XCTAssertTrue(transition.isAnimating)
 
-        let boundary = 1 + DesktopLyricsSingleLineTransition.duration
+        let boundary = 1 + DesktopLyricsSingleLineTransition.exitDuration
         XCTAssertEqual(transition.frame(target: 2, now: boundary, immediate: false, blurs: true).layer, .live(index: 2, alpha: 0))
         let completed = transition.frame(target: 2, now: boundary + 0.2, immediate: false, blurs: true)
         XCTAssertEqual(completed.layer, .live(index: 2, alpha: 1))
@@ -262,6 +263,45 @@ final class DesktopLyricsTests: XCTestCase {
         producer.render(frame: frame, lyrics: lyrics, revision: 1, offset: 0, configuration: .init(),
                         settings: .init(), animates: true)
         XCTAssertFalse(producer.needsPlaybackFrames)
+    }
+
+    func testAdaptiveWindowExpandsForAdditionalVoicesThenSettlesBack() throws {
+        var height = DesktopLyricsAdaptiveHeight()
+        XCTAssertEqual(height.update(contentHeight: 32, at: 0), 112)
+        XCTAssertEqual(height.update(contentHeight: 120, at: 1), 160)
+        XCTAssertEqual(height.update(contentHeight: 178, at: 1.1), 208)
+        XCTAssertEqual(height.update(contentHeight: 32, at: 2), 208)
+        XCTAssertTrue(height.isSettling)
+        XCTAssertEqual(height.update(contentHeight: 32, at: 2.4), 112)
+        XCTAssertFalse(height.isSettling)
+        XCTAssertEqual(height.update(contentHeight: 500, at: 3), 240)
+
+        var settings = DesktopLyricsSettings()
+        settings.fitsContent = true
+        settings.alignment = .centered
+        settings.aspect = .tall
+        let restored = try JSONDecoder().decode(DesktopLyricsSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(restored, settings)
+        XCTAssertEqual(restored.outputAspect, .tall)
+    }
+
+    @MainActor
+    func testDesktopCenterAlignmentMovesBothWordGeometryAndAuxiliary() throws {
+        let line = LyricLine(id: "centered", text: "Hello", start: 0, end: 1,
+                             words: [.init(text: "Hello", start: 0, end: 1)], translation: "Hi",
+                             isDuet: true, precision: .word)
+        let font = UIFont.systemFont(ofSize: 24)
+        var configuration = LyricsRenderConfiguration()
+        configuration.translation = true
+        let right = AMLLCoreTextLayout(line: line, width: 260, font: font, configuration: configuration)
+        let center = AMLLCoreTextLayout(line: line, width: 260, font: font,
+                                        configuration: configuration, centered: true)
+        let original = try XCTUnwrap(right.fragments.first)
+        let moved = try XCTUnwrap(center.fragments.first)
+        XCTAssertGreaterThan(original.rect.midX, moved.rect.midX)
+        XCTAssertEqual(moved.rect.midX, 130, accuracy: 1)
+        XCTAssertEqual(center.horizontalInkBounds.midX, 130, accuracy: 1)
+        XCTAssertEqual(moved.word, original.word)
     }
 
     private func singleLineFixture() -> LyricsDocument {

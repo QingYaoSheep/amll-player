@@ -43,6 +43,12 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
         }
     }
 
+    enum Alignment: String, CaseIterable, Codable, Sendable {
+        case reading, centered
+
+        var label: String { "desktopLyrics.alignment." + rawValue }
+    }
+
     enum Transition: String, CaseIterable, Codable, Sendable {
         case blur, fade, instant
 
@@ -60,6 +66,8 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
     var mode: DisplayMode = .scrolling
     var singleLineTranslation = true
     var singleLineRomanization = true
+    var fitsContent = false
+    var alignment: Alignment = .reading
 
     var outputAspect: Aspect { mode == .singleLine ? .singleLine : aspect }
 
@@ -97,6 +105,7 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case fontSize, blurStrength, wordHighlight, aspect, transition, mode, singleLineTranslation, singleLineRomanization
+        case fitsContent, alignment
     }
 
     init(from decoder: any Decoder) throws {
@@ -109,6 +118,8 @@ struct DesktopLyricsSettings: Codable, Equatable, Sendable {
         mode = (try? values.decode(DisplayMode.self, forKey: .mode)) ?? mode
         singleLineTranslation = (try? values.decode(Bool.self, forKey: .singleLineTranslation)) ?? singleLineTranslation
         singleLineRomanization = (try? values.decode(Bool.self, forKey: .singleLineRomanization)) ?? singleLineRomanization
+        fitsContent = (try? values.decode(Bool.self, forKey: .fitsContent)) ?? fitsContent
+        alignment = (try? values.decode(Alignment.self, forKey: .alignment)) ?? alignment
         self = validated()
     }
 }

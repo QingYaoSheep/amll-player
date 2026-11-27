@@ -51,6 +51,8 @@ final class AMLLNativeCanvas: UIView {
     var drivesFramesExternally = false
     var exportRasterScale: CGFloat = 1
     private var desktopSettings: DesktopLyricsSettings?
+    private var exportFocusGroups: Set<Int> = []
+    private var exportUpcomingGroup: Int?
     private var rasterScale: CGFloat { drivesFramesExternally ? exportRasterScale : (window?.screen.scale ?? 2) }
     private var rendersOffscreenOrAttached: Bool { drivesFramesExternally || window != nil }
 
@@ -423,6 +425,7 @@ final class AMLLNativeCanvas: UIView {
         var boldText: Bool
         var direction: UIUserInterfaceLayoutDirection
         var locale: String
+        var desktopCentersLines: Bool
         var settings: LayoutSettings
     }
 
@@ -434,6 +437,7 @@ final class AMLLNativeCanvas: UIView {
               boldText: traitCollection.legibilityWeight == .bold,
               direction: effectiveUserInterfaceLayoutDirection,
               locale: Locale.current.identifier,
+              desktopCentersLines: desktopSettings?.alignment == .centered,
               settings: Self.layoutSettings(auxiliaryFade.layoutConfiguration(configuration)))
     }
 
@@ -553,13 +557,14 @@ final class AMLLNativeCanvas: UIView {
         let width = max(1, bounds.width - rowInset(line) * 2)
             * (configuration.tabletTypography == nil && hasDuet ? 0.85 : 1)
         let cue = configuration.romanization ? romanizationCues[index] : nil
+        let centered = desktopSettings?.alignment == .centered
         let animateRomanization = configuration.animationStyle == .appleMusic164 || desktopSettings?.mode == .singleLine
         if let cue, !cue.tokens.isEmpty, line.precision == .word {
             var placement = line
             placement.generatedRomanization = cue.tokens
             placement.generatedRomanizationLanguage = cue.line.generatedRomanizationLanguage
             let aligned = AMLLCoreTextLayout(line: placement, width: width, font: font,
-                                             configuration: configuration)
+                                             configuration: configuration, centered: centered)
             if aligned.hasGeneratedRomanizationLayout {
                 let projected = animateRomanization ? aligned.timedRomanization(for: line, cue: cue.line) : nil
                 if projected != nil || !animateRomanization || cue.line.precision == .line {
@@ -578,10 +583,10 @@ final class AMLLNativeCanvas: UIView {
         let romanFont = font.withSize(max(10, size * (configuration.auxiliaryScale ?? 0.5)))
         let romanLayout = cue.map {
             AMLLCoreTextLayout(line: $0.line, width: width, font: romanFont, configuration: romanConfiguration,
-                               preservesWordTiming: animateRomanization)
+                               preservesWordTiming: animateRomanization, centered: centered)
         }
         let original = AMLLCoreTextLayout(line: line, width: width, font: font, configuration: configuration,
-                                          romanizationReserve: romanLayout?.size.height ?? 0)
+                                          romanizationReserve: romanLayout?.size.height ?? 0, centered: centered)
         let projected = animateRomanization && cue == nil ? original.timedRomanization(for: line, cue: nil) : nil
         let result = RowLayouts(original: original, romanization: romanLayout ?? projected?.1,
                                 romanizationCue: cue, alignedRomanization: false, projectedRomanizationLine: projected?.0)
@@ -614,7 +619,9 @@ final class AMLLNativeCanvas: UIView {
         // group-motion array copy on write once per display refresh.
         let previousAnchor = engine!.timeAnchorRevision
         let state = engine!.render(input, delta: delta)
-        if frameState != nil, engine!.timeAnchorRevision != previousAnchor {
+        let reanchored = engine!.timeAnchorRevision != previousAnchor
+        if reanchored { exportUpcomingGroup = nil }
+        if frameState != nil, reanchored {
             auxiliaryReflow.reset(); auxiliarySlotReflow.reset()
         }
         input.seeking = false
@@ -649,8 +656,22 @@ final class AMLLNativeCanvas: UIView {
         let sourceClipping = configuration.animationStyle == .appleMusic164
         let margin = sourceClipping ? 50 : bounds.height * 0.5
         let isSingleLine = desktopSettings?.mode == .singleLine
+        if desktopSettings?.mode == .scrolling {
+            let handoff = engine!.desktopHandoff
+            if state.interlude != nil || exportUpcomingGroup != handoff.pending
+                || handoff.selected.contains(exportUpcomingGroup ?? -1) {
+                exportUpcomingGroup = nil
+            }
+            if state.interlude == nil, handoff.previewsPending {
+                exportUpcomingGroup = handoff.pending
+            }
+            exportFocusGroups = Set(handoff.selected)
+            if let exportUpcomingGroup { exportFocusGroups.insert(exportUpcomingGroup) }
+            if exportFocusGroups.isEmpty { exportFocusGroups.insert(state.focusGroup) }
+        }
         let visible = state.rows.filter {
             if isSingleLine { return $0.lineIndex == singleLine?.index && !$0.hidden }
+            if desktopSettings != nil, Self.exportFocuses($0, groups: exportFocusGroups) { return true }
             let extent = heights[$0.lineIndex] * (sourceClipping ? $0.scale : 1)
             return !$0.hidden && $0.y + extent >= -margin && $0.y <= bounds.height + margin
         }
@@ -732,7 +753,7 @@ final class AMLLNativeCanvas: UIView {
             let inset = configuration.tabletTypography?.inset(width: bounds.width, duet: hasDuet,
                 background: false, custom: configuration.horizontalPadding) ?? self.inset
             let width = layouts[row.lineIndex]?.original.size.width ?? max(1, bounds.width - rowInset(line) * 2)
-            let trailing = line.isDuet || (configuration.tabletTypography != nil && line.isRTL)
+            let trailing = desktopSettings?.alignment != .centered && (line.isDuet || (configuration.tabletTypography != nil && line.isRTL))
             let anchor = CGPoint(x: trailing ? 1 : 0, y: 0.5)
             let rowBounds = CGRect(x: 0, y: 0, width: width, height: heights[row.lineIndex])
             let rowPosition = CGPoint(x: trailing ? bounds.width - inset : inset, y: row.y + heights[row.lineIndex] / 2)
@@ -779,12 +800,17 @@ final class AMLLNativeCanvas: UIView {
             auxiliaryLayoutPreparation = nil
             auxiliaryFade.finishPreparation(token)
         }
-        if !isSingleLine, let interlude = state.interlude,
-           let presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
+        if let interlude = state.interlude,
+           var presentation = AMLLInterludeMotion.presentation(time: state.lyricTime, start: interlude.start, end: interlude.end, playing: input.playing)
         {
             let height = renderEnvironment().dotHeight
             let width = height * 3 + configuration.fontSize * 0.5 + 12
-            dots.frame = CGRect(x: interlude.duet ? bounds.width - inset - width : inset, y: interlude.y, width: width, height: height)
+            let center = desktopSettings?.alignment == .centered
+            let x = center ? bounds.midX - width / 2 : (interlude.duet ? bounds.width - inset - width : inset)
+            if desktopSettings != nil, reduceMotion { presentation.scale = 0.7 }
+            if desktopSettings != nil { dots.transform = .identity }
+            dots.frame = CGRect(x: x, y: isSingleLine ? bounds.midY - height / 2 : interlude.y, width: width, height: height)
+            if desktopSettings != nil { dots.layoutIfNeeded() }
             dots.isHidden = false; dots.apply(presentation); bringSubviewToFront(dots)
         } else {
             dots.isHidden = true
@@ -1147,21 +1173,32 @@ final class AMLLNativeCanvas: UIView {
             || auxiliaryReflow.isAnimating || auxiliarySlotReflow.isAnimating || frameState?.settled == false
     }
 
-    func drawExportFrame(in context: CGContext, sample: LyricsPlaybackFrame, delta: Double, additive: Bool) -> Bool {
-        let animating = advanceExportFrame(sample: sample, delta: delta)
-        context.saveGState()
-        context.clip(to: bounds)
-        let focused = frameState?.rows.filter {
-            !$0.hidden && ($0.active || $0.visualFocus == .current || $0.visualFocus == .holding)
-        } ?? []
-        let focusBounds = focused.reduce(CGRect.null) { rect, row in
-            guard let nativeRow = rowViews[row.lineIndex] else { return rect }
+    private static func exportFocuses(_ row: AMLLFrameState.Row, groups: Set<Int>) -> Bool {
+        !row.hidden && (groups.contains(row.groupIndex) || row.active || row.visualFocus == .current
+            || row.visualFocus == .holding || row.visualFocus == .preparing)
+    }
+
+    var exportScrollingBounds: CGRect {
+        guard let state = frameState else { return .null }
+        if state.interlude != nil, !dots.isHidden { return dots.frame }
+        return state.rows.reduce(CGRect.null) { rect, row in
+            guard Self.exportFocuses(row, groups: exportFocusGroups),
+                  let nativeRow = rowViews[row.lineIndex] else { return rect }
             return rect.union(nativeRow.frame)
         }
-        // Fit unusually tall focus groups without changing their run geometry.
-        if !focusBounds.isNull, focusBounds.maxY > bounds.height - 12 {
-            let fit = min(1, (bounds.height - 24) / max(1, focusBounds.height))
-            context.translateBy(x: bounds.midX * (1 - fit), y: min(0, bounds.height - 12 - focusBounds.maxY * fit))
+    }
+
+    func drawExportScrolling(in context: CGContext, viewport: CGRect, focusBounds: CGRect, additive: Bool) {
+        context.saveGState()
+        context.clip(to: viewport)
+        if !focusBounds.isNull {
+            let padding = DesktopLyricsAdaptiveHeight.padding
+            let fit = min(1, (viewport.height - 2 * padding) / max(1, focusBounds.height))
+            let naturalOrigin = (bounds.height - viewport.height) * 0.29
+            let lower = focusBounds.maxY * fit + padding - viewport.height
+            let upper = focusBounds.minY * fit - padding
+            let origin = max(lower, min(naturalOrigin, upper))
+            context.translateBy(x: bounds.midX * (1 - fit), y: -origin)
             context.scaleBy(x: fit, y: fit)
         }
         if additive {
@@ -1171,7 +1208,21 @@ final class AMLLNativeCanvas: UIView {
         layer.render(in: context)
         if additive { context.endTransparencyLayer() }
         context.restoreGState()
-        return animating
+    }
+
+    func exportSingleLineHeight(_ index: Int) -> CGFloat {
+        guard let row = rowViews[index] else { return 0 }
+        return row.bounds.height
+    }
+
+    func drawExportInterlude(in context: CGContext) {
+        guard !dots.isHidden else { return }
+        context.saveGState()
+        context.translateBy(x: dots.frame.minX, y: dots.frame.minY)
+        let scale = dots.transform.a
+        context.scaleBy(x: scale, y: scale)
+        dots.layer.render(in: context)
+        context.restoreGState()
     }
 
     func drawExportLine(_ index: Int, in context: CGContext, opacity: Double, additive: Bool) {
@@ -1190,7 +1241,17 @@ final class AMLLNativeCanvas: UIView {
         context.setAlpha(opacity)
         if additive { context.setBlendMode(.plusLighter) }
         context.beginTransparencyLayer(auxiliaryInfo: nil)
-        context.translateBy(x: bounds.midX - centerX * fit, y: bounds.midY - row.bounds.midY * fit)
+        let leading = ink.isNull ? row.bounds.minX : ink.minX
+        let trailing = ink.isNull ? row.bounds.maxX : ink.maxX
+        let alignsRight = display?.lines[index].isDuet == true || display?.lines[index].isRTL == true
+        let x = if desktopSettings?.alignment == .centered {
+            bounds.midX - centerX * fit
+        } else if alignsRight {
+            bounds.maxX - inset - trailing * fit
+        } else {
+            inset - leading * fit
+        }
+        context.translateBy(x: x, y: bounds.midY - row.bounds.midY * fit)
         context.scaleBy(x: fit, y: fit)
         row.layer.render(in: context)
         context.endTransparencyLayer()

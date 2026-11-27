@@ -385,10 +385,14 @@ final class AMLLCoreTextLayout {
     }
 
     init(line: LyricLine, width: CGFloat, font: UIFont, configuration: LyricsRenderConfiguration,
-         romanizationReserve: CGFloat = 0, preservesWordTiming: Bool = false) {
+         romanizationReserve: CGFloat = 0, preservesWordTiming: Bool = false, centered: Bool = false) {
         self.font = font
         auxiliaryPointSize = max(10, font.pointSize * (configuration.auxiliaryScale ?? 0.5))
         let availableWidth = max(1, width)
+        func originX(for contentWidth: CGFloat) -> CGFloat {
+            if centered { return (availableWidth - contentWidth) / 2 }
+            return line.isDuet || line.isRTL ? availableWidth - contentWidth : 0
+        }
         let generated = configuration.romanization && line.precision == .word
             ? (line.generatedRomanization ?? []) : []
         let originalChunks: [[AMLLWordSegmentation.Atom]] = if !generated.isEmpty,
@@ -641,7 +645,7 @@ final class AMLLCoreTextLayout {
                     $0 + containerWidth(timedWords[$1.index], at: $1.index,
                         displayedText: displayedText.substring(with: $1.range))
                 }
-                var atomX = line.isDuet || line.isRTL ? availableWidth - total : 0
+                var atomX = originX(for: total)
                 for atom in atoms {
                     let word = timedWords[atom.index]
                     let visibleText = displayedText.substring(with: atom.range)
@@ -686,7 +690,7 @@ final class AMLLCoreTextLayout {
                 continue
             }
             let rowWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
-            let x = line.isDuet || line.isRTL ? availableWidth - rowWidth : 0
+            let x = originX(for: rowWidth)
             rows.append(.init(line: ctLine, origin: CGPoint(x: x, y: y + rubyHeight + font.ascender)))
             if line.precision == .word {
                 let runs = Self.visualRuns(in: ctLine)
@@ -928,7 +932,7 @@ final class AMLLCoreTextLayout {
                 }
                 let ctLine = CTTypesetterCreateLine(typesetter, CFRange(location: range.location, length: range.length))
                 let rowWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
-                rows.append(.init(line: ctLine, origin: CGPoint(x: line.isDuet || line.isRTL ? availableWidth - rowWidth : 0,
+                rows.append(.init(line: ctLine, origin: CGPoint(x: originX(for: rowWidth),
                                                                 y: y + auxiliaryFont.ascender), auxiliary: true,
                                   auxiliaryKind: auxiliary.kind,
                                   auxiliaryRect: CGRect(x: 0, y: y, width: availableWidth, height: auxiliaryFont.pointSize * 1.5)))

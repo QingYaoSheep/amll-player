@@ -34,19 +34,23 @@ import XCTest
         activity.observeQueue(room, now: 10, names: ["43": "另一首歌"])
         activity.observeRoster(room, now: 12)
         activity.observeQueue(room, now: 12, names: [:])
+        let friendName = "好友"
+        let otherSong = "另一首歌"
         XCTAssertEqual(activity.events.map(\.text),
-                       ["好友 添加了《另一首歌》", "好友 加入了房间", "你添加了《\(track.name)》"])
+                       [String(localized: "\(friendName) 添加了《\(otherSong)》"),
+                        String(localized: "\(friendName) 加入了房间"),
+                        String(localized: "你添加了《\(track.name)》")])
         XCTAssertEqual(feedback, [.success])
         activity.advanceBanner()
-        XCTAssertEqual(activity.banner?.text, "好友 加入了房间")
+        XCTAssertEqual(activity.banner?.text, String(localized: "\(friendName) 加入了房间"))
         XCTAssertEqual(feedback, [.success, .roomActivity])
         defaults.set(false, forKey: AppHaptics.preferenceKey)
         activity.advanceBanner()
-        XCTAssertEqual(activity.banner?.text, "好友 添加了《另一首歌》")
+        XCTAssertEqual(activity.banner?.text, String(localized: "\(friendName) 添加了《\(otherSong)》"))
         XCTAssertEqual(feedback, [.success, .roomActivity])
         room.members.removeLast()
         activity.observeRoster(room, now: 15)
-        XCTAssertEqual(activity.events.first?.text, "好友 离开了房间")
+        XCTAssertEqual(activity.events.first?.text, String(localized: "\(friendName) 离开了房间"))
         activity.setPhase(.background)
         defaults.set(true, forKey: AppHaptics.preferenceKey)
         room.members.append(friend)
@@ -203,7 +207,7 @@ import XCTest
         let room = try XCTUnwrap(current)
         let peer = try XCTUnwrap(room.chattingPeer(viewer: "1"))
         let messages = try await service.duetMessages(room, peer: peer)
-        XCTAssertEqual(messages.map(\.sender), ["好友", "我"])
+        XCTAssertEqual(messages.map(\.sender), ["好友", String(localized: "我")])
         XCTAssertEqual(messages.map(\.text), ["一起听吧", "好"])
         try await service.sendDuetMessage(room, peer: peer, text: "下一首")
         XCTAssertEqual(api.sentPrivateText as? [String: String],
@@ -226,7 +230,7 @@ import XCTest
         let conversation = try XCTUnwrap(page.items.first)
         XCTAssertEqual(conversation.peer.id, "2")
         XCTAssertEqual(conversation.peer.avatar?.scheme, "https")
-        XCTAssertEqual(conversation.preview, "分享了歌曲")
+        XCTAssertEqual(conversation.preview, String(localized: "分享了歌曲"))
         XCTAssertEqual(conversation.unread, 2)
         XCTAssertEqual(page.next, 1)
         let peer = conversation.peer

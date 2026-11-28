@@ -163,7 +163,8 @@ import XCTest
         await session.beginQR()
         for _ in 0..<100 where session.currentState.requesting { await Task.yield() }
         XCTAssertNil(session.qrURL); XCTAssertFalse(session.currentState.requesting)
-        XCTAssertTrue(session.qrStatus.contains("过期"))
+        XCTAssertEqual(session.qrPhase, .expired)
+        XCTAssertEqual(session.qrStatus, String(localized: "二维码已过期，请刷新"))
         XCTAssertEqual(api.paths.filter { $0 == "/login/qrcode/client/login" }.count, 1)
     }
     func testQRCodeConfirmedAccountIsValidatedBeforeCredentialStorage() async throws {

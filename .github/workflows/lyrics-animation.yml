@@ -129,31 +129,41 @@ jobs:
             build/Page-presentation-summary.json
           if-no-files-found: ignore
       - name: Test animation engine and real settings page
-        run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -only-testing:AMLLPlayerTests/LyricsAnimationStyleTests
-          -only-testing:AMLLPlayerTests/AMLLFramePerformanceTests
-          -only-testing:AMLLPlayerTests/LyricsAnimationEvidenceTests
-          -only-testing:AMLLPlayerTests/AMLLScheduledSpringTests
-          -only-testing:AMLLPlayerTests/LyricsBlossomLineEndTests
-          -only-testing:AMLLPlayerTests/LyricsBlossomRunLayoutTests
-          -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests
-          -only-testing:AMLLPlayerTests/LyricsBlossomFamilyTwoTests
-          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testVideoFirstFrameReplacesStillFallbackWithoutRestartingPlayer
-          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testNativeBackdropBlurUsesCABackdropLayerAndNeutralizesSystemTint
-          -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testImmersiveSurfaceUsesFixedCalibratedFiveLayerOrderAnd60FPSBackground
-          -only-testing:AMLLPlayerTests/AMLLSeekMotionTests
-          -only-testing:AMLLPlayerTests/AMLLSeekCanvasTests
-          -only-testing:AMLLPlayerTests/AppleMusicIntegrationTests/testApplePlaybackSnapshotUpdatesLyricsSeekRevisionAndIgnoresSpotifySnapshot
-          -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage
-          -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testImmersiveLyricsModeStaysOpenPersistsAndFallsBackInLandscape
-          -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testLyricsSearchPreviewApplyAndManualLock
-          -resultBundlePath build/Animation-tests.xcresult
-          -collect-test-diagnostics never
-          CODE_SIGNING_ALLOWED=NO
+        run: |
+          mkdir -p build
+          set +e
+          xcodebuild test \
+            -project AMLLPlayer.xcodeproj \
+            -scheme AMLLPlayer \
+            -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID" \
+            -only-testing:AMLLPlayerTests/LyricsAnimationStyleTests \
+            -only-testing:AMLLPlayerTests/AMLLFramePerformanceTests \
+            -only-testing:AMLLPlayerTests/LyricsAnimationEvidenceTests \
+            -only-testing:AMLLPlayerTests/AMLLScheduledSpringTests \
+            -only-testing:AMLLPlayerTests/LyricsBlossomLineEndTests \
+            -only-testing:AMLLPlayerTests/LyricsBlossomRunLayoutTests \
+            -only-testing:AMLLPlayerTests/LyricsBlossomMechanismTests \
+            -only-testing:AMLLPlayerTests/LyricsBlossomFamilyTwoTests \
+            -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testVideoFirstFrameReplacesStillFallbackWithoutRestartingPlayer \
+            -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testNativeBackdropBlurUsesCABackdropLayerAndNeutralizesSystemTint \
+            -only-testing:AMLLPlayerTests/ImmersiveArtworkMediaTests/testImmersiveSurfaceUsesFixedCalibratedFiveLayerOrderAnd60FPSBackground \
+            -only-testing:AMLLPlayerTests/AMLLSeekMotionTests \
+            -only-testing:AMLLPlayerTests/AMLLSeekCanvasTests \
+            -only-testing:AMLLPlayerTests/AppleMusicIntegrationTests/testApplePlaybackSnapshotUpdatesLyricsSeekRevisionAndIgnoresSpotifySnapshot \
+            -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testFineAnimationStylesSaveIndependentOptionsAndKeepLyricsPage \
+            -only-testing:AMLLPlayerUITests/LyricsQuickSettingsUITests/testImmersiveLyricsModeStaysOpenPersistsAndFallsBackInLandscape \
+            -only-testing:AMLLPlayerUITests/AMLLPlayerUITests/testLyricsSearchPreviewApplyAndManualLock \
+            -resultBundlePath build/Animation-tests.xcresult \
+            -collect-test-diagnostics never \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/animation-tests.log
+          TEST_STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ "$TEST_STATUS" -ne 0 ]]; then
+            grep -E "(AMLLPlayerUITests/.*: error:|Test Case '.*' failed)" build/animation-tests.log | head -n 10 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit "$TEST_STATUS"
+          fi
       - name: Export screenshots
         if: always()
         run: |

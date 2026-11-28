@@ -204,6 +204,24 @@ struct SettingsView: View {
                         )
                     }
                     .buttonStyle(SettingsRowButtonStyle())
+
+                    SettingsDivider()
+
+                    SettingsDisclosureRow(title: "开发与调试", icon: "wrench.and.screwdriver", iconColor: MusicProductStyle.accent) {
+                        NavigationLink {
+                            ImmersiveArtworkDebugPanel(
+                                backgroundDimming: model.renderPreferences.configuration.validated().backgroundDimming ?? 0.16
+                            )
+                        } label: {
+                            SettingsRowLabel(
+                                title: "沉浸封面层级调试（临时）",
+                                icon: "slider.horizontal.3",
+                                iconColor: MusicProductStyle.accent,
+                                navigates: true
+                            )
+                        }
+                        .buttonStyle(SettingsRowButtonStyle())
+                    }
                 }
             }
         }

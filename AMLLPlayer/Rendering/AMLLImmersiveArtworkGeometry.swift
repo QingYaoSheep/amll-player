@@ -123,6 +123,21 @@ struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
                      fullStrengthY: junction)
     }
 
+    static func extendingBackground(video: CGRect, viewport: CGSize,
+                                    adjustment: ImmersiveArtworkLayerAdjustment) -> Self {
+        guard viewport.width > 0, viewport.height > 0 else { return .init(frame: .zero, fullStrengthY: 0) }
+        let adjustment = adjustment.validated()
+        let junction = min(viewport.height, max(0, video.maxY))
+        let extensionHeight = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: video.height) * adjustment.height
+        let top = min(junction, max(0, junction - extensionHeight + adjustment.y))
+        let width = viewport.width * adjustment.width
+        return .init(frame: CGRect(x: (viewport.width - width) / 2 + adjustment.x,
+                                   y: top,
+                                   width: width,
+                                   height: max(1, viewport.height - top)),
+                     fullStrengthY: junction)
+    }
+
     func backgroundOnly(viewportHeight: CGFloat) -> Self {
         .init(frame: CGRect(x: frame.minX, y: 0, width: frame.width, height: max(1, viewportHeight)), fullStrengthY: 0)
     }

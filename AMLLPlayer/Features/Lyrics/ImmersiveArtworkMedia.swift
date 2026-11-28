@@ -18,6 +18,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         let reflectionEnabled: Bool
         let reduceTransparency: Bool
         var backgroundDimming = ImmersiveArtworkPreset.dimmingOpacity
+        var tuning: ImmersiveArtworkDebugConfiguration = .calibratedDefault
+        var background: CGRect? = nil
+        var dimming: CGRect? = nil
+        var bottomFade: CGRect = .zero
         var cornerRadius: CGFloat = 0
         var pageOpacity = 1.0
         var videoCornerRadius: CGFloat = 0
@@ -29,31 +33,47 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         var transition: CGRect { blurProfile?.frame ?? .zero }
 
         static func inline(frame: CGRect, visible: Bool, presentsFrame: Bool, radius: CGFloat, dimming: Double = 0.16) -> Self {
-            .init(video: frame, reflection: .zero, blurProfile: nil, presentsFrame: presentsFrame,
-                  reflectionEnabled: false, reduceTransparency: false, backgroundDimming: dimming,
-                  cornerRadius: 0, pageOpacity: 1, videoCornerRadius: radius, fitsArtwork: false,
-                  excludesStatusBarBlur: false, showsVideo: visible, showsBlur: false)
+            var tuning = ImmersiveArtworkDebugConfiguration()
+            for layer in ImmersiveArtworkLayer.allCases { tuning[layer].enabled = false }
+            tuning[.video].enabled = visible
+            tuning[.background].enabled = true
+            tuning[.dimming].enabled = dimming > 0
+            tuning[.dimming].opacity = dimming
+            return .init(video: frame, reflection: .zero, blurProfile: nil, presentsFrame: presentsFrame,
+                         reflectionEnabled: false, reduceTransparency: false, backgroundDimming: dimming,
+                         tuning: tuning, cornerRadius: 0, pageOpacity: 1, videoCornerRadius: radius, fitsArtwork: false,
+                         excludesStatusBarBlur: false, showsVideo: visible, showsBlur: false)
         }
 
         static func immersive(cover: CGRect, viewport: CGSize, presentsFrame: Bool,
                               reduceTransparency: Bool, cornerRadius: CGFloat = 0, opacity: Double = 1,
-                              excludesStatusBarBlur: Bool = false) -> Self {
-            let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: cover, source: cover.size)
-            let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: viewport)
+                              excludesStatusBarBlur: Bool = false,
+                              tuning: ImmersiveArtworkDebugConfiguration = .calibratedDefault,
+                              backgroundDimming: Double = ImmersiveArtworkPreset.dimmingOpacity) -> Self {
+            let tuning = tuning.enablingReflection()
+            let video = AMLLImmersiveArtworkGeometry.fittedFrame(container: tuning[.video].frame(cover), source: cover.size)
+            let profile = ImmersiveBackgroundBlurProfile.extendingBackground(video: video, viewport: viewport,
+                                                                             adjustment: tuning[.transition])
+            let effectiveDimming = tuning.layers[ImmersiveArtworkLayer.dimming.rawValue] == nil
+                ? backgroundDimming : tuning[.dimming].opacity
             return .init(video: video,
-                         reflection: ImmersiveArtworkPreset.reflectionFrame(cover: video, viewportHeight: viewport.height),
+                         reflection: tuning[.reflection].frame(ArtworkReflectionGeometry.frame(cover: video, viewportHeight: viewport.height)),
                          blurProfile: profile,
                          presentsFrame: presentsFrame,
                          reflectionEnabled: true,
                          reduceTransparency: reduceTransparency,
-                         backgroundDimming: ImmersiveArtworkPreset.dimmingOpacity,
+                         backgroundDimming: effectiveDimming,
+                         tuning: tuning,
+                         background: tuning[.background].frame(CGRect(origin: .zero, size: viewport)),
+                         dimming: tuning[.dimming].frame(CGRect(origin: .zero, size: viewport)),
+                         bottomFade: tuning[.bottomFade].frame(AMLLImmersiveArtworkGeometry.bottomFadeFrame(video: video, viewport: viewport)),
                          cornerRadius: cornerRadius,
                          pageOpacity: opacity,
                          videoCornerRadius: 0,
                          fitsArtwork: true,
                          excludesStatusBarBlur: excludesStatusBarBlur,
-                         showsVideo: true,
-                         showsBlur: true)
+                         showsVideo: tuning[.video].enabled,
+                         showsBlur: tuning[.transition].enabled && tuning.validatedBlur > 0)
         }
     }
 
@@ -95,6 +115,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         let videoPlane = UIView()
         let stillSurface = UIImageView()
         let reflectionPlane = UIView()
+        private let reflectionContentView = UIView()
         let reflectionVideoView = ReflectionPlayerView()
         let reflectionStillView = UIImageView()
         let transitionSurface = ImmersiveBackdropBlurView()
@@ -146,11 +167,15 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             }
             reflectionPlane.layer.mask = reflectionFadeMask
 
+            reflectionContentView.isOpaque = false
+            reflectionContentView.isUserInteractionEnabled = false
+            reflectionPlane.addSubview(reflectionContentView)
+
             reflectionVideoView.transform = CGAffineTransform(scaleX: 1, y: -1)
             reflectionStillView.contentMode = .scaleAspectFit
             reflectionStillView.transform = CGAffineTransform(scaleX: 1, y: -1)
-            reflectionPlane.addSubview(reflectionVideoView)
-            reflectionPlane.addSubview(reflectionStillView)
+            reflectionContentView.addSubview(reflectionVideoView)
+            reflectionContentView.addSubview(reflectionStillView)
 
             for view in [backgroundSurface, dimmingSurface, videoPlane, reflectionPlane, transitionSurface] {
                 view.isOpaque = false
@@ -287,6 +312,17 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             setNeedsLayout()
         }
 
+        func plane(for layer: ImmersiveArtworkLayer) -> UIView? {
+            switch layer {
+            case .background: backgroundSurface
+            case .dimming: dimmingSurface
+            case .video: videoPlane
+            case .reflection: reflectionPlane
+            case .transition: transitionSurface
+            case .bottomFade: nil
+            }
+        }
+
         private func applyLayout(_ layout: Layout, animated: Bool = false, alphaOnly: Bool = false) {
             let statusBarBottom: CGFloat
             if layout.excludesStatusBarBlur, let window {
@@ -313,16 +349,19 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
                 if alphaOnly { UIView.performWithoutAnimation(work) } else { work() }
             }
 
+            let tuning = layout.tuning
             layer.cornerRadius = layout.cornerRadius
 
-            place(backgroundSurface, bounds)
-            backgroundSurface.isHidden = false
-            backgroundSurface.alpha = layout.pageOpacity
+            place(backgroundSurface, layout.background ?? bounds)
+            backgroundSurface.isHidden = !tuning[.background].enabled
+            backgroundSurface.alpha = CGFloat(tuning[.background].opacity * layout.pageOpacity)
             if let view = backgroundHost?.view { place(view, backgroundSurface.bounds) }
 
-            place(dimmingSurface, bounds)
-            dimmingSurface.isHidden = layout.backgroundDimming <= 0
-            dimmingSurface.backgroundColor = UIColor.black.withAlphaComponent(CGFloat(layout.backgroundDimming * layout.pageOpacity))
+            let effectiveDimming = tuning.layers[ImmersiveArtworkLayer.dimming.rawValue] == nil
+                ? layout.backgroundDimming : tuning[.dimming].opacity
+            place(dimmingSurface, layout.dimming ?? bounds)
+            dimmingSurface.isHidden = !tuning[.dimming].enabled
+            dimmingSurface.backgroundColor = UIColor.black.withAlphaComponent(CGFloat(effectiveDimming * layout.pageOpacity))
 
             place(videoPlane, layout.video)
             videoPlane.layer.cornerRadius = layout.videoCornerRadius
@@ -333,11 +372,13 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             stillSurface.isHidden = stillFrame == nil
             stillSurface.alpha = hasVideo && layout.presentsFrame ? 0 : 1
             storedVideoSurface?.isHidden = !hasVideo
-            videoPlane.isHidden = !layout.showsVideo && !animated
-            videoPlane.alpha = layout.showsVideo ? layout.pageOpacity : 0
+            videoPlane.isHidden = (!layout.showsVideo || !tuning[.video].enabled) && !animated
+            videoPlane.alpha = layout.showsVideo && tuning[.video].enabled
+                ? CGFloat(tuning[.video].opacity * layout.pageOpacity) : 0
 
             place(reflectionPlane, layout.reflection)
             reflectionFadeMask.frame = reflectionPlane.bounds
+            place(reflectionContentView, reflectionPlane.bounds)
             placeFlippedMedia(reflectionVideoView, size: layout.video.size)
             placeFlippedMedia(reflectionStillView, size: layout.video.size)
             reflectionStillView.contentMode = stillSurface.contentMode
@@ -345,20 +386,39 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             reflectionStillView.alpha = hasVideo && layout.presentsFrame ? 0 : 1
             reflectionVideoView.isHidden = !hasVideo
             let presentsMedia = layout.presentsFrame || stillFrame != nil
-            let showsReflection = layout.reflectionEnabled && presentsMedia && layout.showsVideo
+            let showsReflection = layout.reflectionEnabled && presentsMedia && layout.showsVideo && tuning[.reflection].enabled
             reflectionPlane.isHidden = !showsReflection && (!animated || !layout.reflectionEnabled || layout.reflection.isEmpty)
-            reflectionPlane.alpha = showsReflection ? CGFloat(ImmersiveArtworkPreset.reflectionOpacity) * layout.pageOpacity : 0
+            reflectionPlane.alpha = showsReflection ? CGFloat(tuning[.reflection].opacity * layout.pageOpacity) : 0
 
             var profile = layout.blurProfile ?? .init(frame: .zero, fullStrengthY: 0)
             if videoPlane.isHidden || !presentsMedia {
                 profile = profile.backgroundOnly(viewportHeight: bounds.height)
             }
             place(transitionSurface, profile.frame)
-            let hideBlur = layout.reduceTransparency || !layout.showsBlur || profile.frame.isEmpty
+
+            for (index, layer) in tuning.orderedLayers.reversed().enumerated() {
+                if let plane = plane(for: layer) {
+                    bringSubviewToFront(plane)
+                    plane.layer.zPosition = CGFloat(index)
+                }
+            }
+
+            let fadeEnabled = tuning[.bottomFade].enabled && !layout.reduceTransparency
+            videoPlane.mask = fadeEnabled && tuning.isBelow(.video, .bottomFade)
+                ? ImmersiveArtworkVisibility.mask(frame: layout.video, fade: layout.bottomFade, strength: tuning[.bottomFade].opacity)
+                : nil
+            reflectionContentView.mask = fadeEnabled && tuning.isBelow(.reflection, .bottomFade)
+                ? ImmersiveArtworkVisibility.mask(frame: layout.reflection, fade: layout.bottomFade, strength: tuning[.bottomFade].opacity)
+                : nil
+
+            let blurRadius = CGFloat(tuning.validatedBlur)
+            let hideBlur = layout.reduceTransparency || !layout.showsBlur || !tuning[.transition].enabled
+                || profile.frame.isEmpty || blurRadius <= 0
             transitionSurface.configure(
                 profile: profile,
-                radius: ImmersiveArtworkPreset.blurRadius,
-                topFeatherLength: ImmersiveArtworkPreset.topFeatherLength,
+                radius: blurRadius,
+                topFeatherLength: CGFloat(tuning.validatedTopFeatherLength),
+                opacity: tuning[.transition].opacity * layout.pageOpacity,
                 clearThroughY: statusBarBottom,
                 hidden: hideBlur
             )
@@ -368,9 +428,10 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
         private func finishVisibility(_ layout: Layout) {
             stillSurface.isHidden = stillFrame == nil || (hasVideo && layout.presentsFrame)
             reflectionStillView.isHidden = stillFrame == nil || (hasVideo && layout.presentsFrame)
-            videoPlane.isHidden = !layout.showsVideo
+            videoPlane.isHidden = !layout.showsVideo || !layout.tuning[.video].enabled
             let presentsMedia = layout.presentsFrame || stillFrame != nil
-            reflectionPlane.isHidden = !layout.reflectionEnabled || !presentsMedia || !layout.showsVideo
+            reflectionPlane.isHidden = !layout.reflectionEnabled || !presentsMedia
+                || !layout.showsVideo || !layout.tuning[.reflection].enabled
         }
 
         private func triggerOutgoingCrossfade(reduceMotion: Bool) {
@@ -393,7 +454,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             videoPlane.addSubview(videoSnapshot)
             if let reflectionSnapshot {
                 outgoingReflectionView = reflectionSnapshot
-                reflectionPlane.addSubview(reflectionSnapshot)
+                reflectionContentView.addSubview(reflectionSnapshot)
             }
             outgoingFrameCount = 1
 
@@ -484,5 +545,39 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             dismantled = true
             stop()
         }
+    }
+}
+
+@MainActor
+enum ImmersiveArtworkVisibility {
+    /// Optional bottom-fade mask for debugging media opacity below the cover.
+    static func mask(frame: CGRect, fade: CGRect?, strength: Double,
+                     opacity: Double = 1) -> UIView? {
+        guard frame.width > 0, frame.height > 0 else { return nil }
+        guard fade != nil || opacity != 1 else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: frame.size, format: format).image { renderer in
+            let context = renderer.cgContext
+            let rows = max(1, Int(ceil(frame.height)))
+            for row in 0 ..< rows {
+                let y = CGFloat(row) + 0.5
+                let globalY = frame.minY + y
+                let alpha = opacity
+                context.setFillColor(UIColor(white: 1, alpha: CGFloat(alpha)).cgColor)
+                context.fill(CGRect(x: 0, y: CGFloat(row), width: frame.width, height: 1))
+                if let fade, globalY >= fade.minY {
+                    let t = min(1, max(0, (globalY - fade.minY) / max(1, fade.height)))
+                    let faded = alpha * (1 - Double(t * t * (3 - 2 * t)) * strength)
+                    context.setBlendMode(.copy)
+                    context.setFillColor(UIColor(white: 1, alpha: CGFloat(faded)).cgColor)
+                    context.fill(CGRect(x: fade.minX - frame.minX, y: CGFloat(row), width: fade.width, height: 1)
+                        .intersection(CGRect(origin: .zero, size: frame.size)))
+                    context.setBlendMode(.normal)
+                }
+            }
+        }
+        return UIImageView(image: image)
     }
 }

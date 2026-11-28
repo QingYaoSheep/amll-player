@@ -21,15 +21,20 @@ enum ImmersiveVariableBlurMask {
 
     static func topFeatherAlpha(at y: CGFloat, profile: ImmersiveBackgroundBlurProfile,
                                 topFeatherLength: CGFloat = ImmersiveArtworkPreset.topFeatherLength,
+                                opacity: CGFloat = 1,
                                 clearThroughY: CGFloat = 0,
                                 includeRadiusRamp: Bool = false) -> CGFloat {
         if clearThroughY > 0, y < clearThroughY {
             return 0
         }
+        let clampedOpacity = opacity.isFinite ? min(1, max(0, opacity)) : 1
+        let base: CGFloat
         if includeRadiusRamp {
-            return alpha(at: y, profile: profile, topFeatherLength: topFeatherLength, clearThroughY: clearThroughY)
+            base = alpha(at: y, profile: profile, topFeatherLength: topFeatherLength, clearThroughY: clearThroughY)
+        } else {
+            base = min(1, max(0, profile.topFeatherOpacity(at: y, length: topFeatherLength)))
         }
-        return min(1, max(0, profile.topFeatherOpacity(at: y, length: topFeatherLength)))
+        return min(1, max(0, base * clampedOpacity))
     }
 
     static func make(profile: ImmersiveBackgroundBlurProfile,
@@ -44,21 +49,25 @@ enum ImmersiveVariableBlurMask {
 
     static func makeTopFeatherMask(profile: ImmersiveBackgroundBlurProfile,
                                    topFeatherLength: CGFloat = ImmersiveArtworkPreset.topFeatherLength,
+                                   opacity: CGFloat = 1,
                                    clearThroughY: CGFloat = 0,
                                    includeRadiusRamp: Bool = false,
                                    sampleCount: Int = 256) -> CGImage? {
         guard profile.frame.width > 0, profile.frame.height > 0, sampleCount > 0 else { return nil }
+        let clampedOpacity = opacity.isFinite ? min(1, max(0, opacity)) : 1
         let hasStatusBarCutoff = clearThroughY > 0 && clearThroughY > profile.frame.minY
         let hasTopFeather = profile.effectiveTopFeatherLength(topFeatherLength) > 0
         let hasRadiusTransition = includeRadiusRamp
             && min(profile.frame.maxY, max(profile.frame.minY, profile.fullStrengthY)) > profile.frame.minY
-        guard hasStatusBarCutoff || hasTopFeather || hasRadiusTransition else { return nil }
+        let hasOpacityFade = clampedOpacity < 0.999
+        guard hasStatusBarCutoff || hasTopFeather || hasRadiusTransition || hasOpacityFade else { return nil }
         return makeVerticalAlphaImage(sampleCount: sampleCount) { row in
             let y = profile.frame.minY + (CGFloat(row) + 0.5) / CGFloat(sampleCount) * profile.frame.height
             return topFeatherAlpha(
                 at: y,
                 profile: profile,
                 topFeatherLength: topFeatherLength,
+                opacity: clampedOpacity,
                 clearThroughY: clearThroughY,
                 includeRadiusRamp: includeRadiusRamp
             )
@@ -110,13 +119,15 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
         let height: Int
         let fullStrengthY: Int
         let topFeatherLength: Int
+        let opacity: Int
         let clearThroughY: Int
 
-        init(profile: ImmersiveBackgroundBlurProfile, topFeatherLength: CGFloat, clearThroughY: CGFloat) {
+        init(profile: ImmersiveBackgroundBlurProfile, topFeatherLength: CGFloat, opacity: CGFloat, clearThroughY: CGFloat) {
             minY = Int((profile.frame.minY * 2).rounded())
             height = Int((profile.frame.height * 2).rounded())
             fullStrengthY = Int((profile.fullStrengthY * 2).rounded())
             self.topFeatherLength = Int((topFeatherLength * 2).rounded())
+            self.opacity = Int((opacity * 1000).rounded())
             self.clearThroughY = Int((clearThroughY * 2).rounded())
         }
     }
@@ -127,6 +138,7 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
     private(set) var currentFeatherMaskImage: CGImage?
     private var blurRadius: CGFloat = ImmersiveArtworkPreset.blurRadius
     private var topFeatherLength: CGFloat = ImmersiveArtworkPreset.topFeatherLength
+    private var blendOpacity: CGFloat = 1
     private var clearThroughY: CGFloat = 0
     private var maskKey: MaskKey?
     private var appliedFilterRadius: CGFloat = -1
@@ -171,10 +183,12 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
     func configure(profile: ImmersiveBackgroundBlurProfile,
                    radius: CGFloat = ImmersiveArtworkPreset.blurRadius,
                    topFeatherLength: CGFloat = ImmersiveArtworkPreset.topFeatherLength,
+                   opacity: Double = 1.0,
                    clearThroughY: CGFloat = 0,
                    hidden: Bool) {
         self.blurRadius = radius.isFinite ? max(0, radius) : 0
         self.topFeatherLength = topFeatherLength.isFinite ? max(0, topFeatherLength) : 0
+        self.blendOpacity = opacity.isFinite ? min(1, max(0, CGFloat(opacity))) : 1
         self.clearThroughY = clearThroughY.isFinite ? max(0, clearThroughY) : 0
         currentProfile = profile
         isHidden = hidden
@@ -189,6 +203,7 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
         currentProfile = nil
         currentMaskImage = nil
         currentFeatherMaskImage = nil
+        blendOpacity = 1
         maskKey = nil
         appliedFilterRadius = -1
         activeFilter = nil
@@ -217,7 +232,12 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
 
     private func applyBackdropFilter(forceReassert: Bool) {
         guard !isHidden, let profile = currentProfile else { return }
-        let nextKey = MaskKey(profile: profile, topFeatherLength: topFeatherLength, clearThroughY: clearThroughY)
+        let nextKey = MaskKey(
+            profile: profile,
+            topFeatherLength: topFeatherLength,
+            opacity: blendOpacity,
+            clearThroughY: clearThroughY
+        )
         let maskChanged = nextKey != maskKey
         let radiusChanged = abs(appliedFilterRadius - blurRadius) > 0.01
 
@@ -316,6 +336,7 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
             currentFeatherMaskImage = ImmersiveVariableBlurMask.makeTopFeatherMask(
                 profile: profile,
                 topFeatherLength: topFeatherLength,
+                opacity: blendOpacity,
                 clearThroughY: clearThroughY,
                 includeRadiusRamp: includeRadiusRamp
             )

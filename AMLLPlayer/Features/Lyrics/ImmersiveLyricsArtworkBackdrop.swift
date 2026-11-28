@@ -14,6 +14,7 @@ struct ImmersiveLyricsArtworkBackdrop: View {
     @State private var loader = AnimatedArtworkLoader()
     @State private var still = ImmersiveStillArtwork()
     @State private var network = ArtworkNetworkPolicy.shared
+    @State private var debug = ImmersiveArtworkDebugStore.shared
     private var configuration: LyricsRenderConfiguration { model.renderPreferences.configuration.validated() }
     private var eligibleViewport: Bool {
         UIDevice.current.userInterfaceIdiom == .phone && viewport.height > viewport.width
@@ -45,7 +46,9 @@ struct ImmersiveLyricsArtworkBackdrop: View {
                         viewport: viewport,
                         presentsFrame: hasVideo && loader.hasPresentedFrame,
                         reduceTransparency: reduceTransparency,
-                        excludesStatusBarBlur: true
+                        excludesStatusBarBlur: true,
+                        tuning: debug.configuration,
+                        backgroundDimming: configuration.backgroundDimming ?? 0.16
                     )
                 } ?? .inline(frame: .zero, visible: false, presentsFrame: false, radius: 0, dimming: 0),
                 background: layout.map { _ in

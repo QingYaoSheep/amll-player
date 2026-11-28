@@ -292,6 +292,78 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         XCTAssertTrue(surface.transitionSurface.isHidden)
     }
 
+    func testDebugConfigurationReordersLayersUpdatesBlurOpacityAndKeepsReflectionGradientMask() async throws {
+        let window = try playbackWindow()
+        let surface = ImmersiveArtworkMedia.Surface()
+        surface.frame = CGRect(x: 0, y: 0, width: 200, height: 430)
+        window.rootViewController?.view.addSubview(surface)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        try XCTUnwrap(image.pngData()).write(to: url)
+        defer {
+            surface.stop()
+            surface.removeFromSuperview()
+            window.isHidden = true
+            try? FileManager.default.removeItem(at: url)
+        }
+
+        let loadedStill = await ImmersiveStillArtworkCache().load(url)
+        let still = try XCTUnwrap(loadedStill)
+        let cover = CGRect(x: 0, y: 0, width: 200, height: 200)
+        var tuning = ImmersiveArtworkDebugConfiguration.calibratedDefault
+        tuning.order = [.reflection, .transition, .bottomFade, .video, .dimming, .background]
+        tuning.blurRadius = 24
+        tuning.topFeatherLength = 36
+        tuning[.transition].opacity = 0.65
+        tuning[.bottomFade].enabled = true
+        tuning[.bottomFade].opacity = 0.8
+
+        surface.configure(
+            video: nil,
+            layout: .immersive(
+                cover: cover,
+                viewport: surface.bounds.size,
+                presentsFrame: false,
+                reduceTransparency: false,
+                tuning: tuning
+            ),
+            still: still
+        )
+        surface.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertTrue(surface.subviews[4] === surface.reflectionPlane)
+        XCTAssertTrue(surface.subviews[3] === surface.transitionSurface)
+        XCTAssertGreaterThan(surface.reflectionPlane.layer.zPosition, surface.transitionSurface.layer.zPosition)
+        XCTAssertTrue(surface.reflectionPlane.layer.mask is CAGradientLayer)
+        XCTAssertNotNil(surface.videoPlane.mask)
+        XCTAssertFalse(surface.transitionSurface.isHidden)
+        XCTAssertNotNil(surface.transitionSurface.mask)
+        let featherCG = try XCTUnwrap(surface.transitionSurface.currentFeatherMaskImage)
+        let featherData = try XCTUnwrap(featherCG.dataProvider?.data as Data?)
+        let bottomAlpha = Int(featherData[(featherCG.height - 1) * 4 + 3])
+        XCTAssertEqual(bottomAlpha, 166, accuracy: 2)
+
+        tuning[.bottomFade].enabled = false
+        tuning.blurRadius = 0
+        surface.configure(
+            video: nil,
+            layout: .immersive(
+                cover: cover,
+                viewport: surface.bounds.size,
+                presentsFrame: false,
+                reduceTransparency: false,
+                tuning: tuning
+            ),
+            still: still
+        )
+        surface.layoutIfNeeded()
+        XCTAssertNil(surface.videoPlane.mask)
+        XCTAssertTrue(surface.transitionSurface.isHidden)
+    }
+
     private static func layerTree(_ root: CALayer, contains target: CALayer) -> Bool {
         if root === target { return true }
         return root.sublayers?.contains(where: { layerTree($0, contains: target) }) ?? false

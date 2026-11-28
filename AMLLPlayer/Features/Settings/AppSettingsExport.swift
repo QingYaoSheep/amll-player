@@ -28,11 +28,14 @@ struct AppSettingsExport: Codable {
     let music: Music
     let lyrics: LyricsSettings
     let appearance: Appearance
+    let immersiveArtwork: ImmersiveArtworkDebugConfiguration?
+    let showsImmersiveArtworkDebugButton: Bool?
     let trackLyrics: [String: LyricsSelection]
     let pronunciationOverrides: [String: [String: String]]
 
     @MainActor
     init(model: AppModel,
+         artwork: ImmersiveArtworkDebugStore = .shared,
          pronunciationOverrides: [String: [String: String]], haptics: AppHaptics = .shared) throws {
         let configuration = model.renderPreferences.configuration.validated()
         let playback = model.netEasePlayback
@@ -52,6 +55,8 @@ struct AppSettingsExport: Codable {
         lyrics = model.lyrics.settings.validated()
         appearance = Appearance(profile: model.renderPreferences.profile, current: configuration,
                                 savedCustom: model.renderPreferences.migratedCustomConfiguration?.validated())
+        immersiveArtwork = artwork.exportConfiguration(backgroundDimming: configuration.backgroundDimming ?? 0.16)
+        showsImmersiveArtworkDebugButton = artwork.showsButton
         trackLyrics = try model.lyrics.savedSelections()
         self.pronunciationOverrides = pronunciationOverrides
     }
@@ -63,7 +68,9 @@ struct AppSettingsExport: Codable {
     }
 
     @MainActor
-    func apply(to model: AppModel, haptics: AppHaptics = .shared) async throws {
+    func apply(to model: AppModel,
+               artwork: ImmersiveArtworkDebugStore = .shared,
+               haptics: AppHaptics = .shared) async throws {
         guard version == 1 else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -99,6 +106,12 @@ struct AppSettingsExport: Codable {
         model.renderPreferences.restore(profile: appearance.profile,
                                         current: appearance.current,
                                         savedCustom: appearance.savedCustom)
+        if let immersiveArtwork {
+            artwork.configuration = immersiveArtwork.enablingReflection()
+        }
+        if let showsImmersiveArtworkDebugButton {
+            artwork.showsButton = showsImmersiveArtworkDebugButton
+        }
         try model.lyrics.restoreSelections(trackLyrics)
         let overridesData = try JSONEncoder().encode(pronunciationOverrides)
         try await LyricsRomanizationEngine.shared.importOverrides(overridesData)

@@ -41,7 +41,8 @@ struct ImmersiveLyricsLayout: Equatable {
 
     static func resolve(viewport: CGSize, artwork: CGSize, informationHeight: CGFloat,
                         bottomInset: CGFloat, isVideo: Bool = false,
-                        informationTextBottom: CGFloat? = nil) -> Self {
+                        informationTextBottom: CGFloat? = nil,
+                        artworkAdjustment: ImmersiveArtworkLayerAdjustment = .init()) -> Self {
         let width = max(1, viewport.width), height = max(1, viewport.height)
         let inset = min(44, max(20, width * 30 / 402))
         let infoHeight = informationHeight.isFinite ? max(44, informationHeight) : 64
@@ -64,7 +65,7 @@ struct ImmersiveLyricsLayout: Equatable {
             cover = CGRect(x: (width - source.width * scale) / 2, y: 0,
                            width: source.width * scale, height: source.height * scale)
         }
-        let visibleCover = AMLLImmersiveArtworkGeometry.fittedFrame(container: cover, source: source)
+        let visibleCover = AMLLImmersiveArtworkGeometry.fittedFrame(container: artworkAdjustment.validated().frame(cover), source: source)
         let overlaysArtwork = isVideo && source.height > source.width && infoHeight + 32 <= visibleCover.height
         let informationTop = overlaysArtwork ? max(0, visibleCover.maxY - infoHeight - 16) : visibleCover.maxY + 16
         let information = CGRect(x: inset, y: informationTop, width: max(1, width - inset * 2), height: infoHeight)

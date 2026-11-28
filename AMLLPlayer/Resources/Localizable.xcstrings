@@ -13031,6 +13031,38 @@
         }
       }
     },
+    "开发与调试": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Developer & Debugging"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开发与调试"
+          }
+        }
+      }
+    },
+    "沉浸封面层级调试（临时）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Immersive Cover Layer Debug (Temporary)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沉浸封面层级调试（临时）"
+          }
+        }
+      }
+    },
     "竖屏沉浸封面": {
       "localizations": {
         "en": {

@@ -1,6 +1,7 @@
-import Foundation
+#if DEBUG
+    import Foundation
 
-/// Development-only input contract. Events occur at the beginning of a frame;
+    /// Development-only input contract. Events occur at the beginning of a frame;
 /// the declared delta advances animation time and, only while playing, audio time.
 struct AMLLReplayScenario: Codable, Equatable, Sendable {
     struct Event: Codable, Equatable, Sendable {
@@ -82,3 +83,4 @@ struct AMLLReplayCursor {
         return (input, delta, interactions)
     }
 }
+#endif

@@ -182,7 +182,7 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         guard item.service == .appleMusic, item.canPlay else { throw MusicCatalogError.unavailable }
         let token = commandGeneration
         let connection = session.connectionID
-        let resource = context ?? item.resource!
+        guard let resource = context ?? item.resource else { throw MusicCatalogError.unavailable }
         let queue: MusicPlayer.Queue
         switch resource.kind {
         case .playlist:

@@ -110,6 +110,14 @@ targets:
       - sdk: Security.framework
       - sdk: MusicKit.framework
       - sdk: MediaPlayer.framework
+    postBuildScripts:
+      - name: Strip Debug Fixtures in Release
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "${CONFIGURATION:-}" = "Release" ]; then
+            rm -f "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/amll-shared-lyrics.json" \
+                  "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/amll-shared-replay.json"
+          fi
 
   LockScreenLyricsWidget:
     type: app-extension

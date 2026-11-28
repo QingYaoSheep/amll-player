@@ -28,11 +28,18 @@ actor DiagnosticsStore: DiagnosticsExporting {
     }
 
     func exportDiagnostics() async throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        if let existing = try? FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil) {
+            for file in existing where file.lastPathComponent.hasPrefix("amll-player-diagnostics-") && file.pathExtension == "json" {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
 
-        let exportURL = FileManager.default.temporaryDirectory
+        let exportURL = tempDir
             .appendingPathComponent("amll-player-diagnostics-\(UUID().uuidString)")
             .appendingPathExtension("json")
         try encoder.encode(events).write(to: exportURL, options: .atomic)
@@ -42,6 +49,8 @@ actor DiagnosticsStore: DiagnosticsExporting {
     static func redact(_ value: String) -> String {
         let patterns = [
             #"(?i)(authorization\s*:\s*bearer\s+)[^\s]+"#,
+            #"(?i)((?:set-)?cookie\s*:\s*)[^\r\n]+"#,
+            #"(?i)((?:MUSIC_U|MUSIC_A|Media-User-Token|Music-User-Token)\s*[=:]\s*)[^\s&,;"']+"#,
             #"(?i)((?:access|refresh|id)[_-]?token\s*[=:]\s*)[^\s&,]+"#,
             #"(?i)(client[_-]?id\s*[=:]\s*)[^\s&,]+"#,
             #"(?i)(code\s*[=:]\s*)[^\s&,]+"#,

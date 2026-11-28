@@ -138,6 +138,7 @@ struct SettingsIconBadge: View {
 struct SettingsRowButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -147,7 +148,7 @@ struct SettingsRowButtonStyle: ButtonStyle {
                     : .clear
             )
             .opacity(isEnabled ? 1 : 0.45)
-            .animation(SettingsMotion.feedback, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : SettingsMotion.feedback, value: configuration.isPressed)
     }
 }
 
@@ -160,7 +161,7 @@ struct SettingsButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
             .opacity(isEnabled ? (configuration.isPressed ? 0.84 : 1) : 0.50)
-            .animation(SettingsMotion.feedback, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : SettingsMotion.feedback, value: configuration.isPressed)
     }
 }
 
@@ -546,6 +547,7 @@ struct SettingsAccountHeader: View {
     var action: LocalizedStringKey? = nil
     var showsChevron = false
     var serviceStatuses: [(MusicServiceID, Bool)]? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -597,7 +599,7 @@ struct SettingsAccountHeader: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(connected ? .primary : .secondary)
                             .contentTransition(.opacity)
-                            .animation(SettingsMotion.change, value: status)
+                            .animation(reduceMotion ? nil : SettingsMotion.change, value: status)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)

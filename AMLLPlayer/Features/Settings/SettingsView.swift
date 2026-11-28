@@ -589,6 +589,7 @@ struct MusicStorageView: View {
         .clipShape(Capsule())
         .background(Color.primary.opacity(0.06), in: Capsule())
         .animation(reduceMotion ? nil : SettingsMotion.change, value: totalBytes)
+        .accessibilityHidden(true)
     }
 
     private var totalBytes: Int64 {

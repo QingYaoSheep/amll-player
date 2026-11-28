@@ -241,7 +241,7 @@ struct LyricsQuickSettingsPanel: View {
                             .zIndex(1)
                     }
                 }
-                .animation(MusicProductMotion.change, value: presentation.destination)
+                .animation(reduceMotion ? nil : MusicProductMotion.change, value: presentation.destination)
             }
             .frame(maxWidth: .infinity)
             // Extend the surface while leaving the scroll viewport and its
@@ -1118,12 +1118,13 @@ private struct QuickSettingsDivider: View {
 
 private struct QuickSettingsRowButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(configuration.isPressed ? .white.opacity(0.08) : .clear)
             .opacity(isEnabled ? 1 : 0.45)
-            .animation(MusicProductMotion.feedback, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : MusicProductMotion.feedback, value: configuration.isPressed)
     }
 }
 

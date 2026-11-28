@@ -63,7 +63,7 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View>: View {
                     volumeControl(at: volume)
                 }
             }
-            .animation(LyricsPageMotion.content, value: controlsVisible)
+            .animation(reduceMotion ? nil : LyricsPageMotion.content, value: controlsVisible)
 
             if showsFloatingLyricActions {
                 floatingLyricActions
@@ -73,7 +73,7 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View>: View {
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: configuration.showLyrics)
-        .animation(LyricsPageMotion.content, value: showsLyrics)
+        .animation(reduceMotion ? nil : LyricsPageMotion.content, value: showsLyrics)
     }
 
     private var metadata: some View {
@@ -162,6 +162,7 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View>: View {
                         .modifier(TabletLyricsActionTarget())
                 }
                 .foregroundStyle(snapshot.repeatMode == .off ? .white.opacity(0.55) : .white)
+                .accessibilityValue(snapshot.repeatMode.title)
                 .disabled(queueModeDisabled)
                 .offset(x: outerOffset)
             }

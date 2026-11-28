@@ -151,7 +151,7 @@ struct AMLLLyricsPlayer: View {
                     .opacity(presentation.mode.showsLyrics ? 0 : 1)
                     .allowsHitTesting(!configuration.showLyrics).accessibilityHidden(configuration.showLyrics)
             }
-            .animation(LyricsPageMotion.content, value: presentation.mode.showsLyrics)
+            .animation(reduceMotion ? nil : LyricsPageMotion.content, value: presentation.mode.showsLyrics)
         }
     }
 
@@ -193,7 +193,7 @@ struct AMLLLyricsPlayer: View {
                     isSource: configuration.showLyrics)
                 .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.information)
                 .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: configuration.showLyrics)
-                .animation(LyricsPageMotion.content, value: layout != nil)
+                .animation(reduceMotion ? nil : LyricsPageMotion.content, value: layout != nil)
             }
             .frame(width: size.width, height: layout?.contentHeight ?? size.height, alignment: .topLeading)
         }
@@ -616,16 +616,22 @@ struct AMLLLyricsPlayer: View {
         HStack {
             Button { model.renderPreferences.configuration.showLyrics = true } label: {
                 Label("render.showLyrics", systemImage: "quote.bubble")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .modifier(LyricsPageControlVisibility())
             Spacer()
             Button { devices = true; Task { await model.loadDevices() } } label: {
                 Label("player.devices", systemImage: "airplayaudio")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .modifier(LyricsPageControlVisibility())
             Spacer()
             Button { search = true } label: {
                 Label("lyrics.find", systemImage: "text.magnifyingglass")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .modifier(LyricsPageControlVisibility())
         }

@@ -156,7 +156,7 @@ final class AMLLCoreTextLayout {
     }
 
     private static func visualRuns(in line: CTLine) -> [VisualRun] {
-        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+        let runs = (CTLineGetGlyphRuns(line) as NSArray) as? [CTRun] ?? []
         return runs.compactMap { run -> VisualRun? in
             let count = CTRunGetGlyphCount(run)
             guard count > 0 else { return nil }
@@ -976,7 +976,7 @@ final class AMLLCoreTextLayout {
         /// The font resolved by the typesetter, not the requested UIFont name.
         var glyphFontRuns: [GlyphFontRun] {
             rows.flatMap { row in
-                (CTLineGetGlyphRuns(row.line) as! [CTRun]).compactMap { run in
+                ((CTLineGetGlyphRuns(row.line) as NSArray) as? [CTRun] ?? []).compactMap { run in
                     let attributes = CTRunGetAttributes(run) as NSDictionary
                     guard let value = attributes[kCTFontAttributeName] else { return nil }
                     let font = value as! CTFont

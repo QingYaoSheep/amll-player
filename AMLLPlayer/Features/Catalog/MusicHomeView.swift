@@ -268,6 +268,7 @@ private struct MusicHomePoster: View {
     let width: CGFloat
     @Environment(\.displayScale) private var scale
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var image: UIImage?
     @State private var tint: Color?
     @State private var loadedURL: URL?
@@ -333,7 +334,7 @@ private struct MusicHomePoster: View {
             let artwork = await CatalogImageCache.shared.image(url, pixels: pixels)
             guard !Task.isCancelled else { return }
             let sampledColor = artwork?.cgImage.flatMap { MusicArtworkColorSampler.averageColor(of: $0) }
-            withAnimation(MusicProductMotion.change) {
+            withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
                 loadedURL = url
                 image = artwork
                 tint = sampledColor

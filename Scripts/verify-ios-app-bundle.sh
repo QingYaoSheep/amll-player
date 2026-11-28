@@ -16,6 +16,12 @@ for REQUIRED_RESOURCE in default.metallib amll-mesh-presets.json; do
         exit 1
     fi
 done
+for DEBUG_FIXTURE in amll-shared-lyrics.json amll-shared-replay.json; do
+    if [[ -e "$APP_BUNDLE/$DEBUG_FIXTURE" ]]; then
+        echo "Release bundle must not contain debug fixture: $DEBUG_FIXTURE" >&2
+        exit 1
+    fi
+done
 ROMANIZATION_ROOT="$APP_BUNDLE/Romanization"
 if [[ ! -d "$ROMANIZATION_ROOT" ]]; then
     ROMANIZATION_ROOT="$APP_BUNDLE"

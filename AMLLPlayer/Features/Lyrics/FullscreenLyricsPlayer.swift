@@ -151,7 +151,7 @@ struct FullscreenLyricsPlayer: View {
                                     .offset(y: reduceMotion || layout == nil ? 0 : phoneControlsHeight + 8)
                                     .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout != nil)
                                     .opacity(layout == nil ? 1 : 0)
-                                    .animation(LyricsPageMotion.content, value: layout != nil)
+                                    .animation(reduceMotion ? nil : LyricsPageMotion.content, value: layout != nil)
                                     .allowsHitTesting(layout == nil).accessibilityHidden(layout != nil)
                             }
                         }
@@ -242,7 +242,7 @@ struct FullscreenLyricsPlayer: View {
                     .frame(height: layout?.information.height ?? headerHeight, alignment: .topLeading)
                     .offset(x: layout?.information.minX ?? 0, y: max(0, (layout?.information.minY ?? headerInset) - headerInset))
                     .animation(reduceMotion ? nil : LyricsPageMotion.geometry, value: layout?.information)
-                    .animation(LyricsPageMotion.content, value: layout != nil)
+                    .animation(reduceMotion ? nil : LyricsPageMotion.content, value: layout != nil)
                 }
                 .frame(width: available.size.width, height: max(available.size.height, viewport.maxY), alignment: .topLeading)
             }
@@ -466,12 +466,14 @@ struct LyricsProgressControl: View {
                     } label: {
                         let position = editing ? draft : model.progress()
                         Text(model.renderPreferences.configuration.remainingTime ? "−" + time(snapshot.duration - position) : time(position))
-                            .frame(minWidth: 44, minHeight: 24, alignment: .leading)
+                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text(model.renderPreferences.configuration.remainingTime ? "render.remainingTime" : "render.elapsedTime"))
                     .accessibilityHint(Text("render.toggleTime"))
-                    Spacer(); Text("−" + time(snapshot.duration - (editing ? draft : model.progress())))
+                    Spacer()
+                    Text("−" + time(snapshot.duration - (editing ? draft : model.progress())))
+                        .accessibilityLabel(Text("render.remainingTime"))
                 }
                 .font(.caption.monospacedDigit()).opacity(0.7)
             }
@@ -499,7 +501,7 @@ struct LyricsVolumeControl: View {
     @State private var draft = 0.0
     var body: some View {
         HStack {
-            if showsIcons { Image(systemName: "speaker.fill") }
+            if showsIcons { Image(systemName: "speaker.fill").accessibilityHidden(true) }
             LyricsCapsuleSlider(value: Binding(get: { editing ? draft : Double(volume) }, set: { draft = $0 }), maximum: 100, trackThickness: tabletTrackThickness) { value in
                 if value {
                     draft = Double(volume); editing = true
@@ -507,7 +509,7 @@ struct LyricsVolumeControl: View {
                     editing = false; Task { await model.setVolume(percent: Int(draft), deviceID: device.id) }
                 }
             }.accessibilityLabel(Text("render.volume")).disabled(device.isRestricted || model.isPerformingAction)
-            if showsIcons { Image(systemName: "speaker.wave.3.fill") }
+            if showsIcons { Image(systemName: "speaker.wave.3.fill").accessibilityHidden(true) }
         }.font(.caption)
     }
 }

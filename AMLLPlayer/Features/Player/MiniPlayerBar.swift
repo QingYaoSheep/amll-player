@@ -30,7 +30,9 @@ struct TabMusicAccessory: View {
                     PlaybackArtworkImage(url: snapshot.item?.artworkURL) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
-                        Color.secondary.opacity(0.2).overlay { Image(systemName: "music.note") }
+                        Color.secondary.opacity(0.2)
+                            .overlay { Image(systemName: "music.note") }
+                            .accessibilityHidden(true)
                     }
                     .frame(width: 32, height: 32)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -64,7 +66,7 @@ struct TabMusicAccessory: View {
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 52)
-        .accessibilityValue(snapshot.isPlaying ? String(localized: "player.play") : String(localized: "player.pause"))
+        .accessibilityValue(snapshot.isPlaying ? String(localized: "player.state.playing") : String(localized: "player.state.paused"))
         .matchedTransitionSource(id: "nowPlaying", in: namespace)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("miniPlayerBar")
@@ -114,6 +116,7 @@ struct MiniPlayerBar: View {
                         title: snapshot.isPlaying ? "player.pause" : "player.play",
                         systemImage: snapshot.isPlaying ? "pause.fill" : "play.fill",
                         disabled: model.isPerformingAction
+                            || (snapshot.isPlaying ? !snapshot.restrictions.canPause : !snapshot.restrictions.canResume)
                     ) {
                         await model.togglePlayPause()
                     }
@@ -142,6 +145,7 @@ struct MiniPlayerBar: View {
                 .frame(height: 2)
                 .padding(.horizontal, 18)
                 .padding(.bottom, 8)
+                .accessibilityHidden(true)
             }
         }
         .modifier(MiniPlayerGlassSurface())
@@ -176,6 +180,7 @@ struct MiniPlayerBar: View {
                 Image(systemName: "music.note")
                     .foregroundStyle(.secondary)
             }
+            .accessibilityHidden(true)
     }
 
     private var progress: Double {

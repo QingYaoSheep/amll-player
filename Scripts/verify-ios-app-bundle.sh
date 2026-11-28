@@ -18,15 +18,16 @@ fi
 
 APP_EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
 BUNDLE_ICON_FILES="$(find "$APP_BUNDLE" -maxdepth 1 \( -name '*Icon*' -o -name '*.car' -o -name '*.icon' \) -exec basename {} \; 2>/dev/null | tr '\n' ' ' || true)"
-APP_ICON_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$INFO_PLIST" 2>/dev/null || true)"
-if [[ "$APP_ICON_NAME" != "AppIcon" ]]; then
-    fail "Unexpected CFBundleIconName='$APP_ICON_NAME'; bundle icon files: $BUNDLE_ICON_FILES"
+IPHONE_ICON_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' "$INFO_PLIST" 2>/dev/null || true)"
+IPAD_ICON_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIcons~ipad:CFBundlePrimaryIcon:CFBundleIconName' "$INFO_PLIST" 2>/dev/null || true)"
+if [[ "$IPHONE_ICON_NAME" != "AppIcon" || "$IPAD_ICON_NAME" != "AppIcon" ]]; then
+    fail "Unexpected primary icon names (iPhone='$IPHONE_ICON_NAME', iPad='$IPAD_ICON_NAME'); bundle icon files: $BUNDLE_ICON_FILES"
 fi
 if [[ -e "$APP_BUNDLE/AppIcon.icon" ]]; then
     fail "Raw AppIcon.icon copied verbatim into app bundle; bundle icon files: $BUNDLE_ICON_FILES"
 fi
-if [[ ! -s "$APP_BUNDLE/Assets.car" ]]; then
-    fail "Missing compiled Assets.car; bundle icon files: $BUNDLE_ICON_FILES"
+if [[ ! -s "$APP_BUNDLE/Assets.car" || ! -s "$APP_BUNDLE/AppIcon60x60@2x.png" || ! -s "$APP_BUNDLE/AppIcon76x76@2x~ipad.png" ]]; then
+    fail "Missing compiled Assets.car or iOS 18 fallback icon PNGs; bundle icon files: $BUNDLE_ICON_FILES"
 fi
 ASSETUTIL_INFO="$(xcrun assetutil --info "$APP_BUNDLE/Assets.car" 2>&1)" || fail "xcrun assetutil failed: $(printf '%s' "$ASSETUTIL_INFO" | tr '\n' ' ' | cut -c1-400)"
 APP_ICON_COUNT="$(printf '%s\n' "$ASSETUTIL_INFO" | grep -Fc 'AppIcon' || true)"

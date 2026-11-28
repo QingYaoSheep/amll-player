@@ -131,7 +131,7 @@ jobs:
           TEST_STATUS=${PIPESTATUS[0]}
           set -e
           if [[ "$TEST_STATUS" -ne 0 ]]; then
-            grep -E '(: error:|fatal error:|Test Case .* failed|failed \(|TESTING FAILED)' build/iphone-test.log | head -n 15 | while IFS= read -r line; do
+            grep -E "Test Case '.*' failed|(: error:.*\.(swift|metal):|TESTING FAILED)" build/iphone-test.log | head -n 10 | while IFS= read -r line; do
               echo "::error::$line"
             done
             exit "$TEST_STATUS"

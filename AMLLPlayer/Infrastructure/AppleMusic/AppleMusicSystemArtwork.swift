@@ -28,7 +28,7 @@ final class AppleMusicSystemArtwork {
             key = item.uri
         }
         if let imageURL {
-            if now - lastExistenceCheck < 0.5 {
+            if now >= lastExistenceCheck, now - lastExistenceCheck < 0.5 {
                 return imageURL
             }
             lastExistenceCheck = now
@@ -70,7 +70,7 @@ final class AppleMusicSystemArtwork {
             try Task.checkCancellation()
             guard generation == token else { return }
             self.imageURL = url
-            self.lastExistenceCheck = ProcessInfo.processInfo.systemUptime
+            self.lastExistenceCheck = -.infinity
         } catch { /* Keep MusicKit's URL and allow a later metadata-only retry. */ }
     }
 

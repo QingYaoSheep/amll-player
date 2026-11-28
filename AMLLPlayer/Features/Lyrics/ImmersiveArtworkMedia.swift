@@ -346,7 +346,7 @@ struct ImmersiveArtworkMedia: UIViewRepresentable {
             reflectionVideoView.isHidden = !hasVideo
             let presentsMedia = layout.presentsFrame || stillFrame != nil
             let showsReflection = layout.reflectionEnabled && presentsMedia && layout.showsVideo
-            reflectionPlane.isHidden = !showsReflection && !animated
+            reflectionPlane.isHidden = !showsReflection && (!animated || !layout.reflectionEnabled || layout.reflection.isEmpty)
             reflectionPlane.alpha = showsReflection ? CGFloat(ImmersiveArtworkPreset.reflectionOpacity) * layout.pageOpacity : 0
 
             var profile = layout.blurProfile ?? .init(frame: .zero, fullStrengthY: 0)

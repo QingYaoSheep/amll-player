@@ -4,32 +4,41 @@ set -euo pipefail
 APP_BUNDLE="${1:?usage: verify-ios-app-bundle.sh /path/to/AMLLPlayer.app}"
 INFO_PLIST="$APP_BUNDLE/Info.plist"
 
-if [[ ! -f "$INFO_PLIST" ]]; then
-    echo "Missing application Info.plist: $INFO_PLIST" >&2
+fail() {
+    echo "$1" >&2
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        echo "::error::$1"
+    fi
     exit 1
+}
+
+if [[ ! -f "$INFO_PLIST" ]]; then
+    fail "Missing application Info.plist: $INFO_PLIST"
 fi
 
 APP_EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
+BUNDLE_ICON_FILES="$(find "$APP_BUNDLE" -maxdepth 1 \( -name '*Icon*' -o -name '*.car' -o -name '*.icon' \) -exec basename {} \; 2>/dev/null | tr '\n' ' ' || true)"
 APP_ICON_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$INFO_PLIST" 2>/dev/null || true)"
 if [[ "$APP_ICON_NAME" != "AppIcon" ]]; then
-    echo "Unexpected CFBundleIconName in Info.plist: '$APP_ICON_NAME'" >&2
-    exit 1
+    fail "Unexpected CFBundleIconName='$APP_ICON_NAME'; bundle icon files: $BUNDLE_ICON_FILES"
 fi
 if [[ -e "$APP_BUNDLE/AppIcon.icon" ]]; then
-    echo "Raw AppIcon.icon bundle must be compiled into Assets.car, not copied verbatim" >&2
-    exit 1
+    fail "Raw AppIcon.icon copied verbatim into app bundle; bundle icon files: $BUNDLE_ICON_FILES"
 fi
 if [[ ! -s "$APP_BUNDLE/Assets.car" ]]; then
-    echo "Missing compiled Assets.car in application bundle" >&2
-    exit 1
+    fail "Missing compiled Assets.car; bundle icon files: $BUNDLE_ICON_FILES"
 fi
-ASSETUTIL_INFO="$(xcrun assetutil --info "$APP_BUNDLE/Assets.car")"
-if ! printf '%s\n' "$ASSETUTIL_INFO" | grep -Fq 'AppIcon'; then
-    echo "Compiled Assets.car does not report AppIcon entries:" >&2
-    printf '%s\n' "$ASSETUTIL_INFO" | grep -E '"Name"|"AssetType"|"RenditionName"' | head -n 30 >&2 || true
-    exit 1
+ASSETUTIL_INFO="$(xcrun assetutil --info "$APP_BUNDLE/Assets.car" 2>&1)" || fail "xcrun assetutil failed: $(printf '%s' "$ASSETUTIL_INFO" | tr '\n' ' ' | cut -c1-400)"
+APP_ICON_COUNT="$(printf '%s\n' "$ASSETUTIL_INFO" | grep -Fc 'AppIcon' || true)"
+ICON_STACK_COUNT="$(printf '%s\n' "$ASSETUTIL_INFO" | grep -Fc 'IconImageStack' || true)"
+if [[ "$APP_ICON_COUNT" -eq 0 || "$ICON_STACK_COUNT" -eq 0 ]]; then
+    ASSET_SUMMARY="$(printf '%s\n' "$ASSETUTIL_INFO" | grep -E '"AssetType"|"Name"' | head -n 20 | tr '\n' ';' | cut -c1-500 || true)"
+    fail "Assets.car missing compiled Icon Composer stack (AppIcon=$APP_ICON_COUNT, IconImageStack=$ICON_STACK_COUNT); bundle icon files: $BUNDLE_ICON_FILES; assetutil sample: $ASSET_SUMMARY"
 fi
-echo "Compiled app icon verified in Assets.car ($(printf '%s\n' "$ASSETUTIL_INFO" | grep -Fc 'AppIcon') AppIcon references)"
+echo "Compiled Icon Composer AppIcon verified in Assets.car (AppIcon=$APP_ICON_COUNT, IconImageStack=$ICON_STACK_COUNT, bundle files: $BUNDLE_ICON_FILES)"
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    echo "::notice::Compiled Icon Composer AppIcon verified in Assets.car (AppIcon=$APP_ICON_COUNT, IconImageStack=$ICON_STACK_COUNT, bundle files: $BUNDLE_ICON_FILES)"
+fi
 for REQUIRED_RESOURCE in default.metallib amll-mesh-presets.json; do
     if [[ ! -s "$APP_BUNDLE/$REQUIRED_RESOURCE" ]]; then
         echo "Missing visual rendering resource: $REQUIRED_RESOURCE" >&2

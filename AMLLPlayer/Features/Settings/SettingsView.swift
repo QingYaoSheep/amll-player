@@ -840,6 +840,12 @@ struct MusicAboutView: View {
 }
 
 private struct MusicOfflineLicensesView: View {
+    private struct LicenseFile: Identifiable {
+        let name: String
+        let body: String
+        var id: String { name }
+    }
+
     private let noticesText: String = {
         if let url = Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md"),
            let text = try? String(contentsOf: url, encoding: .utf8) {
@@ -848,7 +854,7 @@ private struct MusicOfflineLicensesView: View {
         return ""
     }()
 
-    private let licenseFiles: [(name: String, body: String)] = {
+    private let licenseFiles: [LicenseFile] = {
         let urls = Bundle.main.urls(forResourcesWithExtension: "txt", subdirectory: "Licenses")
             ?? Bundle.main.urls(forResourcesWithExtension: "txt", subdirectory: nil)
             ?? []
@@ -856,7 +862,7 @@ private struct MusicOfflineLicensesView: View {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .compactMap { url in
                 guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-                return (url.deletingPathExtension().lastPathComponent, content)
+                return LicenseFile(name: url.deletingPathExtension().lastPathComponent, body: content)
             }
     }()
 
@@ -872,7 +878,7 @@ private struct MusicOfflineLicensesView: View {
                     }
                 }
             }
-            ForEach(licenseFiles, id: \.name) { license in
+            ForEach(licenseFiles) { license in
                 SettingsSection {
                     SettingsGroup {
                         DisclosureGroup(license.name) {

@@ -23,7 +23,8 @@ final class AppHaptics {
     }
 
     var isEnabled: Bool {
-        defaults.object(forKey: Self.preferenceKey) as? Bool ?? true
+        get { defaults.object(forKey: Self.preferenceKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Self.preferenceKey) }
     }
 
     func play(_ event: Event) {

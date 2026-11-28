@@ -179,8 +179,8 @@ private struct LyricsPreviewView: View {
                         } else {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(line.text)
-                                if let translation = line.translation, !translation.isEmpty {
-                                    Text(translation).font(.caption).foregroundStyle(.secondary)
+                                if !line.translation.isEmpty {
+                                    Text(line.translation).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                             .padding(.vertical, 2)

@@ -86,17 +86,27 @@ jobs:
 
       - name: Verify the ordinary iPad lyrics pages
         if: ${{ !cancelled() && matrix.run-tests && steps.prepare-simulators.outcome == 'success' }}
-        run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPAD_UDID"
-          -only-testing:AMLLPlayerTests/TabletLyricsLayoutTests
-          -only-testing:AMLLPlayerUITests/TabletLyricsPlayerUITests
-          -resultBundlePath build/Xcode27-tablet-lyrics.xcresult
-          -collect-test-diagnostics never
-          -parallel-testing-enabled NO
-          CODE_SIGNING_ALLOWED=NO
+        run: |
+          mkdir -p build
+          set +e
+          xcodebuild test \
+            -project AMLLPlayer.xcodeproj \
+            -scheme AMLLPlayer \
+            -destination "platform=iOS Simulator,id=$CI_IPAD_UDID" \
+            -only-testing:AMLLPlayerTests/TabletLyricsLayoutTests \
+            -only-testing:AMLLPlayerUITests/TabletLyricsPlayerUITests \
+            -resultBundlePath build/Xcode27-tablet-lyrics.xcresult \
+            -collect-test-diagnostics never \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/ipad-test.log
+          TEST_STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ "$TEST_STATUS" -ne 0 ]]; then
+            grep -E '(: error:|fatal error:|Test Case .* failed|failed \(|TESTING FAILED)' build/ipad-test.log | head -n 15 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit "$TEST_STATUS"
+          fi
 
       - name: Upload iPad lyrics verification
         if: ${{ !cancelled() && matrix.run-tests }}
@@ -108,14 +118,24 @@ jobs:
 
       - name: Test on iPhone with Xcode 27
         if: ${{ !cancelled() && matrix.run-tests && steps.prepare-simulators.outcome == 'success' }}
-        run: >-
-          xcodebuild test
-          -project AMLLPlayer.xcodeproj
-          -scheme AMLLPlayer
-          -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID"
-          -resultBundlePath build/Xcode27-tests.xcresult
-          -collect-test-diagnostics never
-          CODE_SIGNING_ALLOWED=NO
+        run: |
+          mkdir -p build
+          set +e
+          xcodebuild test \
+            -project AMLLPlayer.xcodeproj \
+            -scheme AMLLPlayer \
+            -destination "platform=iOS Simulator,id=$CI_IPHONE_UDID" \
+            -resultBundlePath build/Xcode27-tests.xcresult \
+            -collect-test-diagnostics never \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/iphone-test.log
+          TEST_STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ "$TEST_STATUS" -ne 0 ]]; then
+            grep -E '(: error:|fatal error:|Test Case .* failed|failed \(|TESTING FAILED)' build/iphone-test.log | head -n 15 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit "$TEST_STATUS"
+          fi
 
       - name: Upload Xcode 27 test results
         if: always() && matrix.run-tests

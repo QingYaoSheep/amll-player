@@ -474,7 +474,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
             }
         }
 
-        private static func bytesPerRow(width: Int) -> Int {
+        private nonisolated static func bytesPerRow(width: Int) -> Int {
             width * 4
         }
 

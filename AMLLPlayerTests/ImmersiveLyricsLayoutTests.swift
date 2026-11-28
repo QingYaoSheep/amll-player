@@ -156,8 +156,8 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         XCTAssertEqual(ImmersiveArtworkPreset.reflectionOpacity, 0.94, accuracy: 0.0001)
         XCTAssertEqual(ImmersiveArtworkPreset.blurRadius, 10, accuracy: 0.0001)
         XCTAssertEqual(ImmersiveArtworkPreset.topFeatherLength, 80, accuracy: 0.0001)
-        XCTAssertEqual(ImmersiveArtworkPreset.transitionYOffset, 174, accuracy: 0.0001)
-        XCTAssertEqual(ImmersiveArtworkPreset.transitionHeightScale, 2.0, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.transitionYOffset, 0, accuracy: 0.0001)
+        XCTAssertEqual(ImmersiveArtworkPreset.transitionHeightScale, 0.88, accuracy: 0.0001)
         XCTAssertEqual(ImmersiveArtworkPreset.transitionOpacity, 1.0, accuracy: 0.0001)
     }
 }

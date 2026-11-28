@@ -24,7 +24,7 @@ import XCTest
     }
 
     func testApprovedDefaultMatchesTheProvidedCalibration() throws {
-        let expected = Data(#"{"blurRadius":10,"layers":{"background":{"enabled":true,"height":1,"opacity":1,"width":1,"x":0,"y":0},"bottomFade":{"enabled":false,"height":0.17,"opacity":1,"width":1,"x":0,"y":-224},"dimming":{"enabled":true,"height":1,"opacity":0.12,"width":1,"x":0,"y":0},"reflection":{"enabled":true,"height":0.41000000000000003,"opacity":0.9400000000000001,"width":1,"x":0,"y":-78},"transition":{"enabled":true,"height":2,"opacity":1,"width":1,"x":0,"y":174},"video":{"enabled":true,"height":1,"opacity":1,"width":1,"x":0,"y":0}},"order":["transition","reflection","bottomFade","video","dimming","background"],"topFeatherLength":80}"#.utf8)
+        let expected = Data(#"{"blurRadius":10,"layers":{"background":{"enabled":true,"height":1,"opacity":1,"width":1,"x":0,"y":0},"bottomFade":{"enabled":false,"height":0.17,"opacity":1,"width":1,"x":0,"y":-224},"dimming":{"enabled":true,"height":1,"opacity":0.12,"width":1,"x":0,"y":0},"reflection":{"enabled":true,"height":0.41000000000000003,"opacity":0.9400000000000001,"width":1,"x":0,"y":-78},"transition":{"enabled":true,"height":0.88,"opacity":1,"width":1,"x":0,"y":0},"video":{"enabled":true,"height":1,"opacity":1,"width":1,"x":0,"y":0}},"order":["transition","reflection","bottomFade","video","dimming","background"],"topFeatherLength":80}"#.utf8)
         XCTAssertEqual(
             ImmersiveArtworkDebugConfiguration.calibratedDefault,
             try JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: expected)
@@ -44,6 +44,11 @@ import XCTest
         old[.reflection] = .init(y: -53, height: 0.6)
         old[.transition] = .init(y: 206, height: 2, opacity: 0.99)
         defaults.set(try JSONEncoder().encode(old), forKey: key)
+        XCTAssertEqual(ImmersiveArtworkDebugStore(defaults: defaults).configuration, .calibratedDefault)
+
+        var legacyCoupled = ImmersiveArtworkDebugConfiguration.calibratedDefault
+        legacyCoupled[.transition] = .init(y: 174, height: 2)
+        defaults.set(try JSONEncoder().encode(legacyCoupled), forKey: key)
         XCTAssertEqual(ImmersiveArtworkDebugStore(defaults: defaults).configuration, .calibratedDefault)
 
         old[.reflection].enabled = false

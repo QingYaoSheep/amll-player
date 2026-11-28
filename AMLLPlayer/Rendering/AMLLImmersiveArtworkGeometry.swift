@@ -101,8 +101,8 @@ enum ImmersiveArtworkPreset {
     static let reflectionOpacity: Float = 0.94
     static let blurRadius: CGFloat = 10
     static let topFeatherLength: CGFloat = 80
-    static let transitionYOffset: CGFloat = 174
-    static let transitionHeightScale: CGFloat = 2.0
+    static let transitionYOffset: CGFloat = 0
+    static let transitionHeightScale: CGFloat = 0.88
     static let transitionOpacity: Double = 1.0
 
     static func reflectionFrame(cover: CGRect, viewportHeight: CGFloat) -> CGRect {
@@ -128,10 +128,12 @@ struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
         guard viewport.width > 0, viewport.height > 0 else { return .init(frame: .zero, fullStrengthY: 0) }
         let junction = min(viewport.height, max(0, video.maxY))
         let referenceHeight = AMLLImmersiveArtworkGeometry.blurTransitionReferenceHeight(video: video, viewport: viewport)
-        let extensionHeight = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: referenceHeight) * heightScale
-        let top = min(junction, max(0, junction - extensionHeight + yOffset))
-        return .init(frame: CGRect(x: 0, y: top, width: viewport.width, height: max(1, viewport.height - top)),
-                     fullStrengthY: junction)
+        let gradientLength = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: referenceHeight) * heightScale
+        let fullStrengthY = junction + yOffset
+        let top = min(viewport.height, max(0, fullStrengthY - gradientLength))
+        let height = max(0, viewport.height - top)
+        return .init(frame: CGRect(x: 0, y: top, width: viewport.width, height: height),
+                     fullStrengthY: fullStrengthY)
     }
 
     static func extendingBackground(video: CGRect, viewport: CGSize,
@@ -140,14 +142,16 @@ struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
         let adjustment = adjustment.validated()
         let junction = min(viewport.height, max(0, video.maxY))
         let referenceHeight = AMLLImmersiveArtworkGeometry.blurTransitionReferenceHeight(video: video, viewport: viewport)
-        let extensionHeight = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: referenceHeight) * adjustment.height
-        let top = min(junction, max(0, junction - extensionHeight + adjustment.y))
+        let gradientLength = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: referenceHeight) * adjustment.height
+        let fullStrengthY = junction + adjustment.y
+        let top = min(viewport.height, max(0, fullStrengthY - gradientLength))
+        let height = max(0, viewport.height - top)
         let width = viewport.width * adjustment.width
         return .init(frame: CGRect(x: (viewport.width - width) / 2 + adjustment.x,
                                    y: top,
                                    width: width,
-                                   height: max(1, viewport.height - top)),
-                     fullStrengthY: junction)
+                                   height: height),
+                     fullStrengthY: fullStrengthY)
     }
 
     func backgroundOnly(viewportHeight: CGFloat) -> Self {
@@ -155,7 +159,7 @@ struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
     }
 
     func strength(at y: CGFloat) -> CGFloat {
-        let end = min(frame.maxY, max(frame.minY, fullStrengthY))
+        let end = max(frame.minY, fullStrengthY)
         guard end > frame.minY else { return 1 }
         return Self.smoothstep((y - frame.minY) / (end - frame.minY))
     }
@@ -165,7 +169,7 @@ struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
     func effectiveTopFeatherLength(_ requested: CGFloat) -> CGFloat {
         guard requested.isFinite, requested > 0, frame.minY.isFinite,
               frame.maxY.isFinite, fullStrengthY.isFinite else { return 0 }
-        let extensionHeight = max(0, min(frame.maxY, fullStrengthY) - frame.minY)
+        let extensionHeight = max(0, fullStrengthY - frame.minY)
         return min(requested, extensionHeight)
     }
 

@@ -26,8 +26,13 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
                                                                         yOffset: -20, heightScale: 1.5)
         XCTAssertLessThan(custom.frame.minY, profile.frame.minY)
         XCTAssertEqual(custom.frame.maxY, viewport.height)
-        XCTAssertEqual(custom.fullStrengthY, video.maxY, accuracy: 0.001)
-        XCTAssertEqual(custom.strength(at: (custom.frame.minY + video.maxY) / 2), 0.5, accuracy: 0.001)
+        XCTAssertEqual(custom.fullStrengthY, video.maxY - 20, accuracy: 0.001)
+        XCTAssertEqual(
+            custom.fullStrengthY - custom.frame.minY,
+            AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: video.height) * 1.5,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(custom.strength(at: (custom.frame.minY + custom.fullStrengthY) / 2), 0.5, accuracy: 0.001)
 
         let backgroundOnly = profile.backgroundOnly(viewportHeight: viewport.height)
         XCTAssertEqual(backgroundOnly.frame.minY, 0)
@@ -251,6 +256,68 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
                 accuracy: 0.001
             )
         }
+    }
+
+    func testUpwardGradientLengthIsIndependentOfTopOffset() {
+        let viewport = CGSize(width: 402, height: 874)
+        let squareCover = ImmersiveLyricsLayout.resolve(
+            viewport: viewport,
+            artwork: CGSize(width: 1000, height: 1000),
+            informationHeight: 64,
+            bottomInset: 34,
+            isVideo: false
+        ).cover
+        let portraitCover = ImmersiveLyricsLayout.resolve(
+            viewport: viewport,
+            artwork: CGSize(width: 1080, height: 1440),
+            informationHeight: 64,
+            bottomInset: 34,
+            isVideo: true
+        ).cover
+        let offsets: [CGFloat] = [-120, 0, 80, 174, 240]
+
+        for cover in [squareCover, portraitCover] {
+            let referenceHeight = AMLLImmersiveArtworkGeometry.blurTransitionReferenceHeight(video: cover, viewport: viewport)
+            let expectedLength = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: referenceHeight)
+                * ImmersiveArtworkPreset.transitionHeightScale
+
+            for offset in offsets {
+                let profile = ImmersiveBackgroundBlurProfile.extendingBackground(
+                    video: cover,
+                    viewport: viewport,
+                    adjustment: ImmersiveArtworkLayerAdjustment(y: offset, height: ImmersiveArtworkPreset.transitionHeightScale)
+                )
+                XCTAssertEqual(profile.fullStrengthY, cover.maxY + offset, accuracy: 0.001)
+                XCTAssertEqual(profile.fullStrengthY - profile.frame.minY, expectedLength, accuracy: 0.001)
+                XCTAssertEqual(profile.effectiveTopFeatherLength(80), 80, accuracy: 0.001)
+                XCTAssertEqual(profile.strength(at: profile.frame.minY), 0, accuracy: 0.0001)
+                XCTAssertEqual(profile.strength(at: profile.frame.minY + expectedLength / 2), 0.5, accuracy: 0.0001)
+                XCTAssertEqual(profile.strength(at: profile.fullStrengthY), 1, accuracy: 0.0001)
+            }
+
+            let shorter = ImmersiveBackgroundBlurProfile.extendingBackground(
+                video: cover,
+                viewport: viewport,
+                yOffset: 180,
+                heightScale: 0.5
+            )
+            let longer = ImmersiveBackgroundBlurProfile.extendingBackground(
+                video: cover,
+                viewport: viewport,
+                yOffset: 180,
+                heightScale: 1.5
+            )
+            XCTAssertEqual(shorter.fullStrengthY, longer.fullStrengthY, accuracy: 0.001)
+            XCTAssertEqual((longer.fullStrengthY - longer.frame.minY) / (shorter.fullStrengthY - shorter.frame.minY), 3, accuracy: 0.001)
+        }
+
+        let offBottom = ImmersiveBackgroundBlurProfile.extendingBackground(
+            video: portraitCover,
+            viewport: viewport,
+            yOffset: 600,
+            heightScale: 0.88
+        )
+        XCTAssertEqual(offBottom.frame.height, 0, accuracy: 0.001)
     }
 
     private func alphaRows(of image: CGImage) throws -> [Int] {

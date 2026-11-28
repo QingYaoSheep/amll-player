@@ -62,6 +62,17 @@ struct ImmersiveArtworkDebugConfiguration: Codable, Equatable, Sendable {
             dimming: 0.12,
             bottomFade: .init(enabled: false, y: -224, height: 0.17),
             reflection: .init(y: -78, height: 0.41000000000000003, opacity: 0.9400000000000001),
+            transition: .init(y: 0, height: 0.88)
+        )
+    }
+
+    fileprivate static var legacyCoupledOffsetPreset: Self {
+        productPreset(
+            blur: 10,
+            feather: 80,
+            dimming: 0.12,
+            bottomFade: .init(enabled: false, y: -224, height: 0.17),
+            reflection: .init(y: -78, height: 0.41000000000000003, opacity: 0.9400000000000001),
             transition: .init(y: 174, height: 2)
         )
     }
@@ -187,7 +198,8 @@ final class ImmersiveArtworkDebugStore {
         let stored = defaults.data(forKey: Self.key)
             .flatMap { try? JSONDecoder().decode(ImmersiveArtworkDebugConfiguration.self, from: $0) } ?? .calibratedDefault
         let enabled = stored.enablingReflection()
-        configuration = enabled == .previousProductPreset ? .calibratedDefault : enabled
+        configuration = (enabled == .previousProductPreset || enabled == .legacyCoupledOffsetPreset)
+            ? .calibratedDefault : enabled
         if configuration != stored, let data = try? JSONEncoder().encode(configuration) {
             defaults.set(data, forKey: Self.key)
         }

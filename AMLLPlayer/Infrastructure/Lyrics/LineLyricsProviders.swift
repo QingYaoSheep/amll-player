@@ -15,7 +15,7 @@ final class QQLyricsProvider: LyricsProvider {
         return try LyricsRequest.object(data)
     }
 
-    private static func stringValue(_ value: Any?) -> String {
+    private nonisolated static func stringValue(_ value: Any?) -> String {
         if let value = value as? String {
             return value
         }
@@ -30,7 +30,7 @@ final class QQLyricsProvider: LyricsProvider {
         return ""
     }
 
-    private static func decoded(_ value: Any?) -> String {
+    private nonisolated static func decoded(_ value: Any?) -> String {
         let raw = stringValue(value)
         guard !raw.isEmpty else { return "" }
         if let decrypted = QQRCDecoder.decrypt(raw) {
@@ -39,13 +39,13 @@ final class QQLyricsProvider: LyricsProvider {
         return (try? LRCLyricsParser.decodeField(raw)) ?? ""
     }
 
-    private static func asset(_ value: Any?, hint: LyricsAsset.Format, origin: String) -> LyricsAsset? {
+    private nonisolated static func asset(_ value: Any?, hint: LyricsAsset.Format, origin: String) -> LyricsAsset? {
         let text = decoded(value)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return LyricsAsset(format: LyricsFormatDetector.detect(text, hint: hint), text: text, origin: origin)
     }
 
-    private static func bundle(primary: LyricsAsset?, translation: LyricsAsset?, romanization: LyricsAsset?, reason: String) -> LyricsAssetBundle? {
+    private nonisolated static func bundle(primary: LyricsAsset?, translation: LyricsAsset?, romanization: LyricsAsset?, reason: String) -> LyricsAssetBundle? {
         guard let primary else { return nil }
         return LyricsAssetBundle(primary: primary,
                                  translationAssets: translation.map { [$0] } ?? [],
@@ -54,7 +54,7 @@ final class QQLyricsProvider: LyricsProvider {
                                  degradationReason: primary.format == .lrc ? "QQ word-timed lyrics unavailable; using line lyrics" : nil)
     }
 
-    private static func isValid(_ bundle: LyricsAssetBundle, candidate: LyricCandidate) -> Bool {
+    private nonisolated static func isValid(_ bundle: LyricsAssetBundle, candidate: LyricCandidate) -> Bool {
         (try? bundle.parse(candidate: candidate, duration: candidate.duration).lines.isEmpty) == false
     }
 

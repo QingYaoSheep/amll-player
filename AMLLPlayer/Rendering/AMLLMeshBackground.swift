@@ -79,7 +79,7 @@ struct AMLLMeshBackground: UIViewRepresentable {
             let value: Value
         }
 
-        private nonisolated struct Vertex {
+        private struct Vertex {
             var position: SIMD2<Float>
             var uv: SIMD2<Float>
         }

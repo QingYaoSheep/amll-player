@@ -3,11 +3,11 @@ import MediaPlayer
 import Observation
 import SwiftUI
 
-struct NetEaseQueueEntry: Identifiable, Codable, Equatable {
+struct NetEaseQueueEntry: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     var item: MusicCatalogItem
 }
-struct NetEaseQueueState: Codable {
+struct NetEaseQueueState: Codable, Sendable {
     var entries: [NetEaseQueueEntry] = []
     var currentID: UUID?
     var position = 0.0
@@ -670,11 +670,10 @@ struct NetEaseQueueState: Codable {
             return
         }
         if defaults === UserDefaults.standard, let url = Self.queueFileURL(account: account) {
-            let defaultsRef = defaults
             let legacyKey = "netease.queue.v1." + account
             let snapshotState = state
             queueSaveTask?.cancel()
-            queueSaveTask = Task.detached(priority: .utility) {
+            queueSaveTask = Task.detached(priority: .utility) { [weak self] in
                 try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled, let data = try? JSONEncoder().encode(snapshotState) else { return }
                 var dir = url.deletingLastPathComponent()
@@ -683,7 +682,9 @@ struct NetEaseQueueState: Codable {
                 values.isExcludedFromBackup = true
                 try? dir.setResourceValues(values)
                 try? data.write(to: url, options: .atomic)
-                defaultsRef.removeObject(forKey: legacyKey)
+                await MainActor.run { [weak self] in
+                    self?.defaults.removeObject(forKey: legacyKey)
+                }
             }
             return
         }

@@ -10,6 +10,26 @@ if [[ ! -f "$INFO_PLIST" ]]; then
 fi
 
 APP_EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
+APP_ICON_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$INFO_PLIST" 2>/dev/null || true)"
+if [[ "$APP_ICON_NAME" != "AppIcon" ]]; then
+    echo "Unexpected CFBundleIconName in Info.plist: '$APP_ICON_NAME'" >&2
+    exit 1
+fi
+if [[ -e "$APP_BUNDLE/AppIcon.icon" ]]; then
+    echo "Raw AppIcon.icon bundle must be compiled into Assets.car, not copied verbatim" >&2
+    exit 1
+fi
+if [[ ! -s "$APP_BUNDLE/Assets.car" ]]; then
+    echo "Missing compiled Assets.car in application bundle" >&2
+    exit 1
+fi
+ASSETUTIL_INFO="$(xcrun assetutil --info "$APP_BUNDLE/Assets.car")"
+if ! printf '%s\n' "$ASSETUTIL_INFO" | grep -Fq 'AppIcon'; then
+    echo "Compiled Assets.car does not report AppIcon entries:" >&2
+    printf '%s\n' "$ASSETUTIL_INFO" | grep -E '"Name"|"AssetType"|"RenditionName"' | head -n 30 >&2 || true
+    exit 1
+fi
+echo "Compiled app icon verified in Assets.car ($(printf '%s\n' "$ASSETUTIL_INFO" | grep -Fc 'AppIcon') AppIcon references)"
 for REQUIRED_RESOURCE in default.metallib amll-mesh-presets.json; do
     if [[ ! -s "$APP_BUNDLE/$REQUIRED_RESOURCE" ]]; then
         echo "Missing visual rendering resource: $REQUIRED_RESOURCE" >&2

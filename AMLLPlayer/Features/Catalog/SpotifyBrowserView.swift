@@ -243,11 +243,10 @@ struct CatalogSearchView: View {
                         }
                         .scrollDismissesKeyboard(.interactively)
                         .refreshable {
-                            await withTaskGroup(of: Void.self) { group in
-                                for query in queries {
-                                    group.addTask { await store.load(query, force: true) }
-                                }
+                            let tasks = queries.map { query in
+                                Task { await store.page(query).load(query: query, provider: store.provider, force: true) }
                             }
+                            for task in tasks { await task.value }
                         }
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

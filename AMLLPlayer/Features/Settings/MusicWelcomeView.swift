@@ -62,11 +62,6 @@ struct MusicWelcomeView: View {
         }
         .tint(MusicProductStyle.accent)
         .interactiveDismissDisabled()
-        .onChange(of: model.spotifyCatalog.active) { _, active in
-            if active && model.sessionState.isAuthenticated {
-                model.selectMusicService(.spotify)
-            }
-        }
         .onChange(of: model.appleMusicState.connected) { _, connected in
             if connected {
                 model.selectMusicService(.appleMusic)

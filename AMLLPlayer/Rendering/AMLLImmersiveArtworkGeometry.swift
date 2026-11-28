@@ -78,6 +78,16 @@ enum AMLLImmersiveArtworkGeometry {
         return CGRect(x: 0, y: top, width: viewport.width, height: max(1, viewport.height - top))
     }
 
+    /// Standard Apple Music portrait animated artwork aspect ratio (`motionDetailTall`, 3:4).
+    static let portraitReferenceAspect = CGSize(width: 3, height: 4)
+
+    /// Keep the blur transition vertical span consistent with a 3:4 portrait animated cover
+    /// when displaying a square or shorter static cover in the same viewport.
+    static func blurTransitionReferenceHeight(video: CGRect, viewport: CGSize) -> CGFloat {
+        let portraitHeight = frame(viewport: viewport, video: portraitReferenceAspect).height
+        return max(video.height, portraitHeight)
+    }
+
     static func transitionHalfHeight(videoHeight: CGFloat) -> CGFloat {
         videoHeight * overlapFraction * (1 - transitionTopInsetFraction)
     }
@@ -117,7 +127,8 @@ struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
                                     heightScale: CGFloat = ImmersiveArtworkPreset.transitionHeightScale) -> Self {
         guard viewport.width > 0, viewport.height > 0 else { return .init(frame: .zero, fullStrengthY: 0) }
         let junction = min(viewport.height, max(0, video.maxY))
-        let extensionHeight = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: video.height) * heightScale
+        let referenceHeight = AMLLImmersiveArtworkGeometry.blurTransitionReferenceHeight(video: video, viewport: viewport)
+        let extensionHeight = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: referenceHeight) * heightScale
         let top = min(junction, max(0, junction - extensionHeight + yOffset))
         return .init(frame: CGRect(x: 0, y: top, width: viewport.width, height: max(1, viewport.height - top)),
                      fullStrengthY: junction)
@@ -128,7 +139,8 @@ struct ImmersiveBackgroundBlurProfile: Equatable, Sendable {
         guard viewport.width > 0, viewport.height > 0 else { return .init(frame: .zero, fullStrengthY: 0) }
         let adjustment = adjustment.validated()
         let junction = min(viewport.height, max(0, video.maxY))
-        let extensionHeight = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: video.height) * adjustment.height
+        let referenceHeight = AMLLImmersiveArtworkGeometry.blurTransitionReferenceHeight(video: video, viewport: viewport)
+        let extensionHeight = AMLLImmersiveArtworkGeometry.transitionHalfHeight(videoHeight: referenceHeight) * adjustment.height
         let top = min(junction, max(0, junction - extensionHeight + adjustment.y))
         let width = viewport.width * adjustment.width
         return .init(frame: CGRect(x: (viewport.width - width) / 2 + adjustment.x,

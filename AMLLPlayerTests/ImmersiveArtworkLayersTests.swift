@@ -159,6 +159,100 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         XCTAssertEqual(ArtworkReflectionStyle.fadeStops.last?.alpha, 0)
     }
 
+    func testSquareStaticCoverMatchesPortraitDynamicCoverBlurTransitionSpan() throws {
+        let customAdjustment = ImmersiveArtworkLayerAdjustment(y: -20, height: 1.5)
+        let viewports = [
+            CGSize(width: 375, height: 812),
+            CGSize(width: 393, height: 852),
+            CGSize(width: 402, height: 874),
+            CGSize(width: 440, height: 956),
+        ]
+        for viewport in viewports {
+            let squareLayout = ImmersiveLyricsLayout.resolve(
+                viewport: viewport,
+                artwork: CGSize(width: 1000, height: 1000),
+                informationHeight: 64,
+                bottomInset: 34,
+                isVideo: false
+            )
+            let portraitLayout = ImmersiveLyricsLayout.resolve(
+                viewport: viewport,
+                artwork: CGSize(width: 1080, height: 1440),
+                informationHeight: 64,
+                bottomInset: 34,
+                isVideo: true
+            )
+
+            let squareProfile = ImmersiveBackgroundBlurProfile.extendingBackground(
+                video: squareLayout.cover,
+                viewport: viewport
+            )
+            let portraitProfile = ImmersiveBackgroundBlurProfile.extendingBackground(
+                video: portraitLayout.cover,
+                viewport: viewport
+            )
+            XCTAssertEqual(squareProfile.fullStrengthY, squareLayout.cover.maxY, accuracy: 0.001)
+            XCTAssertEqual(
+                squareProfile.fullStrengthY - squareProfile.frame.minY,
+                portraitProfile.fullStrengthY - portraitProfile.frame.minY,
+                accuracy: 0.001
+            )
+            XCTAssertEqual(
+                squareProfile.effectiveTopFeatherLength(ImmersiveArtworkPreset.topFeatherLength),
+                portraitProfile.effectiveTopFeatherLength(ImmersiveArtworkPreset.topFeatherLength),
+                accuracy: 0.001
+            )
+            for distance in [CGFloat(20), 40, 80] {
+                XCTAssertEqual(
+                    squareProfile.strength(at: squareProfile.fullStrengthY - distance),
+                    portraitProfile.strength(at: portraitProfile.fullStrengthY - distance),
+                    accuracy: 0.0001
+                )
+            }
+            XCTAssertEqual(
+                squareProfile.topFeatherOpacity(at: squareProfile.frame.minY + 20, length: ImmersiveArtworkPreset.topFeatherLength),
+                portraitProfile.topFeatherOpacity(at: portraitProfile.frame.minY + 20, length: ImmersiveArtworkPreset.topFeatherLength),
+                accuracy: 0.0001
+            )
+
+            let squareCustom = ImmersiveBackgroundBlurProfile.extendingBackground(
+                video: squareLayout.cover,
+                viewport: viewport,
+                adjustment: customAdjustment
+            )
+            let portraitCustom = ImmersiveBackgroundBlurProfile.extendingBackground(
+                video: portraitLayout.cover,
+                viewport: viewport,
+                adjustment: customAdjustment
+            )
+            XCTAssertEqual(
+                squareCustom.fullStrengthY - squareCustom.frame.minY,
+                portraitCustom.fullStrengthY - portraitCustom.frame.minY,
+                accuracy: 0.001
+            )
+
+            let squareMedia = ImmersiveArtworkMedia.Layout.immersive(
+                cover: squareLayout.cover,
+                viewport: viewport,
+                presentsFrame: false,
+                reduceTransparency: false
+            )
+            let portraitMedia = ImmersiveArtworkMedia.Layout.immersive(
+                cover: portraitLayout.cover,
+                viewport: viewport,
+                presentsFrame: true,
+                reduceTransparency: false
+            )
+            let squareBlur = try XCTUnwrap(squareMedia.blurProfile)
+            let portraitBlur = try XCTUnwrap(portraitMedia.blurProfile)
+            XCTAssertEqual(
+                squareBlur.fullStrengthY - squareMedia.transition.minY,
+                portraitBlur.fullStrengthY - portraitMedia.transition.minY,
+                accuracy: 0.001
+            )
+        }
+    }
+
     private func alphaRows(of image: CGImage) throws -> [Int] {
         let data = try XCTUnwrap(image.dataProvider?.data as Data?)
         var result: [Int] = []

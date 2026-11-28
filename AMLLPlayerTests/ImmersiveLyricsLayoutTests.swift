@@ -49,10 +49,11 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
                 XCTAssertEqual(layout.cover, AMLLImmersiveArtworkGeometry.frame(viewport: viewport, video: source))
                 XCTAssertEqual(layout.cover.width, viewport.width, accuracy: 0.51)
                 XCTAssertEqual(layout.cover.width / layout.cover.height, source.width / source.height, accuracy: 0.0001)
-                let informationTop = source.height > source.width ? layout.cover.maxY - 80 : layout.cover.maxY + 16
+                let informationTop = source.height > source.width ? layout.cover.maxY - 32 : layout.cover.maxY + 16
                 XCTAssertEqual(layout.information.minY, informationTop)
                 XCTAssertEqual(layout.lyrics.minY, layout.information.maxY)
-                XCTAssertGreaterThanOrEqual(layout.lyrics.height, viewport.height / 3 - 0.01)
+                let expectedMinimumLyrics = layout.overlaysArtwork ? max(160, viewport.height * 0.25) : max(160, viewport.height / 3)
+                XCTAssertGreaterThanOrEqual(layout.lyrics.height, expectedMinimumLyrics - 0.01)
             }
         }
     }
@@ -96,16 +97,20 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
             isVideo: true, informationTextBottom: 58)
         XCTAssertTrue(layout.overlaysArtwork)
         XCTAssertEqual(layout.cover.height, 536)
-        XCTAssertEqual(layout.information.minY, 456)
-        XCTAssertEqual(layout.information.maxY, 520)
-        XCTAssertEqual(layout.lyrics.minY, 514)
+        XCTAssertEqual(layout.information.minY, 504)
+        XCTAssertEqual(layout.information.midY, 536)
+        XCTAssertEqual(layout.information.maxY, 568)
+        XCTAssertEqual(layout.lyrics.minY, 562)
         XCTAssertEqual(layout.lyrics.maxY, 840)
         XCTAssertFalse(layout.requiresScrolling)
+        XCTAssertEqual(layout.effectiveFocusAnchor, ImmersiveLyricsLayout.portraitVideoFocusAnchor)
+        XCTAssertGreaterThan(layout.lyrics.height * layout.effectiveFocusAnchor, 64)
         let large = ImmersiveLyricsLayout.resolve(viewport: CGSize(width: 320, height: 568),
             artwork: CGSize(width: 3, height: 4), informationHeight: 500, bottomInset: 34, isVideo: true)
         XCTAssertFalse(large.overlaysArtwork)
         XCTAssertGreaterThan(large.information.minY, large.cover.maxY)
         XCTAssertTrue(large.requiresScrolling)
+        XCTAssertEqual(large.effectiveFocusAnchor, ImmersiveLyricsLayout.focusAnchor)
     }
 
     func testFocusIsEighteenPercentWithoutChangingOrdinaryPreferences() {
@@ -132,8 +137,59 @@ final class ImmersiveLyricsLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cover.width, 402)
         XCTAssertEqual(layout.visibleCover, layout.cover)
         XCTAssertEqual(layout.visibleCover.width / layout.visibleCover.height, 0.75, accuracy: 0.001)
-        XCTAssertEqual(layout.information.maxY, layout.visibleCover.maxY - 16)
+        XCTAssertEqual(layout.information.midY, layout.visibleCover.maxY)
         XCTAssertEqual(layout.lyrics.minY, layout.information.minY + 60)
+    }
+
+    func testPortraitVideoLowersFocusAnchorAndClearsTopFadeAcrossPhoneViewports() {
+        var preference = LyricsRenderConfiguration()
+        preference.anchor = 0.62
+        for viewport in [
+            CGSize(width: 375, height: 812),
+            CGSize(width: 393, height: 852),
+            CGSize(width: 402, height: 874),
+            CGSize(width: 440, height: 956),
+        ] {
+            let layout = ImmersiveLyricsLayout.resolve(viewport: viewport,
+                artwork: CGSize(width: 3, height: 4), informationHeight: 64, bottomInset: 34,
+                isVideo: true, informationTextBottom: 58)
+            XCTAssertTrue(layout.overlaysArtwork)
+            XCTAssertEqual(layout.information.midY, layout.visibleCover.maxY, accuracy: 0.001)
+            XCTAssertEqual(layout.lyrics.minY, layout.information.minY + 58, accuracy: 0.001)
+            XCTAssertFalse(layout.requiresScrolling)
+            XCTAssertEqual(layout.effectiveFocusAnchor, ImmersiveLyricsLayout.portraitVideoFocusAnchor)
+            XCTAssertEqual(layout.effectiveFocusAnchor, 0.28)
+            XCTAssertGreaterThan(layout.lyrics.height * layout.effectiveFocusAnchor, 64)
+            let projected = layout.lyricConfiguration(preference, page: viewport).validated()
+            XCTAssertEqual(projected.anchor, 0.28)
+            XCTAssertEqual(preference.anchor, 0.62)
+        }
+    }
+
+    func testImmersiveHeaderAppearanceEnablesHDRAndPlusLighterForPortraitVideo() {
+        let hdrAndAdditive = ImmersiveLyricsHeaderAppearance.resolve(
+            overlaysArtwork: true, hdrEnabled: true, reduceTransparency: false)
+        XCTAssertTrue(hdrAndAdditive.usesPlusLighter)
+        XCTAssertTrue(hdrAndAdditive.usesHDR)
+        XCTAssertEqual(hdrAndAdditive.hdrBrightness, LyricsHDRConfiguration.targetBrightness)
+
+        let additiveOnly = ImmersiveLyricsHeaderAppearance.resolve(
+            overlaysArtwork: true, hdrEnabled: false, reduceTransparency: false)
+        XCTAssertTrue(additiveOnly.usesPlusLighter)
+        XCTAssertFalse(additiveOnly.usesHDR)
+        XCTAssertEqual(additiveOnly.hdrBrightness, 1.0)
+
+        let reducedTransparency = ImmersiveLyricsHeaderAppearance.resolve(
+            overlaysArtwork: true, hdrEnabled: true, reduceTransparency: true)
+        XCTAssertFalse(reducedTransparency.usesPlusLighter)
+        XCTAssertFalse(reducedTransparency.usesHDR)
+        XCTAssertEqual(reducedTransparency.hdrBrightness, 1.0)
+
+        let staticCover = ImmersiveLyricsHeaderAppearance.resolve(
+            overlaysArtwork: false, hdrEnabled: true, reduceTransparency: false)
+        XCTAssertFalse(staticCover.usesPlusLighter)
+        XCTAssertFalse(staticCover.usesHDR)
+        XCTAssertEqual(staticCover.hdrBrightness, 1.0)
     }
 
     func testModeOnlyAppliesToPhonePortraitLyricsAndDoesNotEnableVideo() {

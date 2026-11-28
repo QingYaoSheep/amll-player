@@ -791,10 +791,10 @@ struct AMLLLyricsPlayer: View {
 
 
 
-/// Allow the floating Metal lyric layers to retain extended values through
-/// SwiftUI composition. Individual renderers still enforce the user's HDR
-/// setting, live screen headroom and the 2x ceiling; SDR content stays SDR.
-private struct LyricsPageDynamicRange: ViewModifier {
+/// Allow the floating Metal lyric and HDR header layers to retain extended
+/// values through SwiftUI composition. Individual renderers enforce the user's
+/// HDR setting, live screen headroom and the 1.2x ceiling; SDR content stays SDR.
+struct LyricsPageDynamicRange: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content.allowedDynamicRange(.high)

@@ -172,6 +172,7 @@ final class LyricsRenderView: UIView, LyricsRendering, UIScrollViewDelegate {
             needsRebuild = true
         }
         if self.configuration.tabletTypography?.fade != configuration.tabletTypography?.fade { fadeSize = .zero }
+        if self.configuration.anchor != configuration.anchor { needsRebuild = true }
         self.configuration = configuration; self.offset = offset; self.duration = duration
         self.playing = playing; self.active = active; self.canSeek = canSeek; self.reduceMotion = reduceMotion
         for row in rows.values {

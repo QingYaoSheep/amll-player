@@ -13,6 +13,7 @@ struct ImmersiveLyricsArtworkSource: Equatable {
 /// Layout only: no song time, playback state or lyric animation lives here.
 struct ImmersiveLyricsLayout: Equatable {
     static let focusAnchor = 0.18
+    static let portraitVideoFocusAnchor = 0.28
     let cover: CGRect
     let visibleCover: CGRect
     let information: CGRect
@@ -22,10 +23,14 @@ struct ImmersiveLyricsLayout: Equatable {
     let contentHeight: CGFloat
     let requiresScrolling: Bool
 
+    var effectiveFocusAnchor: Double {
+        overlaysArtwork ? Self.portraitVideoFocusAnchor : Self.focusAnchor
+    }
+
     func lyricConfiguration(_ source: LyricsRenderConfiguration, page: CGSize? = nil) -> LyricsRenderConfiguration {
         var value = source
         value.immersiveLyrics = true
-        value.anchor = Self.focusAnchor
+        value.anchor = effectiveFocusAnchor
         value.horizontalPadding = horizontalInset
         if let page {
             value.fontSize = source.resolvedFontSize(width: page.width, height: page.height)
@@ -47,8 +52,8 @@ struct ImmersiveLyricsLayout: Equatable {
         let inset = min(44, max(20, width * 30 / 402))
         let infoHeight = informationHeight.isFinite ? max(44, informationHeight) : 64
         let safeBottom = bottomInset.isFinite ? max(0, bottomInset) : 0
-        let minimumLyrics = max(160, height / 3)
-        let availableCover = max(0, height - safeBottom - minimumLyrics - infoHeight - 40)
+        let standardMinimumLyrics = max(160, height / 3)
+        let availableCover = max(0, height - safeBottom - standardMinimumLyrics - infoHeight - 40)
         let source = artwork.width.isFinite && artwork.height.isFinite && artwork.width > 0 && artwork.height > 0
             ? artwork : CGSize(width: 1, height: 1)
         // An exceptionally tall accessibility header can scroll with the lyric
@@ -67,12 +72,13 @@ struct ImmersiveLyricsLayout: Equatable {
         }
         let visibleCover = AMLLImmersiveArtworkGeometry.fittedFrame(container: artworkAdjustment.validated().frame(cover), source: source)
         let overlaysArtwork = isVideo && source.height > source.width && infoHeight + 32 <= visibleCover.height
-        let informationTop = overlaysArtwork ? max(0, visibleCover.maxY - infoHeight - 16) : visibleCover.maxY + 16
+        let informationTop = overlaysArtwork ? max(0, visibleCover.maxY - infoHeight / 2) : visibleCover.maxY + 16
         let information = CGRect(x: inset, y: informationTop, width: max(1, width - inset * 2), height: infoHeight)
         // The native canvas owns a 64pt fade from this upper edge. Measure the
         // text block so the fade starts at the artist, even beside taller buttons.
         let textBottom = informationTextBottom.flatMap { $0.isFinite ? min(infoHeight, max(0, $0)) : nil } ?? infoHeight
         let top = information.minY + textBottom
+        let minimumLyrics = overlaysArtwork ? max(160, height * 0.25) : standardMinimumLyrics
         let lyrics = CGRect(x: 0, y: top, width: width, height: max(minimumLyrics, height - safeBottom - top))
         let contentHeight = lyrics.maxY + safeBottom
         return Self(cover: cover, visibleCover: visibleCover, information: information, lyrics: lyrics,

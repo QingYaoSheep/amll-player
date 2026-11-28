@@ -1,5 +1,34 @@
 import SwiftUI
 
+struct ImmersiveLyricsHeaderAppearance: Equatable, Sendable {
+    let usesPlusLighter: Bool
+    let usesHDR: Bool
+    let hdrBrightness: Double
+
+    static func resolve(overlaysArtwork: Bool,
+                        hdrEnabled: Bool,
+                        reduceTransparency: Bool) -> Self {
+        let additive = overlaysArtwork && !reduceTransparency
+        let hdr = additive && hdrEnabled
+        return Self(
+            usesPlusLighter: additive,
+            usesHDR: hdr,
+            hdrBrightness: hdr ? LyricsHDRConfiguration.targetBrightness : 1.0
+        )
+    }
+}
+
+private struct ImmersiveHeaderDynamicRange: ViewModifier {
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *), enabled {
+            content.allowedDynamicRange(.high)
+        } else {
+            content
+        }
+    }
+}
+
 struct ImmersiveLyricsHeader: View {
     @Bindable var model: AppModel
     let snapshot: PlaybackSnapshot
@@ -11,17 +40,35 @@ struct ImmersiveLyricsHeader: View {
     @ScaledMetric(relativeTo: .headline) private var titleSize = 18.0
     @ScaledMetric(relativeTo: .subheadline) private var artistSize = 15.0
 
+    private static func foregroundColor(opacity: Double, appearance: ImmersiveLyricsHeaderAppearance) -> Color {
+        if #available(iOS 26.0, *), appearance.usesHDR {
+            let brightness = appearance.hdrBrightness
+            return Color(.sRGBLinear, red: brightness, green: brightness, blue: brightness, opacity: opacity)
+                .headroom(brightness)
+        }
+        return Color.white.opacity(opacity)
+    }
+
     var body: some View {
         let configuration = model.renderPreferences.configuration
+        let appearance = ImmersiveLyricsHeaderAppearance.resolve(
+            overlaysArtwork: additive,
+            hdrEnabled: configuration.hdr?.enabled == true,
+            reduceTransparency: reduceTransparency
+        )
+        let primaryColor = Self.foregroundColor(opacity: 1, appearance: appearance)
+        let secondaryColor = Self.foregroundColor(opacity: 0.65, appearance: appearance)
         HStack(alignment: .center, spacing: 4) {
             LyricsTrackTransition(item: item) { displayed in
               VStack(alignment: .leading, spacing: 3) {
                 if configuration.showTitle {
                     Text(displayed.title).font(.system(size: titleSize, weight: .bold))
+                        .foregroundStyle(primaryColor)
                         .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 }
                 if configuration.showArtist {
-                    Text(displayed.artistLine).font(.system(size: artistSize)).foregroundStyle(.white.opacity(0.65))
+                    Text(displayed.artistLine).font(.system(size: artistSize))
+                        .foregroundStyle(secondaryColor)
                         .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 }
               }
@@ -50,11 +97,14 @@ struct ImmersiveLyricsHeader: View {
             LyricsQuickSettingsButton(presentation: presentation)
             }
         }
+        .foregroundStyle(primaryColor)
+        .tint(primaryColor)
         .buttonStyle(.plain)
         .frame(minHeight: 44)
         .fixedSize(horizontal: false, vertical: true)
         .coordinateSpace(name: "immersiveLyricsHeader")
-        .blendMode(additive && !reduceTransparency ? .plusLighter : .normal)
+        .blendMode(appearance.usesPlusLighter ? .plusLighter : .normal)
+        .modifier(ImmersiveHeaderDynamicRange(enabled: appearance.usesHDR))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("immersiveLyricsInformation")
     }

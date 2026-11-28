@@ -164,6 +164,8 @@ struct FullscreenLyricsPlayer: View {
                                                description: Text("player.noPlaybackSubtitle"))
                     }
                 }
+                .modifier(LyricsPageCompositing())
+                .modifier(LyricsPageDynamicRange())
                 .onChange(of: layout != nil, initial: true) { _, enabled in immersiveViewport = enabled }
                 .onChange(of: LyricsPagePresentationCoordinator.Mode(showsLyrics: configuration.showLyrics,
                     immersive: layout != nil), initial: true) { _, mode in
@@ -264,6 +266,7 @@ struct FullscreenLyricsPlayer: View {
                 .frame(width: available.size.width, height: max(available.size.height, viewport.maxY), alignment: .topLeading)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .scrollClipDisabled(layout != nil)
             .scrollIndicators(.hidden)
             .modifier(ImmersiveLyricsScrollEdge(active: configuration.showLyrics && layout != nil))
         }

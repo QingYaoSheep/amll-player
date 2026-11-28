@@ -140,7 +140,8 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
             try? FileManager.default.removeItem(at: url)
         }
 
-        let still = try XCTUnwrap(await ImmersiveStillArtworkCache().load(url))
+        let loadedStill = await ImmersiveStillArtworkCache().load(url)
+        let still = try XCTUnwrap(loadedStill)
         let cover = CGRect(x: 0, y: 0, width: 200, height: 200)
         let layout = ImmersiveArtworkMedia.Layout.immersive(
             cover: cover,
@@ -193,7 +194,8 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         defer { surface.stop(); surface.removeFromSuperview(); window.isHidden = true; try? FileManager.default.removeItem(at: url) }
 
         let cache = ImmersiveStillArtworkCache()
-        let still = try XCTUnwrap(await cache.load(url))
+        let loadedStill = await cache.load(url)
+        let still = try XCTUnwrap(loadedStill)
         let cached = await cache.load(url)
         XCTAssertTrue(still.image === cached?.image, "Repeated updates reuse the decoded cover")
 

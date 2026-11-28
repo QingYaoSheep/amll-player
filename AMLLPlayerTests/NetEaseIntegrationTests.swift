@@ -387,7 +387,7 @@ import XCTest
         playback.accountChanged()
         playback.start()
         XCTAssertEqual(playback.displayedEntries.count, 1)
-        XCTAssertEqual(playback.displayedEntries.first?.item.title, "First")
+        XCTAssertEqual(playback.displayedEntries.first?.item.name, "First")
 
         playback.handleAudioSessionInterruption(type: AVAudioSession.InterruptionType.began.rawValue, options: nil)
         playback.handleAudioSessionInterruption(type: AVAudioSession.InterruptionType.ended.rawValue,

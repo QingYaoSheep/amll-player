@@ -115,11 +115,6 @@ final class SpotifyCatalogClient: SpotifyCatalogProviding {
         self.http = http
     }
 
-    deinit {
-        let retiring = http
-        Task { await retiring.finishSession() }
-    }
-
     func invalidate() {
         generation = UUID()
         let retiring = http

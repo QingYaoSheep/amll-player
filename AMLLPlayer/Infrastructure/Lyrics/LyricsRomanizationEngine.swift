@@ -1,6 +1,5 @@
 import CryptoKit
 import Foundation
-import UIKit
 
 struct RomanizationResult: Codable, Sendable {
     struct Line: Codable, Sendable {
@@ -72,7 +71,7 @@ actor LyricsRomanizationEngine {
 
     init() {
         memoryWarningObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didReceiveMemoryWarningNotification,
+            forName: Notification.Name("UIApplicationDidReceiveMemoryWarningNotification"),
             object: nil,
             queue: nil
         ) { [weak self] _ in

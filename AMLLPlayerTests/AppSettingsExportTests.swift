@@ -68,9 +68,36 @@ import XCTest
     }
 
     func testApplyRestoresPreferencesSelectionsAndPlaybackModes() async throws {
-        let suite = "settings-import-" + UUID().uuidString
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let sourceSuite = "settings-export-src-" + UUID().uuidString
+        let sourceDefaults = try XCTUnwrap(UserDefaults(suiteName: sourceSuite))
+        defer { sourceDefaults.removePersistentDomain(forName: sourceSuite) }
+
+        let targetSuite = "settings-import-dst-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: targetSuite))
+        defer { defaults.removePersistentDomain(forName: targetSuite) }
+
+        let sourceSelected = MusicSourcePreferences(defaults: sourceDefaults)
+        sourceSelected.selected = .netease
+        let sourceAppearances = LyricsRenderPreferences(defaults: sourceDefaults)
+        sourceAppearances.activate(.custom)
+        sourceAppearances.configuration.fontSize = 44
+        sourceAppearances.configuration.bold = false
+        let sourceSettingsStore = LyricsSettingsStore(defaults: sourceDefaults)
+        var lyricSettings = LyricsSettings()
+        lyricSettings.globalDelay = 1.25
+        try sourceSettingsStore.save(lyricSettings)
+        let sourceCache = try SwiftDataLyricsCache(inMemory: true)
+        let candidate = LyricCandidate(source: .netease, sourceID: "456", title: "Imported Track", artists: ["Tester"])
+        try sourceCache.saveSelection(.init(candidate: candidate, offset: -0.75), for: "netease:456")
+        let sourceLyrics = LyricsCoordinator(providers: [], cache: sourceCache, settingsStore: sourceSettingsStore)
+        let sourceDesktop = DesktopLyricsPreferences(defaults: sourceDefaults)
+        sourceDesktop.settings.aspect = .tall
+        sourceDesktop.settings.plusLighter = false
+        let sourceModel = AppModel(environment: .make(configuration: .preview), lyrics: sourceLyrics,
+                                   renderPreferences: sourceAppearances, desktopLyricsPreferences: sourceDesktop,
+                                   musicPreferences: sourceSelected)
+        sourceDefaults.set(false, forKey: AppHaptics.preferenceKey)
+        let sourceHaptics = AppHaptics(defaults: sourceDefaults)
 
         let selected = MusicSourcePreferences(defaults: defaults)
         selected.selected = .spotify
@@ -83,49 +110,38 @@ import XCTest
                              renderPreferences: appearances, desktopLyricsPreferences: desktop, musicPreferences: selected)
         let haptics = AppHaptics(defaults: defaults)
 
-        var renderConfig = LyricsRenderConfiguration()
-        renderConfig.fontSize = 44
-        renderConfig.bold = false
-        var lyricSettings = LyricsSettings()
-        lyricSettings.globalDelay = 1.25
-        var desktopSettings = DesktopLyricsSettings()
-        desktopSettings.aspect = .tall
-        desktopSettings.plusLighter = false
-
-        let candidate = LyricCandidate(source: .netease, sourceID: "456", title: "Imported Track", artists: ["Tester"])
-        let exported = AppSettingsExport(
-            version: 1,
-            exportedAt: Date(),
-            music: .init(source: .netease, spotifyClientID: nil, netEaseQuality: .lossless, netEaseShuffle: true, netEaseRepeat: .one),
-            lyrics: lyricSettings,
-            appearance: .init(profile: .custom, current: renderConfig, savedCustom: renderConfig),
-            trackLyrics: ["netease:456": .init(candidate: candidate, offset: -0.75)],
-            pronunciationOverrides: [:],
-            lockScreenLyrics: true,
-            lockScreenLyricsTranslation: false,
-            lockScreenLyricsRomanization: true,
-            lockScreenLyricsKeepAlive: false,
-            autoDesktopLyrics: nil,
-            desktopLyrics: desktopSettings,
-            hapticsEnabled: false
-        )
-
+        let savedSourceQuality = sourceModel.netEasePlayback.quality
+        let savedTargetQuality = model.netEasePlayback.quality
         let savedLockScreen = model.lockScreenLyricsEnabled
         let savedTranslation = model.lockScreenLyricsShowsTranslation
         let savedRomanization = model.lockScreenLyricsShowsRomanization
         let savedKeepAlive = model.lockScreenLyricsKeepAliveEnabled
         defer {
+            sourceModel.netEasePlayback.quality = savedSourceQuality
+            model.netEasePlayback.quality = savedTargetQuality
             model.lockScreenLyricsEnabled = savedLockScreen
             model.lockScreenLyricsShowsTranslation = savedTranslation
             model.lockScreenLyricsShowsRomanization = savedRomanization
             model.lockScreenLyricsKeepAliveEnabled = savedKeepAlive
         }
 
+        sourceModel.lockScreenLyricsEnabled = true
+        sourceModel.lockScreenLyricsShowsTranslation = false
+        sourceModel.lockScreenLyricsShowsRomanization = true
+        sourceModel.lockScreenLyricsKeepAliveEnabled = false
+        sourceModel.netEasePlayback.quality = .lossless
+        sourceModel.netEasePlayback.restorePlaybackModes(shuffle: true, repeatMode: .one)
+
+        let data = try AppSettingsExport(model: sourceModel, pronunciationOverrides: [:], haptics: sourceHaptics).encoded()
+        let exported = try JSONDecoder().decode(AppSettingsExport.self, from: data)
+
         try await exported.apply(to: model, haptics: haptics)
 
         XCTAssertFalse(haptics.isEnabled)
         XCTAssertEqual(model.selectedMusicService, .netease)
         XCTAssertEqual(model.netEasePlayback.quality, .lossless)
+        XCTAssertEqual(model.netEasePlayback.savedPlaybackModes.shuffle, true)
+        XCTAssertEqual(model.netEasePlayback.savedPlaybackModes.repeatMode, .one)
         XCTAssertEqual(model.lyrics.settings.globalDelay, 1.25)
         XCTAssertEqual(model.renderPreferences.profile, .custom)
         XCTAssertEqual(model.renderPreferences.configuration.fontSize, 44)
@@ -134,8 +150,10 @@ import XCTest
         XCTAssertEqual(model.desktopLyricsPreferences.settings.plusLighter, false)
         XCTAssertEqual(try cache.selection(for: "netease:456"), .init(candidate: candidate, offset: -0.75))
 
-        var invalid = exported
-        invalid.version = 999
+        var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        raw["version"] = 999
+        let invalidData = try JSONSerialization.data(withJSONObject: raw)
+        let invalid = try JSONDecoder().decode(AppSettingsExport.self, from: invalidData)
         do {
             try await invalid.apply(to: model, haptics: haptics)
             XCTFail("Expected unsupported settings version to throw")

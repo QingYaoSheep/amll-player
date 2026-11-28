@@ -36,7 +36,7 @@ final class SpotifyWebAuthorizationController: NSObject {
     private let redirectURI: URL
     private let presentationContext = SpotifyWebPresentationContext()
     private var authenticationSession: ASWebAuthenticationSession?
-    nonisolated(unsafe) private let httpSession: URLSession = {
+    nonisolated private let httpSession: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30

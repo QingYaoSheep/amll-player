@@ -446,7 +446,7 @@ final class LyricsRomanizationEngineTests: XCTestCase {
 
     func testCancelledCachedGenerationDoesNotPersistPartialResult() async throws {
         let engine = LyricsRomanizationEngine()
-        try await engine.clearCache()
+        try await engine.clearGeneratedCache()
         let doc = document([
             .init(id: "ko-cancel", text: "사랑해 \(UUID().uuidString)", start: 0, end: 2),
         ], language: "ko")

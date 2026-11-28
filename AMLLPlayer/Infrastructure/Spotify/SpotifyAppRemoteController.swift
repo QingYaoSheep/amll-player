@@ -137,8 +137,9 @@ final class SpotifyAppRemoteController: NSObject, SpotifyAppRemoteControlling {
             (continuation: CheckedContinuation<Void, Error>) in
             pendingOperations[operationID] = continuation
             operation { [weak self] _, error in
+                let hasError = error != nil
                 Task { @MainActor [weak self] in
-                    if error != nil {
+                    if hasError {
                         self?.finishPendingOperation(operationID, result: .failure(SpotifyServiceError.transport))
                     } else {
                         self?.finishPendingOperation(operationID, result: .success(()))

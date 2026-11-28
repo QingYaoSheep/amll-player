@@ -326,9 +326,13 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
         if knownEntryID != entry?.id {
             knownContext = nil; knownEntryID = entry?.id
         }
+        let currentShuffle = player.state.shuffleMode == .songs
+        let currentRepeatMode: MusicRepeatMode = player.state.repeatMode == .one
+            ? .one
+            : (player.state.repeatMode == .all ? .all : .off)
         if !playing, let previous, previous.item == item, !previous.isPlaying,
-           previous.shuffleEnabled == (player.state.shuffleMode == .songs),
-           previous.repeatMode == (player.state.repeatMode == .one ? .one : (player.state.repeatMode == .all ? .all : .off)),
+           previous.shuffleEnabled == currentShuffle,
+           previous.repeatMode == currentRepeatMode,
            abs(previous.position - position) < 0.01, !displaced, !resolvedSeek {
             return
         }
@@ -337,8 +341,8 @@ final class AppleMusicPlayback: MusicPlaybackProviding {
                                                                          canSkipNext: true, canSkipPrevious: true),
                                         source: .musicKit, sampledAtUptime: now,
                                         playbackRate: playing ? Double(player.state.playbackRate) : 0, positionRevision: revision,
-                                        shuffleEnabled: player.state.shuffleMode == .songs,
-                                        repeatMode: player.state.repeatMode == .one ? .one : (player.state.repeatMode == .all ? .all : .off))
+                                        shuffleEnabled: currentShuffle,
+                                        repeatMode: currentRepeatMode)
         previous = snapshot
         continuation.yield(snapshot)
     }

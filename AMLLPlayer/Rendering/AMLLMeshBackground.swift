@@ -2,6 +2,10 @@ import MetalKit
 import SwiftUI
 import UIKit
 
+private struct AMLLMeshSendableBox<Value>: @unchecked Sendable {
+    let value: Value
+}
+
 struct AMLLMeshBackground: UIViewRepresentable {
     enum ColorMode: Equatable, Sendable {
         case original, colorMode2
@@ -75,10 +79,6 @@ struct AMLLMeshBackground: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, MTKViewDelegate {
-        private struct SendableBox<Value>: @unchecked Sendable {
-            let value: Value
-        }
-
         private struct Vertex {
             var position: SIMD2<Float>
             var uv: SIMD2<Float>
@@ -168,12 +168,12 @@ struct AMLLMeshBackground: UIViewRepresentable {
                     let data = try await ArtworkImageData.load(url)
                     try Task.checkCancellation()
                     guard let self else { return }
-                    let deviceBox = SendableBox(value: device)
+                    let deviceBox = AMLLMeshSendableBox(value: device)
                     let radius = self.blurRadius
                     let mode = self.colorMode
                     let prepared = await Task.detached(priority: .userInitiated) {
                         Self.albumTexture(data: data, device: deviceBox.value,
-                                          blurRadius: radius, colorMode: mode).map { SendableBox(value: $0) }
+                                          blurRadius: radius, colorMode: mode).map { AMLLMeshSendableBox(value: $0) }
                     }.value
                     try Task.checkCancellation()
                     guard let prepared else { throw URLError(.cannotDecodeContentData) }
@@ -197,11 +197,11 @@ struct AMLLMeshBackground: UIViewRepresentable {
             self.colorMode = colorMode
             processTask?.cancel()
             guard let artworkData, let device = view?.device else { return }
-            let deviceBox = SendableBox(value: device)
+            let deviceBox = AMLLMeshSendableBox(value: device)
             processTask = Task { [weak self] in
                 let rebuilt = await Task.detached(priority: .userInitiated) {
                     Self.albumTexture(data: artworkData, device: deviceBox.value, blurRadius: next, colorMode: colorMode)
-                        .map { SendableBox(value: $0) }
+                        .map { AMLLMeshSendableBox(value: $0) }
                 }.value
                 guard !Task.isCancelled, let self, self.blurRadius == next, self.colorMode == colorMode,
                       let texture = rebuilt?.value else { return }

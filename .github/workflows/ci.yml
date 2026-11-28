@@ -154,6 +154,8 @@ jobs:
 
       - name: Create unsigned device archive and IPA
         run: |
+          mkdir -p build
+          set +e
           xcodebuild archive \
             -project AMLLPlayer.xcodeproj \
             -scheme AMLLPlayer \
@@ -162,7 +164,15 @@ jobs:
             -archivePath build/AMLLPlayer-Xcode27.xcarchive \
             AMLL_BUILD_COMMIT="$GITHUB_SHA" \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO 2>&1 | tee build/archive.log
+          ARCHIVE_STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ "$ARCHIVE_STATUS" -ne 0 ]]; then
+            grep -E '(: error:|fatal error:|ARCHIVE FAILED|Command .* failed)' build/archive.log | head -n 25 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit "$ARCHIVE_STATUS"
+          fi
 
           PACKAGE_ROOT="$(mktemp -d "$RUNNER_TEMP/amll-unsigned-ipa.XXXXXX")"
           trap 'rm -rf "$PACKAGE_ROOT"' EXIT

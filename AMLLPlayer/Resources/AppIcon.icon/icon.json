@@ -369,67 +369,6 @@
           }
         }
       ]
-    },
-    {
-      "layers" : [
-        {
-          "fill-specializations" : [
-            {
-              "value" : {
-                "solid" : "extended-gray:1.00000,1.00000"
-              }
-            },
-            {
-              "appearance" : "dark",
-              "value" : {
-                "solid" : "display-p3:1.00000,0.28235,0.34510,1.00000"
-              }
-            }
-          ],
-          "glass" : false,
-          "hidden-specializations" : [
-            {
-              "value" : false
-            },
-            {
-              "appearance" : "dark",
-              "value" : false
-            },
-            {
-              "appearance" : "tinted",
-              "value" : true
-            }
-          ],
-          "image-name" : "ambient-glow.svg",
-          "name" : "ambient-glow",
-          "opacity-specializations" : [
-            {
-              "value" : 0.24
-            },
-            {
-              "appearance" : "dark",
-              "value" : 0.22
-            }
-          ],
-          "position" : {
-            "scale" : 1,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
-        }
-      ],
-      "name" : "Ambient Glow",
-      "shadow" : {
-        "kind" : "none",
-        "opacity" : 0
-      },
-      "specular" : false,
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0
-      }
     }
   ],
   "supported-platforms" : {

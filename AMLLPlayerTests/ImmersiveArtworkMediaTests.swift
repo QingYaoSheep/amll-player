@@ -112,13 +112,57 @@ final class ImmersiveArtworkMediaTests: XCTestCase {
         }
         XCTAssertTrue(blurView.activeMode == .variableBlur || blurView.activeMode == .gaussianBlurFallback,
             "Expected CAFilter-driven blur mode on iOS Simulator/Device, got \(blurView.activeMode)")
+        let maskView = try XCTUnwrap(blurView.mask as? UIImageView)
+        XCTAssertEqual(maskView.frame, blurView.bounds)
+        let featherCG = try XCTUnwrap(blurView.currentFeatherMaskImage)
+        let featherData = try XCTUnwrap(featherCG.dataProvider?.data as Data?)
+        XCTAssertLessThanOrEqual(Int(featherData[3]), 2, "The top feather display mask must fade smoothly from 0")
+        XCTAssertEqual(Int(featherData[(featherCG.height - 1) * 4 + 3]), 255)
         if blurView.activeMode == .variableBlur {
             XCTAssertNotNil(blurView.currentMaskImage)
-            XCTAssertNil(blurView.mask)
         }
+
+        // Simulate UIKit resetting filters and re-exposing system tint overlays across layout passes.
+        backdropLayer.filters = []
+        for subview in blurView.subviews where !Self.layerTree(subview.layer, contains: backdropLayer) {
+            subview.isHidden = false
+            subview.alpha = 1
+        }
+        blurView.setNeedsLayout()
+        blurView.layoutIfNeeded()
+        XCTAssertEqual(backdropLayer.filters?.count, 1)
+        for subview in blurView.subviews where !Self.layerTree(subview.layer, contains: backdropLayer) {
+            XCTAssertTrue(subview.isHidden)
+            XCTAssertEqual(subview.alpha, 0, accuracy: 0.001)
+        }
+        XCTAssertNotNil(blurView.mask)
+
+        blurView.configure(
+            profile: profile.backgroundOnly(viewportHeight: 470),
+            radius: ImmersiveArtworkPreset.blurRadius,
+            topFeatherLength: ImmersiveArtworkPreset.topFeatherLength,
+            clearThroughY: 0,
+            hidden: false
+        )
+        blurView.layoutIfNeeded()
+        XCTAssertNil(blurView.mask)
+        XCTAssertNil(blurView.currentFeatherMaskImage)
+
+        blurView.configure(
+            profile: profile.backgroundOnly(viewportHeight: 470),
+            radius: ImmersiveArtworkPreset.blurRadius,
+            topFeatherLength: ImmersiveArtworkPreset.topFeatherLength,
+            clearThroughY: 62,
+            hidden: false
+        )
+        blurView.layoutIfNeeded()
+        XCTAssertTrue(blurView.mask is UIImageView)
+        XCTAssertNotNil(blurView.currentFeatherMaskImage)
 
         blurView.stop()
         XCTAssertNil(blurView.currentMaskImage)
+        XCTAssertNil(blurView.currentFeatherMaskImage)
+        XCTAssertNil(blurView.mask)
         XCTAssertTrue((backdropLayer.filters ?? []).isEmpty)
     }
 

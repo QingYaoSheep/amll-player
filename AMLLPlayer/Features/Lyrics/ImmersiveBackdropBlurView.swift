@@ -19,17 +19,57 @@ enum ImmersiveVariableBlurMask {
         return min(1, max(0, radiusStrength * feather))
     }
 
+    static func topFeatherAlpha(at y: CGFloat, profile: ImmersiveBackgroundBlurProfile,
+                                topFeatherLength: CGFloat = ImmersiveArtworkPreset.topFeatherLength,
+                                clearThroughY: CGFloat = 0,
+                                includeRadiusRamp: Bool = false) -> CGFloat {
+        if clearThroughY > 0, y < clearThroughY {
+            return 0
+        }
+        if includeRadiusRamp {
+            return alpha(at: y, profile: profile, topFeatherLength: topFeatherLength, clearThroughY: clearThroughY)
+        }
+        return min(1, max(0, profile.topFeatherOpacity(at: y, length: topFeatherLength)))
+    }
+
     static func make(profile: ImmersiveBackgroundBlurProfile,
                      topFeatherLength: CGFloat = ImmersiveArtworkPreset.topFeatherLength,
                      clearThroughY: CGFloat = 0,
                      sampleCount: Int = 256) -> CGImage? {
+        makeVerticalAlphaImage(sampleCount: sampleCount) { row in
+            let y = profile.frame.minY + (CGFloat(row) + 0.5) / CGFloat(sampleCount) * profile.frame.height
+            return alpha(at: y, profile: profile, topFeatherLength: topFeatherLength, clearThroughY: clearThroughY)
+        }
+    }
+
+    static func makeTopFeatherMask(profile: ImmersiveBackgroundBlurProfile,
+                                   topFeatherLength: CGFloat = ImmersiveArtworkPreset.topFeatherLength,
+                                   clearThroughY: CGFloat = 0,
+                                   includeRadiusRamp: Bool = false,
+                                   sampleCount: Int = 256) -> CGImage? {
         guard profile.frame.width > 0, profile.frame.height > 0, sampleCount > 0 else { return nil }
+        let hasStatusBarCutoff = clearThroughY > 0 && clearThroughY > profile.frame.minY
+        let hasTopFeather = profile.effectiveTopFeatherLength(topFeatherLength) > 0
+        let hasRadiusTransition = includeRadiusRamp
+            && min(profile.frame.maxY, max(profile.frame.minY, profile.fullStrengthY)) > profile.frame.minY
+        guard hasStatusBarCutoff || hasTopFeather || hasRadiusTransition else { return nil }
+        return makeVerticalAlphaImage(sampleCount: sampleCount) { row in
+            let y = profile.frame.minY + (CGFloat(row) + 0.5) / CGFloat(sampleCount) * profile.frame.height
+            return topFeatherAlpha(
+                at: y,
+                profile: profile,
+                topFeatherLength: topFeatherLength,
+                clearThroughY: clearThroughY,
+                includeRadiusRamp: includeRadiusRamp
+            )
+        }
+    }
+
+    private static func makeVerticalAlphaImage(sampleCount: Int, sample: (Int) -> CGFloat) -> CGImage? {
+        guard sampleCount > 0 else { return nil }
         var bytes = [UInt8](repeating: 0, count: sampleCount * 4)
         for row in 0 ..< sampleCount {
-            let y = profile.frame.minY + (CGFloat(row) + 0.5) / CGFloat(sampleCount) * profile.frame.height
-            let alphaValue = alpha(at: y, profile: profile, topFeatherLength: topFeatherLength,
-                                   clearThroughY: clearThroughY)
-            let byte = UInt8(clamping: Int((alphaValue * 255).rounded()))
+            let byte = UInt8(clamping: Int((sample(row) * 255).rounded()))
             let offset = row * 4
             bytes[offset] = byte
             bytes[offset + 1] = byte
@@ -84,11 +124,15 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
     private(set) var activeMode: Mode = .systemMaterialFallback
     private(set) var currentProfile: ImmersiveBackgroundBlurProfile?
     private(set) var currentMaskImage: CGImage?
+    private(set) var currentFeatherMaskImage: CGImage?
     private var blurRadius: CGFloat = ImmersiveArtworkPreset.blurRadius
     private var topFeatherLength: CGFloat = ImmersiveArtworkPreset.topFeatherLength
     private var clearThroughY: CGFloat = 0
     private var maskKey: MaskKey?
     private var appliedFilterRadius: CGFloat = -1
+    private var activeFilter: NSObject?
+    private var appliedFeatherIncludeRadiusRamp: Bool?
+    private var reassertScheduled = false
 
     init() {
         super.init(effect: UIBlurEffect(style: .regular))
@@ -106,16 +150,22 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         applyBackdropFilter(forceReassert: true)
+        scheduleDeferredReassert()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        if let mask, !bounds.isEmpty, mask.frame != bounds {
+            mask.frame = bounds
+        }
         applyBackdropFilter(forceReassert: true)
+        scheduleDeferredReassert()
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         applyBackdropFilter(forceReassert: true)
+        scheduleDeferredReassert()
     }
 
     func configure(profile: ImmersiveBackgroundBlurProfile,
@@ -138,8 +188,12 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
     func stop() {
         currentProfile = nil
         currentMaskImage = nil
+        currentFeatherMaskImage = nil
         maskKey = nil
         appliedFilterRadius = -1
+        activeFilter = nil
+        appliedFeatherIncludeRadiusRamp = nil
+        reassertScheduled = false
         mask = nil
         if let backdropLayer = findBackdropLayer(in: layer) {
             backdropLayer.filters = []
@@ -151,16 +205,40 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
         findBackdropLayer(in: layer)
     }
 
+    private func scheduleDeferredReassert() {
+        guard !isHidden, window != nil, currentProfile != nil, !reassertScheduled else { return }
+        reassertScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.reassertScheduled = false
+            self.applyBackdropFilter(forceReassert: false)
+        }
+    }
+
     private func applyBackdropFilter(forceReassert: Bool) {
         guard !isHidden, let profile = currentProfile else { return }
         let nextKey = MaskKey(profile: profile, topFeatherLength: topFeatherLength, clearThroughY: clearThroughY)
         let maskChanged = nextKey != maskKey
         let radiusChanged = abs(appliedFilterRadius - blurRadius) > 0.01
-        guard forceReassert || maskChanged || radiusChanged else { return }
 
         guard let backdropLayer = findBackdropLayer(in: layer) else {
+            activeFilter = nil
             activeMode = .systemMaterialFallback
-            mask = makeFallbackMaskView(profile: profile)
+            applyTopFeatherMask(profile: profile, includeRadiusRamp: true, forceRebuild: maskChanged)
+            maskKey = nextKey
+            appliedFilterRadius = blurRadius
+            return
+        }
+
+        let currentFilters = backdropLayer.filters as? [NSObject] ?? []
+        let filtersDrifted = blurRadius > 0
+            && (activeMode == .variableBlur || activeMode == .gaussianBlurFallback)
+            && (activeFilter == nil || currentFilters.count != 1 || currentFilters.first !== activeFilter)
+        let overlaysDrifted = hasVisibleSystemOverlay(keeping: backdropLayer)
+        let maskNeedsSync = (mask != nil && !bounds.isEmpty && mask?.frame != bounds)
+            || (currentFeatherMaskImage != nil && mask == nil)
+
+        guard forceReassert || maskChanged || radiusChanged || filtersDrifted || overlaysDrifted || maskNeedsSync else {
             return
         }
 
@@ -168,8 +246,11 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
 
         if blurRadius <= 0 {
             backdropLayer.filters = []
+            activeFilter = nil
             mask = nil
             currentMaskImage = nil
+            currentFeatherMaskImage = nil
+            appliedFeatherIncludeRadiusRamp = nil
             maskKey = nextKey
             appliedFilterRadius = 0
             return
@@ -184,30 +265,82 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
             maskKey = nextKey
         }
 
-        if let filter = Self.makeCAFilter(type: "variableBlur"), let maskImage = currentMaskImage {
+        if let maskImage = currentMaskImage,
+           let filter = resolvedFilter(type: "variableBlur", targetMode: .variableBlur, rebuild: maskChanged || radiusChanged)
+        {
             filter.setValue(blurRadius as NSNumber, forKey: "inputRadius")
             filter.setValue(maskImage, forKey: "inputMaskImage")
             filter.setValue(true as NSNumber, forKey: "inputNormalizeEdges")
             backdropLayer.filters = [filter]
-            mask = nil
+            if backdropLayer.responds(to: NSSelectorFromString("setScale:")) {
+                backdropLayer.setValue(1.0 as NSNumber, forKey: "scale")
+            }
+            activeFilter = filter
             activeMode = .variableBlur
             appliedFilterRadius = blurRadius
+            applyTopFeatherMask(profile: profile, includeRadiusRamp: false, forceRebuild: maskChanged)
             return
         }
 
-        if let filter = Self.makeCAFilter(type: "gaussianBlur") {
+        if let filter = resolvedFilter(type: "gaussianBlur", targetMode: .gaussianBlurFallback, rebuild: radiusChanged) {
             filter.setValue(blurRadius as NSNumber, forKey: "inputRadius")
             filter.setValue(true as NSNumber, forKey: "inputNormalizeEdges")
             backdropLayer.filters = [filter]
-            mask = makeFallbackMaskView(profile: profile)
+            activeFilter = filter
             activeMode = .gaussianBlurFallback
             appliedFilterRadius = blurRadius
+            applyTopFeatherMask(profile: profile, includeRadiusRamp: true, forceRebuild: maskChanged)
             return
         }
 
+        activeFilter = nil
         activeMode = .systemMaterialFallback
-        mask = makeFallbackMaskView(profile: profile)
+        applyTopFeatherMask(profile: profile, includeRadiusRamp: true, forceRebuild: maskChanged)
         appliedFilterRadius = blurRadius
+    }
+
+    private func resolvedFilter(type: String, targetMode: Mode, rebuild: Bool) -> NSObject? {
+        if !rebuild, activeMode == targetMode, let existing = activeFilter {
+            return existing
+        }
+        return Self.makeCAFilter(type: type)
+    }
+
+    private func applyTopFeatherMask(profile: ImmersiveBackgroundBlurProfile,
+                                     includeRadiusRamp: Bool,
+                                     forceRebuild: Bool) {
+        let shouldRebuild = forceRebuild
+            || appliedFeatherIncludeRadiusRamp != includeRadiusRamp
+            || (currentFeatherMaskImage == nil && mask != nil)
+        if shouldRebuild {
+            currentFeatherMaskImage = ImmersiveVariableBlurMask.makeTopFeatherMask(
+                profile: profile,
+                topFeatherLength: topFeatherLength,
+                clearThroughY: clearThroughY,
+                includeRadiusRamp: includeRadiusRamp
+            )
+            appliedFeatherIncludeRadiusRamp = includeRadiusRamp
+        }
+
+        guard let featherImage = currentFeatherMaskImage else {
+            mask = nil
+            return
+        }
+
+        let targetBounds = bounds.isEmpty ? CGRect(origin: .zero, size: profile.frame.size) : bounds
+        let imageView = (mask as? UIImageView) ?? UIImageView()
+        if shouldRebuild || imageView.image == nil {
+            imageView.image = UIImage(cgImage: featherImage)
+        }
+        imageView.contentMode = .scaleToFill
+        imageView.backgroundColor = .clear
+        imageView.isOpaque = false
+        imageView.isUserInteractionEnabled = false
+        imageView.frame = targetBounds
+        // Reassign `mask` whenever the image changes so UIVisualEffectView updates its internal backdrop mask.
+        if shouldRebuild || mask !== imageView {
+            mask = imageView
+        }
     }
 
     private func findBackdropLayer(in root: CALayer) -> CALayer? {
@@ -220,6 +353,12 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
             }
         }
         return nil
+    }
+
+    private func hasVisibleSystemOverlay(keeping backdropLayer: CALayer) -> Bool {
+        subviews.contains { subview in
+            !Self.layerTree(subview.layer, contains: backdropLayer) && (!subview.isHidden || subview.alpha > 0)
+        }
     }
 
     private func neutralizeSystemOverlays(keeping backdropLayer: CALayer) {
@@ -244,29 +383,5 @@ final class ImmersiveBackdropBlurView: UIVisualEffectView {
         typealias FilterFactory = @convention(c) (AnyClass, Selector, NSString) -> Unmanaged<NSObject>?
         let impl = unsafeBitCast(method_getImplementation(method), to: FilterFactory.self)
         return impl(filterClass, selector, type as NSString)?.takeUnretainedValue()
-    }
-
-    private func makeFallbackMaskView(profile: ImmersiveBackgroundBlurProfile) -> UIView? {
-        guard profile.frame.width > 0, profile.frame.height > 0 else { return nil }
-        let view = UIView(frame: CGRect(origin: .zero, size: profile.frame.size))
-        view.isOpaque = false
-        let gradient = CAGradientLayer()
-        gradient.frame = view.bounds
-        gradient.startPoint = CGPoint(x: 0.5, y: 0)
-        gradient.endPoint = CGPoint(x: 0.5, y: 1)
-        let steps = 32
-        gradient.locations = (0 ... steps).map { NSNumber(value: Double($0) / Double(steps)) }
-        gradient.colors = (0 ... steps).map { step in
-            let y = profile.frame.minY + profile.frame.height * CGFloat(step) / CGFloat(steps)
-            let alpha = ImmersiveVariableBlurMask.alpha(
-                at: y,
-                profile: profile,
-                topFeatherLength: topFeatherLength,
-                clearThroughY: clearThroughY
-            )
-            return UIColor(white: 1, alpha: alpha).cgColor
-        }
-        view.layer.addSublayer(gradient)
-        return view
     }
 }

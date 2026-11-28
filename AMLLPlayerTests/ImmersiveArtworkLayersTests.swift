@@ -97,6 +97,52 @@ final class ImmersiveArtworkLayersTests: XCTestCase {
         }
     }
 
+    func testTopFeatherDisplayMaskMatchesSmoothstepAndStatusBarCutoff() throws {
+        let profile = ImmersiveBackgroundBlurProfile(frame: CGRect(x: 0, y: 180, width: 128, height: 470), fullStrengthY: 400)
+        let image = try XCTUnwrap(ImmersiveVariableBlurMask.makeTopFeatherMask(
+            profile: profile,
+            topFeatherLength: ImmersiveArtworkPreset.topFeatherLength,
+            includeRadiusRamp: false
+        ))
+        XCTAssertEqual(image.width, 1)
+        XCTAssertEqual(image.height, 256)
+
+        let alphas = try alphaRows(of: image)
+        XCTAssertLessThanOrEqual(alphas[0], 2, "Top row must fade smoothly from 0")
+        let midRow = Int(((220 - profile.frame.minY) / profile.frame.height * CGFloat(image.height)).rounded(.down))
+        XCTAssertEqual(Double(alphas[midRow]), 128, accuracy: 10)
+        for row in 0 ..< image.height {
+            let y = profile.frame.minY + (CGFloat(row) + 0.5) / CGFloat(image.height) * profile.frame.height
+            if y >= profile.frame.minY + ImmersiveArtworkPreset.topFeatherLength {
+                XCTAssertEqual(alphas[row], 255)
+            }
+        }
+
+        let backgroundOnly = profile.backgroundOnly(viewportHeight: 650)
+        XCTAssertNil(ImmersiveVariableBlurMask.makeTopFeatherMask(
+            profile: backgroundOnly,
+            topFeatherLength: ImmersiveArtworkPreset.topFeatherLength,
+            clearThroughY: 0,
+            includeRadiusRamp: false
+        ))
+
+        let statusBarProtected = try XCTUnwrap(ImmersiveVariableBlurMask.makeTopFeatherMask(
+            profile: backgroundOnly,
+            topFeatherLength: ImmersiveArtworkPreset.topFeatherLength,
+            clearThroughY: 62,
+            includeRadiusRamp: false
+        ))
+        let protectedAlphas = try alphaRows(of: statusBarProtected)
+        for row in 0 ..< statusBarProtected.height {
+            let y = backgroundOnly.frame.minY + (CGFloat(row) + 0.5) / CGFloat(statusBarProtected.height) * backgroundOnly.frame.height
+            if y < 62 {
+                XCTAssertEqual(protectedAlphas[row], 0)
+            } else {
+                XCTAssertEqual(protectedAlphas[row], 255)
+            }
+        }
+    }
+
     func testPresetReflectionFrameAndFadeStopsKeepCalibratedGeometry() {
         let cover = CGRect(x: 0, y: 0, width: 402, height: 536)
         let base = ArtworkReflectionGeometry.frame(cover: cover, viewportHeight: 874)

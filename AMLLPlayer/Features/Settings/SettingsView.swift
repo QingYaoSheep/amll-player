@@ -131,6 +131,13 @@ struct SettingsView: View {
                         SettingsIconToggleLabel(title: "settings.haptics", icon: "hand.tap", color: MusicProductStyle.accent)
                     }
                     .accessibilityIdentifier("appHapticsEnabled")
+
+                    SettingsDivider()
+
+                    Toggle(isOn: $model.lyricsKeepScreenAwake.hapticSelection()) {
+                        SettingsIconToggleLabel(title: "settings.keepScreenAwake", icon: "sun.max", color: MusicProductStyle.accent)
+                    }
+                    .accessibilityIdentifier("lyricsKeepScreenAwake")
                 }
             }
 

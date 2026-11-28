@@ -196,8 +196,14 @@ struct FullscreenLyricsPlayer: View {
                 }
             }
             .ignoresSafeArea(.container, edges: immersiveViewport ? .all : [])
-            .onAppear { pageVisible = true }
-            .onDisappear { pageVisible = false }
+            .onAppear {
+                pageVisible = true
+                model.beginLyricsPageVisibility()
+            }
+            .onDisappear {
+                pageVisible = false
+                model.endLyricsPageVisibility()
+            }
             .foregroundStyle(.white)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar(immersiveViewport ? .hidden : .visible, for: .navigationBar)
@@ -404,9 +410,7 @@ struct FullscreenLyricsPlayer: View {
     }
 
     private var returnCurrentButton: some View {
-        Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
-            .buttonStyle(.bordered).accessibilityIdentifier("resumeLyricsFollowing")
-            .frame(height: 48).opacity(browsing ? 1 : 0).disabled(!browsing).accessibilityHidden(!browsing)
+        ReturnCurrentLyricsPill(visible: browsing) { resumeToken += 1 }
     }
 
     private func compatibilityConfiguration(layout: ImmersiveLyricsLayout?) -> LyricsRenderConfiguration {
@@ -435,6 +439,7 @@ struct FullscreenLyricsPlayer: View {
                     Task { await model.togglePlayPause() }
                 } label: {
                     Label(snapshot.isPlaying ? "player.pause" : "player.play", systemImage: snapshot.isPlaying ? "pause.fill" : "play.fill")
+                        .modifier(PlayPauseSymbolTransition())
                         .frame(minWidth: 44, minHeight: 44)
                 }.font(.largeTitle)
                     .disabled(model.isPerformingAction || (snapshot.isPlaying ? !snapshot.restrictions.canPause : !snapshot.restrictions.canResume))
@@ -442,7 +447,7 @@ struct FullscreenLyricsPlayer: View {
                     Label("player.next", systemImage: "forward.fill").frame(minWidth: 44, minHeight: 44)
                 }
                 .disabled(!snapshot.restrictions.canSkipNext || model.isPerformingAction)
-            }.labelStyle(.iconOnly).font(.title2).buttonStyle(.plain).frame(height: 48)
+            }.labelStyle(.iconOnly).font(.title2).buttonStyle(MusicContentButtonStyle()).frame(height: 48)
             if configuration.showVolume, configuration.showLyrics, model.selectedMusicService != .spotify {
                 SystemMusicVolumeView().frame(height: 44)
             }

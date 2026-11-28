@@ -49,10 +49,19 @@ struct TabMusicAccessory: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .trackSwipeToSkip(
+                enabled: !model.isPerformingAction,
+                canSkipNext: snapshot.restrictions.canSkipNext,
+                canSkipPrevious: snapshot.restrictions.canSkipPrevious,
+                onSkipNext: { Task { await model.skipNext() } },
+                onSkipPrevious: { Task { await model.skipPrevious() } }
+            )
             .accessibilityIdentifier("openNowPlaying")
             Button { Task { await model.togglePlayPause() } } label: {
                 Label(snapshot.isPlaying ? "player.pause" : "player.play", systemImage: snapshot.isPlaying ? "pause.fill" : "play.fill")
-                    .labelStyle(.iconOnly).frame(width: 44, height: 44)
+                    .labelStyle(.iconOnly)
+                    .modifier(PlayPauseSymbolTransition())
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(MusicContentButtonStyle())
             .disabled(model.isPerformingAction || (snapshot.isPlaying ? !snapshot.restrictions.canPause : !snapshot.restrictions.canResume))
@@ -101,6 +110,13 @@ struct MiniPlayerBar: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .trackSwipeToSkip(
+                        enabled: !model.isPerformingAction,
+                        canSkipNext: snapshot.restrictions.canSkipNext,
+                        canSkipPrevious: snapshot.restrictions.canSkipPrevious,
+                        onSkipNext: { Task { await model.skipNext() } },
+                        onSkipPrevious: { Task { await model.skipPrevious() } }
+                    )
                     .accessibilityIdentifier("openNowPlaying")
 
                     controlButton(
@@ -202,6 +218,7 @@ struct MiniPlayerBar: View {
             Label(title, systemImage: systemImage)
                 .labelStyle(.iconOnly)
                 .font(.body.weight(.semibold))
+                .modifier(PlayPauseSymbolTransition())
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }

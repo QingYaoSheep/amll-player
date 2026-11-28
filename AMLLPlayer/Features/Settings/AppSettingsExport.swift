@@ -25,6 +25,7 @@ struct AppSettingsExport: Codable {
     let lockScreenLyricsTranslation: Bool?
     let lockScreenLyricsRomanization: Bool?
     let lockScreenLyricsKeepAlive: Bool?
+    let lyricsKeepScreenAwake: Bool?
     let music: Music
     let lyrics: LyricsSettings
     let appearance: Appearance
@@ -48,6 +49,7 @@ struct AppSettingsExport: Codable {
         lockScreenLyricsTranslation = model.lockScreenLyricsShowsTranslation
         lockScreenLyricsRomanization = model.lockScreenLyricsShowsRomanization
         lockScreenLyricsKeepAlive = model.lockScreenLyricsKeepAliveEnabled
+        lyricsKeepScreenAwake = model.lyricsKeepScreenAwake
         music = Music(source: model.selectedMusicService,
                       spotifyClientID: model.environment.configuration.spotifyClientID.flatMap(SpotifyClientIDStore.normalized),
                       netEaseQuality: playback.quality, netEaseShuffle: modes.shuffle, netEaseRepeat: modes.repeatMode,
@@ -94,6 +96,9 @@ struct AppSettingsExport: Codable {
         }
         if let lockScreenLyricsKeepAlive, AMLLBuildCapabilities.supportsSilentBackgroundKeepAlive {
             model.lockScreenLyricsKeepAliveEnabled = lockScreenLyricsKeepAlive
+        }
+        if let lyricsKeepScreenAwake {
+            model.lyricsKeepScreenAwake = lyricsKeepScreenAwake
         }
         model.selectMusicService(music.source)
         if let clientID = music.spotifyClientID.flatMap(SpotifyClientIDStore.normalized),

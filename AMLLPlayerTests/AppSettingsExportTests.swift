@@ -33,12 +33,15 @@ import XCTest
         defaults.set(false, forKey: AppHaptics.preferenceKey)
         let savedLockScreen = model.lockScreenLyricsEnabled
         let savedKeepAlive = model.lockScreenLyricsKeepAliveEnabled
+        let savedKeepScreenAwake = model.lyricsKeepScreenAwake
         defer {
             model.lockScreenLyricsEnabled = savedLockScreen
             model.lockScreenLyricsKeepAliveEnabled = savedKeepAlive
+            model.lyricsKeepScreenAwake = savedKeepScreenAwake
         }
         model.lockScreenLyricsEnabled = true
         model.lockScreenLyricsKeepAliveEnabled = true
+        model.lyricsKeepScreenAwake = true
         let snapshot = try AppSettingsExport(model: model, artwork: artwork, pronunciationOverrides: overrides,
                                              haptics: AppHaptics(defaults: defaults))
         let data = try snapshot.encoded()
@@ -46,6 +49,7 @@ import XCTest
         XCTAssertEqual(decoded.version, 1)
         XCTAssertEqual(decoded.lockScreenLyrics, true)
         XCTAssertEqual(decoded.lockScreenLyricsKeepAlive, true)
+        XCTAssertEqual(decoded.lyricsKeepScreenAwake, true)
         XCTAssertEqual(decoded.desktopLyrics?.aspect, .tall)
         XCTAssertEqual(decoded.desktopLyrics?.plusLighter, false)
         XCTAssertEqual(decoded.hapticsEnabled, false)
@@ -64,6 +68,7 @@ import XCTest
         legacy.removeValue(forKey: "hapticsEnabled")
         legacy.removeValue(forKey: "desktopLyrics")
         legacy.removeValue(forKey: "lockScreenLyricsKeepAlive")
+        legacy.removeValue(forKey: "lyricsKeepScreenAwake")
         legacy.removeValue(forKey: "immersiveArtwork")
         legacy.removeValue(forKey: "showsImmersiveArtworkDebugButton")
         let legacyData = try JSONSerialization.data(withJSONObject: legacy)
@@ -71,6 +76,7 @@ import XCTest
         XCTAssertNil(legacySettings.hapticsEnabled)
         XCTAssertNil(legacySettings.desktopLyrics)
         XCTAssertNil(legacySettings.lockScreenLyricsKeepAlive)
+        XCTAssertNil(legacySettings.lyricsKeepScreenAwake)
         XCTAssertNil(legacySettings.immersiveArtwork)
         XCTAssertNil(legacySettings.showsImmersiveArtworkDebugButton)
     }
@@ -124,6 +130,7 @@ import XCTest
         let savedTranslation = model.lockScreenLyricsShowsTranslation
         let savedRomanization = model.lockScreenLyricsShowsRomanization
         let savedKeepAlive = model.lockScreenLyricsKeepAliveEnabled
+        let savedKeepScreenAwake = model.lyricsKeepScreenAwake
         defer {
             sourceModel.netEasePlayback.quality = savedSourceQuality
             model.netEasePlayback.quality = savedTargetQuality
@@ -131,12 +138,14 @@ import XCTest
             model.lockScreenLyricsShowsTranslation = savedTranslation
             model.lockScreenLyricsShowsRomanization = savedRomanization
             model.lockScreenLyricsKeepAliveEnabled = savedKeepAlive
+            model.lyricsKeepScreenAwake = savedKeepScreenAwake
         }
 
         sourceModel.lockScreenLyricsEnabled = true
         sourceModel.lockScreenLyricsShowsTranslation = false
         sourceModel.lockScreenLyricsShowsRomanization = true
         sourceModel.lockScreenLyricsKeepAliveEnabled = false
+        sourceModel.lyricsKeepScreenAwake = true
         sourceModel.netEasePlayback.quality = .lossless
         sourceModel.netEasePlayback.restorePlaybackModes(shuffle: true, repeatMode: .one)
         let sourceArtwork = ImmersiveArtworkDebugStore(defaults: sourceDefaults)
@@ -159,6 +168,7 @@ import XCTest
         XCTAssertEqual(targetArtwork.configuration.validatedBlur, 28)
         XCTAssertEqual(targetArtwork.configuration.validatedTopFeatherLength, 42)
         XCTAssertFalse(haptics.isEnabled)
+        XCTAssertTrue(model.lyricsKeepScreenAwake)
         XCTAssertEqual(model.selectedMusicService, .netease)
         XCTAssertEqual(model.netEasePlayback.quality, .lossless)
         XCTAssertEqual(model.netEasePlayback.savedPlaybackModes.shuffle, true)

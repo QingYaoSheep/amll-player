@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
 
 @MainActor
 @Observable
@@ -71,9 +72,20 @@ final class AppModel {
     let renderPreferences: LyricsRenderPreferences
     let desktopLyrics = DesktopLyricsController()
     let desktopLyricsPreferences: DesktopLyricsPreferences
+    let sleepTimer: SleepTimerController
     @ObservationIgnored private var desktopLyricsRunning = false
+    @ObservationIgnored private var lyricsPageVisibleCount = 0
+    @ObservationIgnored private var appliedIdleTimerDisabled: Bool?
+    @ObservationIgnored private let idleTimerSink: @MainActor (Bool) -> Void
     @ObservationIgnored private let lockScreenLyrics = LockScreenLyricsController()
     @ObservationIgnored private let lockScreenKeepAlive = LockScreenBackgroundKeepAlive()
+    var lyricsKeepScreenAwake = UserDefaults.standard.bool(forKey: LyricsIdleTimerPolicy.preferenceKey) {
+        didSet {
+            guard lyricsKeepScreenAwake != oldValue else { return }
+            UserDefaults.standard.set(lyricsKeepScreenAwake, forKey: LyricsIdleTimerPolicy.preferenceKey)
+            syncIdleTimer()
+        }
+    }
     var lockScreenLyricsEnabled = UserDefaults.standard.bool(forKey: LockScreenLyricsController.preferenceKey) {
         didSet {
             guard lockScreenLyricsEnabled != oldValue else { return }
@@ -145,6 +157,7 @@ final class AppModel {
         netEaseSession: NetEaseSession? = nil,
         netEasePlayback: NetEasePlayback? = nil,
         musicPreferences: MusicSourcePreferences = MusicSourcePreferences(),
+        idleTimerSink: (@MainActor (Bool) -> Void)? = nil,
         environmentFactory: @escaping @MainActor (AppConfiguration) -> AppEnvironment = {
             AppEnvironment.make(configuration: $0)
         }
@@ -176,6 +189,8 @@ final class AppModel {
         self.lyrics = lyrics ?? .live()
         self.renderPreferences = renderPreferences ?? LyricsRenderPreferences()
         self.desktopLyricsPreferences = desktopLyricsPreferences ?? DesktopLyricsPreferences()
+        self.sleepTimer = SleepTimerController()
+        self.idleTimerSink = idleTimerSink ?? { UIApplication.shared.isIdleTimerDisabled = $0 }
         self.clientIDStore = clientIDStore
         self.environmentFactory = environmentFactory
         sessionState = environment.spotifySession.currentState
@@ -191,6 +206,9 @@ final class AppModel {
         }
         if appleMusicState.connected {
             appleStore.activate()
+        }
+        sleepTimer.onTriggerPause = { [weak self] in
+            await self?.pauseForSleepTimer()
         }
         lockScreenKeepAlive.onIdleSleep = { [weak self] in
             self?.handleLockScreenKeepAliveIdleSleep()
@@ -264,6 +282,7 @@ final class AppModel {
             isForeground = true
             lockScreenKeepAlive.stop()
             lyrics.setForeground(true)
+            sleepTimer.reconcileOnForeground()
             refreshBackgroundLyricsRuntime()
             currentPlayback.enterForeground()
             Task { await appleSession.refresh(); await netEaseSession.refresh() }
@@ -284,10 +303,33 @@ final class AppModel {
             if wasForeground && !keepsExternalAlive { lockScreenLyrics.requireNewExternalSample() }
             suspendForegroundPlayback()
         }
+        syncIdleTimer()
         lockScreenLyrics.synchronize(self)
         if !lockScreenLyrics.needsBackgroundLyrics {
             refreshBackgroundLyricsRuntime()
         }
+    }
+
+    func beginLyricsPageVisibility() {
+        lyricsPageVisibleCount += 1
+        syncIdleTimer()
+    }
+
+    func endLyricsPageVisibility() {
+        lyricsPageVisibleCount = max(0, lyricsPageVisibleCount - 1)
+        syncIdleTimer()
+    }
+
+    private func syncIdleTimer() {
+        let shouldKeepAwake = LyricsIdleTimerPolicy.shouldKeepAwake(
+            enabled: lyricsKeepScreenAwake,
+            lyricsPageVisible: lyricsPageVisibleCount > 0,
+            isForeground: isForeground,
+            isPlaying: playbackSnapshot?.isPlaying == true
+        )
+        guard appliedIdleTimerDisabled != shouldKeepAwake else { return }
+        appliedIdleTimerDisabled = shouldKeepAwake
+        idleTimerSink(shouldKeepAwake)
     }
 
     var lockScreenLyricsInForeground: Bool { isForeground }
@@ -473,6 +515,13 @@ final class AppModel {
 
     func skipPrevious() async {
         await perform(feedback: .selection) { try await currentPlayback.skipPrevious() }
+    }
+
+    func pauseForSleepTimer() async {
+        guard playbackSnapshot?.isPlaying == true else { return }
+        await perform(feedback: isForeground ? .success : nil) {
+            try await currentPlayback.pause()
+        }
     }
 
     func seek(to position: TimeInterval, entry: PlaybackSeekEntry = .unspecified, trackURI: String? = nil,
@@ -753,6 +802,9 @@ final class AppModel {
     }
 
     private func clearPlayback() {
+        if case .endOfTrack = sleepTimer.mode {
+            sleepTimer.cancel()
+        }
         desktopLyrics.stop()
         setDesktopLyricsRunning(false)
         lockScreenLyrics.stopSession()
@@ -761,6 +813,7 @@ final class AppModel {
         lyricsMetadataTask?.cancel()
         lyrics.update(track: nil)
         playbackSnapshot = nil
+        syncIdleTimer()
         lyricsSeekPosition = nil
         pendingLyricsSeek = nil; frozenSeekPosition = nil; lastLyricsSeekConfirmation = nil
         if seekActionID != nil { seekActionID = nil; isPerformingAction = false }
@@ -773,6 +826,7 @@ final class AppModel {
         guard currentServiceConnected else { return }
         if let previous = playbackSnapshot, previous.item?.uri == snapshot.item?.uri,
            snapshot.sampledAtUptime < previous.sampledAtUptime { return }
+        let previousURI = playbackSnapshot?.item?.uri
         if playbackSnapshot?.item?.uri != snapshot.item?.uri {
             lyricsSeekPosition = nil; lastLyricsSeekConfirmation = nil
             if pendingLyricsSeek?.trackURI != snapshot.item?.uri { pendingLyricsSeek = nil; frozenSeekPosition = nil }
@@ -795,6 +849,8 @@ final class AppModel {
         }
         playbackSnapshot = snapshot
         clock = PlayerClock(anchor: snapshot)
+        sleepTimer.handleTrackChange(previousURI: previousURI, currentURI: snapshot.item?.uri, isPlaying: snapshot.isPlaying)
+        syncIdleTimer()
         updateLyricsMetadata(snapshot.item)
         desktopLyrics.playbackChanged()
         if lockScreenLyricsEnabled { lockScreenLyrics.synchronize(self) }

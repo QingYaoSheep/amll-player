@@ -107,14 +107,17 @@ struct LyricsQuickSettingsButton: View {
 
     var body: some View {
         if controlsEnabled {
-            Button { presentation.open(reduceMotion: reduceMotion) } label: {
+            Button {
+                AppHaptics.shared.play(.selection)
+                presentation.open(reduceMotion: reduceMotion)
+            } label: {
                 Label("render.options", systemImage: systemImage)
                     .labelStyle(.iconOnly)
                     .font(.system(size: 22, weight: .bold))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(MusicContentButtonStyle())
             .accessibilityIdentifier("lyricsDisplayOptions")
             .accessibilityFocused($focused)
             .onChange(of: presentation.focusRevision) { focused = true }
@@ -593,6 +596,7 @@ struct LyricsQuickSettingsPanel: View {
                     route(model.selectedMusicService == .spotify ? "player.devices" : "AirPlay",
                           symbol: "airplayaudio", to: .devices)
                 }
+                sleepTimerCard
             }
             if model.selectedMusicService == .netease, model.netEasePlayback.isPersonalFM {
                 Text("私人 FM 自动续播，退出后可使用随机与循环。")
@@ -601,6 +605,121 @@ struct LyricsQuickSettingsPanel: View {
                     .padding(.horizontal, 4)
             }
         }
+    }
+
+    private var sleepTimerCard: some View {
+        QuickSettingsCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    QuickSettingsIconTile(
+                        symbol: "moon.zzz.fill",
+                        accent: MusicProductStyle.accent,
+                        selected: model.sleepTimer.isActive,
+                        unselectedFill: MusicProductStyle.accent.opacity(0.20)
+                    )
+                    Text("sleepTimer.title")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 8)
+                    sleepTimerStatusBadge
+                }
+
+                switch model.sleepTimer.mode {
+                case .off:
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) { sleepTimerPresetButtons }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 8)], spacing: 8) {
+                            sleepTimerPresetButtons
+                        }
+                    }
+                    sleepTimerActionButton("sleepTimer.endOfTrack", id: "quickSettingsSleepTimerEndOfTrack") {
+                        AppHaptics.shared.play(.selection)
+                        withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
+                            model.sleepTimer.startEndOfTrack(currentTrackURI: model.playbackSnapshot?.item?.uri)
+                        }
+                    }
+                    .disabled(model.playbackSnapshot?.item?.uri == nil)
+                case .until:
+                    HStack(spacing: 8) {
+                        sleepTimerActionButton("sleepTimer.extend5m", id: "quickSettingsSleepTimerExtend", emphasized: true) {
+                            AppHaptics.shared.play(.selection)
+                            withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
+                                model.sleepTimer.extend(minutes: 5)
+                            }
+                        }
+                        sleepTimerActionButton("sleepTimer.cancel", id: "quickSettingsSleepTimerCancel") {
+                            AppHaptics.shared.play(.selection)
+                            withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
+                                model.sleepTimer.cancel()
+                            }
+                        }
+                    }
+                case .endOfTrack:
+                    sleepTimerActionButton("sleepTimer.cancel", id: "quickSettingsSleepTimerCancel") {
+                        AppHaptics.shared.play(.selection)
+                        withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
+                            model.sleepTimer.cancel()
+                        }
+                    }
+                }
+            }
+            .padding(14)
+        }
+        .accessibilityIdentifier("quickSettingsSleepTimer")
+    }
+
+    @ViewBuilder private var sleepTimerStatusBadge: some View {
+        switch model.sleepTimer.mode {
+        case .off:
+            Text("sleepTimer.off")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.white.opacity(0.55))
+        case .until:
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let remaining = model.sleepTimer.remainingSeconds(at: context.date) ?? 0
+                Text(SleepTimerController.formattedDuration(remaining))
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .contentTransition(reduceMotion ? .opacity : .numericText())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(MusicProductStyle.accent.opacity(0.24), in: Capsule())
+                    .foregroundStyle(.white)
+            }
+        case .endOfTrack:
+            Text("sleepTimer.endOfTrackShort")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(MusicProductStyle.accent.opacity(0.24), in: Capsule())
+                .foregroundStyle(.white)
+        }
+    }
+
+    @ViewBuilder private var sleepTimerPresetButtons: some View {
+        ForEach([
+            SleepTimerPreset.fifteenMinutes,
+            .thirtyMinutes,
+            .fortyFiveMinutes,
+            .sixtyMinutes,
+        ]) { preset in
+            sleepTimerActionButton(
+                LocalizedStringKey(preset.titleKey),
+                id: "quickSettingsSleepTimer\(preset.minutes ?? 0)"
+            ) {
+                guard let minutes = preset.minutes else { return }
+                AppHaptics.shared.play(.selection)
+                withAnimation(reduceMotion ? nil : MusicProductMotion.change) {
+                    model.sleepTimer.start(minutes: minutes)
+                }
+            }
+        }
+    }
+
+    private func sleepTimerActionButton(_ title: LocalizedStringKey, id: String, emphasized: Bool = false,
+                                        perform: @escaping () -> Void) -> some View
+    {
+        timingButton(title, id: id, emphasized: emphasized, perform: perform)
     }
 
     private var globalTiming: some View {
@@ -730,6 +849,25 @@ struct LyricsQuickSettingsPanel: View {
                 .buttonStyle(QuickSettingsRowButtonStyle())
                 .accessibilityFocused($focusedRoute, equals: .lyricsSources)
                 .accessibilityIdentifier("quickSettingsRoute.lyricsSources")
+
+                QuickSettingsDivider(inset: 56)
+
+                Button {
+                    AppHaptics.shared.play(.selection)
+                    model.lyricsKeepScreenAwake.toggle()
+                } label: {
+                    QuickSettingsCardToggleRow(
+                        title: "settings.keepScreenAwake",
+                        symbol: "sun.max",
+                        accent: MusicProductStyle.accent,
+                        selected: model.lyricsKeepScreenAwake
+                    )
+                }
+                .buttonStyle(QuickSettingsRowButtonStyle())
+                .accessibilityLabel(Text("settings.keepScreenAwake"))
+                .accessibilityValue(Text(LocalizedStringKey(model.lyricsKeepScreenAwake ? "quickSettings.on" : "quickSettings.off")))
+                .accessibilityAddTraits(model.lyricsKeepScreenAwake ? .isSelected : [])
+                .accessibilityIdentifier("quickSettingsKeepScreenAwake")
 
                 QuickSettingsDivider(inset: 56)
 

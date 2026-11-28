@@ -75,6 +75,13 @@ struct ImmersiveLyricsHeader: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
+            .trackSwipeToSkip(
+                enabled: configuration.showControls && !model.isPerformingAction,
+                canSkipNext: snapshot.restrictions.canSkipNext,
+                canSkipPrevious: snapshot.restrictions.canSkipPrevious,
+                onSkipNext: { Task { await model.skipNext() } },
+                onSkipPrevious: { Task { await model.skipPrevious() } }
+            )
             .background {
                 GeometryReader { proxy in
                     Color.clear.preference(key: ImmersiveInformationTextBottomKey.self,
@@ -86,6 +93,7 @@ struct ImmersiveLyricsHeader: View {
                 Button { Task { await model.togglePlayPause() } } label: {
                     Image(systemName: snapshot.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 22, weight: .semibold)).frame(width: 44, height: 44)
+                        .modifier(PlayPauseSymbolTransition())
                         .contentShape(Rectangle())
                 }
                 .disabled(model.isPerformingAction || (snapshot.isPlaying ? !snapshot.restrictions.canPause : !snapshot.restrictions.canResume))
@@ -99,7 +107,7 @@ struct ImmersiveLyricsHeader: View {
         }
         .foregroundStyle(primaryColor)
         .tint(primaryColor)
-        .buttonStyle(.plain)
+        .buttonStyle(MusicContentButtonStyle())
         .frame(minHeight: 44)
         .fixedSize(horizontal: false, vertical: true)
         .coordinateSpace(name: "immersiveLyricsHeader")

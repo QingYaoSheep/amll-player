@@ -128,6 +128,8 @@ struct AMLLLyricsPlayer: View {
             }
         }
         .ignoresSafeArea()
+        .onAppear { model.beginLyricsPageVisibility() }
+        .onDisappear { model.endLyricsPageVisibility() }
         .preferredColorScheme(.dark)
         .statusBarHidden(false)
         .modifier(LyricsQuickSettingsPresenter(model: model, presentation: quickSettings,
@@ -331,15 +333,8 @@ struct AMLLLyricsPlayer: View {
                 // lyric viewport the whole shell so its display link and
                 // layout cache use the complete Apple Music-derived viewport.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Button("render.returnCurrent", systemImage: "location.fill") { resumeToken += 1 }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.white.opacity(0.18))
-                    .frame(minHeight: 44)
+                ReturnCurrentLyricsPill(visible: browsing) { resumeToken += 1 }
                     .padding(.bottom, 34)
-                    .opacity(browsing ? 1 : 0)
-                    .disabled(!browsing)
-                    .accessibilityHidden(!browsing)
-                    .accessibilityIdentifier("resumeLyricsFollowing")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -632,9 +627,10 @@ struct AMLLLyricsPlayer: View {
             Label(title, systemImage: systemImage)
                 .labelStyle(.iconOnly)
                 .font(.system(size: size, weight: .semibold))
+                .modifier(PlayPauseSymbolTransition())
                 .frame(minWidth: 52, minHeight: 52)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MusicContentButtonStyle())
         .disabled(disabled || model.isPerformingAction)
         .modifier(LyricsPageControlVisibility())
     }

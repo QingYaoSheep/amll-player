@@ -178,9 +178,11 @@ struct TabletLyricsPlayer<Cover: View, Canvas: View>: View {
         Button { Task { await action() } } label: {
             Label(label, systemImage: image)
                 .font(.system(size: max(18, min(side * 0.68, layout.glyphSize)), weight: .semibold))
+                .modifier(PlayPauseSymbolTransition())
                 .frame(width: side, height: side)
                 .contentShape(Rectangle())
         }
+        .buttonStyle(MusicContentButtonStyle())
         .disabled(!available || model.isPerformingAction)
     }
 
